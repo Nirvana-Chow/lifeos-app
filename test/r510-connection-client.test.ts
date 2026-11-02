@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {AISettingsClient,AISettingsRequestError} from '../src/workbench/ai-settings-client.ts';
+import type {PublicAISettings} from '../src/platform/ai-settings-contract.ts';
+const owner='synthetic-r510-client-owner',view:PublicAISettings={storage:'ready',revision:4,config:{provider:'volcengine-ark',baseURL:'https://ark.cn-beijing.volces.com/api/v3',model:'synthetic-r510-model',dataScope:'current-message-only',monthlyBudgetMinor:null},secretState:'stored',secretMask:'••••••••',enabled:false,realModelActive:false,mode:'synthetic-sdk-test',testState:'passed',testedAt:'2026-10-23T10:00:00.000Z',capabilities:{configurationWritable:true,secretWritable:true,connectionTestAvailable:true,activationAvailable:true},notice:'Synthetic fixture'};
+const session=(id=owner)=>Response.json({user:{id},session:{userId:id}}),deferred=<T>()=>{let resolve!:(value:T)=>void;const promise=new Promise<T>(r=>resolve=r);return{promise,resolve};};
+async function bounded<T>(work:Promise<T>){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('Synthetic wait expired')),300);})]);}finally{clearTimeout(timer);}}
+test('cancellation before dispatch is definitive and sends no paid request',async()=>{
+ let calls=0;const client=new AISettingsClient(async()=>{calls++;return session();}),abort=new AbortController();abort.abort();await assert.rejects(()=>client.request('connection-test','POST',{expectedRevision:2,confirmCost:true},undefined,abort.signal),cause=>cause instanceof AISettingsRequestError&&cause.code==='AI_CONNECTION_TEST_CANCELLED'&&!cause.uncertain);assert.equal(calls,0);
+});
+test('cancelled ignored transport stays uncertain, ignores late success and never resends',async()=>{
+ const started=deferred<void>(),late=deferred<Response>(),abort=new AbortController();let writes=0,sentSignal:AbortSignal|undefined;const client=new AISettingsClient(async(path,init)=>{if(String(path).endsWith('/get-session'))return session();writes++;sentSignal=init?.signal??undefined;started.resolve();return late.promise;}),work=client.request('connection-test','POST',{expectedRevision:2,confirmCost:true},undefined,abort.signal);await started.promise;abort.abort();await assert.rejects(()=>bounded(work),cause=>cause instanceof AISettingsRequestError&&cause.code==='AI_CONNECTION_TEST_CANCELLED'&&cause.uncertain);assert.equal(sentSignal?.aborted,true);late.resolve(Response.json(view));await new Promise<void>(r=>setImmediate(r));assert.equal(writes,1);
+});
+test('identity rejection wins over cancellation after dispatch while preserving unknown write outcome',async()=>{
+ const started=deferred<void>(),late=deferred<Response>(),abort=new AbortController();let current=owner;const client=new AISettingsClient(async path=>String(path).endsWith('/get-session')?session(current):(started.resolve(),late.promise)),work=client.request('connection-test','POST',{},undefined,abort.signal);await started.promise;current='synthetic-r510-other';abort.abort();late.resolve(Response.json(view));await assert.rejects(()=>work,cause=>cause instanceof AISettingsRequestError&&cause.status===403&&cause.uncertain);
+});
+test('obsolete successful test response cannot be accepted after the view changes',async()=>{
+ let current=true;const client=new AISettingsClient(async path=>String(path).endsWith('/get-session')?session():(current=false,Response.json(view)));await assert.rejects(()=>client.request('connection-test','POST',{},()=>current),cause=>cause instanceof AISettingsRequestError&&cause.code==='VIEW_CHANGED'&&cause.uncertain);
+});

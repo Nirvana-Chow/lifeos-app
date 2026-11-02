@@ -1,0 +1,23 @@
+/* Neutral semantic tokens following shadcn/ui theming, adapted to this workspace.
+ * No external fonts, remote stylesheets or runtime theme service. */
+:root{
+ --background:#fafafa;--foreground:#18181b;--card:#fff;--card-foreground:#18181b;
+ --popover:#fff;--popover-foreground:#18181b;--primary:#18181b;--primary-foreground:#fafafa;
+ --secondary:#f4f4f5;--secondary-foreground:#27272a;--muted:#f4f4f5;--muted-foreground:#52525b;
+ --accent:#f4f4f5;--accent-foreground:#18181b;--border:#e4e4e7;--input:#d4d4d8;--ring:#71717a;
+ --danger:#991b1b;--danger-background:#fef2f2;--danger-border:#fca5a5;color-scheme:light;
+}
+:root[data-lifeos-theme=dark]{
+ --background:#09090b;--foreground:#fafafa;--card:#18181b;--card-foreground:#fafafa;
+ --popover:#18181b;--popover-foreground:#fafafa;--primary:#fafafa;--primary-foreground:#18181b;
+ --secondary:#27272a;--secondary-foreground:#fafafa;--muted:#27272a;--muted-foreground:#a1a1aa;
+ --accent:#27272a;--accent-foreground:#fafafa;--border:#3f3f46;--input:#52525b;--ring:#a1a1aa;
+ --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
+}
+@media(prefers-color-scheme:dark){:root:not([data-lifeos-theme=light]){
+ --background:#09090b;--foreground:#fafafa;--card:#18181b;--card-foreground:#fafafa;
+ --popover:#18181b;--popover-foreground:#fafafa;--primary:#fafafa;--primary-foreground:#18181b;
+ --secondary:#27272a;--secondary-foreground:#fafafa;--muted:#27272a;--muted-foreground:#a1a1aa;
+ --accent:#27272a;--accent-foreground:#fafafa;--border:#3f3f46;--input:#52525b;--ring:#a1a1aa;
+ --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
+}}

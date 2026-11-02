@@ -1,0 +1,5 @@
+schema: spec-driven
+context: |
+  LifeOS is an early source-only personal workspace built with Next.js, React, TypeScript and PostgreSQL.
+  Prefer composition of existing tools. Use one npm lock, synthetic fixtures, closed defaults and explicit test evidence.
+  Public source and CI grant no production, credential or real-data permissions.

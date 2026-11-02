@@ -1,0 +1,98 @@
+import type{TaskCellDraftMemory}from"../personal-candidate/task-cell-draft";
+import type {PersonalEditorFields} from "../personal-candidate/editor";
+import type {PublicEntry} from "../platform/contracts";
+import type { ReactNode } from "react";
+import type {PersonalType} from "../personal-candidate/config";
+
+export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
+export type ReferenceLabel = { id: string; title: string };
+export type TaskRow = {
+  id: string;
+  revision: number;
+  title: string;
+  notes: string | null;
+  status: TaskStatus;
+  dueOn: string | null;
+  area: ReferenceLabel | null;
+  project: ReferenceLabel | null;
+  /** Must come from an explicit source classification; missing relations are not an inbox. */
+  inInbox: boolean | null;
+  sourceLabel: string | null;
+  /** Original validated Apple read time; never the website snapshot time. */
+  sourceCapturedAt?: string | null;
+  referenceChanged?: boolean;
+};
+export type AreaRow = ReferenceLabel & { revision: number };
+export type ProjectRow = ReferenceLabel & {
+  revision: number;
+  area: ReferenceLabel | null;
+  stage: string | null;
+  nextStep: string | null;
+  referenceChanged?: boolean;
+};
+export type WorkspaceData = {
+  tasks: readonly TaskRow[];
+  areas: readonly AreaRow[];
+  projects: readonly ProjectRow[];
+  today: string;
+  asOf: string;
+  /** complete only after the existing API's identity/scope/truncation checks succeed. */
+  coverage: "complete" | "partial";
+};
+export type WorkspaceState =
+  | { status: "unknown" | "loading"; message?: string }
+  | { status: "error" | "forbidden"; message: string }
+  | { status: "ready"; data: WorkspaceData };
+export type WorkspaceAccess = {
+  authenticated: boolean | null;
+  writable: boolean | null;
+  loginAllowed: boolean | null;
+  /** Verified status capabilities; missing means no category creation links. */
+  allowedTypes?: readonly PersonalType[];
+  displayName?: string | null;
+  message?: string | null;
+};
+export type WorkspacePage =
+  | "overview"
+  | "tasks"
+  | "inbox"
+  | "areas"
+  | "projects"
+  | "settings";
+export type TaskView = "list" | "table" | "board";
+export type TaskFilter = {
+  query: string;
+  status: "all" | "pending" | TaskStatus;
+  areaId: string | null;
+  projectId: string | null;
+  inboxOnly: boolean;
+  due?: "all" | "today" | "overdue";
+};
+export type LifeOSWorkspaceProps = {
+  state: WorkspaceState;
+  access: WorkspaceAccess;
+  initialPage?: WorkspacePage;
+  initialView?: TaskView;
+  onRefresh?: () => void;
+  onLogin?: () => void;
+  onLogout?: () => void;
+  onCreateTask?: () => void;
+  /** Keep the existing revision/idempotency/recovery writer in the host. No optimistic local mutation. */
+  onSetTaskStatus?: (
+    task: Pick<TaskRow, "id" | "revision">,
+    nextStatus: TaskStatus,
+  ) => void;
+  onOpenTask?: (task: Pick<TaskRow, "id" | "revision">) => void;
+  onSaveTask?: (task: Pick<TaskRow,"id"|"revision">|null, fields: PersonalEditorFields) => Promise<PublicEntry|null>;
+  getTaskFields?: (task: Pick<TaskRow,"id"|"revision">) => PersonalEditorFields|null;
+  taskCellDraftMemory?: TaskCellDraftMemory;
+  saving?: boolean;
+  uncertain?: boolean;
+  undoDeadline?: number|null;
+  onUndoTaskStatus?: () => void;
+  pendingTaskIds?: readonly string[];
+  mutationError?: string | null;
+  settingsContent?: ReactNode;
+  /** QA-only banner, never a replacement for real data in the default route. */
+  testLabel?: string;
+};

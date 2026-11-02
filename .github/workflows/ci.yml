@@ -1,0 +1,269 @@
+# Reuses reviewed platform checks and isolated recovery/MFA fixtures.
+# Public-source checks only: no browser, TLS, image qualification or production deployment.
+# Fixture passwords below are synthetic and apply only to disposable loopback services.
+name: LifeOS public source CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifeos-public-ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_EVENT_SHA: ${{ github.sha }}
+  CI_WORKFLOW_SHA: ${{ github.workflow_sha }}
+  CI_SOURCE_REPOSITORY: ${{ github.repository }}
+
+jobs:
+  checks:
+    name: Tests, types, webpack, isolated Auth and PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        # Official library/postgres index resolved 2026-10-31. Ephemeral fixtures only.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - name: Check out the exact source head, without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          persist-credentials: false
+      - name: Confirm source identity and the single npm lock
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-files '*lock.json' '*lock.yaml' '*lock.yml' yarn.lock npm-shrinkwrap.json | wc -l)" -eq 1
+          git ls-files --error-unmatch package-lock.json >/dev/null
+          printf 'source=%s\nevent=%s\nworkflow=%s\n' "$SOURCE_SHA" "$CI_EVENT_SHA" "$CI_WORKFLOW_SHA"
+      - name: Set up the reviewed Node release, without persistent package cache
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Install the committed dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Unit and contract tests (opt-in integration skips are not acceptance)
+        run: npm test
+      - name: Type check
+        run: npm run typecheck
+      - name: Locked dependency security audit
+        run: npm audit --audit-level=high
+      - name: Build the default-closed application with webpack
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '0'
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run build -- --webpack
+      - name: Verify compiled default-closed routes (in process, not HTTP)
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '0'
+        run: node scripts/check-built-platform.mjs
+      - name: Prepare the empty runner-local synthetic PostgreSQL fixture
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {Pool} from 'pg';
+          const pool = new Pool({host:'127.0.0.1',port:55432,user:'postgres',password:'fixture-ci-admin-never-live',database:'lifeos_platform_test_local',max:1});
+          try {
+            const target = (await pool.query('SELECT current_database() AS db, current_user AS role, version() AS version')).rows[0];
+            if (target.db !== 'lifeos_platform_test_local' || target.role !== 'postgres' || !target.version.startsWith('PostgreSQL 17.11 ')) throw Error('Unexpected CI fixture');
+            if ((await pool.query("SELECT to_regnamespace('lifeos_platform') AS schema")).rows[0].schema !== null) throw Error('CI fixture must be empty');
+            await pool.query("CREATE ROLE lifeos_platform_candidate_runtime LOGIN PASSWORD 'fixture-ci-runtime-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("CREATE ROLE lifeos_platform_candidate_bootstrap LOGIN PASSWORD 'fixture-ci-bootstrap-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
+            await pool.query('REVOKE CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
+            await pool.query("SET lifeos.calendar_migration_approved = '1'");
+            await pool.query("SET lifeos.chat_migration_approved = '1'");
+            for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
+              await pool.query(readFileSync('db/' + file, 'utf8'));
+            }
+            console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');
+          } finally { await pool.end(); }
+          JS
+      - name: Bootstrap synthetic identities with FD3 and independent readback
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_BOOTSTRAP: synthetic-test-only
+          LIFEOS_PLATFORM_BOOTSTRAP_APPROVAL: approved-isolated-fixtures
+          LIFEOS_PLATFORM_BOOTSTRAP_DATABASE_URL: postgresql://lifeos_platform_candidate_bootstrap:fixture-ci-bootstrap-never-live@127.0.0.1:55432/lifeos_platform_test_local
+        run: |
+          node scripts/platform-synthetic-bootstrap.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+      - name: Run actual Auth and core/AI/calendar PostgreSQL tests with no skipped cases
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_CALENDAR_CANDIDATE: '1'
+          RUN_PLATFORM_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_AUTH_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_AI_SETTINGS_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_CALENDAR_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/auth-pg.xml" test/platform-postgres.integration.test.ts test/platform-auth-postgres.integration.test.ts test/ai-settings-postgres.integration.test.ts test/calendar-candidate-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'auth-pg.xml')).getroot()
+          cases = list(root.iter('testcase'))
+          assert len(cases) == 5, f'Expected 5 explicit PG/auth tests, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG/auth skip or failure is not acceptance'
+          print('PASS: 5 explicit PG/auth tests, zero skips. No HTTP/browser/restart/restore acceptance claimed.')
+          PY
+      - name: Run actual Next HTTP, login, ownership, rate-limit and capture tests
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LIFEOS_CHAT_CANDIDATE: '1'
+          RUN_PLATFORM_NETWORK_TESTS: '1'
+          RUN_PLATFORM_CAPTURE_NETWORK_TESTS: '1'
+        run: |
+          node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3190 > "$RUNNER_TEMP/next-fixture.log" 2>&1 &
+          next_pid=$!
+          trap 'kill "$next_pid" 2>/dev/null || true' EXIT
+          status=000
+          for attempt in {1..40}; do
+            status="$(curl --max-time 2 --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3190/api/platform/todos || true)"
+            if test "$status" = 401; then break; fi
+            kill -0 "$next_pid"
+            sleep 1
+          done
+          test "$status" = 401
+          # Auth+PG has exercised this same synthetic owner's limiter. Preserve its
+          # state and wait its natural window; never delete counters to make CI pass.
+          python3 -c 'import time; time.sleep(61)'
+          # Run files in explicit process order: the Node runner may sort files.
+          # Network owns the 1st/4th-attempt limiter assertion and natural recovery;
+          # capture may log in only after that test has recovered successfully.
+          RUN_PLATFORM_CAPTURE_NETWORK_TESTS=0 node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/network.xml" test/platform-network.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          RUN_PLATFORM_NETWORK_TESTS=0 node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/capture-network.xml" test/platform-capture-network.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          for report in ('network.xml', 'capture-network.xml'):
+              cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], report)).getroot().iter('testcase'))
+              assert len(cases) == 1, f'{report}: expected 1 actual HTTP test, found {len(cases)}'
+              assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), f'{report}: HTTP skip or failure is not acceptance'
+              print(f'PASS: {report}, 1 actual HTTP test, zero skips.')
+          print('PASS: actual Next+Auth+PG and capture HTTP, zero skips. No browser/restart/restore acceptance claimed.')
+          PY
+      - name: Confirm installation and verification preserved the committed lock
+        run: git diff --exit-code -- package.json package-lock.json
+
+  recovery-pg:
+    name: Isolated PostgreSQL recovery and native MFA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      LIFEOS_PLATFORM_CANDIDATE: '1'
+      LIFEOS_PLATFORM_TARGET: isolated-test
+      LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+      LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+      LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+      LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+      LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55439/lifeos_platform_test_local
+      LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+    steps:
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact source identity
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Create restricted synthetic fixture and failure injection triggers
+        env:
+          LIFEOS_FIXTURE_PORT: '55439'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: node test/helpers/owner-recovery-pg-setup.mjs
+      - name: Bootstrap fixture identities
+        env:
+          LIFEOS_PLATFORM_BOOTSTRAP: synthetic-test-only
+          LIFEOS_PLATFORM_BOOTSTRAP_APPROVAL: approved-isolated-fixtures
+          LIFEOS_PLATFORM_BOOTSTRAP_DATABASE_URL: postgresql://lifeos_platform_candidate_bootstrap:fixture-ci-bootstrap-never-live@127.0.0.1:55439/lifeos_platform_test_local
+        run: node scripts/platform-synthetic-bootstrap.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+      - name: Run real PG recovery checks without skips
+        env:
+          RUN_OWNER_RECOVERY_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/recovery-pg.xml" test/owner-recovery-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          cases=list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'],'recovery-pg.xml')).getroot().iter('testcase'))
+          assert len(cases)==1, f'Expected one real PG recovery test, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG test not passed'
+          print('PASS: isolated synthetic PG recovery test, no skips')
+          PY
+      - name: Run isolated native MFA PostgreSQL acceptance
+        env:
+          RUN_OWNER_MFA_POSTGRES_TESTS: '1'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/mfa-pg.xml" test/owner-mfa-postgres.integration.test.ts
+          python3 - <<'PY_MFA'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'mfa-pg.xml')).getroot().iter('testcase'))
+          assert len(cases) == 1, f'Expected one real native MFA test, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'MFA skip or failure is not acceptance'
+          print('PASS: one isolated native MFA PostgreSQL test, zero skips; no browser/TLS/production acceptance claimed.')
+          PY_MFA
+      - name: Confirm verification preserved the committed lock
+        run: git diff --exit-code -- package.json package-lock.json

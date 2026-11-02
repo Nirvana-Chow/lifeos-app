@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateRecordFields} from '../src/records-candidate/domain.ts';
+import {emptyRecordForm,formToFields,fieldsToForm} from '../src/records-workbench/fields.ts';
+const base=()=>({title:'Synthetic actual movement',text:'Synthetic original note',occurredOn:null,record:{type:'training',syntheticOnly:true,exercise:null as string|null,sets:[] as unknown[]}});
+test('training keeps unknown date movement and set count without manufacturing zeros',()=>{assert.deepEqual(validateRecordFields(base()),base());const form=emptyRecordForm('training');assert.deepEqual(formToFields({...form,title:'Synthetic actual movement',text:'Synthetic original note'}),base());});
+test('actual ordered sets preserve explicit zero and kg/lb or s/min without conversions',()=>{const input=base();input.record.exercise='Synthetic squat';input.record.sets=[{reps:0,weight:{value:20.5,unit:'kg'},duration:null},{reps:null,weight:null,duration:{value:2,unit:'min'}},{reps:null,weight:null,duration:null}];const fields=validateRecordFields(input);assert.deepEqual(fields,input);assert.deepEqual(formToFields(fieldsToForm(fields)),fields);});
+test('invalid units unknown keys and fabricated numeric strings cannot enter training writer',()=>{for(const set of [{reps:-1,weight:null,duration:null},{reps:'5',weight:null,duration:null},{reps:1,weight:{value:5,unit:'stone'},duration:null},{reps:null,weight:null,duration:{value:Infinity,unit:'s'}},{reps:2,weight:null,duration:null,ownerId:'foreign'}]){const v=base();v.record.sets=[set];assert.throws(()=>validateRecordFields(v));}const v=base();v.record.sets=Array(51).fill({reps:null,weight:null,duration:null});assert.throws(()=>validateRecordFields(v));});
+
+test('small decimal measurements roundtrip and training dates reject year zero',()=>{const v=base();v.record.sets=[{reps:null,weight:{value:0.0000001,unit:'lb'},duration:{value:0,unit:'s'}}];const fields=validateRecordFields(v);assert.deepEqual(formToFields(fieldsToForm(fields)),fields);assert.throws(()=>validateRecordFields({...v,occurredOn:'0000-01-01'}));});

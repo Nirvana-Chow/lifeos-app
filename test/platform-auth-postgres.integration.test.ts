@@ -1,0 +1,16 @@
+import test from'node:test';import assert from'node:assert/strict';import{createPlatformAuth,authRequest,readOwnerPrincipal}from'../src/platform/auth.ts';import{createPlatformHandler}from'../src/platform/http.ts';import{PostgresPlatformRepository,verifyRestrictedPool,type SqlPool}from'../src/platform/postgres.ts';import{validateAcceptanceEnvironment,acceptancePasswords,acceptancePool}from'./helpers/platform-pg.ts';
+import{tamperSessionToken}from'./helpers/auth-cookie.ts';
+test('OPT-IN real Better Auth + PostgreSQL credential/session/owner checks through application Requests, not a Next network server',{skip:process.env.RUN_PLATFORM_AUTH_POSTGRES_TESTS==='1'?false:'No approved isolated Auth+PG target/FD3; not executed'},async()=>{
+ const config=validateAcceptanceEnvironment(process.env,process.execArgv),passwords=acceptancePasswords(),pool=acceptancePool(config.databaseURL);
+ try{
+  await verifyRestrictedPool(pool as SqlPool);const auth=createPlatformAuth(config,pool),repository=new PostgresPlatformRepository(pool as SqlPool),handler=createPlatformHandler({repository,sessions:{read:h=>readOwnerPrincipal(auth,config,h)},baseURL:config.baseURL,owner:{id:config.ownerId,email:config.ownerEmail}});
+  const login=(email:string,password:string)=>authRequest(new Request(config.baseURL+'/api/platform/auth/sign-in/email',{method:'POST',headers:{host:new URL(config.baseURL).host,origin:config.baseURL,'content-type':'application/json'},body:JSON.stringify({email,password,rememberMe:false})}),config,r=>auth.handler(r));
+  assert.equal((await login(config.ownerEmail,'wrong-synthetic-password')).status,401);assert.ok((await login('other@example.invalid',passwords.ownerB)).status>=400);const before=new Date();const signed=await login(config.ownerEmail,passwords.ownerA);assert.equal(signed.status,200,'owner sign-in');
+  const cookies=signed.headers.getSetCookie();assert.ok(cookies.length>0&&cookies.every(c=>/HttpOnly/i.test(c)&&/SameSite=Strict/i.test(c)));const cookie=cookies.map(c=>c.split(';')[0]).join('; ');
+  const sessionRows=await pool.query('SELECT "expiresAt" FROM lifeos_platform.platform_session WHERE "userId"=$1 AND "createdAt">=$2',[config.ownerId,before]);assert.ok(sessionRows.rowCount&&sessionRows.rowCount>0);for(const row of sessionRows.rows)assert.ok(new Date(row.expiresAt).valueOf()<=Date.now()+1800000);
+  const request=(cookieValue='')=>new Request(config.baseURL+'/api/platform/requirements',{headers:{host:new URL(config.baseURL).host,cookie:cookieValue}});
+  assert.equal((await handler(request())).status,401);assert.equal((await handler(request(tamperSessionToken(cookie)))).status,401);assert.equal((await handler(request(cookie))).status,200);
+  const signup=await authRequest(new Request(config.baseURL+'/api/platform/auth/sign-up/email',{method:'POST'}),config,r=>auth.handler(r));assert.equal(signup.status,404);
+  assert.equal((await authRequest(new Request(config.baseURL+'/api/platform/auth/sign-out',{method:'POST',headers:{host:new URL(config.baseURL).host,origin:config.baseURL,'content-type':'application/json',cookie},body:'{}'}),config,r=>auth.handler(r))).status,200);assert.equal((await handler(request(cookie))).status,401);
+ }finally{await pool.end();}
+});

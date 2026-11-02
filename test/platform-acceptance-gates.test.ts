@@ -1,0 +1,6 @@
+import test from'node:test';import assert from'node:assert/strict';import{validateAcceptanceEnvironment}from'./helpers/platform-pg.ts';
+const env={LIFEOS_PLATFORM_CANDIDATE:'1',LIFEOS_PLATFORM_TARGET:'isolated-test',LIFEOS_PLATFORM_BASE_URL:'http://127.0.0.1:3190',LIFEOS_PLATFORM_OWNER_ID:'fixture-owner-a',LIFEOS_PLATFORM_OWNER_EMAIL:'fixture@example.invalid',LIFEOS_PLATFORM_SECRET:'fixture-only-not-a-live-secret-000000000',LIFEOS_PLATFORM_TEST_DATABASE_URL:'postgres://lifeos_platform_candidate_runtime:fixture-only@127.0.0.1:55433/lifeos_platform_test_fixture',LIFEOS_PLATFORM_TEST_APPROVAL:'approved-isolated-fixtures'};
+test('optional acceptance requires fixed synthetic identity, explicit target approval and the dedicated no-isolation runner',()=>{
+ assert.equal(validateAcceptanceEnvironment(env,['--test-isolation=none']).ownerId,'fixture-owner-a');
+ assert.throws(()=>validateAcceptanceEnvironment({...env,LIFEOS_PLATFORM_TEST_APPROVAL:''},['--test-isolation=none']));assert.throws(()=>validateAcceptanceEnvironment(env,[]));assert.throws(()=>validateAcceptanceEnvironment({...env,LIFEOS_PLATFORM_OWNER_EMAIL:'person@example.com'},['--test-isolation=none']));assert.throws(()=>validateAcceptanceEnvironment({...env,RUN_PLATFORM_AUTH_POSTGRES_TESTS:'1',RUN_PLATFORM_NETWORK_TESTS:'1'},['--test-isolation=none']));
+});

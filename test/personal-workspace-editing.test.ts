@@ -1,0 +1,83 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync,existsSync} from 'node:fs';
+import {dirname,resolve,extname} from 'node:path';
+import {createRequire} from 'node:module';
+import * as React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import ts from 'typescript';
+import type {LifeOSWorkspaceProps} from '../src/ui-review/contract.ts';
+
+// Compile local TSX like the recovery-panel tests; real components render without effects.
+const nativeRequire=createRequire(import.meta.url),cache=new Map<string,unknown>();
+function load(file:string):any {
+ const path=resolve(file);if(cache.has(path))return cache.get(path);
+ const m={exports:{}};cache.set(path,m.exports);
+ const code=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
+ new Function('require','module','exports',code)((name:string)=>{
+  if(name.endsWith('.css'))return{__esModule:true,default:{}};
+  if(!name.startsWith('.'))return nativeRequire(name);
+  const base=resolve(dirname(path),name),target=extname(base)?base:[base+'.tsx',base+'.ts',base].find(existsSync);
+  assert.ok(target,'local module '+name);return load(target);
+ },m,m.exports);cache.set(path,m.exports);return m.exports;
+}
+const {LifeOSWorkspace}=load('src/ui-review/workspace.tsx');
+const {PersonalRecordForm}=load('src/personal-candidate/record-form.tsx');
+const task={id:'11111111-1111-4111-8111-111111111111',revision:3,title:'Synthetic reminder',notes:'',status:'open' as const,dueOn:null,area:null,project:null,inInbox:null,sourceLabel:'Apple 提醒事项',sourceCapturedAt:'2026-10-25T03:00:00Z'};
+function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
+ const props:LifeOSWorkspaceProps={state:{status:'ready',data:{tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']},initialPage:'tasks',initialView:'list',onOpenTask:()=>{},onCreateTask:()=>{},...overrides};
+ return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
+}
+test('writable task view exposes editing and real category routes without inventing empty category options',()=>{
+ const html=workspace({initialPage:'settings'});assert.match(html,/分类管理/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
+ for(const type of ['domain','project','topic'])assert.match(html,new RegExp('href="/personal/edit\\?type='+type+'"'));
+ assert.doesNotMatch(html,/<option[^>]*>[^<]*(?:示例|默认项目|默认领域)/);
+});
+test('read-only and unverified workspace never expose category creation and label detail access honestly',()=>{
+ for(const access of [{authenticated:true,writable:false,loginAllowed:true},{authenticated:null,writable:null,loginAllowed:null}]){
+  const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="编辑待办：/);
+ }
+});
+test('source summary uses full snapshot totals and original Apple interval separately from website read',()=>{
+ const html=workspace({initialPage:'settings'});assert.match(html,/全部待办[\s\S]*3/);assert.match(html,/Apple 提醒事项[\s\S]*2/);assert.match(html,/手工录入[\s\S]*1/);assert.match(html,/2026-10-25T03:00:00Z/);assert.match(html,/2026-10-26T04:00:00Z/);assert.match(html,/2026-10-27T09:00:00Z/);assert.match(html,/非实时|不是实时/);assert.match(html,/不会.*(?:写回|反写).*Apple/);
+});
+test('partial snapshot and missing capture metadata never imply full totals or zero source coverage',()=>{
+ const html=workspace({initialPage:'settings',state:{status:'ready',data:{tasks:[{...task,sourceCapturedAt:null}],areas:[],projects:[],coverage:'partial',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}}});
+ assert.match(html,/全部待办[\s\S]*未知/);assert.match(html,/Apple.*读取时间.*未提供|Apple.*读取.*未知/);
+});
+test('empty relationship form retains four statuses and only real writable category creation',()=>{
+ const props={type:'todo',fields:{title:'Synthetic',text:'',date:'',status:'open'},setFields:()=>{},confirmed:false,setConfirmed:()=>{},options:{domain:[],project:[],topic:[]},allowedTypes:['todo','journal','project','domain','topic'],disabled:false,onSubmit:()=>{},onCancel:()=>{}};
+ const html=renderToStaticMarkup(React.createElement(PersonalRecordForm,props));
+ for(const status of ['open','in_progress','done','cancelled'])assert.match(html,new RegExp('<option value="'+status+'"'));
+ for(const type of ['domain','project','topic'])assert.match(html,new RegExp('href="/personal/edit\\?type='+type+'"'));
+ assert.match(html,/不关联/);assert.doesNotMatch(html,/<option value="[^\"]+">[^<]*(?:默认项目|默认领域)/);
+ const closed=renderToStaticMarkup(React.createElement(PersonalRecordForm,{...props,disabled:true}));assert.doesNotMatch(closed,/href="\/personal\/edit\?type=/);
+});
+
+test('writable workspace hides category creation for restricted or unknown type capabilities',()=>{
+ for(const allowedTypes of [undefined,['todo','journal'] as const]){
+  const html=workspace({access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes}});
+  assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);
+ }
+ const html=workspace({initialPage:'settings',access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','domain']}});
+ assert.match(html,/href="\/personal\/edit\?type=domain"/);assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:project|topic)"/);
+});
+test('enabled form does not offer category creation without verified type capabilities',()=>{
+ const props={type:'todo',fields:{title:'Synthetic',text:'',date:'',status:'open'},setFields:()=>{},confirmed:false,setConfirmed:()=>{},options:{domain:[],project:[],topic:[]},disabled:false,onSubmit:()=>{},onCancel:()=>{}};
+ for(const allowedTypes of [undefined,['todo','journal']]){
+  const html=renderToStaticMarkup(React.createElement(PersonalRecordForm,{...props,allowedTypes}));
+  assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);
+ }
+});
+
+test('task view keeps data details and categories in settings, with real journal calendar and export links',()=>{
+ const html=workspace();assert.doesNotMatch(html,/非实时|不是实时|lo-edit-hint|lo-category-entries/);
+ assert.match(html,/href="\/review\/admin\/journal"/);assert.match(html,/href="\/review\/admin\/schedule"/);
+ const settings=workspace({initialPage:'settings'});assert.match(settings,/数据与权限/);assert.match(settings,/href="\/review\/admin\/personal\?type=journal"/);
+});
+test('overview metrics are actionable and unknown metrics are disabled',()=>{
+ const html=workspace({initialPage:'overview'});
+ for(const label of ['待办','今日到期','已逾期','项目'])assert.match(html,new RegExp('<button[^>]*aria-label="'+label+'：[^" ]+"'));
+ const unknown=workspace({initialPage:'overview',state:{status:'unknown'}});
+ assert.equal((unknown.match(/<button[^>]*aria-label="(?:待办|今日到期|已逾期|项目)：未知"[^>]*disabled/g)||[]).length,4);
+});

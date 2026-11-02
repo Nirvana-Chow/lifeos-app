@@ -1,0 +1,38 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import{PostgresPlatformRepository,assertRestrictedMetadata,verifyRestrictedPool,type SqlClient}from'../src/platform/postgres.ts';
+const safe={role:'lifeos_platform_candidate_runtime',superuser:false,create_db:false,create_role:false,bypass_rls:false,memberships:0,owns_objects:0,can_create_schema:false,can_create_database:false,rls_tables:4,forced_tables:4,version:2};
+test('database metadata must prove a restricted nonowner role and all four forced RLS tables',()=>{
+ assert.doesNotThrow(()=>assertRestrictedMetadata(safe));
+ for(const [key,value]of Object.entries({role:'postgres',superuser:true,create_db:true,create_role:true,bypass_rls:true,memberships:1,owns_objects:1,can_create_schema:true,can_create_database:true,rls_tables:3,forced_tables:3,version:0}))assert.throws(()=>assertRestrictedMetadata({...safe,[key]:value}),/Restricted isolated PostgreSQL target required/);
+ assert.throws(()=>assertRestrictedMetadata({...safe,version:1}),/Restricted isolated PostgreSQL target required/);
+ assert.throws(()=>assertRestrictedMetadata({}),/Restricted isolated PostgreSQL target required/);
+});
+test('bootstrap purpose never relaxes the default runtime role boundary',()=>{
+ const bootstrap={...safe,role:'lifeos_platform_candidate_bootstrap'};assert.throws(()=>assertRestrictedMetadata(bootstrap));assert.doesNotThrow(()=>assertRestrictedMetadata(bootstrap,'synthetic-bootstrap'));assert.throws(()=>assertRestrictedMetadata(safe,'synthetic-bootstrap'));assert.throws(()=>assertRestrictedMetadata(bootstrap,'unknown' as never));
+});
+test('bootstrap connection gate requires exact auth INSERT/SELECT grants and rejects excess privileges',async()=>{
+ for(const [grants,allowed]of [[{required:true,excessive:false},true],[{required:false,excessive:false},false],[{required:true,excessive:true},false]] as const){let calls=0,released=false;const pool={connect:async()=>({query:async()=>({rows:calls++===0?[{...safe,role:'lifeos_platform_candidate_bootstrap'}]:[grants],rowCount:1}),release:()=>{released=true;}})};
+  const result=verifyRestrictedPool(pool,'synthetic-bootstrap');if(allowed)await result;else await assert.rejects(result,/Restricted synthetic bootstrap grants required/);assert.equal(calls,2);assert.equal(released,true);
+ }
+});
+function driver(){const calls:{sql:string;values:unknown[]}[]=[];let released=0;const client:SqlClient={query:async(sql,values=[])=>{calls.push({sql,values});return{rows:[],rowCount:0};},release:()=>{released++;}};return{repo:new PostgresPlatformRepository({connect:async()=>client}),calls,released:()=>released};}
+test('owner scope and command lock are bound values inside a READ COMMITTED transaction',async()=>{
+ const d=driver(),owner="fixture-owner'; DROP TABLE nope;--",key='fixture-command-001';
+ assert.equal(await d.repo.transaction(owner,key,async tx=>{assert.equal(await tx.receipt(),null);return 'ok';}),'ok');
+ assert.equal(d.calls[0].sql,'BEGIN ISOLATION LEVEL READ COMMITTED');assert.deepEqual(d.calls[1].values,[owner]);assert.match(d.calls[1].sql,/set_config/);assert.deepEqual(d.calls[2].values,[JSON.stringify([owner,key])]);assert.match(d.calls[2].sql,/pg_advisory_xact_lock/);assert.equal(d.calls.at(-1)?.sql,'COMMIT');assert.equal(d.released(),1);assert.ok(d.calls.every(c=>!c.sql.includes(owner)));
+});
+test('failed application callbacks roll back and release instead of claiming save',async()=>{
+ const d=driver();await assert.rejects(d.repo.transaction('fixture-owner','fixture-command',async()=>{throw Error('fixture-reject');}),/fixture-reject/);assert.equal(d.calls.at(-1)?.sql,'ROLLBACK');assert.equal(d.released(),1);assert.ok(!d.calls.some(c=>c.sql==='COMMIT'));
+});
+test('object reads and linked refunds keep owner predicates; mutation get holds the source row lock',async()=>{
+ const d=driver(),owner='fixture-owner',id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';assert.deepEqual(await d.repo.list(owner,'finance'),[]);assert.equal(await d.repo.get(owner,'finance',id),null);
+ await d.repo.transaction(owner,'fixture-command',async tx=>{await tx.get('finance',id);await tx.refundsFor(id);});
+ const reads=d.calls.filter(c=>/FROM lifeos_platform.platform_record r/.test(c.sql));assert.equal(reads.length,4);for(const r of reads){assert.ok(r.values.includes(owner));assert.match(r.sql,/r.owner_id=\$1/);}assert.match(reads[2].sql,/FOR UPDATE OF r/);assert.match(reads[3].sql,/original_entry_id/);
+});
+test('project link discovery peeks on the same transaction connection without locking before ordered gets',async()=>{
+ const d=driver(),id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ await d.repo.transaction('fixture-owner','fixture-project-peek',async tx=>{assert.equal(await tx.peek('inbox',id),null);assert.equal(await tx.get('inbox',id),null);});
+ const reads=d.calls.filter(call=>call.sql.includes('FROM lifeos_platform.platform_record r'));assert.equal(reads.length,2);
+ assert.deepEqual(reads.map(call=>call.values),[['fixture-owner','inbox',id],['fixture-owner','inbox',id]]);
+ assert.doesNotMatch(reads[0].sql,/FOR UPDATE/);assert.match(reads[1].sql,/FOR UPDATE OF r/);assert.equal(d.released(),1);
+});

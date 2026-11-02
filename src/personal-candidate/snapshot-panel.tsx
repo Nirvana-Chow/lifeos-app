@@ -1,0 +1,2 @@
+import type {PublicEntry} from '../platform/contracts';import {PersistentViews} from './persistent-views';
+export function SnapshotPanel({items,spaceId,error,navigationLocked=false,documentNavigation=false}:{items:PublicEntry[]|null;spaceId:string;error:string;navigationLocked?:boolean;documentNavigation?:boolean}){if(items===null)return <p role={error?"alert":"status"}>{error||"正在读取完整快照…"}</p>;return <PersistentViews entries={items??[]} spaceId={spaceId} navigationLocked={navigationLocked} documentNavigation={documentNavigation}/>;}

@@ -1,0 +1,19 @@
+import type {PublicEntry} from '../platform/contracts.ts';
+import {validateId,validateRevision,validateTodo} from '../platform/domain.ts';
+import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
+import {editorFromEntry} from './editor.ts';
+import type {PersonalReference} from './business.ts';
+export type ReferenceLabel={id:string;title:string};
+export type WorkspaceTask={id:string;revision:number;title:string;notes:string|null;status:'open'|'in_progress'|'done'|'cancelled';dueOn:string|null;area:ReferenceLabel|null;project:ReferenceLabel|null;inInbox:boolean|null;sourceLabel:string|null;sourceCapturedAt?:string|null;referenceChanged?:boolean};
+export type WorkspaceData={tasks:WorkspaceTask[];areas:(ReferenceLabel&{revision:number})[];projects:(ReferenceLabel&{revision:number;area:ReferenceLabel|null;stage:string|null;nextStep:string|null;referenceChanged?:boolean})[];today:string;asOf:string;coverage:'complete'|'partial'};
+const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
+export function workspaceData(value:unknown,spaceId:string,today:string):{data:WorkspaceData;entries:PublicEntry[]}{
+ if(!obj(value)||value.scope!=='full-current-snapshot'||value.truncated!==false||!Array.isArray(value.items)||value.total!==value.items.length||value.today!==today||typeof value.observedAt!=='string'||!Number.isFinite(Date.parse(value.observedAt)))throw Error('全量快照无法核实。');
+ const entries=value.items as PublicEntry[],seen=new Set<string>(),types=new Map<string,string>();
+ for(const entry of entries){if(!obj(entry)||'ownerId'in entry||!obj(entry.source)||entry.source.system!=='website'||entry.source.version!==1||entry.source.externalId!==entry.id||entry.syncState!=='draft'||entry.externalStatus!==null)throw Error('记录来源无法核实。');validateId(entry.id);validateId(entry.source.id);validateRevision(entry.revision);if(seen.has(entry.id))throw Error('重复记录。');seen.add(entry.id);types.set(entry.id,editorFromEntry(entry,spaceId).type);}
+ const lookup=new Map(entries.map(e=>[e.id,e]));let changed=false;
+ function reference(ref:PersonalReference|null|undefined,type:string):ReferenceLabel|null{if(!ref)return null;const entry=lookup.get(ref.id);if(!entry||types.get(ref.id)!==type||entry.source.id!==ref.sourceId){changed=true;return null;}if(entry.revision!==ref.revision)changed=true;return{id:entry.id,title:'title'in entry.draft?entry.draft.title:''};}
+ const data:WorkspaceData={tasks:[],areas:[],projects:[],today,asOf:value.observedAt,coverage:'complete'};
+ for(const entry of entries){const type=types.get(entry.id);changed=false;if(type==='todo'){const d=validateTodo(entry.draft),r=d.personal,apple=(entry.source.original as {marker?:string}).marker===appleOriginMarker?readAppleOrigin(entry.source.original,spaceId):null;const project=reference(r?.project,'project');let area=reference(r?.domain,'domain');if(!r?.domain&&project){const parent=lookup.get(project.id)!;if('personal'in parent.draft&&parent.draft.personal&&'type'in parent.draft.personal&&parent.draft.personal.type==='project')area=reference(parent.draft.personal.domain,'domain');}data.tasks.push({id:entry.id,revision:entry.revision,title:d.title,notes:d.notes,status:d.status,dueOn:d.dueOn,area,project,inInbox:null,sourceLabel:apple?'Apple 提醒事项':'手工录入',sourceCapturedAt:apple?.source.capturedAt??null,referenceChanged:changed});}else if(type==='domain')data.areas.push({id:entry.id,revision:entry.revision,title:'title'in entry.draft?entry.draft.title:''});else if(type==='project'&&'personal'in entry.draft&&entry.draft.personal&&'type'in entry.draft.personal&&entry.draft.personal.type==='project'){const meta=entry.draft.personal,area=reference(meta.domain,'domain');data.projects.push({id:entry.id,revision:entry.revision,title:'title'in entry.draft?entry.draft.title:'',area,stage:meta.stage,nextStep:meta.nextStep,referenceChanged:changed});}}
+ return{data,entries};
+}

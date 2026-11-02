@@ -1,0 +1,9 @@
+import {createHash} from 'node:crypto';
+import {PlatformError,object,validateId} from '../platform/domain.ts';
+import type {ChatPoint,ChatPageWindow} from './contracts.ts';
+const bad=():never=>{throw new PlatformError(400,'INVALID_CHAT_CURSOR','分页位置无法核对，请重新开始导出。');};
+export function chatPoint(value:{createdAt:string;id:string}):ChatPoint{const m=/^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,6}))?Z$/.exec(value.createdAt);if(!m||!Number.isFinite(Date.parse(value.createdAt))||new Date(Date.parse(value.createdAt)).toISOString().slice(0,19)!==m[1]||m[1].startsWith('0000-'))return bad();return{createdAt:m[1]+'.'+(m[2]??'').padEnd(6,'0')+'Z',id:validateId(value.id).toLowerCase()};}
+export function compareChatPoints(a:ChatPoint,b:ChatPoint){return a.createdAt<b.createdAt?-1:a.createdAt>b.createdAt?1:a.id<b.id?-1:a.id>b.id?1:0;}
+const ownerHash=(owner:string)=>createHash('sha256').update('lifeos.chat.export-page.v1\0'+owner).digest('hex');
+export function encodeChatCursor(owner:string,window:ChatPageWindow):string{return Buffer.from(JSON.stringify({version:1,owner:ownerHash(owner),anchor:window.anchor,after:window.after})).toString('base64url');}
+export function decodeChatCursor(owner:string,cursor:string|null):ChatPageWindow{if(cursor===null)return{anchor:null,after:null};try{if(!/^[A-Za-z0-9_-]{1,1200}$/.test(cursor))return bad();const bytes=Buffer.from(cursor,'base64url');if(bytes.toString('base64url')!==cursor)return bad();const v=object(JSON.parse(bytes.toString('utf8')),['version','owner','anchor','after']);if(v.version!==1||v.owner!==ownerHash(owner))return bad();const point=(raw:unknown)=>{const x=object(raw,['createdAt','id']);if(typeof x.createdAt!=='string'||typeof x.id!=='string')return bad();const p=chatPoint(x as ChatPoint);if(p.createdAt!==x.createdAt||p.id!==x.id)return bad();return p;};const anchor=point(v.anchor),after=point(v.after);if(compareChatPoints(after,anchor)>0)return bad();return{anchor,after};}catch{return bad();}}

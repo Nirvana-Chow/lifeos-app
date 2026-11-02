@@ -1,0 +1,18 @@
+import{readOwnerAccountAccess}from'./account-access.ts';
+import {isHTTPSOrigin} from '../platform/config.ts';
+export const personalConfigKeys=Object.freeze(['LIFEOS_PERSONAL_RECOVERY_APPROVAL','LIFEOS_PERSONAL_ACCOUNT_ACCESS','LIFEOS_PERSONAL_BUSINESS_WRITES','LIFEOS_PERSONAL_READONLY_LOGIN','LIFEOS_PERSONAL_SSH_LOOPBACK','LIFEOS_PERSONAL_B_CANDIDATE','LIFEOS_PERSONAL_ENABLED','LIFEOS_PERSONAL_APPROVED','LIFEOS_PERSONAL_OWNER_ID','LIFEOS_PERSONAL_OWNER_EMAIL','LIFEOS_PERSONAL_SPACE_ID','LIFEOS_PERSONAL_DATABASE_NAME','LIFEOS_PERSONAL_ALLOWED_TYPES'] as const);
+export type PersonalType='todo'|'journal'|'project'|'domain'|'topic';
+export type PersonalConfig=Readonly<{ownerId:string;ownerEmail:string;spaceId:string;databaseName:string;allowedTypes:readonly PersonalType[];approval:'personal-manual-v1';baseURL:string;transport?:'https'|'ssh-loopback';readonlyLoginApproved?:true;businessWriteMode?:'owner-managed'|'disabled'}>;
+export type PersonalPlatformContext={ownerId:string;ownerEmail:string;databaseURL:string;baseURL:string};
+export function readPersonalConfig(env:Record<string,string|undefined>,platform:PersonalPlatformContext):PersonalConfig|null{
+ if(env.LIFEOS_PERSONAL_ENABLED===undefined)return null;
+ const fail=():never=>{throw Error('Personal candidate configuration unavailable');};
+ if(env.LIFEOS_PERSONAL_READONLY_LOGIN!==undefined&&env.LIFEOS_PERSONAL_READONLY_LOGIN!=='owner-session-v1')return fail();
+ const writes=env.LIFEOS_PERSONAL_BUSINESS_WRITES;if(writes!==undefined&&!['owner-managed-v1','disabled'].includes(writes)||writes==='owner-managed-v1'&&env.LIFEOS_PERSONAL_READONLY_LOGIN!=='owner-session-v1')return fail();
+ const ssh=env.LIFEOS_PERSONAL_SSH_LOOPBACK==='approved-private-ssh-v1';if(env.LIFEOS_PERSONAL_SSH_LOOPBACK!==undefined&&!ssh)return fail();
+ readOwnerAccountAccess(env);
+ const ownerId=env.LIFEOS_PERSONAL_OWNER_ID,ownerEmail=env.LIFEOS_PERSONAL_OWNER_EMAIL,spaceId=env.LIFEOS_PERSONAL_SPACE_ID,databaseName=env.LIFEOS_PERSONAL_DATABASE_NAME;
+ if(env.LIFEOS_PERSONAL_ENABLED!=='1'||env.LIFEOS_PERSONAL_APPROVED!=='personal-manual-v1'||env.LIFEOS_PERSONAL_ALLOWED_TYPES!==(env.LIFEOS_PERSONAL_B_CANDIDATE==='project-domain-v1'?'todo,journal,project,domain,topic':'todo,journal')||!ownerId||['fixture-owner-a','fixture-owner-b'].includes(ownerId)||!/^[A-Za-z0-9_-]{6,80}$/.test(ownerId)||ownerId!==platform.ownerId||!ownerEmail||['fixture@example.invalid','other@example.invalid'].includes(ownerEmail)||ownerEmail!==platform.ownerEmail||ownerEmail!==ownerEmail.toLowerCase()||!/^\S+@\S+\.\S+$/.test(ownerEmail)||!spaceId||!/^[A-Za-z0-9_-]{8,80}$/.test(spaceId)||databaseName!=='lifeos_platform_test_local')return fail();
+ try{const db=new URL(platform.databaseURL),base=new URL(platform.baseURL);const secureOrigin=ssh?base.protocol==='http:'&&base.hostname==='127.0.0.1'&&!!base.port&&Number(base.port)>=1024&&!base.username&&!base.password:isHTTPSOrigin(base);if(!secureOrigin||base.origin!==platform.baseURL||!['postgres:','postgresql:'].includes(db.protocol)||db.hostname!=='127.0.0.1'||db.port!=='55432'||db.username!=='lifeos_platform_candidate_runtime'||!db.password||db.pathname!=='/'+databaseName||db.search||db.hash)return fail();}catch{return fail();}
+ return Object.freeze({ownerId,ownerEmail,spaceId,databaseName,allowedTypes:Object.freeze(env.LIFEOS_PERSONAL_B_CANDIDATE==='project-domain-v1'?['todo','journal','project','domain','topic'] as const:['todo','journal'] as const),approval:'personal-manual-v1',baseURL:platform.baseURL,...(writes?{businessWriteMode:writes==='owner-managed-v1'?'owner-managed' as const:'disabled' as const}:{}),...(env.LIFEOS_PERSONAL_READONLY_LOGIN==='owner-session-v1'?{readonlyLoginApproved:true as const}:{}),...(ssh?{transport:'ssh-loopback' as const}:{})});
+}

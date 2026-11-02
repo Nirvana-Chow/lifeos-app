@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createPlatformHandler} from '../src/platform/http.ts';
+import {DraftService} from '../src/platform/service.ts';
+import {MemoryPort} from './helpers/platform.ts';
+import {RecordsClient,createRecordCommand,createProjectReviewCommand} from '../src/records-workbench/client.ts';
+import {RecordsSaveSession} from '../src/records-workbench/session.ts';
+import {createRecordsCommandStore} from '../src/records-workbench/recovery.ts';
+import {formToFields,fieldsToForm} from '../src/records-workbench/fields.ts';
+import type {RecordFields,RecordEntry,ProjectLink} from '../src/records-candidate/contracts.ts';
+const owner={id:'synthetic-links-client-owner',email:'synthetic-links-client@example.invalid'},base='http://127.0.0.1:3111';
+const target=(entry:RecordEntry)=>({id:entry.id,revision:entry.revision,type:'project' as const,baseline:entry});
+
+test('linked client preserves exact create retry, source history, stale refusal and explicit pin refresh through in-process API',async()=>{
+ const repository=new MemoryPort(),drafts=new DraftService(repository),handler=createPlatformHandler({repository,sessions:{read:async()=>({userId:owner.id,email:owner.email})},owner,baseURL:base});
+ const transport:typeof fetch=async(input,init)=>String(input)==='/api/platform/auth/get-session'?Response.json({user:{id:owner.id},session:{userId:owner.id}}):handler(new Request(new URL(String(input),base),{...init,headers:{...Object.fromEntries(new Headers(init?.headers)),origin:base,host:'127.0.0.1:3111'}}));
+ const client=new RecordsClient(transport),todo=(await drafts.mutate(owner.id,'todo',null,{title:'Synthetic linked task',notes:'Synthetic original body',status:'open',dueOn:null},'links-client-task')).entry;
+ const resource=await client.send(createRecordCommand({title:'Synthetic resource',text:'Synthetic reference body',occurredOn:null,record:{type:'resource',syntheticOnly:true,url:'https://example.invalid/synthetic',author:null}},null,'links-client-resource',true,owner.id));
+ const pins:ProjectLink[]=[{type:'todo',id:todo.id,sourceId:todo.source.id,revision:todo.revision},{type:'resource',id:resource.entry.id,sourceId:resource.entry.source.id,revision:resource.entry.revision}],fields:RecordFields={title:' Synthetic linked project ',text:'Synthetic body',occurredOn:null,record:{type:'project',syntheticOnly:true,stage:'active',nextStep:null,completion:{selfReported:true,status:'not-complete',evidence:null},testing:{manuallyRecorded:true,outcome:'not-run',evidence:null},review:{decision:'pending',evidence:null},links:pins}};
+ assert.deepEqual((await client.projectCandidates('todo','Synthetic',owner.id)).items.map(item=>item.link),[pins[0]]);
+ let lost=false;const requests:{path:string;body:BodyInit|null|undefined;key:string|null}[]=[],flaky=new RecordsClient(async(input,init)=>{if(String(input)==='/api/platform/records/project')requests.push({path:String(input),body:init?.body,key:new Headers(init?.headers).get('idempotency-key')});const response=await transport(input,init);if(String(input)==='/api/platform/records/project'&&!lost){lost=true;throw Error('Synthetic receipt lost after commit');}return response;});
+ const data=new Map<string,string>(),store=createRecordsCommandStore({getItem:key=>data.get(key)??null,setItem:(key,value)=>{data.set(key,value);},removeItem:key=>{data.delete(key);}}),session=new RecordsSaveSession(flaky,()=> 'links-client-frozen-create',store);await session.save(fields,null,true);assert.equal(session.getSnapshot().phase,'uncertain');const frozen=session.getSnapshot().pending!;
+ await drafts.mutate(owner.id,'todo',todo.id,{expectedRevision:1,notes:'Synthetic corrected source body'},'links-client-task-edit');
+ const restored=new RecordsSaveSession(flaky,()=> 'must-not-change-key',store);assert.equal(restored.getSnapshot().pending!.body,frozen.body);await restored.retry();assert.equal(restored.getSnapshot().phase,'saved');assert.equal(restored.getSnapshot().result?.duplicate,true);assert.deepEqual(requests[0],requests[1]);const created=restored.getSnapshot().result!.entry;
+ assert.deepEqual(created.source.original,{...fields,disposition:'reference'});assert.deepEqual(created.draft.record.type==='project'?created.draft.record.links:[],[pins[1],pins[0]]);
+ const summary=await client.projectRecap(created.id,owner.id);assert.equal(summary.counts.updated,1);assert.equal(summary.reviewApplicable,false);const source=await client.projectSource(pins[0],owner.id);assert.equal(source.current.revision,2);assert.equal(source.original.revision,1);assert.ok(source.current.fields.some(field=>field.value==='Synthetic corrected source body'));
+ const review=new RecordsSaveSession(client,()=> 'links-client-stale-review');await review.review(created,'accepted','Synthetic manual review',true);assert.equal(review.getSnapshot().phase,'rejected');assert.equal(review.getSnapshot().pending,null);
+ const form=fieldsToForm(created.draft);form.links=form.links.map(pin=>pin.type==='todo'?{...pin,revision:2}:pin);const refreshed=await client.send(createRecordCommand(formToFields(form),target(created),'links-client-refresh',true,owner.id));assert.deepEqual(refreshed.entry.source,created.source);
+ const accepted=await client.send(createProjectReviewCommand(refreshed.entry,'accepted','Synthetic checked pins','links-client-accept',true,owner.id));assert.equal((await client.projectRecap(accepted.entry.id,owner.id)).reviewApplicable,true);
+ await drafts.mutate(owner.id,'todo',todo.id,{expectedRevision:2,status:'done'},'links-client-task-done');const stale=await client.projectRecap(accepted.entry.id,owner.id);assert.equal(stale.reviewApplicability,'stale-links');assert.equal(stale.project.draft.record.type==='project'&&stale.project.draft.record.review.decision,'accepted');
+});

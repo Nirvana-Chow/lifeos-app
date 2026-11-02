@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {RecentRecordsClient,RecentRecordsCancelled} from '../src/workbench/recent-records-client.ts';
+import {TimelineRequestError,validateTimelineSource} from '../src/timeline-workbench/client.ts';
+import {createPlatformHandler} from '../src/platform/http.ts';
+import {MemoryPort} from './helpers/platform.ts';
+import type {StoredEntry} from '../src/platform/contracts.ts';
+const owner='synthetic-home-owner',base='http://127.0.0.1:3190',id=(n:number)=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0'),stamp='2026-12-31T16:00:00.000Z';
+function entry(n:number):StoredEntry{const draft={title:'Synthetic recent '+n,text:'Synthetic full body '+n,occurredOn:n===1||n===3?null:'2020-01-01',disposition:'reference' as const};return{id:id(n),ownerId:owner,kind:'inbox',draft,source:{id:id(n+100),system:'website',externalId:id(n),version:1,asOf:stamp,original:structuredClone(draft)},revision:1,createdAt:stamp,updatedAt:stamp,syncState:'draft',externalStatus:null};}
+function fixture(){const repository=new MemoryPort();for(let n=1;n<=10;n++){const row=entry(n);repository.rows.set(row.id,row);repository.historyRows.push(row);}let account:string|null=owner;const calls:Array<{path:string;signal:AbortSignal|null|undefined}>=[],handler=createPlatformHandler({repository,owner:{id:owner,email:'synthetic-home@example.invalid'},baseURL:base,sessions:{read:async()=>account?{userId:account,email:'synthetic-home@example.invalid'}:null}});const transport:typeof fetch=async(input,init)=>{const path=String(input);calls.push({path,signal:init?.signal});if(path.endsWith('/auth/get-session'))return Response.json(account?{user:{id:account},session:{userId:account}}:null);const request=new Request(new URL(path,base),init);request.headers.set('host','127.0.0.1:3190');return handler(request);};return{repository,calls,transport,setAccount(next:string|null){account=next;}};}
+
+test('home defaults to no access; explicit read uses bounded recorded timeline and no writes',async()=>{
+ const f=fixture(),client=new RecentRecordsClient(f.transport);await assert.rejects(()=>client.recent(false),TimelineRequestError);assert.equal(f.calls.length,0);const value=await client.recent(true);assert.equal(value.items.length,8);assert.equal(value.limit,8);assert.equal(value.truncated,true);assert.ok(value.items.every(row=>row.timeRole==='recorded'&&row.date==='2027-01-01'&&row.revision===1));assert.equal(f.calls.filter(call=>call.path.includes('/timeline/page?'))[0].path,'/api/platform/timeline/page?axis=recorded&timeZone=Asia%2FShanghai&includeSynthetic=true&limit=8');assert.equal(f.repository.events.length,0);assert.equal(f.repository.receipts.size,0);
+});
+
+test('same-ID home details retain selected full revision and distinguish recorded date from occurrence',async()=>{
+ const f=fixture(),client=new RecentRecordsClient(f.transport),list=await client.recent(true),selected=list.items.find(row=>row.id===id(3))!;assert.ok(selected);const original=f.repository.rows.get(selected.id)!,current={...original,revision:2,updatedAt:'2027-01-01T16:00:00.000Z',draft:{...original.draft,title:'Synthetic corrected title'}};f.repository.rows.set(current.id,current);f.repository.historyRows.push(current);const detail=await client.source(selected,true);assert.equal(detail.current.id,selected.id);assert.equal(detail.current.sourceId,selected.sourceId);assert.equal(detail.current.date,null);assert.equal(detail.current.revision,2);assert.equal(validateTimelineSource(selected,detail).selected?.revision,1);assert.equal(validateTimelineSource(selected,detail).currentChanged,true);assert.match(f.calls.find(call=>call.path.includes('/search/source/'))!.path,new RegExp('/inbox/'+selected.id+'\\?includeSynthetic=true'));
+ await assert.rejects(()=>client.source(selected,false),TimelineRequestError);
+});
+
+test('home retains one owner across fresh operations and failed data postflight',async()=>{
+ const f=fixture(),client=new RecentRecordsClient(f.transport);await client.recent(true);f.setAccount('synthetic-other');const before=f.calls.length;await assert.rejects(()=>client.recent(true),cause=>cause instanceof TimelineRequestError&&cause.code==='ACCOUNT_CHANGED');assert.ok(f.calls.slice(before).every(call=>call.path.endsWith('/auth/get-session')));
+ const g=fixture(),failed=new RecentRecordsClient(async(input,init)=>{if(String(input).includes('/timeline/page?')){g.setAccount('synthetic-other');return Response.json({error:{code:'UNAVAILABLE',message:'PRIVATE_UPSTREAM_SENTINEL'}},{status:503});}return g.transport(input,init);});await assert.rejects(()=>failed.recent(true),cause=>cause instanceof TimelineRequestError&&cause.code==='ACCOUNT_CHANGED'&&!cause.message.includes('PRIVATE_UPSTREAM_SENTINEL'));
+});
+
+test('cancel signals reach identity preflight and data fetch; cancelled reads do not dispatch or publish',async()=>{
+ for(const phase of ['identity','data']){const f=fixture(),controller=new AbortController();let started!:(value:void)=>void;const ready=new Promise<void>(resolve=>{started=resolve;}),client=new RecentRecordsClient(async(input,init)=>{if((phase==='identity')===String(input).endsWith('/auth/get-session')){assert.ok(init?.signal instanceof AbortSignal);controller.signal.addEventListener('abort',()=>assert.equal(init!.signal!.aborted,true));started();return new Promise<Response>((_,reject)=>init?.signal?.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));}return f.transport(input,init);});const pending=client.recent(true,controller.signal);await ready;controller.abort();await assert.rejects(()=>pending,RecentRecordsCancelled);if(phase==='identity')assert.equal(f.calls.length,0);}
+});
+
+test('late auth failure after cancellation remains identity failure and cannot be downgraded to cancelled',async()=>{
+ const f=fixture(),controller=new AbortController();let finish!:(response:Response)=>void,started!:(value:void)=>void;const ready=new Promise<void>(resolve=>{started=resolve;}),client=new RecentRecordsClient(async(input,init)=>String(input).includes('/timeline/page?')?new Promise<Response>(resolve=>{finish=resolve;started();}):f.transport(input,init));const pending=client.recent(true,controller.signal);await ready;controller.abort();finish(Response.json({error:{code:'LOGIN_REQUIRED',message:'PRIVATE_SENTINEL'}},{status:401}));await assert.rejects(()=>pending,cause=>cause instanceof TimelineRequestError&&cause.status===401&&!cause.message.includes('PRIVATE_SENTINEL'));
+});
+
+test('source cannot bind another owner even when account changes back before outer readback',async()=>{
+ const f=fixture();let switching=false;const client=new RecentRecordsClient(async(input,init)=>{if(switching&&String(input).endsWith('/auth/get-session'))return Response.json({user:{id:'synthetic-other'},session:{userId:'synthetic-other'}});return f.transport(input,init);});const selected=(await client.recent(true)).items[0];switching=true;await assert.rejects(()=>client.source(selected,true),cause=>cause instanceof TimelineRequestError&&cause.code==='ACCOUNT_CHANGED');assert.equal(f.calls.filter(call=>call.path.includes('/search/source/')).length,0);
+});
+
+test('home read deadline remains active with a caller signal and interrupts response body reading',async t=>{
+ const deadlines:AbortController[]=[];t.mock.method(AbortSignal,'timeout',(milliseconds:number)=>{assert.equal(milliseconds,20000);const controller=new AbortController();deadlines.push(controller);return controller.signal;});
+ const f=fixture(),caller=new AbortController();let started!:(value:void)=>void;const ready=new Promise<void>(resolve=>{started=resolve;}),client=new RecentRecordsClient(async(input,init)=>{if(!String(input).includes('/timeline/page?'))return f.transport(input,init);const stream=new ReadableStream({start(controller){init?.signal?.addEventListener('abort',()=>controller.error(new DOMException('Timed out','TimeoutError')),{once:true});started();}});return new Response(stream,{headers:{'content-type':'application/json'}});});const pending=client.recent(true,caller.signal);await ready;assert.ok(deadlines.length>=2,'Identity and data requests each retain their deadline');deadlines.at(-1)!.abort();await assert.rejects(()=>pending,TimelineRequestError);assert.equal(caller.signal.aborted,false);
+});

@@ -1,0 +1,5 @@
+import{ownerMaintenanceProtocol}from'../../../src/deployment-candidate/owner-maintenance-key';
+import{candidateBuildDirectory}from'../../../src/platform/build-directory';
+import{readFileSync}from'node:fs';import{resolve}from'node:path';import{requirements}from'../../../src/platform/requirements';
+export const runtime='nodejs';export const dynamic='force-dynamic';
+export function GET(){try{const codeCommit=process.env.LIFEOS_REVIEW_GIT_SHA;if(!codeCommit||!/^[0-9a-f]{40}$/.test(codeCommit))throw Error();const baseline=requirements(),buildId=readFileSync(resolve(process.cwd(),candidateBuildDirectory(),'BUILD_ID'),'utf8').trim();return Response.json({codeCommit,buildId,candidateVersion:baseline.candidateVersion,requirementsVersion:baseline.baselineVersion,ownerMaintenanceProtocol,scope:'isolated-synthetic-review-not-production'},{headers:{'Cache-Control':'private, no-store'}});}catch{return Response.json({status:'build-metadata-unavailable'},{status:503,headers:{'Cache-Control':'private, no-store'}});}}

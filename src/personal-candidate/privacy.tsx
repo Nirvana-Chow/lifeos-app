@@ -1,0 +1,9 @@
+'use client';
+import {useEffect,useState,type ReactNode} from 'react';
+/** Conceal cached children before background/back navigation; reveal only after
+ * a fresh server owner check. No client supplied identity is trusted. */
+export function PrivacyBoundary({children}:{children:ReactNode}){const[visible,setVisible]=useState(true);
+ useEffect(()=>{let alive=true,generation=0;const hide=()=>{generation++;setVisible(false);document.documentElement.style.visibility='hidden';};const check=async()=>{const token=++generation;try{const r=await fetch('/api/platform/status',{cache:'no-store',credentials:'same-origin'});if(!alive||token!==generation)return;if(!r.ok){window.location.replace('/login');return;}setVisible(true);document.documentElement.style.visibility='';}catch{if(alive&&token===generation)window.location.replace('/login');}};const visibility=()=>{if(document.visibilityState==='hidden')hide();else void check();};const pageShow=()=>void check();window.addEventListener('pagehide',hide);window.addEventListener('pageshow',pageShow);document.addEventListener('visibilitychange',visibility);return()=>{alive=false;generation++;window.removeEventListener('pagehide',hide);window.removeEventListener('pageshow',pageShow);document.removeEventListener('visibilitychange',visibility);document.documentElement.style.visibility='';};},[]);
+ return <><div hidden={!visible}>{children}</div>{!visible&&<p role="status">正在重新核对私人空间…</p>}</>;
+}
+export function LogoutButton(){const[busy,setBusy]=useState(false),[error,setError]=useState('');return <><button disabled={busy} onClick={async()=>{if(busy)return;setBusy(true);setError('');try{const r=await fetch('/api/platform/auth/sign-out',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});if(!r.ok)throw Error();window.location.replace('/login');}catch{setError('退出未获服务端确认，请重试。');setBusy(false);}}}>{busy?'正在退出…':'退出'}</button>{error&&<span role="alert">{error}</span>}</>;}

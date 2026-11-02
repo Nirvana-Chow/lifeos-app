@@ -1,0 +1,17 @@
+.page{min-height:100dvh;display:grid;place-items:center;padding:48px 24px;background:var(--background);color:var(--foreground)}
+.card{width:100%;max-width:400px;min-width:0;padding:32px;border:1px solid var(--border);border-radius:16px;background:var(--card);box-sizing:border-box}
+.card h1{font-size:26px;letter-spacing:-.04em;margin:0 0 8px}
+.card h2{font-size:18px;font-weight:500;margin:0 0 28px;color:var(--muted-foreground)}
+.card form{width:100%;max-width:none}
+.card fieldset{display:grid;gap:20px;min-width:0;margin:0;padding:0;border:0}
+.card label{display:grid;gap:8px;font-size:16px}
+.card input{box-sizing:border-box;min-width:0;width:100%;min-height:44px;padding:11px 12px;background:var(--card);color:var(--foreground);border:1px solid var(--input);border-radius:8px;font:inherit;font-size:16px}
+.card input:disabled{opacity:.6}
+.card button{min-height:44px;border:1px solid transparent;border-radius:8px;font:inherit;font-size:16px;cursor:pointer}
+.card button:disabled{opacity:.55;cursor:not-allowed}
+.primary{width:100%;background:var(--primary);color:var(--primary-foreground)}
+.card .alternative{display:block;width:100%;margin-top:12px;background:transparent;color:var(--muted-foreground);padding:10px 0}
+.link{display:flex;align-items:center;justify-content:center;min-height:44px;margin-top:4px;color:var(--muted-foreground);font-size:16px}
+.message{margin:0 0 20px;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+.hint{color:var(--muted-foreground);font-size:16px;line-height:1.6}
+@media(max-width:560px){.page{padding:24px 20px}.card{padding:24px 20px}}

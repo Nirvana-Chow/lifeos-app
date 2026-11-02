@@ -1,0 +1,104 @@
+{
+  "baselineVersion": "lifeos-public-v1",
+  "candidateVersion": "0.1.0-preview",
+  "scopeNote": "公开源码开发基线；以下为通用工程要求，不包含个人项目历史或实际验收结论。",
+  "newIdeaPolicy": "backlog-requires-explicit-scope",
+  "requirements": [
+    {
+      "id": "LO-UI-001",
+      "version": 1,
+      "title": "日常工作台",
+      "description": "连接个人任务与记录的工作界面。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    },
+    {
+      "id": "LO-AUTH-001",
+      "version": 1,
+      "title": "身份与访问控制",
+      "description": "私有记录仅对验证过的对应身份开放。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    },
+    {
+      "id": "LO-PRIVACY-001",
+      "version": 1,
+      "title": "公开源码与私人数据隔离",
+      "description": "公开代码包含通用实现与合成样例，不包含私人运行资料。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    },
+    {
+      "id": "LO-VERSION-001",
+      "version": 1,
+      "title": "版本可追溯",
+      "description": "源码提交和运行构建分别标识。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    },
+    {
+      "id": "LO-OPS-001",
+      "version": 1,
+      "title": "独立验证",
+      "description": "以锁定源码和合成环境执行适用验证。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    },
+    {
+      "id": "LO-REQ-001",
+      "version": 1,
+      "title": "范围与验收",
+      "description": "计划、实现与实际验收分别记录。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+      ],
+      "evidence": [],
+      "blockedBy": []
+    }
+  ]
+}

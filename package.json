@@ -1,0 +1,60 @@
+{
+  "name": "lifeos-app",
+  "private": true,
+  "version": "0.1.0-preview",
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "node scripts/require-lock.mjs && tsc --noEmit",
+    "build": "node scripts/require-lock.mjs && next build",
+    "dev": "node scripts/require-lock.mjs && next dev --hostname 127.0.0.1 --port 3000",
+    "start": "node scripts/require-lock.mjs && next start --hostname 127.0.0.1 --port 3000",
+    "bootstrap:synthetic": "node scripts/platform-synthetic-bootstrap.ts",
+    "test:platform-pg": "node --test --test-isolation=none --test-concurrency=1 test/platform-postgres.integration.test.ts test/platform-auth-postgres.integration.test.ts",
+    "test:platform-network": "node --test --test-isolation=none --test-concurrency=1 test/platform-network.integration.test.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.77",
+    "@visactor/vtable": "1.26.8",
+    "@visactor/vtable-editors": "1.26.8",
+    "ai": "7.0.150",
+    "bcryptjs": "3.0.3",
+    "better-auth": "1.7.15",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "drizzle-orm": "0.45.4",
+    "echarts": "6.1.0",
+    "lucide-react": "1.62.0",
+    "next": "16.4.1",
+    "pg": "8.23.1",
+    "qrcode": "1.5.4",
+    "radix-ui": "1.8.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@emnapi/core": "1.11.3",
+    "@emnapi/wasi-threads": "2.2.0",
+    "@napi-rs/wasm-runtime": "1.2.5",
+    "@playwright/test": "1.64.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@tybys/wasm-util": "0.10.4",
+    "@types/node": "22.13.10",
+    "@types/pg": "8.11.11",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.2"
+  },
+  "overrides": {
+    "lodash": "4.18.1",
+    "minimist": "1.2.8"
+  },
+  "license": "MIT"
+}
