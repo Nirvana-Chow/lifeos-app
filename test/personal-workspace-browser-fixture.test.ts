@@ -9,11 +9,11 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 import {expect,type Dialog} from '@playwright/test';
 import assert from 'node:assert/strict';
-import {assertPersonalCapture,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
+import {assertPersonalCapture,personalCaptureAllowedValues,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
 
 // A missing fixture, auth node, foreign record, or arbitrary output path must
 // prevent capture, even when the browser otherwise contains synthetic text.
-const clean:PersonalCapture={platform:'linux',ci:'true',actions:'true',fresh:'approved-isolated-fixture',database:'postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local',runnerTemp:'/tmp/fixture',name:'workspace-360-dark.png',url:'https://review.example.test/personal?page=tasks',surface:true,forbidden:0,syntheticVisible:true,values:[''],allowedValues:[''],recordIds:['synthetic-domain','synthetic-project','synthetic-todo'],expectedIds:['synthetic-domain','synthetic-project','synthetic-todo'],editorId:'synthetic-todo',snapshotComplete:true};
+const clean:PersonalCapture={platform:'linux',ci:'true',actions:'true',fresh:'approved-isolated-fixture',database:'postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local',runnerTemp:'/tmp/fixture',name:'workspace-360-dark.png',url:'https://review.example.test/personal?page=tasks',surface:true,forbidden:0,syntheticVisible:true,values:[''],allowedValues:personalCaptureAllowedValues,recordIds:['synthetic-domain','synthetic-project','synthetic-todo'],expectedIds:['synthetic-domain','synthetic-project','synthetic-todo'],editorId:'synthetic-todo',snapshotComplete:true};
 test('personal capture accepts only the synthetic personal presentation',()=>assert.doesNotThrow(()=>assertPersonalCapture(clean)));
 test('personal capture rejects authentication, foreign content and arbitrary destinations',()=>{
  for(const changed of [{platform:'darwin'},{ci:'false'},{actions:'false'},{fresh:''},{database:'postgresql://production/real'},{runnerTemp:''},{name:'../workspace-360-dark.png'},{name:'login-desktop.png'},{url:'https://review.example.test/account/mfa'},{url:'https://evil.test/personal'},{url:'https://review.example.test/personal?private=1'},{surface:false},{forbidden:1},{syntheticVisible:false},{values:['private text']},{recordIds:['synthetic-domain','foreign-private']},{recordIds:['synthetic-domain','synthetic-project','synthetic-todo','synthetic-todo']},{snapshotComplete:false}])assert.throws(()=>assertPersonalCapture({...clean,...changed}),/PERSONAL_SCREENSHOT_DENIED/);
@@ -78,9 +78,8 @@ function vendorLabels(){
  }
  return (control:unknown,selector:string)=>{context.control=control;context.selector=selector;return vm.runInContext('getElementLabels(new Map(),control).some(createTextMatcher(selector,true).matcher)',context) as boolean;};
 }
-function renderRecordForm(type:'todo'|'project'|'domain'){
- // Same local TSX loading pattern as personal-workspace-editing.test.ts; render
- // the actual product form and actual relation component, no replacement UI.
+function loadProductModule(file:string){
+ // Run real product components and their local dependencies; only CSS is omitted.
  const nativeRequire=createRequire(import.meta.url),cache=new Map<string,unknown>();
  function load(file:string):any{
   const path=resolve(file);if(cache.has(path))return cache.get(path);const m={exports:{}};cache.set(path,m.exports);
@@ -90,9 +89,21 @@ function renderRecordForm(type:'todo'|'project'|'domain'){
    const base=resolve(dirname(path),name),target=extname(base)?base:[base+'.tsx',base+'.ts',base].find(existsSync);assert.ok(target);return load(target);
   },m,m.exports);cache.set(path,m.exports);return m.exports;
  }
- const {PersonalRecordForm}=load('src/personal-candidate/record-form.tsx');
+ return load(file);
+}
+function renderRecordForm(type:'todo'|'project'|'domain'){
+ const {PersonalRecordForm}=loadProductModule('src/personal-candidate/record-form.tsx');
  return renderToStaticMarkup(React.createElement(PersonalRecordForm,{type,fields:{title:'合成标题',text:'合成已保存正文',date:'',status:'open',personal:type==='project'?{type:'project',stage:'idea',purpose:null,nextStep:'合成下一步',domain:null,topics:[]}:undefined},setFields:()=>{},confirmed:false,setConfirmed:()=>{},options:{domain:[],project:[],topic:[]},allowedTypes:['todo','journal','project','domain','topic'],disabled:false,onSubmit:()=>{},onCancel:()=>{}}));
 }
+test('actual ThemeSwitch radio values pass the fixed screenshot allowlist without admitting foreign input',()=>{
+ const {ThemeSwitch}=loadProductModule('src/workbench/theme-switch.tsx');
+ const html=renderToStaticMarkup(React.createElement(ThemeSwitch));
+ const values=Array.from(html.matchAll(/<input\b[^>]*\bvalue="([^"]*)"/g),match=>match[1]);
+ assert.deepEqual(values,['light','dark','system']);
+ assert.doesNotThrow(()=>assertPersonalCapture({...clean,values}));
+ assert.throws(()=>assertPersonalCapture({...clean,values:[...values,'foreign-private-input']}),/PERSONAL_SCREENSHOT_DENIED/);
+});
+
 function wrappedControls(html:string){
  type NativeNode={nodeName?:string;nodeType:number;nodeValue?:string;firstChild?:NativeNode|null;nextSibling:NativeNode|null;ownerDocument?:{head:null};shadowRoot?:null;getAttribute?:(name:string)=>null;labels?:NativeNode[]};
  const doc={head:null},text=(value:string):NativeNode=>({nodeType:3,nodeValue:value,nextSibling:null});

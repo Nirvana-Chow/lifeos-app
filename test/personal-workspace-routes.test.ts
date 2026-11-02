@@ -4,11 +4,13 @@ import {readFileSync} from 'node:fs';
 import * as React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import{readWorkspacePage}from'../src/workbench/private-navigation.ts';
 function page(path:string,authenticated=true){
  const module={exports:{} as {default:(props?:unknown)=>Promise<React.ReactNode>}};
  const source=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  new Function('require','module','exports',source)((name:string)=>{
   if(name==='react/jsx-runtime')return {jsx:React.createElement,jsxs:React.createElement};
+  if(name.endsWith('/private-navigation'))return {readWorkspacePage};
   if(name==='next/headers')return {headers:async()=>new Headers()};
   if(name==='next/navigation')return {redirect:(url:string)=>{throw Error('REDIRECT '+url);}};
   if(name.endsWith('/runtime'))return {readPlatformPagePrincipal:async()=>authenticated?{ownerId:'synthetic-owner'}:null};
@@ -45,3 +47,5 @@ test('legacy todo navigation redirects to the single shell while synthetic revie
  const legacy=page('app/review/admin/personal/page.tsx');
  await assert.rejects(legacy({searchParams:Promise.resolve({type:'todo',id:'bad/id'})}),/REDIRECT \/personal\/edit\?type=todo&id=bad%2Fid/);
 });
+
+test('canonical finite page queries reach the existing controller without arbitrary routes',async()=>{const route=page('app/personal/page.tsx');for(const name of ['inbox','areas','projects','settings'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),new RegExp('data-page="'+name+'"'));for(const name of ['constructor','unknown','settings/data'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),/data-page="overview"/);});

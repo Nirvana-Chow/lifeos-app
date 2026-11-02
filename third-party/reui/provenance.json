@@ -1,0 +1,52 @@
+{
+  "repository": "https://github.com/keenthemes/reui",
+  "commit": "067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a",
+  "license": "MIT",
+  "licenseSourceSha256": "09592ffefa6512b68dd7aa9031bc50d5d39cfcc9da08288f5eb1f9d236baca66",
+  "files": [
+    {
+      "source": "registry-reui/bases/radix/reui/data-grid/data-grid.tsx",
+      "sourceSha256": "718d349e005537ee45a65826d6768deedc4479f9f5b9b9afa7e8052509de9be4",
+      "target": "src/ui-review/reui/data-grid.tsx",
+      "adaptations": [
+        "Relative imports use existing cn and Button; local Radix Checkbox and Lucide Spinner",
+        "Plus icon replaces upstream docs-only IconPlaceholder"
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/data-grid/data-grid-table.tsx",
+      "sourceSha256": "46ac575b6f0b28b4631f2e27c2cf2b5b4f95e7fcf934362b16a4341e8e88e589",
+      "target": "src/ui-review/reui/data-grid-table.tsx",
+      "adaptations": [
+        "Relative imports use existing cn and Button; local Radix Checkbox and Lucide Spinner",
+        "Plus icon replaces upstream docs-only IconPlaceholder"
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/data-grid/data-grid-i18n.tsx",
+      "sourceSha256": "bc314f648968ae86a4a2f11a8c2107a1f83f0baea6ed2d6200a58f63e3c1d7b5",
+      "target": "src/ui-review/reui/data-grid-i18n.tsx",
+      "adaptations": [
+        "Relative imports use existing cn and Button; local Radix Checkbox and Lucide Spinner",
+        "Plus icon replaces upstream docs-only IconPlaceholder"
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/data-grid/data-grid-table-virtual.tsx",
+      "sourceSha256": "560d0af6dddd3674153a0c24c1e83b5b15d8be1bc3db86fb53d760f44c249d5a",
+      "target": "src/ui-review/reui/data-grid-table-virtual.tsx",
+      "adaptations": [
+        "Relative imports use existing cn and Button; local Radix Checkbox and Lucide Spinner",
+        "Plus icon replaces upstream docs-only IconPlaceholder"
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/data-grid/data-grid-cell-selection.tsx",
+      "sourceSha256": "a4916eb6da28a8700ae56d5ba3ba86f7021753427436c9be678e75c230f5befe",
+      "target": "src/ui-review/reui/data-grid-cell-selection.tsx",
+      "adaptations": [
+        "Relative imports use existing cn and Button; headless keyboard controller used without clipboard writes or built-in editor"
+      ]
+    }
+  ]
+}

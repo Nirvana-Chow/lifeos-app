@@ -12,7 +12,7 @@ import {ownerRecoveryLock,ownerRecoveryRateLimit} from '../src/personal-candidat
 import {ownerOperatorRecovery} from '../src/personal-candidate/owner-email-reset.ts';
 import {safeScreenshot,trustFixtureCA,applyAuthFixtureAppearance,assertPublicLayout,assertPublicStaticCache} from './helpers/owner-recovery-browser-fixture.ts';
 import {verifyPersonalWorkspace} from './helpers/personal-workspace-browser-fixture.ts';
-import {themeInitializationScript,themeStorageKey} from '../src/workbench/theme.ts';
+import {themeStorageKey} from '../src/workbench/theme.ts';
 
 const enabled=process.env.RUN_OWNER_RECOVERY_BROWSER_TESTS==='1';
 const origin='https://review.example.test',target='postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local';
@@ -28,15 +28,15 @@ async function assertAuthTheme(page:Page,theme:'light'|'dark'){
   const style=(node:Element|null)=>{if(!node)throw Error('THEME_ELEMENT_MISSING');const s=getComputedStyle(node);return {background:s.backgroundColor,color:s.color,colorScheme:s.colorScheme};};
   return {theme:document.documentElement.dataset.lifeosTheme,root:style(document.documentElement),body:style(document.body),page:style(document.querySelector('main')),input:style(document.querySelector('form input')),button:style(document.querySelector('form button'))};
  });
- const paper=theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)',ink=theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)',card=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonInk=theme==='dark'?'rgb(24, 24, 27)':'rgb(250, 250, 250)';
+ const paper=theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)',ink=theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)',card=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonInk=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonPaper=theme==='dark'?'rgb(165, 180, 252)':'rgb(79, 70, 229)';
  must(facts.theme===theme&&facts.root.colorScheme===theme,'theme-resolved');
  for(const part of ['root','body','page'] as const)must(facts[part].background===paper&&facts[part].color===ink,'theme-'+part);
- must(facts.input.background===card&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===ink&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
+ must(facts.input.background===card&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===buttonPaper&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
 }
 async function assertAuthPresentation(page:Page,system:'light'|'dark'){
- await assertAuthTheme(page,system);const preference=system==='dark'?'light':'dark';
- try{await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:themeStorageKey,value:preference});await page.addScriptTag({content:themeInitializationScript});await assertAuthTheme(page,preference);}
- finally{await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.addScriptTag({content:themeInitializationScript});}
+ await assertAuthTheme(page,system);const preference=system==='dark'?'light':'dark',sibling=await page.context().newPage();
+ try{await sibling.goto(origin+'/login',{waitUntil:'domcontentloaded'});await sibling.evaluate(({key,value})=>localStorage.setItem(key,value),{key:themeStorageKey,value:preference});await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t,preference);await assertAuthTheme(page,preference);}
+ finally{await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t,system);await sibling.close();}
  await assertAuthTheme(page,system);
 }
 async function assertPublicChineseHeading(page:Page,heading:'main h1'|'main h2'){

@@ -3,7 +3,15 @@ import type{WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
 import{validateTodo}from'../platform/domain.ts';
 import type{TaskCellDraft}from'./task-cell-draft.ts';
-import type{IEditor}from'@visactor/vtable-editors';
+/** Native input lifecycle used by the receipt bridge; no vendor geometry or data writer. */
+export type NativeReceiptEditor = {
+ onStart: (context: { value?: unknown }) => void;
+ onEnd: () => void;
+ getValue: () => unknown;
+ getInputElement?: () => HTMLElement;
+ isEditorElement?: (target: HTMLElement) => boolean;
+ element?: HTMLInputElement | HTMLSelectElement;
+};
 export type TaskIdentity=Pick<WorkspaceTask,'id'|'revision'>;
 export type TaskTarget={mode:'create'}|{mode:'edit';task:TaskIdentity}|{mode:'missing';id:string};
 export const taskStatusLabels={open:'未完成',in_progress:'进行中',done:'已完成',cancelled:'已取消'};
@@ -27,11 +35,16 @@ export function taskReceiptMatchesSubmission(target:TaskTarget,fields:PersonalEd
   return JSON.stringify(validateTodo(receipt.draft))===JSON.stringify(expected);
  }catch{return false;}
 }
-/** VTable's validator always returns false: only authoritative receipts may update projected rows. */
-export type ReceiptEditor=IEditor&{captureDraft:()=>void;discard:()=>void;setDisabled:(disabled:boolean)=>void};
-export function receiptEditor(native:IEditor,options:{field?:'title'|'status'|'due';capture:(context:Parameters<IEditor['onStart']>[0])=>{task:TaskIdentity;fields:PersonalEditorFields}|null;save:(task:TaskIdentity,fields:PersonalEditorFields)=>Promise<PublicEntry|null>;active:()=>boolean;canSave?:()=>boolean;cancel:()=>void;style:(element?:HTMLElement)=>void;onDraft?:(draft:TaskCellDraft|null)=>void;onError?:(message:string)=>void}):ReceiptEditor{
+/** Validation always returns false: only authoritative receipts may update projected rows. */
+export type ReceiptEditor = NativeReceiptEditor & {
+ validateValue: (value: unknown, previousValue?: unknown) => Promise<false>;
+ captureDraft: () => void;
+ discard: () => void;
+ setDisabled: (disabled: boolean) => void;
+};
+export function receiptEditor(native:NativeReceiptEditor,options:{field?:'title'|'status'|'due';capture:(context:Parameters<NativeReceiptEditor['onStart']>[0])=>{task:TaskIdentity;fields:PersonalEditorFields}|null;save:(task:TaskIdentity,fields:PersonalEditorFields)=>Promise<PublicEntry|null>;active:()=>boolean;canSave?:()=>boolean;cancel:()=>void;style:(element?:HTMLElement)=>void;onDraft?:(draft:TaskCellDraft|null)=>void;onError?:(message:string)=>void}):ReceiptEditor{
  let context:ReturnType<typeof options.capture>=null,epoch=0,busy=false,discarded=false,removeInputListener:(()=>void)|null=null;
- const element=()=>native.getInputElement?.()??(native as IEditor&{element?:HTMLInputElement}).element;
+ const element=()=>native.getInputElement?.()??native.element;
  const captureDraft=()=>{if(!context||discarded)return;const value=native.getValue(),field=options.field??'title';if(typeof value!=='string')return;const old=field==='title'?context.fields.title:field==='due'?context.fields.date:taskStatusLabels[context.fields.status];options.onDraft?.(value===old?null:{task:{...context.task},fields:structuredClone(context.fields),field,value});};
  const editor:ReceiptEditor={
   captureDraft,discard(){discarded=true;options.onDraft?.(null);},setDisabled(disabled){const input=element();if(input)(input as HTMLInputElement|HTMLSelectElement).disabled=disabled;},
