@@ -98,7 +98,8 @@ jobs:
             await pool.query('REVOKE CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
             await pool.query("SET lifeos.calendar_migration_approved = '1'");
             await pool.query("SET lifeos.chat_migration_approved = '1'");
-            for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
+            await pool.query("SET lifeos.apple_sync_migration_approved = '1'");
+            for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','0006_apple_sync.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
               await pool.query(readFileSync('db/' + file, 'utf8'));
             }
             console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');
@@ -133,15 +134,16 @@ jobs:
           RUN_PLATFORM_AUTH_POSTGRES_TESTS: '1'
           RUN_PLATFORM_AI_SETTINGS_POSTGRES_TESTS: '1'
           RUN_PLATFORM_CALENDAR_POSTGRES_TESTS: '1'
+          RUN_APPLE_SYNC_POSTGRES_TESTS: '1'
         run: |
-          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/auth-pg.xml" test/platform-postgres.integration.test.ts test/platform-auth-postgres.integration.test.ts test/ai-settings-postgres.integration.test.ts test/calendar-candidate-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/auth-pg.xml" test/platform-postgres.integration.test.ts test/platform-auth-postgres.integration.test.ts test/ai-settings-postgres.integration.test.ts test/calendar-candidate-postgres.integration.test.ts test/apple-sync-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
           python3 - <<'PY'
           import os, xml.etree.ElementTree as ET
           root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'auth-pg.xml')).getroot()
           cases = list(root.iter('testcase'))
-          assert len(cases) == 5, f'Expected 5 explicit PG/auth tests, found {len(cases)}'
+          assert len(cases) == 10, f'Expected 10 explicit PG/auth/sync tests, found {len(cases)}'
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG/auth skip or failure is not acceptance'
-          print('PASS: 5 explicit PG/auth tests, zero skips. No HTTP/browser/restart/restore acceptance claimed.')
+          print('PASS: 10 explicit PG/auth/sync tests, zero skips. No HTTP/browser/restart/restore acceptance claimed.')
           PY
       - name: Run actual Next HTTP, login, ownership, rate-limit and capture tests
         env:

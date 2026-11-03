@@ -6,6 +6,7 @@ import {readWritePermit,type WritePermitBinding} from '../deployment-candidate/w
 import type {PersonalConfig} from './config.ts';
 import {PersonalService} from './service.ts';
 import {handlePersonalRequest} from './http.ts';
+import {createAppleSyncHandler} from '../apple-sync-candidate/http.ts';
 export const personalPermitPath='/run/lifeos-platform/write-gate/permit.json';
 /** No password, URL credentials, API secret or owner content participates in this digest. */
 export function personalPermitBinding(config:PersonalConfig,sourceSha:string):WritePermitBinding{
@@ -23,11 +24,13 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;assertWritable:()=>Promise<void>;appleSync?:(request:Request)=>Promise<Response>}):(request:Request)=>Promise<Response>{
  const service=new PersonalService(options.repository,options.config);
+ const appleSync=options.appleSync??createAppleSyncHandler({baseURL:options.config.baseURL});
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
+   if(url.pathname==='/api/platform/personal/apple-sync'||url.pathname.startsWith('/api/platform/personal/apple-sync/'))return appleSync(request);
    const assertOwner=async():Promise<void>=>{
     if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消，尚未确认保存。');
     let principal:Principal|null;try{principal=await options.sessions.read(request.headers);}catch{throw new PlatformError(503,'AUTH_UNAVAILABLE','身份服务暂不可用。');}

@@ -3,6 +3,7 @@
 - Keep implementation, test results and user acceptance distinct.
 - Use Issue/PR and OpenSpec for multi-step work. Read applicable generated workflows; pin the CLI to 1.16.0 and set `OPENSPEC_TELEMETRY=0 DO_NOT_TRACK=1 CI=1` for automated execution.
 - Continue the approved interface work through the sole mapped [unified-business-ui checklist](openspec/changes/unified-business-ui/tasks.md); preserve its task IDs, inherited status and unfinished rendered/performance/delivery gates instead of opening a duplicate backlog.
+- Continue the approved Apple bridge through [apple-bidirectional-sync](openspec/changes/apple-bidirectional-sync/tasks.md); source/synthetic progress does not activate devices, native permissions, live data or background writers. Check [the native tool assessment](docs/research/apple-native-tools-2026-11-03.md) before replacing adapters; Skills do not expand binary field coverage or API authority.
 - Inspect existing code and native component capabilities before adding dependencies or abstractions. Prefer composition and small adapters.
 - Keep one npm lock. Review version updates explicitly.
 - Keep credentials, runtime settings, personal records, exports, attachments and backups outside Git. Use explicit synthetic fixtures only.

@@ -1,4 +1,5 @@
-import {verifyRestrictedPool,type SqlPool,type SqlClient} from '../platform/postgres.ts';
+import type {SyncCapture} from '../apple-sync-candidate/capture.ts';
+import {verifyRestrictedPool,type SqlPool,type SqlClient,type BoundSqlScope} from '../platform/postgres.ts';
 import {PlatformError} from '../platform/domain.ts';
 import type {CalendarRepository,CalendarTransaction,CalendarEntry,CalendarHistory,CalendarReceipt} from './contracts.ts';
 /** Read-only readiness gate. Never applies the proposed extension migration. */
@@ -32,8 +33,9 @@ function decode(row:Record<string,unknown>):CalendarEntry {
 }
 const decodeHistory=(row:Record<string,unknown>):CalendarHistory=>({entry:row.snapshot as CalendarEntry,raw:row.raw});
 export class PostgresCalendarRepository implements CalendarRepository {
- private pool:SqlPool;constructor(pool:SqlPool){this.pool=pool;}
+ private pool:SqlPool;private capture?:SyncCapture;private bound?:BoundSqlScope;constructor(pool:SqlPool,capture?:SyncCapture,bound?:BoundSqlScope){this.pool=pool;this.capture=capture;this.bound=bound;}
  private async scoped<T>(owner:string,fn:(client:SqlClient)=>Promise<T>,consistent=false):Promise<T>{
+  if(this.bound){if(owner!==this.bound.owner)throw Error('SYNC_OWNER_MISMATCH');return fn(this.bound.client);}
   const client=await this.pool.connect();try{await client.query(consistent?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN ISOLATION LEVEL READ COMMITTED');await client.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner]);const result=await fn(client);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
  }
  async list(owner:string):Promise<CalendarEntry[]>{return this.scoped(owner,async client=>(await client.query(select+' WHERE e.owner_id=$1 ORDER BY e.id',[owner])).rows.map(decode));}
@@ -41,6 +43,7 @@ export class PostgresCalendarRepository implements CalendarRepository {
  async history(owner:string,id:string):Promise<CalendarHistory[]>{return this.scoped(owner,async client=>(await client.query('SELECT snapshot,raw FROM lifeos_platform.platform_calendar_history WHERE owner_id=$1 AND event_id=$2 ORDER BY revision',[owner,id])).rows.map(decodeHistory));}
  async exportSnapshot(owner:string):Promise<{entries:CalendarEntry[];history:CalendarHistory[]}>{return this.scoped(owner,async client=>({entries:(await client.query(select+' WHERE e.owner_id=$1 ORDER BY e.id',[owner])).rows.map(decode),history:(await client.query('SELECT snapshot,raw FROM lifeos_platform.platform_calendar_history WHERE owner_id=$1 ORDER BY event_id,revision',[owner])).rows.map(decodeHistory)}),true);}
  async transaction<T>(owner:string,key:string,fn:(tx:CalendarTransaction)=>Promise<T>):Promise<T>{return this.scoped(owner,async client=>{
+  if(this.capture)await this.capture.begin(client,owner);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['calendar',owner,key])]);
   const tx:CalendarTransaction={
    get:async id=>{const row=(await client.query(select+' WHERE e.owner_id=$1 AND e.id=$2 FOR UPDATE OF e',[owner,id])).rows[0];return row?decode(row):null;},
@@ -57,6 +60,7 @@ export class PostgresCalendarRepository implements CalendarRepository {
      if(result.rowCount!==1)throw new PlatformError(409,'REVISION_CONFLICT','安排已更新，请读取当前版本再核对。');
     }
     await client.query('INSERT INTO lifeos_platform.platform_calendar_history(owner_id,event_id,revision,raw,snapshot,created_at) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6)',[owner,entry.id,entry.revision,JSON.stringify(raw),JSON.stringify(entry),entry.updatedAt]);
+    if(this.capture)await this.capture.append(client,owner,{kind:'calendar',entityId:entry.id,sourceId:entry.source.id,revision:entry.revision,commandKey:key,snapshot:entry});
    },
   };return fn(tx);
  });}

@@ -1,6 +1,7 @@
 import{personalConfigKeys,readPersonalConfig}from'../personal-candidate/config.ts';
 import{readCaptureRunCandidateFlag}from'../capture-runs-candidate/config.ts';
 import{readChatCandidateFlag}from'../chat-candidate/config.ts';
+import{readAppleSyncConfig}from'../apple-sync-candidate/config.ts';
 import{openSync,closeSync,fstatSync,readFileSync,constants}from'node:fs';import{readPlatformConfig}from'./config.ts';import{aiSettingsRuntimeKeys,readAISettingsRuntimeConfig}from'./ai-settings-config.ts';
 import{readCalendarCandidateFlag}from'./calendar-config.ts';
 export const reviewDatabase='lifeos_platform_test_local';
@@ -17,15 +18,16 @@ export function validateReviewConfig(value:Record<string,unknown>):Record<string
   const keys=['LIFEOS_PLATFORM_CANDIDATE','LIFEOS_PLATFORM_TARGET','LIFEOS_PLATFORM_BASE_URL','LIFEOS_PLATFORM_OWNER_ID','LIFEOS_PLATFORM_OWNER_EMAIL','LIFEOS_PLATFORM_SECRET','LIFEOS_PLATFORM_TEST_DATABASE_URL'];
   if(value.LIFEOS_PLATFORM_TRANSPORT==='https-origin')keys.push('LIFEOS_PLATFORM_TRANSPORT','LIFEOS_PLATFORM_HTTPS_HOST');
   keys.push(...aiSettingsRuntimeKeys.filter(k=>value[k]!==undefined),...personalConfigKeys.filter(k=>value[k]!==undefined));
-  for(const key of ['LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'])if(value[key]!==undefined)keys.push(key);
+  for(const key of ['LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE','LIFEOS_APPLE_SYNC_CANDIDATE'])if(value[key]!==undefined)keys.push(key);
   if(Object.keys(value).length!==keys.length||keys.some(k=>k!=='LIFEOS_PERSONAL_RECOVERY_APPROVAL'&&typeof value[k]!=='string'))throw Error();
   const env={...value} as Record<string,string>;if(typeof value.LIFEOS_PERSONAL_RECOVERY_APPROVAL!=='string')delete env.LIFEOS_PERSONAL_RECOVERY_APPROVAL;const config=readPlatformConfig(env);if(!config)throw Error();
   const personal=readPersonalConfig(env,config);
   if(personal){
-   // Personal mode is manual-only. It cannot inherit optional model, import or fixture capabilities.
+   // Existing business writes remain separately gated. A sync source flag never
+   // provisions its independent device identity or inherits browser authority.
    if([...aiSettingsRuntimeKeys,'LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'].some(k=>value[k]!==undefined))throw Error();
   }else if(personalConfigKeys.some(k=>value[k]!==undefined)||env.LIFEOS_PLATFORM_TRANSPORT!=='https-origin'&&config.baseURL!=='http://127.0.0.1:3002'||config.ownerId!=='fixture-owner-a'||config.ownerEmail!=='fixture@example.invalid')throw Error();
-  readAISettingsRuntimeConfig(env,config.baseURL);readCalendarCandidateFlag(env);readChatCandidateFlag(env);readCaptureRunCandidateFlag(env);
+  readAISettingsRuntimeConfig(env,config.baseURL);readCalendarCandidateFlag(env);readChatCandidateFlag(env);readCaptureRunCandidateFlag(env);readAppleSyncConfig(env);
   const db=new URL(config.databaseURL);if(db.pathname!=='/'+reviewDatabase||db.port!=='55432')throw Error();return Object.freeze(env);
  }catch{throw Error('Isolated review configuration unavailable');}
 }
@@ -37,5 +39,5 @@ export function loadReviewEnvironment(path:string,env:Record<string,string|undef
 
 /** Pure application of an already read configuration; never reopen its source. */
 export function applyReviewEnvironment(value:Record<string,string>,env:Record<string,string|undefined>):void{
- const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;for(const key of personalConfigKeys)delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
+ const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;delete env.LIFEOS_APPLE_SYNC_CANDIDATE;for(const key of personalConfigKeys)delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
 }
