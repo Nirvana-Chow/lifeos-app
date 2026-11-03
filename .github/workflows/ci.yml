@@ -314,7 +314,7 @@ jobs:
           RUN_OWNER_RECOVERY_HTTPS_TESTS: '1'
           RUN_OWNER_PERMIT_HTTPS_TESTS: '1'
           RUN_OWNER_RECOVERY_BROWSER_TESTS: '1'
-          LIFEOS_SYNTHETIC_GRID_ROWS: '100'
+          LIFEOS_SYNTHETIC_GRID_ROWS: 'both'
         run: |
           set -euo pipefail
           run_scenario() (

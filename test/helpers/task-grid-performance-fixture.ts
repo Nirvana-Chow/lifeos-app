@@ -9,11 +9,12 @@ const prefix = '合成性能待办';
 const path = '/api/platform/personal/todo';
 const overview = '/api/platform/personal/overview?today=2030-11-02';
 
-export async function measureTaskGrid({browser,context,page,entries}:PrivateFixture, rows:100|1000) {
+export async function measureTaskGrid({browser,context,page,entries}:PrivateFixture, rows:100|1000, previousRows:0|100=0) {
   assert.equal(new URL(page.url()).origin, origin);
-  assert.equal((await privateRead(page,overview)).total, 3);
-  const seeded = await page.evaluate(async ({rows,prefix,path}) => {
-    for (let index=0; index<rows; index++) {
+  assert.ok(previousRows < rows);
+  assert.equal((await privateRead(page,overview)).total, previousRows+3);
+  const seeded = await page.evaluate(async ({rows,previousRows,prefix,path}) => {
+    for (let index=previousRows; index<rows; index++) {
       const title=prefix+' '+String(index).padStart(4,'0');
       const response=await fetch(path,{
         method:'POST',credentials:'same-origin',
@@ -25,7 +26,7 @@ export async function measureTaskGrid({browser,context,page,entries}:PrivateFixt
       if (duplicate!==false || entry.revision!==1 || entry.draft.title!==title) return false;
     }
     return true;
-  },{rows,prefix,path});
+  },{rows,previousRows,prefix,path});
   assert.equal(seeded,true);
   const snapshot=await privateRead(page,overview);
   assert.equal(snapshot.total,rows+3);

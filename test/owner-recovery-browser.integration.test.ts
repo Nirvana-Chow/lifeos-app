@@ -138,6 +138,7 @@ for(const [name,timeout,run] of privateGroups)test(name,{skip:!enabled?'isolated
   const samples=await withPrivateBrowserFixture(completedHandoff,async fixture=>{
    await run(fixture);
    if(!matrix||rowCount===undefined)return;
+   if(rowCount==='both')return [...await measureTaskGrid(fixture,100),...await measureTaskGrid(fixture,1000,100)];
    if(rowCount!=='100'&&rowCount!=='1000')throw Error('INVALID_SYNTHETIC_GRID_ROWS');
    return measureTaskGrid(fixture,rowCount==='100'?100:1000);
   });
