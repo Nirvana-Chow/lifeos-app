@@ -162,7 +162,7 @@ export function captureSourceText(paths:readonly string[]=privateCaptureSources)
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
  const out=new Set<string>();for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
 }
-async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark){
+async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark,settingsObservedAt?:string){
  mark('capture-receipts');requireFixture();await assertPrivateReceipts(page,entries);
  mark('capture-dom');const facts=await page.evaluate(()=>{
   const forbidden=document.querySelectorAll('input[type="password"],input[name="otp"],input[autocomplete="one-time-code"],input[autocomplete="username"],input[autocomplete="current-password"],input[autocomplete="new-password"],#mfa-setup-key,canvas[aria-label="验证器绑定二维码"],[aria-label="备用恢复码"]').length;
@@ -177,6 +177,11 @@ async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[numbe
  for(const value of texts)values.add(value);
  if(row.key==='private-journal'){
   for(const text of journalSnapshotCaptureText(entries,new Date().toLocaleDateString('sv-SE')))texts.add(text);
+ }
+ if(row.key==='private-settings'){
+  if(!settingsObservedAt)throw Error('PRIVATE_SNAPSHOT_DENIED');
+  texts.add('修改密码');
+  texts.add(settingsObservedAt);
  }
  assertPrivateCaptureContent(facts,texts,values,entries.map(e=>e.id));
  mark('capture-image');const directory=resolve(process.env.RUNNER_TEMP!,'owner-personal-browser-screenshots');mkdirSync(directory,{recursive:true,mode:0o700});await page.screenshot({path:join(directory,row.name),fullPage:true});mark('capture-manifest');recordSyntheticCapture({name:row.name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});
@@ -306,8 +311,28 @@ async function privateLocalInteractions(page:Page,key:string){
  }else if(key==='private-health'){await page.getByRole('button',{name:'添加一组',exact:true}).click();await page.getByLabel('第 1 组 次数',{exact:true}).fill('5');await page.getByRole('button',{name:'移除第 1 组',exact:true}).click();await expect(page.getByLabel('第 1 组 次数',{exact:true})).toHaveCount(0);}
  else if(key==='private-workflows'){await page.getByRole('tab',{name:'设计草稿',exact:true}).click();await page.getByRole('button',{name:'添加步骤',exact:true}).click();await page.getByRole('textbox',{name:'步骤1名称',exact:true}).fill('合成审核步骤');await page.getByRole('button',{name:'移除此步骤',exact:true}).click();await expect(page.getByRole('button',{name:'保存流程 · 待接入',exact:true})).toBeDisabled();}
  else if(key==='private-tools'){const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'授权与执行要求'})}).first();await details.locator('summary').click();await expect(details).toContainText('需确认来源');await details.locator('summary').click();await expect(page.getByRole('button',{name:'连接 · 未实现',exact:true}).first()).toBeDisabled();}
- else if(key==='private-chat')await expect(page.getByText('AI 聊天尚未接入',{exact:true})).toBeVisible();
+ else if(key==='private-chat')await expect(page.locator('main').getByRole('heading',{level:2,name:'AI 聊天尚未接入',exact:true})).toBeVisible();
  else if(key==='private-data')await expect(page.getByRole('button',{name:'恢复 · 未验证',exact:true})).toBeDisabled();
+}
+// Bind the visible timestamp to the exact snapshot that this navigation fetched.
+async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture['entries']):Promise<string>{
+ const [response]=await Promise.all([
+  page.waitForResponse(response=>{
+   const url=new URL(response.url());
+   return url.origin===privateOrigin&&url.pathname==='/api/platform/personal/overview'
+     &&/^\?today=\d{4}-\d{2}-\d{2}$/.test(url.search)&&response.request().method()==='GET'
+     &&response.frame()===page.mainFrame();
+  }),
+  page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}),
+ ]);
+ assert.equal(response.ok(),true);
+ assert.match((await response.allHeaders())['cache-control']??'',/private.*no-store/);
+ const snapshot=await response.json();
+ assertPrivateSnapshot(snapshot,entries);
+ const {observedAt}=snapshot;
+ if(typeof observedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(observedAt)
+   ||!Number.isFinite(Date.parse(observedAt))||new Date(observedAt).toISOString()!==observedAt)throw Error('PRIVATE_SNAPSHOT_DENIED');
+ return observedAt;
 }
 type PresentationStage='personal'|'navigation'|'heading'|'theme'|'interaction'|'measure-ready'|'measure-dom'|'overflow'|'palette'|'header'|'title'|'typography'|'hit-targets'|'contrast'|'dialog'|'keyboard'|'capture-receipts'|'capture-dom'|'capture-scope'|'capture-content'|'capture-image'|'capture-manifest'|'close-dialog'|'mobile-navigation'|'settings'|'receipts';
 type PresentationMark=(stage:PresentationStage,metrics?:readonly number[])=>void;
@@ -323,10 +348,13 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  try{
   for(const item of privateCaptureCases){
    row=item;mark('navigation');
-   await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});mark('heading');await readyHeading(page,row.heading);mark('theme');await radio(page,'system');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
+   await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});let settingsObservedAt:string|undefined;
+   if(row.key==='private-settings')settingsObservedAt=await openPrivateSettings(page,row.path,entries);
+   else await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});
+   mark('heading');await readyHeading(page,row.heading);mark('theme');await radio(page,'system');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
    if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.getByRole('button').filter({hasText:'title'in entry.draft?entry.draft.title:''}).first()).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
-   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark);cells++;
+   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark,settingsObservedAt);cells++;
    mark('close-dialog');if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
    mark('mobile-navigation');if(row.width<800&&row.key==='private-finance'){const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();const drawer=page.getByRole('dialog',{name:'手机导航',exact:true});await expect(drawer).toBeVisible();await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();}
   }
