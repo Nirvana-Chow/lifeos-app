@@ -8,6 +8,8 @@ export type PublicEntry=Omit<StoredEntry,'ownerId'>;
 export type MutationResult={entry:PublicEntry;duplicate:boolean};
 export type Receipt={digest:string;result:MutationResult};
 export interface Transaction {
+ /** Agent-only capability, held until this same transaction ends. */
+ lockAgentTodoWriteGrant?(grant: Readonly<{grantId:string;ownerId:string;spaceId:string}>):Promise<boolean>;
  /** Nonlocking discovery on this transaction's connection. Decisions must use
   * a subsequent locked get and revision check, not this preliminary value. */
  peek(kind:Kind,id:string):Promise<StoredEntry|null>;
