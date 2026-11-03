@@ -71,24 +71,41 @@ export function assertPrivateCaptureScope(f:{name:string;url:string;width:number
 export function assertPrivateCaptureContent(f:{forbidden:number;values:string[];texts:string[];editable:string[];recordIds:string[]},texts:ReadonlySet<string>,values:ReadonlySet<string>,recordIds:readonly string[]):void{
  if(f.forbidden!==0||!f.values.every(v=>values.has(v))||!f.texts.every(t=>texts.has(t))||f.editable.length!==0||!f.recordIds.every(id=>recordIds.includes(id)))throw Error('PRIVATE_CAPTURE_DENIED');
 }
-export type FirstVisibleTheme={theme:string|undefined;scheme:string;checked:string|null;time:number};
+export type FirstVisibleTheme={theme:string|undefined;scheme:string;checked:string|null;control?:'missing'|'hidden'|'visible';time:number};
 export function assertFirstVisibleTheme(frames:FirstVisibleTheme[],theme:'light'|'dark',preference:'light'|'dark'|'system'){
  if(!frames.length||frames.some(frame=>frame.theme!==theme||frame.scheme!==theme||frame.checked!==preference||!Number.isFinite(frame.time)||frame.time<0))throw Error('PRIVATE_FIRST_VISIBLE_THEME');
 }
+type FirstVisiblePhase='initial-system'|'saved-dark-reload'|'saved-dark-navigation';
+type FirstVisibleDocument='new'|'same'|'unknown';
+export function projectFirstVisibleDiagnostic(phase:unknown,frames:readonly unknown[],document:unknown){
+ const fixedPhase=(['initial-system','saved-dark-reload','saved-dark-navigation'] as const).includes(phase as FirstVisiblePhase)?phase as FirstVisiblePhase:'other';
+ const fixedDocument=document==='new'||document==='same'?document:'unknown';
+ const enumValue=(value:unknown,allowed:readonly string[])=>value===undefined||value===null?'missing':allowed.includes(value as string)?value as string:'other';
+ return {phase:fixedPhase,document:fixedDocument,frames:frames.slice(0,3).map(frame=>{
+  const value=frame&&typeof frame==='object'?frame as Record<string,unknown>:{};
+  const timeMs=typeof value.time==='number'&&Number.isFinite(value.time)&&value.time>=0&&value.time<=180000?Math.round(value.time):undefined;
+  return {theme:enumValue(value.theme,['light','dark']),scheme:enumValue(value.scheme,['light','dark']),checked:enumValue(value.checked,['light','dark','system']),control:enumValue(value.control,['missing','hidden','visible']),...(timeMs===undefined?{}:{timeMs})};
+ })};
+}
+const firstVisibleTimeOrigins=new WeakMap<Page,number>();
 /** Passive init observer: never changes theme, storage, checked controls or CSS. */
 export async function observeFirstVisibleTheme(context:BrowserContext){await context.addInitScript(()=>{
- const w=window as unknown as {__lifeosFirstVisible?:{theme?:string;scheme:string;checked:string|null;time:number}[]};w.__lifeosFirstVisible=[];
+ const w=window as unknown as {__lifeosFirstVisible?:{theme?:string;scheme:string;checked:string|null;control:'missing'|'hidden'|'visible';time:number}[]};w.__lifeosFirstVisible=[];
  let seen=false,count=0;const tick=()=>{
   const header=document.querySelector('header'),r=header?.getBoundingClientRect();
   if(header&&r&&r.width>0&&r.height>0&&getComputedStyle(header).visibility!=='hidden'){
-   const root=document.documentElement;w.__lifeosFirstVisible!.push({theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:header.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value??null,time:performance.now()});seen=true;count++;
+   const root=document.documentElement,radio=header.querySelector<HTMLInputElement>('input[type="radio"]'),label=radio?.closest('label'),labelRect=label?.getBoundingClientRect();
+   const control=!radio?'missing':label&&labelRect&&labelRect.width>0&&labelRect.height>0&&getComputedStyle(label).visibility!=='hidden'?'visible':'hidden';
+   w.__lifeosFirstVisible!.push({theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:header.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value??null,control,time:performance.now()});seen=true;count++;
   }
   if(!seen||count<3)requestAnimationFrame(tick);
  };requestAnimationFrame(tick);
  });}
-export async function checkFirstVisibleTheme(page:Page,theme:'light'|'dark',preference:'light'|'dark'|'system'){
+export async function checkFirstVisibleTheme(page:Page,theme:'light'|'dark',preference:'light'|'dark'|'system',phase:FirstVisiblePhase){
  await page.waitForFunction(()=>((window as unknown as {__lifeosFirstVisible?:unknown[]}).__lifeosFirstVisible?.length??0)>=3);
- const frames=await page.evaluate(()=>(window as unknown as {__lifeosFirstVisible:FirstVisibleTheme[]}).__lifeosFirstVisible);assertFirstVisibleTheme(frames,theme,preference);
+ const observation=await page.evaluate(()=>({frames:(window as unknown as {__lifeosFirstVisible:FirstVisibleTheme[]}).__lifeosFirstVisible,timeOrigin:performance.timeOrigin}));
+ const previous=firstVisibleTimeOrigins.get(page),timeOrigin=observation.timeOrigin,document=Number.isFinite(previous)&&Number.isFinite(timeOrigin)?previous===timeOrigin?'same':'new':'unknown';
+ firstVisibleTimeOrigins.set(page,timeOrigin);try{assertFirstVisibleTheme(observation.frames,theme,preference);}catch(error){if(error instanceof Error&&error.message==='PRIVATE_FIRST_VISIBLE_THEME')console.error('PRIVATE_FIRST_VISIBLE_DIAGNOSTIC '+JSON.stringify(projectFirstVisibleDiagnostic(phase,observation.frames,document)));throw error;}
 }
 // The text source set is finite and reviewed. AST literals/JSX text are admitted
 // exactly, never source prefixes, arbitrary file paths or body-derived expected data.
@@ -163,11 +180,11 @@ async function themeState(page:Page,theme:'light'|'dark',preference:'light'|'dar
 export async function verifyPrivateAppearanceAndDrafts(f:PrivateFixture){
  const {page,context,entries}=f,transport=watchPrivateTransport(page);
  try{
-  await observeFirstVisibleTheme(context);await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,'总览');await checkFirstVisibleTheme(page,'light','system');
+  await observeFirstVisibleTheme(context);await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,'总览');await checkFirstVisibleTheme(page,'light','system','initial-system');
   await radio(page,'dark');await themeState(page,'dark','dark');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
-  await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark');await themeState(page,'dark','dark');
-  // Real Next link navigation, not a second injected initializer.
-  await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true}).click();await readyHeading(page,'日历与日程');await checkFirstVisibleTheme(page,'dark','dark');
+  await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark','saved-dark-reload');await themeState(page,'dark','dark');
+  // Schedule uses ordinary anchor/document navigation, not a second injected initializer.
+  await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true}).click();await readyHeading(page,'日历与日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
   await page.emulateMedia({colorScheme:'dark'});await radio(page,'light');await themeState(page,'light','light');await radio(page,'system');await themeState(page,'dark','system');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');
   const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await radio(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await radio(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}
   await page.goto(privateOrigin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});await readyHeading(page,'待办');await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();const todo=entries[2],savedTitle='title'in todo.draft?todo.draft.title:'';

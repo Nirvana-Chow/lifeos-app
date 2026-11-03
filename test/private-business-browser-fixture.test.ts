@@ -45,6 +45,32 @@ test('first-visible observations include checked preference and reject final-sta
  assert.doesNotThrow(()=>fixture.assertFirstVisibleTheme([first], 'dark','dark'));
  for(const observations of [[],[{...first,checked:'system'}],[{...first,theme:'light'},first],[{...first,scheme:'light'},first]])assert.throws(()=>fixture.assertFirstVisibleTheme(observations,'dark','dark'),/PRIVATE_FIRST_VISIBLE_THEME/);
 });
+test('first-visible diagnostic projection limits output to finite enums and rounded relative times',()=>{
+ const privateValue='private-secret-value';
+ const projected=fixture.projectFirstVisibleDiagnostic(privateValue,[
+  {theme:privateValue,scheme:'dark',checked:privateValue,control:privateValue,time:1.6,url:privateValue,timeOrigin:privateValue,input:privateValue,storage:privateValue,body:privateValue,cookie:privateValue},
+  {theme:'light',scheme:privateValue,checked:'system',control:'visible',time:Number.NaN},
+  {theme:'dark',scheme:'dark',checked:null,control:'hidden',time:Number.POSITIVE_INFINITY},
+  {theme:'dark',scheme:'dark',checked:'dark',control:'visible',time:999},
+ ],privateValue);
+ assert.deepEqual(projected,{phase:'other',document:'unknown',frames:[
+  {theme:'other',scheme:'dark',checked:'other',control:'other',timeMs:2},
+  {theme:'light',scheme:'other',checked:'system',control:'visible'},
+  {theme:'dark',scheme:'dark',checked:'missing',control:'hidden'},
+ ]});
+ assert.equal(JSON.stringify(projected).includes(privateValue),false);
+ assert.equal(JSON.stringify(projected).includes('999'),false);
+ assert.equal(JSON.stringify(projected).includes('NaN'),false);
+ assert.equal(JSON.stringify(projected).includes('Infinity'),false);
+ const outOfRange=fixture.projectFirstVisibleDiagnostic('initial-system',[
+  {theme:'light',scheme:'light',checked:'system',control:'visible',time:180001},
+  {theme:'light',scheme:'light',checked:'system',control:'visible',time:-1},
+ ],'unknown');
+ assert.deepEqual(outOfRange.frames,[
+  {theme:'light',scheme:'light',checked:'system',control:'visible'},
+  {theme:'light',scheme:'light',checked:'system',control:'visible'},
+ ]);
+});
 test('independent destination literals cover the actual frozen map and source paths cannot expand',()=>{
  assert.deepEqual(Object.fromEntries(fixture.privateDestinations.map(([id,path])=>[id,path])),privateHrefs);
  const texts=fixture.captureSourceText();assert.equal(texts.has('财务'),true);assert.equal([...texts].some(text=>/ICP备/.test(text)),false);assert.equal(texts.has('待办'),true);assert.equal(texts.has('详情'),true);
