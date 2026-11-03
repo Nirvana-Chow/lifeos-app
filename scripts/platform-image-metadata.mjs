@@ -13,7 +13,7 @@ export function sourceImageProof(root,sourceSha){
   if(/^\.env(?:\.|$)|^\.npmrc$|\.(pem|key)$/.test(name))throw Error('Private build input is forbidden');
   const st=lstatSync(join(root,name));if(/\.(?:[cm]?js|json|tsx?)$/.test(name)||name==='Dockerfile.platform-review'||name==='.dockerignore'){if(st.isSymbolicLink())throw Error('Unreviewed root build symlink');add(name);}
  }
- for(const required of ['package.json','package-lock.json','next.config.ts','Dockerfile.platform-review'])if(!files.some(f=>f.path===required))throw Error('Missing required build input');
+ for(const required of ['package.json','package-lock.json','next.config.ts','proxy.ts','Dockerfile.platform-review'])if(!files.some(f=>f.path===required))throw Error('Missing required build input');
  for(const dir of ['app','src','scripts','components','db','public'])if(existsSync(join(root,dir)))walk(dir);else if(['app','src','scripts'].includes(dir))throw Error('Missing runtime source directory');
  files.sort((a,b)=>a.path.localeCompare(b.path,'en'));return{version:1,sourceSha,sourceTreeDigest:createHash('sha256').update(JSON.stringify(files)).digest('hex'),files};
 }
