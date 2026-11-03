@@ -267,16 +267,32 @@ export function assertPrivateHeaderGeometry(surface:PrivatePresentationSurface,w
 async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'dark',mark:PresentationMark,dialog=false,surface:PrivatePresentationSurface='workspace'){
  mark('measure-ready');const selectors=privatePresentationScope(surface,dialog);
  await page.evaluate(()=>document.fonts.ready.then(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))));
- mark('measure-dom');const facts=await page.evaluate(({width,dialog,selectors})=>{
+ // The workbench paints this fixed icon entirely inside the native select's
+ // trailing padding. It is outside the area where the selected text is drawn.
+ const chevronStroke=theme==='dark'?'a1a1aa':'52525b';
+ const chevronImage=`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23${chevronStroke}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`;
+ mark('measure-dom');const facts=await page.evaluate(({dialog,selectors,chevronImage})=>{
   const visible=(n:Element)=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';};
   const root=document.documentElement,header=document.querySelector(selectors.header),scope=document.querySelector(selectors.content);
   if(!header||!scope)throw Error('PRIVATE_PRESENTATION_STRUCTURE');
   const h=header.getBoundingClientRect(),headerStyle=getComputedStyle(header),children=Array.from(header.children).map(n=>n.getBoundingClientRect());
   const nodes=Array.from(scope.querySelectorAll('p,small,th,td,label,input,textarea,select,h1,h2,h3')).filter(visible),controls=Array.from(header.querySelectorAll('[data-lifeos-theme-control] label')).filter(visible);
-  const layers=(n:Element)=>{const result:ContrastLayer[]=[];for(let e:Element|null=n;e;e=e.parentElement){const s=getComputedStyle(e);result.push({backgroundColor:s.backgroundColor,backgroundImage:s.backgroundImage,mixBlendMode:s.mixBlendMode,backgroundBlendMode:s.backgroundBlendMode,opacity:s.opacity,filter:s.filter,backdropFilter:s.backdropFilter});}return result;};
+  const layers=(n:Element)=>{
+   const result:ContrastLayer[]=[];
+   for(let e:Element|null=n;e;e=e.parentElement){
+    const s=getComputedStyle(e);
+    const separateChevron=e===n&&e.matches('select:not([multiple]):not([size])')
+      &&s.backgroundImage===chevronImage&&s.appearance==='none'
+      &&s.backgroundOrigin==='padding-box'&&s.backgroundAttachment==='scroll'&&s.backgroundRepeat==='no-repeat'
+      &&s.backgroundPosition==='calc(100% - 12px) 50%'&&s.backgroundSize==='16px 16px'
+      &&s.direction==='ltr'&&s.writingMode==='horizontal-tb'&&parseFloat(s.paddingRight)>=40;
+    result.push({backgroundColor:s.backgroundColor,backgroundImage:separateChevron?'none':s.backgroundImage,mixBlendMode:s.mixBlendMode,backgroundBlendMode:s.backgroundBlendMode,opacity:s.opacity,filter:s.filter,backdropFilter:s.backdropFilter});
+   }
+   return result;
+  };
   // Transparent native choices have no text ink; retain their labels, hit targets and keyboard checks.
   return {overflow:root.scrollWidth>root.clientWidth,header:{height:h.height,display:headerStyle.display,wrap:headerStyle.flexWrap,gap:parseFloat(headerStyle.rowGap),contained:children.every(r=>r.x>=h.x-1&&r.y>=h.y-1&&r.right<=h.right+1&&r.bottom<=h.bottom+1),childHeights:children.map(r=>r.height)},theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,heading:parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),fonts:nodes.map(n=>({size:parseFloat(getComputedStyle(n).fontSize),form:n.matches('input,textarea,select')})),targets:controls.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})),contrasts:nodes.filter(n=>(n.textContent?.trim()||n.matches('input,textarea,select'))&&!(n.matches('input[type="radio"],input[type="checkbox"]')&&getComputedStyle(n).opacity==='0')).map(n=>({foreground:getComputedStyle(n).color,layers:layers(n)})),dialog:dialog?{width:scope.getBoundingClientRect().width,height:scope.getBoundingClientRect().height,scroll:scope.scrollHeight>=scope.clientHeight}:null};
- },{width,dialog,selectors});
+ },{dialog,selectors,chevronImage});
  mark('overflow');assert.equal(facts.overflow,false,'private horizontal overflow');mark('palette');assert.equal(facts.theme,theme);assert.equal(facts.scheme,theme);mark('header',[facts.header.height,facts.header.gap,facts.header.childHeights.length,...facts.header.childHeights.slice(0,3),Number(facts.header.contained),Number(facts.header.display==='flex'),Number(facts.header.wrap==='wrap')]);assertPrivateHeaderGeometry(surface,width,facts.header);mark('title',[facts.heading]);assert.equal(facts.heading>= (width===1365?28:24),true,'private title typography');mark('typography',[facts.fonts.filter(n=>!(n.size>=(n.form?16:14))).length]);assert.equal(facts.fonts.every(n=>n.size>= (n.form?16:14)),true,'private readable typography');mark('hit-targets',[facts.targets.length,...facts.targets.slice(0,3).flatMap(n=>[n.width,n.height])]);assert.equal(facts.targets.length,3);assert.equal(facts.targets.every(n=>n.width>=44&&n.height>=44),true,'Header radio hit targets');
  for(const [index,c] of facts.contrasts.entries()){mark('contrast',[index,Number(c.layers.some(l=>Number(l.opacity??'1')!==1)),Number(c.layers.some(l=>(l.backgroundImage??'none')!=='none')),Number(c.layers.some(l=>(l.filter??'none')!=='none'||(l.backdropFilter??'none')!=='none')),Number(c.layers.some(l=>(l.mixBlendMode??'normal')!=='normal'||(l.backgroundBlendMode??'normal')!=='normal'))]);const contrast=renderedContrast(c.foreground,c.layers);mark('contrast',[index,contrast.contrast]);assert.equal(contrast.contrast>=4.5,true,'private rendered text contrast');}
  mark('dialog');if(facts.dialog){assert.equal(facts.dialog.width<=width,true);assert.equal(facts.dialog.scroll,true);await expect(page.getByRole('button',{name:'返回页面',exact:true})).toBeVisible();}
