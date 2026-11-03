@@ -1,9 +1,11 @@
 import test from'node:test';import assert from'node:assert/strict';import{randomUUID}from'node:crypto';import{DraftService}from'../src/platform/service.ts';import{PostgresPlatformRepository,verifyRestrictedPool,type SqlPool}from'../src/platform/postgres.ts';import{validateAcceptanceEnvironment,acceptancePasswords,acceptancePool}from'./helpers/platform-pg.ts';
+import {createPlatformAuth,readOwnerPrincipal} from '../src/platform/auth.ts';
+import {syntheticIdentities} from '../src/platform/synthetic-bootstrap.ts';
 import{requirements}from'../src/platform/requirements.ts';
 test('OPT-IN exact configured Next HTTP + Auth + PG todo/finance/ownership acceptance; retains all synthetic records',{skip:process.env.RUN_PLATFORM_NETWORK_TESTS==='1'?false:'No approved configured Next+PG target/FD3; not executed',timeout:90000},async t=>{
  const config=validateAcceptanceEnvironment(process.env,process.execArgv),passwords=acceptancePasswords(),pool=acceptancePool(config.databaseURL),batch='fixture-network-'+randomUUID();let cookie='';const ids:string[]=[];
- const send=async(path:string,method='GET',body?:unknown,key?:string,withCookie=true)=>{
-  const response=await fetch(config.baseURL+'/api/platform/'+path,{method,signal:AbortSignal.timeout(8000),headers:{origin:config.baseURL,...(body===undefined?{}:{'content-type':'application/json'}),...(key?{'idempotency-key':key}:{}),...(withCookie&&cookie?{cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json()};
+ const send=async(path:string,method='GET',body?:unknown,key?:string,withCookie=true,sessionCookie=cookie)=>{
+  const response=await fetch(config.baseURL+'/api/platform/'+path,{method,signal:AbortSignal.timeout(8000),headers:{origin:config.baseURL,...(body===undefined?{}:{'content-type':'application/json'}),...(key?{'idempotency-key':key}:{}),...(withCookie&&sessionCookie?{cookie:sessionCookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return{status:response.status,body:await response.json()};
  };
  try{
   await verifyRestrictedPool(pool as SqlPool);const service=new DraftService(new PostgresPlatformRepository(pool as SqlPool));
@@ -13,7 +15,53 @@ test('OPT-IN exact configured Next HTTP + Auth + PG todo/finance/ownership accep
   assert.equal((await send('todos','POST',{title:batch,notes:'Synthetic HTTP acceptance only'},batch+'-todo')).body.duplicate,true);assert.equal((await send('todos','POST',{title:batch+' changed'},batch+'-todo')).status,409);
   const patched=await send('todos/'+id,'PATCH',{expectedRevision:1,status:'done'},batch+'-todo-edit');assert.equal(patched.status,200);assert.equal(patched.body.entry.revision,2);assert.equal((await send('todos/'+id,'PATCH',{expectedRevision:1,title:'stale'},batch+'-stale')).status,409);assert.equal((await send('todos/'+id)).body.entry.source.original.title,batch);
   assert.equal((await send('todos','POST',{title:batch,ownerId:'fixture-owner-b'},batch+'-forged')).status,400);assert.equal((await send('todos','POST',{title:batch,dueOn:'2026-02-30'},batch+'-date')).status,400);
-  const foreign=await service.mutate('fixture-owner-b','todo',null,{title:batch+' secondary synthetic owner'},batch+'-foreign');ids.push(foreign.entry.id);assert.equal((await send('todos/'+foreign.entry.id)).status,404);assert.ok(!(await send('todos')).body.items.some((entry:{id:string})=>entry.id===foreign.entry.id));assert.equal((await send('todos/'+foreign.entry.id,'PATCH',{expectedRevision:1,title:'forbidden'},batch+'-forbidden')).status,404);
+  const foreignIdentity = syntheticIdentities[1];
+  const foreign = await service.mutate(foreignIdentity.id, 'todo', null, {title: batch + ' secondary synthetic owner'}, batch + '-foreign');
+  const foreignId = foreign.entry.id;
+  ids.push(foreignId);
+  const missingId = randomUUID();
+
+  const deniedRead = await send('todos/' + foreignId);
+  assert.equal(deniedRead.status, 404);
+  assert.deepEqual(deniedRead, await send('todos/' + missingId));
+  assert.ok(!(await send('todos')).body.items.some((entry: {id: string}) => entry.id === foreignId));
+  const forbiddenEdit = {expectedRevision: 1, title: 'forbidden'};
+  const deniedEdit = await send('todos/' + foreignId, 'PATCH', forbiddenEdit, batch + '-forbidden');
+  assert.equal(deniedEdit.status, 404);
+  assert.deepEqual(deniedEdit, await send('todos/' + missingId, 'PATCH', forbiddenEdit, batch + '-missing'));
+  assert.deepEqual(await service.get(foreignIdentity.id, 'todo', foreignId), foreign.entry);
+
+  const search = 'search/page?' + new URLSearchParams({q: batch, type: 'todo', includeSynthetic: 'true'});
+  const source = (recordId: string) => 'search/source/todo/' + recordId + '?includeSynthetic=true';
+  assert.equal((await send(search, 'GET', undefined, undefined, false)).status, 401);
+  assert.equal((await send(source(id), 'GET', undefined, undefined, false)).status, 401);
+  const matches = await send(search);
+  assert.equal(matches.status, 200);
+  assert.deepEqual(matches.body.items.map((entry: {id: string}) => entry.id), [id]);
+  const ownSource = await send(source(id));
+  assert.equal(ownSource.status, 200);
+  assert.equal(ownSource.body.current.sourceId, direct.source.id);
+  const foreignSource = await send(source(foreignId));
+  assert.equal(foreignSource.status, 404);
+  assert.deepEqual(foreignSource, await send(source(missingId)));
+
+  // Sign B in separately so A's real Next sign-in rate-limit sequence is preserved.
+  const foreignConfig = {...config, ownerId: foreignIdentity.id, ownerEmail: foreignIdentity.email};
+  const foreignAuth = createPlatformAuth(foreignConfig, pool);
+  const foreignLogin = await foreignAuth.handler(new Request(config.baseURL + '/api/platform/auth/sign-in/email', {
+    method: 'POST',
+    headers: {origin: config.baseURL, 'content-type': 'application/json', 'x-platform-client': '127.0.0.2'},
+    body: JSON.stringify({email: foreignIdentity.email, password: passwords.ownerB, rememberMe: false}),
+  }));
+  assert.equal(foreignLogin.status, 200);
+  const foreignCookie = foreignLogin.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  assert.equal((await readOwnerPrincipal(foreignAuth, foreignConfig, new Headers({cookie: foreignCookie})))?.userId, foreignIdentity.id);
+  for (const route of [search, source(id)]) {
+    const denied = await send(route, 'GET', undefined, undefined, true, foreignCookie);
+    assert.equal(denied.status, 401);
+    assert.deepEqual(denied, await send(route, 'GET', undefined, undefined, false));
+  }
+  t.diagnostic('Synthetic cross-account search and source isolation verified over Next HTTP and PostgreSQL.');
   const draft={kind:'expense',amountMinor:1200,currency:'CNY',occurredOn:'2026-10-22',fromAccountRef:'fixture-wallet',notes:batch};const expense=await send('finance','POST',draft,batch+'-expense');assert.equal(expense.status,201);const expenseId=expense.body.entry.id;ids.push(expenseId);
   const refund=await send('finance','POST',{...draft,kind:'refund',amountMinor:300,originalEntryId:expenseId},batch+'-refund');assert.equal(refund.status,201);ids.push(refund.body.entry.id);assert.equal((await send('finance/'+expenseId,'PATCH',{expectedRevision:1,kind:'income'},batch+'-invalid-source')).status,409);
   assert.equal((await send('finance','POST',{...draft,amountMinor:1.5},batch+'-fraction')).status,400);assert.equal((await send('finance','POST',{...draft,kind:'transfer',toAccountRef:'fixture-wallet'},batch+'-same-account')).status,400);
