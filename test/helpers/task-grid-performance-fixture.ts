@@ -49,14 +49,36 @@ export async function measureTaskGrid({browser,context,page,entries}:PrivateFixt
           const count=tab.locator('.lo-result-count');
           await expect(count).toHaveText((rows+1)+' 项');
           const search=tab.getByRole('textbox',{name:'搜索待办',exact:true});
-          const start=performance.now();
+          await search.fill('合成性能验证空结果');
+          await expect(count).toHaveText('0 项');
+          await search.evaluate((node,target)=>{
+            const input=node as HTMLInputElement;
+            type TimingWindow=Window & {syntheticGridElapsed?:Promise<number>};
+            (window as TimingWindow).syntheticGridElapsed=new Promise((resolve,reject)=>{
+              const timeout=setTimeout(()=>reject(Error('SYNTHETIC_GRID_TIMEOUT')),8000);
+              input.addEventListener('input',()=>{
+                const start=performance.now();
+                const observe=()=>{
+                  if(document.querySelector('.lo-result-count')?.textContent?.trim()!==target){
+                    requestAnimationFrame(observe);
+                    return;
+                  }
+                  requestAnimationFrame(()=>{
+                    clearTimeout(timeout);
+                    resolve(performance.now()-start);
+                  });
+                };
+                requestAnimationFrame(observe);
+              },{capture:true,once:true});
+            });
+          },rows+' 项');
           await search.fill(prefix);
-          await expect(count).toHaveText(rows+' 项');
+          const elapsed=await tab.evaluate(async()=>await (window as Window & {syntheticGridElapsed?:Promise<number>}).syntheticGridElapsed);
+          assert.ok(typeof elapsed==="number"&&Number.isFinite(elapsed)&&elapsed>=0);
           const firstTitle=taskGridRoot(tab).locator('tbody td[aria-colindex="1"]').first();
           await expect(firstTitle).toHaveText(/^合成性能待办 \d{4}$/);
           await requireTaskGrid(tab,(await firstTitle.innerText()).trim(),rows);
-          await tab.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-          raw[mode].push(Math.round((performance.now()-start)*100)/100);
+          raw[mode].push(Math.round(elapsed*100)/100);
         }
       } finally {
         await sample.close();

@@ -18,16 +18,20 @@ async function privateRead(page:Page,path:string) {
 }
 
 """+helper[end:]
+helper=helper.replace("          await search.evaluate", "          await expect(tab.locator('.lo-screen-reader-table tbody tr')).toHaveCount(0);\n          await tab.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));\n          const emptyCanvas=await tab.locator('.lo-vtable canvas').first().evaluate(canvas=>(canvas as HTMLCanvasElement).toDataURL());\n          await search.evaluate")
 start=helper.index('          const firstTitle=')
-end=helper.index('          await tab.evaluate',start)
-helper=helper[:start]+"""          await tab.waitForFunction(()=>{
+end=helper.index('          raw[mode].push',start)
+helper=helper[:start]+"""          const accessibleRows=tab.locator('.lo-screen-reader-table tbody tr');
+          await expect(accessibleRows).toHaveCount(rows);
+          await expect(accessibleRows.first().locator('td').first()).toHaveText(/^合成性能待办 \d{4}$/);
+          await tab.waitForFunction(emptyCanvas=>{
             const host=document.querySelector('.lo-vtable');
             if(host?.getAttribute('aria-busy')!=='false'||host.closest('.lo-table-wrap')?.querySelector('[role="alert"]'))return false;
             return Array.from(host.querySelectorAll('canvas')).some(canvas=>{
               if(!canvas.width||!canvas.height||!canvas.getBoundingClientRect().width)return false;
-              return canvas.getContext('2d')?.getImageData(0,0,canvas.width,canvas.height).data.some((value,index)=>index%4===3&&value>0);
+              return canvas.toDataURL()!==emptyCanvas && canvas.getContext('2d')?.getImageData(0,0,canvas.width,canvas.height).data.some((value,index)=>index%4===3&&value>0);
             });
-          });
+          },emptyCanvas);
 """+helper[end:]
 (target/'test/helpers/task-grid-performance-fixture.ts').write_text(helper)
 p=target/'test/owner-recovery-browser.integration.test.ts'
