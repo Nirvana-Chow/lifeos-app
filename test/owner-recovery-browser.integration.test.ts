@@ -11,6 +11,7 @@ import {verifyRestrictedPool,type SqlPool} from '../src/platform/postgres.ts';
 import {ownerRecoveryLock,ownerRecoveryRateLimit} from '../src/personal-candidate/owner-recovery-lock.ts';
 import {ownerOperatorRecovery} from '../src/personal-candidate/owner-email-reset.ts';
 import {safeScreenshot as guardedAuthScreenshot,trustFixtureCA,applyAuthFixtureAppearance,assertPublicLayout,assertPublicStaticCache} from './helpers/owner-recovery-browser-fixture.ts';
+import {measureTaskGrid} from './helpers/task-grid-performance-fixture.ts';
 import {verifyPersonalWorkspace} from './helpers/personal-workspace-browser-fixture.ts';
 import {themeStorageKey} from '../src/workbench/theme.ts';
 
@@ -131,7 +132,20 @@ const privateGroups=[
 ] as const;
 for(const [name,timeout,run] of privateGroups)test(name,{skip:!enabled?'isolated browser CI not requested':false,concurrency:false,timeout},async(t)=>{
  const start=performance.now();let passed=false;
- try{await withPrivateBrowserFixture(completedHandoff,run);assertFixtureCompletion(t.signal);if(name==='isolated private business presentation matrix')publishSyntheticCaptureManifest(t.signal);passed=true;}
+ try{
+  const matrix=name==='isolated private business presentation matrix';
+  const rowCount=process.env.LIFEOS_SYNTHETIC_GRID_ROWS;
+  const samples=await withPrivateBrowserFixture(completedHandoff,async fixture=>{
+   await run(fixture);
+   if(!matrix||rowCount===undefined)return;
+   if(rowCount!=='100'&&rowCount!=='1000')throw Error('INVALID_SYNTHETIC_GRID_ROWS');
+   return measureTaskGrid(fixture,rowCount==='100'?100:1000);
+  });
+  assertFixtureCompletion(t.signal);
+  if(matrix)publishSyntheticCaptureManifest(t.signal);
+  if(samples)console.log('SYNTHETIC_GRID_PERFORMANCE '+JSON.stringify({sourceSha:completedHandoff?.sourceSha,samples}));
+  passed=true;
+ }
  catch(error){completedHandoff=undefined;const allowed=['PRIVATE_CAPTURE_DENIED','PRIVATE_SNAPSHOT_DENIED','PRIVATE_FIRST_VISIBLE_THEME','BROWSER_PRIVATE_HANDOFF_UNAVAILABLE','BROWSER_FIXTURE_UNAVAILABLE','BROWSER_FIXTURE_CLEANUP_FAILED'];const reason=error instanceof Error&&allowed.includes(error.message)?error.message:error instanceof Error&&error.name==='TimeoutError'?'timeout':error instanceof Error&&error.name==='AssertionError'?'assertion':'other';console.log('PRIVATE_BROWSER_FAILURE '+JSON.stringify({group:name,reason}));throw Error('PRIVATE_BROWSER_GROUP_FAILED_'+name.replaceAll(' ','_'));}
  finally{if(!passed||name==='isolated private business presentation matrix')completedHandoff=undefined;console.log('PRIVATE_BROWSER_GROUP '+JSON.stringify({group:name,elapsedMs:Math.round(performance.now()-start),passed}));}
 });

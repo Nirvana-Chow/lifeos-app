@@ -1,0 +1,72 @@
+import assert from 'node:assert/strict';
+import {expect} from '@playwright/test';
+import {themeStorageKey} from '../../src/workbench/theme.ts';
+import {privateRead, type PrivateFixture} from './private-business-browser-fixture.ts';
+import {requireTaskGrid, taskGridRoot} from './task-grid-browser-driver.ts';
+
+const origin = 'https://review.example.test';
+const prefix = '合成性能待办';
+const path = '/api/platform/personal/todo';
+const overview = '/api/platform/personal/overview?today=2030-11-02';
+
+export async function measureTaskGrid({browser,context,page,entries}:PrivateFixture, rows:100|1000) {
+  assert.equal(new URL(page.url()).origin, origin);
+  assert.equal((await privateRead(page,overview)).total, 3);
+  const seeded = await page.evaluate(async ({rows,prefix,path}) => {
+    for (let index=0; index<rows; index++) {
+      const title=prefix+' '+String(index).padStart(4,'0');
+      const response=await fetch(path,{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/json','idempotency-key':'synthetic-grid-benchmark-'+index},
+        body:JSON.stringify({spaceId:'personal-review-space',confirmed:true,fields:{title,notes:'隔离性能验证',dueOn:'2030-11-03',status:'open'}}),
+      });
+      if (response.status!==201) return false;
+      const {entry,duplicate}=await response.json();
+      if (duplicate!==false || entry.revision!==1 || entry.draft.title!==title) return false;
+    }
+    return true;
+  },{rows,prefix,path});
+  assert.equal(seeded,true);
+  const snapshot=await privateRead(page,overview);
+  assert.equal(snapshot.total,rows+3);
+  assert.equal(snapshot.truncated,false);
+  for (const entry of entries) assert.deepEqual(snapshot.items.find((item:{id:string})=>item.id===entry.id),entry);
+
+  const results=[];
+  const cookies=await context.cookies(origin);
+  for (const layout of [{width:1365,height:900,theme:'light'},{width:390,height:844,theme:'dark'}] as const) {
+    const raw={cold:[] as number[],warm:[] as number[]};
+    for (let i=0;i<3;i++) {
+      const sample=await browser.newContext({viewport:{width:layout.width,height:layout.height},colorScheme:layout.theme});
+      try {
+        await sample.addCookies(cookies);
+        await sample.addInitScript(({key,theme})=>localStorage.setItem(key,theme),{key:themeStorageKey,theme:layout.theme});
+        const tab=await sample.newPage();
+        for (const mode of ['cold','warm'] as const) {
+          await tab.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+          await expect(tab.locator('html')).toHaveAttribute('data-lifeos-theme',layout.theme);
+          const count=tab.locator('.lo-result-count');
+          await expect(count).toHaveText((rows+1)+' 项');
+          const search=tab.getByRole('textbox',{name:'搜索待办',exact:true});
+          const start=performance.now();
+          await search.fill(prefix);
+          await expect(count).toHaveText(rows+' 项');
+          const firstTitle=taskGridRoot(tab).locator('tbody td[aria-colindex="1"]').first();
+          await expect(firstTitle).toHaveText(/^合成性能待办 \d{4}$/);
+          await requireTaskGrid(tab,(await firstTitle.innerText()).trim(),rows);
+          await tab.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+          raw[mode].push(Math.round((performance.now()-start)*100)/100);
+        }
+      } finally {
+        await sample.close();
+      }
+    }
+    const summary=(values:number[])=>{const [min,median,max]=values.toSorted((a,b)=>a-b);return {raw:values,min,median,max};};
+    results.push({...layout,rows,cold:summary(raw.cold),warm:summary(raw.warm)});
+  }
+  for (const entry of entries) {
+    const type=entry.id===entries[0].id?'domain':entry.id===entries[1].id?'project':'todo';
+    assert.deepEqual((await privateRead(page,'/api/platform/personal/'+type+'/'+entry.id)).entry,entry);
+  }
+  return results;
+}
