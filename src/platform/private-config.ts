@@ -26,7 +26,7 @@ export function validateReviewConfig(value:Record<string,unknown>):Record<string
    if([...aiSettingsRuntimeKeys,'LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'].some(k=>value[k]!==undefined))throw Error();
   }else if(personalConfigKeys.some(k=>value[k]!==undefined)||env.LIFEOS_PLATFORM_TRANSPORT!=='https-origin'&&config.baseURL!=='http://127.0.0.1:3002'||config.ownerId!=='fixture-owner-a'||config.ownerEmail!=='fixture@example.invalid')throw Error();
   readAISettingsRuntimeConfig(env,config.baseURL);readCalendarCandidateFlag(env);readChatCandidateFlag(env);readCaptureRunCandidateFlag(env);
-  const db=new URL(config.databaseURL);if(db.pathname!=='/'+reviewDatabase||db.port!=='55432')throw Error();return Object.freeze(env);
+  const db=new URL(config.databaseURL);if(db.pathname!=='/'+(personal?personal.databaseName:reviewDatabase)||db.port!=='55432')throw Error();return Object.freeze(env);
  }catch{throw Error('Isolated review configuration unavailable');}
 }
 

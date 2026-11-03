@@ -20,3 +20,16 @@ test('personal projections reject marker extras, forged original fields, foreign
 test('revoked write permit immediately before write rolls back record history and command',async()=>{const{service,repo}=setup();let checks=0;await assert.rejects(service.mutate(platform.ownerId,'todo',null,{spaceId:env.LIFEOS_PERSONAL_SPACE_ID,confirmed:true,fields:{title:'Fictional task',notes:'Synthetic',dueOn:null,status:'open'}},'personal-late-permit',async()=>{if(++checks===3)throw Error('synthetic permit revoked');}));assert.equal(checks,3);assert.equal(repo.rows.size,0);assert.equal(repo.historyRows.length,0);assert.equal(repo.receipts.size,0);});
 test('lost committed response retries original command without duplicate source or history',async()=>{const{service,repo}=setup(),transaction=repo.transaction.bind(repo);let lost=true;repo.transaction=async(owner,key,fn)=>{const result=await transaction(owner,key,fn);if(lost){lost=false;throw Error('synthetic response lost after commit');}return result;};await assert.rejects(service.mutate(platform.ownerId,'journal',null,create(),'personal-lost-commit'));const recovered=await service.mutate(platform.ownerId,'journal',null,create(),'personal-lost-commit');assert.equal(recovered.duplicate,true);assert.equal(repo.rows.size,1);assert.equal(repo.historyRows.length,1);assert.equal(repo.receipts.size,1);});
 test('same owner different isolated space cannot reuse prior receipt or access prior source',async()=>{const{service,repo}=setup(),created=await service.mutate(platform.ownerId,'journal',null,create(),'personal-old-space');assert.ok(serviceModule);const next=new serviceModule.PersonalService(repo,{...service.config,spaceId:'synthetic-space-b'});await assert.rejects(next.get(platform.ownerId,'journal',created.entry.id),{code:'NOT_FOUND'});await assert.rejects(next.mutate(platform.ownerId,'journal',null,create('synthetic-space-b'),'personal-old-space'),{code:'COMMAND_CONFLICT'});assert.equal(repo.rows.size,1);});
+
+// Synthetic second target: widening the name must retain endpoint/identity binding.
+test('personal explicit database target accepts namespace identifiers through 63 bytes and rejects malformed names',()=>{
+ assert.ok(configModule);
+ for(const name of ['lifeos_platform_test_local','lifeos_platform_test_synthetic_release','lifeos_platform_test_'+'a'.repeat(42)]){
+  const scoped={...env,LIFEOS_PERSONAL_DATABASE_NAME:name},target={...platform,databaseURL:platform.databaseURL.replace('/lifeos_platform_test_local','/'+name)};
+  assert.equal(configModule.readPersonalConfig(scoped,target)?.databaseName,name);
+  assert.throws(()=>configModule.readPersonalConfig(scoped,{...target,databaseURL:target.databaseURL+'_mismatch'}));
+ }
+ for(const name of ['', 'lifeos_platform_test_', 'lifeos_platform_test_'+'a'.repeat(43),'lifeos_platform_test_中文','lifeos_platform_test_a/b','lifeos_platform_test_%61','lifeos_other_synthetic']){
+  assert.throws(()=>configModule.readPersonalConfig({...env,LIFEOS_PERSONAL_DATABASE_NAME:name},{...platform,databaseURL:platform.databaseURL.replace('/lifeos_platform_test_local','/'+name)}));
+ }
+});

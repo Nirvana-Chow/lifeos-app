@@ -85,3 +85,15 @@ test('startup proof rejects a foreign uid even when all bytes and inode otherwis
   fs.fstatSync=((...args:Parameters<typeof fs.fstatSync>)=>{const s=(original as Function)(...args);if(args[0]===fd)return Object.assign(Object.create(Object.getPrototypeOf(s)),s,{uid:typeof s.uid==='bigint'?s.uid+1n:s.uid+1});return s;}) as typeof fs.fstatSync;syncBuiltinESMExports();assert.throws(()=>m.readStartupMountProof(fd),/STARTUP_MOUNT_UNVERIFIED/);
  }finally{fs.fstatSync=original;syncBuiltinESMExports();closeSync(fd);f.cleanup();}
 });
+
+test('measured startup binds a second synthetic personal target and revalidates it on apply',async()=>{
+ const m=await api(),f=fixture(),name='lifeos_platform_test_synthetic_release';
+ try{
+  const value={...f.config,LIFEOS_PLATFORM_BASE_URL:'https://synthetic.example.test',LIFEOS_PLATFORM_TRANSPORT:'https-origin',LIFEOS_PLATFORM_HTTPS_HOST:'synthetic.example.test',LIFEOS_PLATFORM_OWNER_ID:'synthetic-release-owner',LIFEOS_PLATFORM_OWNER_EMAIL:'release@example.test',LIFEOS_PLATFORM_TEST_DATABASE_URL:f.config.LIFEOS_PLATFORM_TEST_DATABASE_URL.replace('/lifeos_platform_test_local','/'+name),LIFEOS_PERSONAL_ENABLED:'1',LIFEOS_PERSONAL_APPROVED:'personal-manual-v1',LIFEOS_PERSONAL_OWNER_ID:'synthetic-release-owner',LIFEOS_PERSONAL_OWNER_EMAIL:'release@example.test',LIFEOS_PERSONAL_SPACE_ID:'synthetic-release-space',LIFEOS_PERSONAL_DATABASE_NAME:name,LIFEOS_PERSONAL_ALLOWED_TYPES:'todo,journal'};
+  const bytes=JSON.stringify(value);writeFileSync(f.path,bytes);const proof={...f.proof,runtime:{...f.proof.runtime,sha256:createHash('sha256').update(bytes).digest('hex')}};
+  const measured=m.readBoundStartupConfig(proof,f.fds);assert.deepEqual(measured,value);
+  renameSync(f.path,f.path+'.before');writeFileSync(f.path,JSON.stringify({...value,LIFEOS_PERSONAL_OWNER_ID:'changed-owner'}),{mode:0o600});
+  const env:Record<string,string|undefined>={LIFEOS_PERSONAL_BOOTSTRAP:'1',DATABASE_URL:'synthetic-unapproved'};m.applyBoundStartupConfig(measured,env);assert.equal(env.LIFEOS_PERSONAL_DATABASE_NAME,name);assert.equal(env.LIFEOS_PERSONAL_BOOTSTRAP,undefined);assert.equal(env.DATABASE_URL,undefined);
+  assert.throws(()=>m.applyBoundStartupConfig({...measured,LIFEOS_PERSONAL_DATABASE_NAME:name+'_mismatch'},{}));assert.throws(()=>readReviewConfig(f.path));
+ }finally{f.cleanup();}
+});
