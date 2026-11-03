@@ -1,3 +1,4 @@
+import {recordSyntheticCapture} from '../../scripts/synthetic-rendered-qualification.ts';
 import assert from 'node:assert/strict';
 import {mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
@@ -165,7 +166,7 @@ async function screenshot(page:Page,name:string,records:PublicEntry[],todo:Publi
  for(const entry of snapshot.items){diagnostic('snapshot-match',{countmatch:snapshot.items.length===records.length});assert.deepEqual(entry,records.find(e=>e.id===entry.id));}
  diagnostic('capture-facts');const facts=await page.evaluate(({expectedTitle})=>({surface:!!document.querySelector('[data-lifeos-surface="personal"]'),forbidden:document.querySelectorAll('input[type="password"],input[name="otp"],input[autocomplete="one-time-code"],input[autocomplete="username"],input[autocomplete="current-password"],input[autocomplete="new-password"],#mfa-setup-key,canvas[aria-label="验证器绑定二维码"],[aria-label="备用恢复码"]').length,syntheticVisible:document.body.innerText.includes(expectedTitle),values:Array.from(document.querySelectorAll('input,textarea')).map(node=>(node as HTMLInputElement).value)}),{expectedTitle:synthetic.title});
  diagnostic('capture-guard');assertPersonalCapture({...facts,platform:process.platform,ci:process.env.CI,actions:process.env.GITHUB_ACTIONS,fresh:process.env.LIFEOS_FIXTURE_FRESH,database:process.env.LIFEOS_PLATFORM_TEST_DATABASE_URL,runnerTemp:process.env.RUNNER_TEMP,name,url:page.url(),recordIds:snapshot.items.map((e:PublicEntry)=>e.id),expectedIds:records.map(e=>e.id),editorId:todo.id,snapshotComplete:snapshot.scope==='full-current-snapshot'&&snapshot.truncated===false&&snapshot.total===3,allowedValues:personalCaptureAllowedValues});
- diagnostic('screenshot');const dir=resolve(process.env.RUNNER_TEMP!,'owner-personal-browser-screenshots');mkdirSync(dir,{recursive:true,mode:0o700});await page.screenshot({path:join(dir,name),fullPage:true});
+ diagnostic('screenshot');const dir=resolve(process.env.RUNNER_TEMP!,'owner-personal-browser-screenshots');mkdirSync(dir,{recursive:true,mode:0o700});await page.screenshot({path:join(dir,name),fullPage:true});recordSyntheticCapture({name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});
 }
 async function presentation(page:Page,kind:'workspace'|'editor',width:number,theme:'light'|'dark',records:PublicEntry[],todo:PublicEntry,diagnostic:PresentationDiagnostic){
  diagnostic('viewport',{width});await page.setViewportSize({width,height:width===1365?900:844});await page.emulateMedia({colorScheme:theme});
@@ -218,7 +219,7 @@ type LatencyPhase='tasks-table-ready'|'native-input-visible'|'editor-form-ready'
 // Synthetic fixture only: fixed labels and elapsed numbers, never data or request details.
 function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.now()-start;assert.equal(Number.isFinite(elapsedMs)&&elapsedMs>=0,true);console.log('PERSONAL_LATENCY',JSON.stringify({phase,elapsedMs:Math.round(elapsedMs*100)/100}));}
 /** Runs once inside the existing authenticated MFA lifecycle; no extra login. */
-export async function verifyPersonalWorkspace(page:Page):Promise<()=>Promise<void>>{
+export async function verifyPersonalWorkspace(page:Page){
  let phase='empty-workspace-ready';
  let presentationFailure:{reason:PresentationReason;metadata:SafeMetadata}={reason:'not-started',metadata:{}};
  const diagnostic:PresentationDiagnostic=(reason,metadata={})=>{presentationFailure={reason,metadata:Object.fromEntries(Object.entries(metadata).filter(([,value])=>typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value))))};};
@@ -271,8 +272,7 @@ export async function verifyPersonalWorkspace(page:Page):Promise<()=>Promise<voi
  try{await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});await expect(complete).toBeDisabled();await complete.evaluate((node:HTMLElement)=>node.click());await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page.getByRole('heading',{name:'分类管理',exact:true})).toBeVisible();await expect(page.locator('[aria-label="分类管理"] a')).toHaveCount(0);
  await page.goto(editorURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();await expect(title(page)).toHaveValue(synthetic.title);for(const label of ['标题','正文','到期日','状态'])await expect(recordField(page,label)).toBeDisabled();await taskRelations(page);for(const label of ['项目','领域'])await expect(recordField(page,label)).toBeDisabled();const disabledSave=form(page).getByRole('button',{name:'保存待办',exact:true});await expect(disabledSave).toBeDisabled();await disabledSave.evaluate((node:HTMLElement)=>node.click());assert.equal(mutations,0,'readonly UI attempted mutations');
  }finally{await cleanupReadonly();page.off('request',count);assert.equal((await json(page,'/api/platform/personal/status')).writable,true);assert.equal((await json(page,'/api/platform/personal/availability')).writable,true);await page.goto(editorURL,{waitUntil:'domcontentloaded'});await verifyFields();}
- phase='presentation-matrix';await verifyPersonalPresentations(page,[domain,project,todo]);
- phase='restore-personal';await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);await readTodo(page,todo,records);return async()=>{await workspaceReady(page);await readTodo(page,todo,records);};
+ phase='restore-personal';await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);await readTodo(page,todo,records);return {verifyPersisted:async()=>{await workspaceReady(page);await readTodo(page,todo,records);},entries:[domain,project,todo] as const};
  }catch(error){console.log('PERSONAL_BROWSER_PHASE '+phase);console.log('PERSONAL_BROWSER_FAILURE '+personalBrowserFailureKind(error));console.log('PERSONAL_BROWSER_PRESENTATION '+JSON.stringify(presentationFailure));throw Error('PERSONAL_BROWSER_FAILED');}
 }
 

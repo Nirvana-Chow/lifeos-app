@@ -12,23 +12,13 @@
   -Server
  }
 }
-(public) {
- respond 404
-}
-
-lifeos.example.invalid {
+review.example.test {
  import common
- @home path /index.html
- handle @home {
-  root * /var/www/lifeos-public
-  rewrite * /index.html
-  file_server
- }
  @app path /login /account/* /personal /personal/* /_next/* /api/platform /api/platform/* /
  handle @app {
   reverse_proxy 127.0.0.1:3002 {
-   header_up Host lifeos.example.invalid
-   header_up X-Forwarded-Host lifeos.example.invalid
+   header_up Host review.example.test
+   header_up X-Forwarded-Host review.example.test
    header_up X-Forwarded-Proto https
    header_up X-Forwarded-Port 443
    header_up -Forwarded
