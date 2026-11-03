@@ -96,3 +96,14 @@ export type LifeOSWorkspaceProps = {
   /** QA-only banner, never a replacement for real data in the default route. */
   testLabel?: string;
 };
+
+/** Shared ordinary-grid boundary; the existing controller remains the only business writer. */
+export type TaskGridProps = {
+  draftMemory?: TaskCellDraftMemory;
+  tasks: readonly TaskRow[];
+  onOpen: (task: TaskRow, trigger?: HTMLButtonElement) => void;
+  writable?: boolean;
+  blocked?: boolean;
+  onSave?: (task: Pick<TaskRow, 'id' | 'revision'>, fields: PersonalEditorFields) => Promise<PublicEntry | null>;
+  getTaskFields?: (task: Pick<TaskRow, 'id' | 'revision'>) => PersonalEditorFields | null;
+};

@@ -199,3 +199,28 @@ test('native backup HTTP200 with an enabled but unverified factor still needs ca
  const response=await f.send('two-factor/verify-backup-code',{code:bound.backupCodes[0],trustDevice:false},challenge);assert.equal(response.status,200);
  const headers=new Headers({cookie:cookies(response,challenge)});assert.equal((await authentication.readOwnerMfaState(f.auth,f.config,headers)).kind,'incomplete');assert.equal(await authentication.readOwnerPrincipal(f.auth,f.config,headers),null);
 });
+
+test('every private business alias uses the native owner MFA principal gate before module rendering',async()=>{
+ const {readFileSync}=await import('node:fs'),ts=(await import('typescript')).default,map=await import('../src/workbench/private-navigation.ts');
+ const f=await fixture();let cookie='',config=f.config,rendered=0;
+ const jsx=(type:unknown,props:unknown)=>{rendered++;return{type,props};};
+ const imports:Record<string,unknown>={
+  'react/jsx-runtime':{jsx,jsxs:jsx},'next/headers':{headers:async()=>new Headers(cookie?{cookie}:{})},
+  'next/navigation':{redirect:(url:string)=>{throw Error('REDIRECT '+url);},notFound:()=>{throw Error('NOT_FOUND');}},
+  '../../../src/platform/runtime':{readPlatformPagePrincipal:(headers:Headers)=>authentication.readOwnerPrincipal(f.auth,config,headers)},
+  '../../../src/workbench/private-navigation':map,'../../../src/workbench/shell':{WorkbenchShell:'shell'},
+  '../../../src/workbench/draft-workspace':{BasicWorkspace:'basic',DraftEditor:'draft'},'../../../src/workbench/domain':{DomainPage:'domain'},'../../../src/workbench/settings':{DataSettings:'data'},
+ };
+ const m={exports:{} as {default:(props:unknown)=>Promise<unknown>}};
+ new Function('require','module','exports',ts.transpileModule(readFileSync('app/personal/[...section]/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText)((name:string)=>{assert.ok(name in imports,name);return imports[name];},m,m.exports);
+ const aliases=map.privateNavigation.filter(item=>!item.href.includes('?')&&item.href!=='/personal'),props=(href:string)=>({params:Promise.resolve({section:href.slice('/personal/'.length).split('/')}),searchParams:Promise.resolve({mode:'synthetic-review',owner:'forged'})});
+ const denied=async()=>{rendered=0;for(const item of aliases)await assert.rejects(m.exports.default(props(item.href)),/REDIRECT \/login/);assert.equal(rendered,0,'denied principals must never construct module elements');};
+ await denied();cookie='lifeos-platform-candidate.session_token=forged';await denied();
+ const signed=await f.login();assert.equal(signed.status,200);cookie=cookies(signed);await denied();
+ const passwordCookie=cookie,enrolled=await enrollSyntheticOwnerMfa(f.auth,f.config.ownerId,password,(path,body,value)=>f.send(path,body,value),cookie);cookie=enrolled.cookie;
+ for(const item of aliases)await assert.doesNotReject(m.exports.default(props(item.href)));assert.ok(rendered>0);
+ const readyCookie=cookie;cookie=passwordCookie;await denied();cookie=readyCookie;
+ for(const override of [{ownerId:'another-owner'},{ownerEmail:'another-owner@example.invalid'}]){config={...f.config,...override};await denied();}config=f.config;
+ const verified=f.db.platform_two_factor[0].verified;f.db.platform_two_factor[0].verified=false;await denied();f.db.platform_two_factor[0].verified=verified;
+ for(const session of f.db.platform_session)session.expiresAt=new Date(0);await denied();
+});

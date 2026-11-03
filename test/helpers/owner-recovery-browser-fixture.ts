@@ -7,7 +7,6 @@ import {request} from 'node:https';
 import {fileURLToPath} from 'node:url';
 import type {Page,Browser} from '@playwright/test';
 import {fixtureLookup,fixtureErrorCode} from './owner-recovery-https-config.ts';
-import {themeInitializationScript} from '../../src/workbench/theme.ts';
 
 /** Two normal public documents in a fresh context; no routing or cache-setting interception. */
 export async function assertPublicStaticCache(browser:Browser):Promise<void>{
@@ -34,11 +33,10 @@ export async function assertPublicLayout(page:Page,{expectFits=false,expectScrol
  if(!facts.main||!facts.noOverflow||facts.ownerFooter||expectFits&&!facts.fits||expectScroll&&!facts.scrolls)throw Error('Public layout unavailable or unexpectedly includes an owner-specific footer');
 }
 
-export async function applyAuthFixtureAppearance(page:Pick<Page,'emulateMedia'|'addScriptTag'>,theme:'light'|'dark'):Promise<void>{
+export async function applyAuthFixtureAppearance(page:Pick<Page,'emulateMedia'|'waitForFunction'>,theme:'light'|'dark'):Promise<void>{
  await page.emulateMedia({colorScheme:theme});
- // Auth pages initialize their custom tokens in the head, rather than mounting
- // the workspace's live system-theme listener. Reproduce a fresh theme here.
- await page.addScriptTag({content:themeInitializationScript});
+ // Exercise the actual root runtime. Never inject a repair after navigation.
+ await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t&&getComputedStyle(document.documentElement).colorScheme===t,theme);
 }
 
 const allowedScreenshots=new Set(['recovery-desktop.png','recovery-mobile.png','login-desktop.png','login-mobile.png','mfa-login-desktop.png','mfa-login-mobile.png']);

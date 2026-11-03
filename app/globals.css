@@ -2,8 +2,46 @@
 @source "./";
 @source "../src";
 @source "../components";
-:root {font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--foreground);background:var(--background);} body{margin:0} main{max-width:960px;margin:auto;padding:48px 24px} h1{font-size:2.4rem;font-weight:700;margin:12px 0} h2{font-size:1.5rem;margin:32px 0 14px;font-weight:650} p{line-height:1.7;margin:10px 0} nav{display:flex;gap:24px;flex-wrap:wrap;margin:24px 0} a{color:var(--foreground);text-decoration:underline;text-underline-offset:4px} .eyebrow{color:var(--muted-foreground);font-size:.85rem;letter-spacing:.08em}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}.fulltext{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);padding:28px;border-radius:16px;margin:28px 0;line-height:1.9} aside,footer{color:var(--muted-foreground);font-size:.9rem;margin-top:32px} form{display:grid;gap:12px;max-width:420px} input{background:var(--card);border:1px solid var(--input);border-radius:8px;padding:10px}button{border-radius:8px;background:var(--primary);color:var(--primary-foreground);padding:10px 16px;cursor:pointer} :focus-visible{outline:3px solid var(--ring);outline-offset:3px}
-
+:root{font:var(--lo-font-body);color:var(--foreground);background:var(--background);scroll-padding-top:calc(var(--lo-header-height) + 16px)}
+body{margin:0}*,*::before,*::after{box-sizing:border-box}
+h1{font-size:var(--lo-font-title);font-weight:650;line-height:1.35;letter-spacing:-.025em;text-wrap:pretty}
+h2{font-size:var(--lo-font-section);font-weight:600;line-height:1.5}h3{font-size:16px;font-weight:600;line-height:1.5}
+small{font-size:14px}p{line-height:1.7}a{color:inherit;text-underline-offset:4px}button,input,textarea,select{font:inherit;color:inherit}
+label:has(>input[type="checkbox"]),label:has(>input[type="radio"]){min-height:44px}
+button{cursor:pointer}button:disabled{cursor:default}input,textarea,select{accent-color:var(--primary)}
+:focus-visible{outline:2px solid var(--ring);outline-offset:3px}h1,h2,h3,[id]{scroll-margin-top:calc(var(--lo-header-height) + 16px)}
+/* Old reader defaults apply only to unmarked standalone content, never shells or portals. */
+body>main:not([class]):not([data-lifeos-surface]){width:100%;max-width:960px;margin-inline:auto;padding:48px 24px}
+body>main:not([class]):not([data-lifeos-surface]) :where(h1,h2,p){margin-block:12px}
+body>main:not([class]):not([data-lifeos-surface]) :where(nav){display:flex;gap:24px;flex-wrap:wrap;margin-block:24px}
+body>main:not([class]):not([data-lifeos-surface]) :where(form){display:grid;gap:12px;max-width:480px}
+body>main:not([class]):not([data-lifeos-surface]) :where(input,select,textarea){background:var(--card);border:1px solid var(--input);border-radius:var(--lo-radius-control);padding:10px 12px;min-height:44px}
+body>main:not([class]):not([data-lifeos-surface]) :where(button){border-radius:var(--lo-radius-control);background:var(--primary);color:var(--primary-foreground);padding:10px 16px;min-height:44px}
+.eyebrow{color:var(--muted-foreground);font-size:14px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px}
+.fulltext{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);padding:24px;border-radius:var(--lo-radius-surface);margin-block:24px;line-height:1.9}
+/* Shared primitives use the same semantic tokens inside and outside workspace portals. */
+[data-slot="button"]{font:inherit;font-size:16px;min-height:44px;min-width:44px;border-radius:var(--lo-radius-control);border:1px solid transparent;box-shadow:none;padding:8px 12px;white-space:normal;transition:background-color 120ms,color 120ms,border-color 120ms}
+[data-slot="button"]:where([data-variant="default"]){background:var(--primary);color:var(--primary-foreground)}
+[data-slot="button"]:where([data-variant="outline"]){background:var(--card);color:var(--foreground);border-color:var(--border)}
+[data-slot="button"]:where([data-variant="secondary"]){background:var(--secondary);color:var(--secondary-foreground)}
+[data-slot="button"]:where([data-variant="ghost"],[data-variant="link"]){background:transparent;color:inherit}
+[data-slot="button"]:where([data-variant="destructive"]){background:var(--danger-background);color:var(--danger);border-color:var(--danger-border)}
+[data-slot="button"]:hover:enabled{filter:brightness(.97)}
+[data-slot="button"]:where([data-variant="ghost"],[data-variant="outline"]):hover:enabled{background:var(--accent);filter:none}
+[data-slot="button"]:disabled{opacity:.5;cursor:not-allowed}
+[data-slot="input"]{min-height:44px;font-size:16px;background:var(--card);color:var(--foreground);border:1px solid var(--input);border-radius:var(--lo-radius-control);padding:10px 12px}
+[data-slot="input"]::placeholder{color:var(--muted-foreground)}
+[data-slot="badge"]{font-size:14px;line-height:1.5;border-radius:6px;padding:2px 8px;border:1px solid var(--border);background:var(--muted);color:var(--muted-foreground)}
+[data-slot="badge"]:where([data-variant="outline"]){background:transparent}
+[data-slot="badge"]:where([data-variant="destructive"]){background:var(--danger-background);color:var(--danger);border-color:var(--danger-border)}
+[data-slot="dialog-content"]{background:var(--card);color:var(--foreground);border-color:var(--border);border-radius:var(--lo-radius-surface);max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;font-size:16px}
+[data-slot="dialog-close"]{min-width:44px;min-height:44px;display:grid;place-items:center;color:var(--muted-foreground);background:transparent}
+[data-slot="dialog-title"]{font-size:18px;font-weight:600;line-height:1.5}
+[data-slot="dialog-description"]{font-size:16px;line-height:1.6;color:var(--muted-foreground)}
+[data-slot="tabs-trigger"]{min-height:44px;min-width:44px;font-size:16px;color:var(--muted-foreground)}
+[data-slot="tabs-trigger"][data-state="active"]{color:var(--foreground);background:var(--card)}
+[data-slot="card"]{border-radius:var(--lo-radius-surface)}
+@media(prefers-reduced-motion:reduce){[data-slot="button"],[data-slot="dialog-content"],[data-slot="dialog-overlay"]{transition:none;animation:none}}
 /* Personal and authentication surfaces share the existing adaptive theme. */
 body:has([data-lifeos-surface="personal"]){min-height:100dvh;background:var(--background);color:var(--foreground);}
 body .lo-shell,body [data-lifeos-surface="personal"]:not([role="dialog"]),body [data-lifeos-surface="auth"]{width:100%;max-width:none;margin:0;box-sizing:border-box;}

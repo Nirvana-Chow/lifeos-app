@@ -22,3 +22,14 @@ test('unknown colors, unbacked alpha and unsupported rendering fail closed',()=>
  assert.throws(()=>renderedContrast('#000',[bg('transparent')]),/CONTRAST_BACKGROUND_UNRESOLVED/);
  for(const change of [{backgroundImage:'linear-gradient(red,blue)'},{mixBlendMode:'multiply'},{backgroundBlendMode:'screen'},{opacity:'.5'},{filter:'blur(1px)'},{backdropFilter:'blur(1px)'}])assert.throws(()=>renderedContrast('#000',[{...bg('#fff'),...change}]),/CONTRAST_UNSUPPORTED_EFFECT/);
 });
+test('Chrome sRGB color-mix output composites like equivalent translucent RGB',()=>{
+ const ink='rgb(24, 24, 27)';
+ const canvas=bg('#fafafa');
+ const mixed=renderedContrast(ink,[bg('color(srgb 0.0941176 0.0941176 0.105882 / 0.06)'),canvas]);
+ const equivalent=renderedContrast(ink,[bg('rgba(24, 24, 27, .06)'),canvas]);
+ close(mixed.contrast,equivalent.contrast);
+ close(renderedContrast('color(srgb 0% 0% 0%)',[bg('#fff')]).contrast,21);
+ for(const color of ['color(srgb 1.1 0 0)','color(srgb 0 0 0 / 101%)','color(srgb none 0 0)','color(srgb 0 0 0 1)']){
+  assert.throws(()=>renderedContrast(color,[canvas]),/CONTRAST_UNSUPPORTED_COLOR/);
+ }
+});

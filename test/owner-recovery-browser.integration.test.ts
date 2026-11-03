@@ -5,15 +5,20 @@ import {chromium,type Browser,type BrowserContext,type Page,type Request as Brow
 import {Pool} from 'pg';
 import {readReviewConfig} from '../src/platform/private-config.ts';
 import {readPlatformConfig} from '../src/platform/config.ts';
-import {createPlatformAuth} from '../src/platform/auth.ts';
+import {createPlatformAuth,readOwnerMfaState} from '../src/platform/auth.ts';
 import {syntheticOwnerTotp} from './helpers/owner-mfa-fixture.ts';
 import {verifyRestrictedPool,type SqlPool} from '../src/platform/postgres.ts';
 import {ownerRecoveryLock,ownerRecoveryRateLimit} from '../src/personal-candidate/owner-recovery-lock.ts';
 import {ownerOperatorRecovery} from '../src/personal-candidate/owner-email-reset.ts';
-import {safeScreenshot,trustFixtureCA,applyAuthFixtureAppearance,assertPublicLayout,assertPublicStaticCache} from './helpers/owner-recovery-browser-fixture.ts';
+import {safeScreenshot as guardedAuthScreenshot,trustFixtureCA,applyAuthFixtureAppearance,assertPublicLayout,assertPublicStaticCache} from './helpers/owner-recovery-browser-fixture.ts';
+import {measureTaskGrid} from './helpers/task-grid-performance-fixture.ts';
 import {verifyPersonalWorkspace} from './helpers/personal-workspace-browser-fixture.ts';
-import {themeInitializationScript,themeStorageKey} from '../src/workbench/theme.ts';
+import {themeStorageKey} from '../src/workbench/theme.ts';
 
+import {withPrivateBrowserFixture,verifyPrivateRouteBoundaries,verifyPrivateAppearanceAndDrafts,verifyPrivatePresentationMatrix,type PrivateBrowserHandoff} from './helpers/private-business-browser-fixture.ts';
+import {recordSyntheticCapture,publishSyntheticCaptureManifest,assertFixtureCompletion} from '../scripts/synthetic-rendered-qualification.ts';
+async function safeScreenshot(page:Page,name:string){await guardedAuthScreenshot(page,name);recordSyntheticCapture({name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});}
+let completedHandoff:PrivateBrowserHandoff|undefined;
 const enabled=process.env.RUN_OWNER_RECOVERY_BROWSER_TESTS==='1';
 const origin='https://review.example.test',target='postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local';
 const args=['--no-proxy-server','--disable-background-networking','--host-resolver-rules=MAP review.example.test 127.0.0.1, MAP * ~NOTFOUND'];
@@ -28,15 +33,15 @@ async function assertAuthTheme(page:Page,theme:'light'|'dark'){
   const style=(node:Element|null)=>{if(!node)throw Error('THEME_ELEMENT_MISSING');const s=getComputedStyle(node);return {background:s.backgroundColor,color:s.color,colorScheme:s.colorScheme};};
   return {theme:document.documentElement.dataset.lifeosTheme,root:style(document.documentElement),body:style(document.body),page:style(document.querySelector('main')),input:style(document.querySelector('form input')),button:style(document.querySelector('form button'))};
  });
- const paper=theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)',ink=theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)',card=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonInk=theme==='dark'?'rgb(24, 24, 27)':'rgb(250, 250, 250)';
+ const paper=theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)',ink=theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)',card=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonInk=theme==='dark'?'rgb(24, 24, 27)':'rgb(255, 255, 255)',buttonPaper=theme==='dark'?'rgb(165, 180, 252)':'rgb(79, 70, 229)';
  must(facts.theme===theme&&facts.root.colorScheme===theme,'theme-resolved');
  for(const part of ['root','body','page'] as const)must(facts[part].background===paper&&facts[part].color===ink,'theme-'+part);
- must(facts.input.background===card&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===ink&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
+ must(facts.input.background===card&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===buttonPaper&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
 }
 async function assertAuthPresentation(page:Page,system:'light'|'dark'){
- await assertAuthTheme(page,system);const preference=system==='dark'?'light':'dark';
- try{await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:themeStorageKey,value:preference});await page.addScriptTag({content:themeInitializationScript});await assertAuthTheme(page,preference);}
- finally{await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.addScriptTag({content:themeInitializationScript});}
+ await assertAuthTheme(page,system);const preference=system==='dark'?'light':'dark',sibling=await page.context().newPage();
+ try{await sibling.goto(origin+'/login',{waitUntil:'domcontentloaded'});await sibling.evaluate(({key,value})=>localStorage.setItem(key,value),{key:themeStorageKey,value:preference});await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t,preference);await assertAuthTheme(page,preference);}
+ finally{await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t,system);await sibling.close();}
  await assertAuthTheme(page,system);
 }
 async function assertPublicChineseHeading(page:Page,heading:'main h1'|'main h2'){
@@ -60,8 +65,9 @@ test('no-JS page lifecycle finishes and closes before the next page opens',{time
  must(events.join(',')==='open-login,response-login,close-login,finished-login,open-password,response-password,close-password,finished-password','no-js-order');
 });
 
-test('isolated browser owner recovery and password flow',{skip:!enabled?'isolated browser CI not requested':false,timeout:180000},async()=>{
+test('isolated browser owner recovery and password flow',{skip:!enabled?'isolated browser CI not requested':false,timeout:180000},async(t)=>{
  if(process.platform!=='linux'||process.env.CI!=='true'||process.env.GITHUB_ACTIONS!=='true'||process.env.LIFEOS_FIXTURE_FRESH!=='approved-isolated-fixture'||process.env.LIFEOS_PLATFORM_TEST_DATABASE_URL!==target||!process.env.RUNNER_TEMP)throw Error('BROWSER_FIXTURE_UNAVAILABLE');
+ completedHandoff=undefined;let pendingHandoff:PrivateBrowserHandoff|undefined;
  let stage='setup',noJsFinished='not-observed',approvalWritten=false,browser:Browser|undefined,context:BrowserContext|undefined,untrust:(()=>void)|undefined;const pool=new Pool({connectionString:target,max:3,connectionTimeoutMillis:2000,statement_timeout:5000,options:'-c search_path=pg_catalog,lifeos_platform'});
  try{
   const env=readReviewConfig('/run/lifeos-platform/runtime.json'),config=readPlatformConfig(env);must(config&&config.ownerId==='personal-review-user'&&config.ownerEmail==='owner@example.test'&&config.baseURL===origin&&config.databaseURL===target,'fixture');if(!config)throw Error('fixture');await verifyRestrictedPool(pool as SqlPool);
@@ -77,14 +83,17 @@ test('isolated browser owner recovery and password flow',{skip:!enabled?'isolate
   const login=async(password:string,code?:string)=>{await page.goto(origin+'/login',{waitUntil:'domcontentloaded'});must(await page.locator('input[name="email"]').getAttribute('autocomplete')==='username','login-user');must(await page.locator('input[name="password"]').getAttribute('autocomplete')==='current-password','login-password');must(await page.locator('input[name="code"]').getAttribute('autocomplete')==='one-time-code','login-code');await page.getByLabel('密码',{exact:true}).fill(password);if(code)await page.getByLabel('验证器动态码',{exact:true}).fill(code);await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForFunction(()=>{const password=document.querySelector('input[name="password"]') as HTMLInputElement|null,fieldset=document.querySelector('form fieldset') as HTMLFieldSetElement|null;return location.pathname!=='/login'||!!password?.disabled&&!fieldset?.disabled||!!document.querySelector('[role="status"]')?.textContent;});};
   stage='login';await login('fixture-browser-recovery-password');await page.waitForURL(origin+'/account/mfa');
   const nativeMfa=createPlatformAuth(config,pool,{requireMfa:true,forceSecureCookies:true});
-  stage='mfa-password-only-private-denied';await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await page.waitForURL(origin+'/login');await page.goto(origin+'/account/mfa',{waitUntil:'domcontentloaded'});
+  stage='mfa-password-only-private-denied';
+  const passwordHeaders=new Headers({cookie:(await context.cookies(origin)).map(c=>c.name+'='+c.value).join('; ')}),readMfa=createPlatformAuth(config,pool,{requireMfa:true,forceSecureCookies:true,readOnlySessions:true,disableSessionRefresh:true});
+  const passwordSession=await readMfa.api.getSession({headers:passwordHeaders});must(passwordSession?.user.id===config.ownerId&&passwordSession.user.email===config.ownerEmail,'mfa-password-owner-binding');const passwordState=await readOwnerMfaState(readMfa,config,passwordHeaders);must(passwordState.kind==='enroll'&&passwordState.step==='start','mfa-native-enroll-start');
+  for(const path of ['/personal','/personal/finance','/personal/outputs','/personal/settings/ai']){await page.goto(origin+path,{waitUntil:'domcontentloaded'});await page.waitForURL(origin+'/login');}await page.goto(origin+'/account/mfa',{waitUntil:'domcontentloaded'});
   stage='mfa-enrollment';await page.getByLabel('账号密码',{exact:true}).fill('fixture-browser-recovery-password');await page.getByRole('button',{name:'生成绑定信息'}).click();await page.locator('#mfa-setup-key').waitFor();
   must((await page.locator('#mfa-setup-key').textContent()??'').length>=16,'manual-totp-key');
   await page.waitForFunction(()=>{const c=document.querySelector('canvas[aria-label="验证器绑定二维码"]') as HTMLCanvasElement|null;const data=c?.getContext('2d')?.getImageData(0,0,c.width,c.height).data;return !!data&&data.some((value,index)=>index%4!==3&&value!==data[0]);});
   const backupCodes=await page.locator('ul[aria-label="备用恢复码"] code').allTextContents();must(backupCodes.length===10,'backup-codes');must(await page.getByRole('button',{name:'验证并继续'}).isDisabled(),'backup-save-required');
   let screenshotRefused=false;try{await safeScreenshot(page,'login-desktop.png');}catch(error){screenshotRefused=error instanceof Error&&error.message==='SCREENSHOT_DENIED';}must(screenshotRefused,'mfa-secret-screenshot-denied');
   await page.reload({waitUntil:'domcontentloaded'});await page.getByLabel('我已妥善保存此前显示的备用恢复码').waitFor();must(await page.locator('#mfa-setup-key').count()===0,'seed-not-persisted-after-reload');must(await page.getByRole('button',{name:'验证并继续'}).isDisabled(),'backup-save-required-after-reload');await page.getByLabel('我已妥善保存此前显示的备用恢复码').check();await page.getByLabel('验证器动态码',{exact:true}).fill(await syntheticOwnerTotp(nativeMfa,config.ownerId));await page.getByRole('button',{name:'验证并继续'}).click();await page.waitForURL(origin+'/personal');
-  stage='personal-workspace';const verifyPersisted=await verifyPersonalWorkspace(page);
+  stage='personal-workspace';const {verifyPersisted,entries}=await verifyPersonalWorkspace(page);
   const finishSecondFactor=async()=>{await page.getByLabel('验证器动态码',{exact:true}).waitFor();await page.getByLabel('验证器动态码',{exact:true}).fill(await syntheticOwnerTotp(nativeMfa,config.ownerId));await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForURL(origin+'/personal');};
   stage='no-js-fallback';const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:1365,height:900}});try{
    await nojs.addCookies(await context.cookies(origin));
@@ -110,5 +119,34 @@ test('isolated browser owner recovery and password flow',{skip:!enabled?'isolate
   try{await login('fixture-browser-changed-password',await syntheticOwnerTotp(nativeMfa,config.ownerId));await page.waitForURL(origin+'/personal');await verifyPersisted();must(loginDocuments.mfa===0&&loginDocuments.personal===1,'totp-direct-documents');}
   finally{page.off('request',countLoginDocuments);console.log('LOGIN_TRANSITION_DOCUMENTS '+JSON.stringify(loginDocuments));}
   await page.getByRole('button',{name:'账户设置'}).click();await page.getByRole('button',{name:'退出登录'}).click();await page.getByRole('button',{name:'前往登录'}).waitFor();stage='login-after-logout';await login('fixture-browser-changed-password');await page.getByRole('button',{name:'无法使用验证器？使用备用恢复码'}).click();await page.getByLabel('备用恢复码',{exact:true}).fill(backupCodes[0]);backupCodes.length=0;await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForURL(origin+'/personal');await verifyPersisted();
- }catch(error){const name=error instanceof Error&&['Error','TypeError','TimeoutError'].includes(error.name)?error.name:'OTHER';const code=error instanceof Error?(error.message.match(/net::ERR_[A-Z_]+/)?.[0]??'OTHER'):'OTHER';const reason=error instanceof Error&&['theme-resolved','theme-root','theme-body','theme-page','theme-input','theme-button','mfa-layout','mfa-screenshot-empty','SCREENSHOT_DENIED'].includes(error.message)?error.message:'OTHER';console.log('BROWSER_ERROR_DIAGNOSTIC '+JSON.stringify({name,code,noJsFinished,reason}));throw Error('BROWSER_STAGE_'+stage);}finally{let cleanupFailed=false;try{if(approvalWritten)setApproval(undefined);}catch{cleanupFailed=true;}try{await context?.close();}catch{cleanupFailed=true;}try{await browser?.close();}catch{cleanupFailed=true;}try{untrust?.();}catch{cleanupFailed=true;}try{await pool.end();}catch{cleanupFailed=true;}if(cleanupFailed)throw Error('BROWSER_FIXTURE_CLEANUP_FAILED');}
+  stage='private-handoff';const nativeContext=await nativeMfa.$context,cookieName=nativeContext.authCookies.sessionToken.name,cookies=(await context.cookies(origin)).filter(c=>c.name===cookieName);must(cookies.length===1,'private-session-cookie');pendingHandoff={origin,ownerId:'personal-review-user',spaceId:'personal-review-space',sourceSha:proof.sourceSha,cookies,entries};
+ }catch(error){const name=error instanceof Error&&['Error','TypeError','TimeoutError'].includes(error.name)?error.name:'OTHER';const code=error instanceof Error?(error.message.match(/net::ERR_[A-Z_]+/)?.[0]??'OTHER'):'OTHER';const reason=error instanceof Error&&['theme-resolved','theme-root','theme-body','theme-page','theme-input','theme-button','mfa-layout','mfa-screenshot-empty','SCREENSHOT_DENIED'].includes(error.message)?error.message:'OTHER';console.log('BROWSER_ERROR_DIAGNOSTIC '+JSON.stringify({name,code,noJsFinished,reason}));throw Error('BROWSER_STAGE_'+stage);}finally{let cleanupFailed=false;try{if(approvalWritten)setApproval(undefined);}catch{cleanupFailed=true;}try{await context?.close();}catch{cleanupFailed=true;}try{await browser?.close();}catch{cleanupFailed=true;}try{untrust?.();}catch{cleanupFailed=true;}try{await pool.end();}catch{cleanupFailed=true;}if(cleanupFailed){pendingHandoff=undefined;throw Error('BROWSER_FIXTURE_CLEANUP_FAILED');}}
+ // Publish only after every original assertion and every cleanup succeeded.
+ assertFixtureCompletion(t.signal);completedHandoff=pendingHandoff;
+});
+
+const privateGroups=[
+ ['isolated private business route boundaries',90000,verifyPrivateRouteBoundaries],
+ ['isolated private appearance and draft lifecycle',90000,verifyPrivateAppearanceAndDrafts],
+ ['isolated private business presentation matrix',180000,verifyPrivatePresentationMatrix],
+] as const;
+for(const [name,timeout,run] of privateGroups)test(name,{skip:!enabled?'isolated browser CI not requested':false,concurrency:false,timeout},async(t)=>{
+ const start=performance.now();let passed=false;
+ try{
+  const matrix=name==='isolated private business presentation matrix';
+  const rowCount=process.env.LIFEOS_SYNTHETIC_GRID_ROWS;
+  const samples=await withPrivateBrowserFixture(completedHandoff,async fixture=>{
+   await run(fixture);
+   if(!matrix||rowCount===undefined)return;
+   if(rowCount==='both')return [...await measureTaskGrid(fixture,100),...await measureTaskGrid(fixture,1000,100)];
+   if(rowCount!=='100'&&rowCount!=='1000')throw Error('INVALID_SYNTHETIC_GRID_ROWS');
+   return measureTaskGrid(fixture,rowCount==='100'?100:1000);
+  });
+  assertFixtureCompletion(t.signal);
+  if(matrix)publishSyntheticCaptureManifest(t.signal);
+  if(samples)console.log('SYNTHETIC_GRID_PERFORMANCE '+JSON.stringify({sourceSha:completedHandoff?.sourceSha,samples}));
+  passed=true;
+ }
+ catch(error){completedHandoff=undefined;const allowed=['PRIVATE_CAPTURE_DENIED','PRIVATE_SNAPSHOT_DENIED','PRIVATE_FIRST_VISIBLE_THEME','BROWSER_PRIVATE_HANDOFF_UNAVAILABLE','BROWSER_FIXTURE_UNAVAILABLE','BROWSER_FIXTURE_CLEANUP_FAILED'];const reason=error instanceof Error&&allowed.includes(error.message)?error.message:error instanceof Error&&error.name==='TimeoutError'?'timeout':error instanceof Error&&error.name==='AssertionError'?'assertion':'other';console.log('PRIVATE_BROWSER_FAILURE '+JSON.stringify({group:name,reason}));throw Error('PRIVATE_BROWSER_GROUP_FAILED_'+name.replaceAll(' ','_'));}
+ finally{if(!passed||name==='isolated private business presentation matrix')completedHandoff=undefined;console.log('PRIVATE_BROWSER_GROUP '+JSON.stringify({group:name,elapsedMs:Math.round(performance.now()-start),passed}));}
 });

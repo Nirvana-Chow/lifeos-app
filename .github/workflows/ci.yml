@@ -1,5 +1,5 @@
 # Reuses reviewed platform checks and isolated recovery/MFA fixtures.
-# Public-source checks only: no browser, TLS, image qualification or production deployment.
+# Public source and isolated synthetic TLS/browser qualification only; no production authority.
 # Fixture passwords below are synthetic and apply only to disposable loopback services.
 name: LifeOS public source CI
 
@@ -192,7 +192,7 @@ jobs:
   recovery-pg:
     name: Isolated PostgreSQL recovery and native MFA
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
@@ -202,6 +202,18 @@ jobs:
           POSTGRES_PASSWORD: fixture-ci-admin-never-live
         ports:
           - 127.0.0.1:55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      rendered-postgres:
+        # Independent disposable rendered fixture; never reset the 55439 recovery service.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55432:5432
         options: >-
           --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
           --health-interval 5s --health-timeout 5s --health-retries 12
@@ -265,5 +277,314 @@ jobs:
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'MFA skip or failure is not acceptance'
           print('PASS: one isolated native MFA PostgreSQL test, zero skips; no browser/TLS/production acceptance claimed.')
           PY_MFA
+      - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
+        run: |
+          set -euo pipefail
+          # Official Ubuntu noble; SIL-1.1 font, GPL-3+ packaging. No product font bundle.
+          sudo -n apt-get update -qq
+          sudo -n apt-get install -y --no-install-recommends 'fonts-noto-cjk=1:20230817+repack1-3'
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          test -s /usr/share/doc/fonts-noto-cjk/copyright
+          fc-cache -f
+          cjk_family="$(fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
+          case "$cjk_family" in *'Noto Sans CJK'*) ;; *) exit 1 ;; esac
+          command -v google-chrome >/dev/null
+          command -v certutil >/dev/null
+          google-chrome --version
+      - name: Build the exact public source image and read back its source proof
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          docker build --pull --build-arg SOURCE_COMMIT="$SOURCE_SHA" --file Dockerfile.platform-review --tag "lifeos-synthetic:$SOURCE_SHA" .
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "lifeos-synthetic:$SOURCE_SHA")" = "$SOURCE_SHA"
+          test "$(docker image inspect --format '{{.Config.User}}' "lifeos-synthetic:$SOURCE_SHA")" = node
+          docker create --name recovery-image-proof "lifeos-synthetic:$SOURCE_SHA" >/dev/null
+          trap 'docker rm -f recovery-image-proof >/dev/null 2>&1 || true' EXIT
+          mkdir -p .next
+          docker cp recovery-image-proof:/app/.image-source-proof.json .image-source-proof.json
+          docker cp recovery-image-proof:/app/.next/BUILD_ID .next/BUILD_ID
+          node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(".image-source-proof.json"));if(p.sourceSha!==process.env.SOURCE_SHA)throw Error("Image source mismatch");'
+      - name: Run fresh synthetic TLS recovery permit and five browser groups
+        id: rendered-qualification
+        env:
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          LIFEOS_FIXTURE_PORT: '55432'
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_OWNER_RECOVERY_HTTPS_TESTS: '1'
+          RUN_OWNER_PERMIT_HTTPS_TESTS: '1'
+          RUN_OWNER_RECOVERY_BROWSER_TESTS: '1'
+          LIFEOS_SYNTHETIC_GRID_ROWS: 'both'
+        run: |
+          set -euo pipefail
+          run_scenario() (
+            export OWNER_HTTPS_SCENARIO="$1"
+            fixture_root=${2:-$PWD}
+            image_sha=${3:-$SOURCE_SHA}
+            test ! -e /run/lifeos-platform
+            sudo mkdir -m 0700 /run/lifeos-platform
+            sudo chown "$(id -u):$(id -g)" /run/lifeos-platform
+            mkdir -m 0700 "$RUNNER_TEMP/recovery-tls"
+            cleanup() {
+              original_status=$?
+              trap - EXIT
+              set +e
+              cleanup_status=0
+              node test/helpers/owner-recovery-browser-fixture.ts cleanup-nss || cleanup_status=1
+              for container in recovery-caddy-fixture recovery-next-fixture; do
+                if docker inspect "$container" >/dev/null 2>&1; then docker rm -f "$container" >/dev/null || cleanup_status=1; fi
+              done
+              if test -L /run/lifeos-platform/write-gate; then
+                cleanup_status=1
+              elif test -d /run/lifeos-platform/write-gate; then
+                rm -f /run/lifeos-platform/write-gate/permit.json || cleanup_status=1
+                rmdir /run/lifeos-platform/write-gate || cleanup_status=1
+              fi
+              rm -f /run/lifeos-platform/runtime.json /run/lifeos-platform/runtime.json.next || cleanup_status=1
+              sudo rmdir /run/lifeos-platform || cleanup_status=1
+              rm -rf "$RUNNER_TEMP/recovery-tls" || cleanup_status=1
+              if test "$original_status" -ne 0; then exit "$original_status"; fi
+              exit "$cleanup_status"
+            }
+            trap cleanup EXIT
+            node test/helpers/owner-recovery-https-setup.ts reset-disposable-schema
+            node test/helpers/owner-recovery-pg-setup.mjs
+            case "$OWNER_HTTPS_SCENARIO" in
+              recovery) mode=runtime; test_file=test/owner-recovery-https.integration.test.ts ;;
+              permit) mode=runtime-permit; test_file=test/owner-permit-https.integration.test.ts ;;
+              browser) mode=runtime-workspace; test_file=test/owner-recovery-browser.integration.test.ts ;;
+              *) exit 1 ;;
+            esac
+            node test/helpers/owner-recovery-https-setup.ts "$mode"
+            node test/helpers/owner-recovery-https-setup.ts bootstrap
+            if test "$OWNER_HTTPS_SCENARIO" = recovery; then node test/helpers/owner-recovery-https-setup.ts bootstrap-foreign; fi
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=isolated fixture CA' -keyout "$RUNNER_TEMP/recovery-tls/ca.key" -out "$RUNNER_TEMP/recovery-tls/ca.crt" >/dev/null 2>&1
+            openssl req -newkey rsa:2048 -nodes -subj '/CN=review.example.test' -keyout "$RUNNER_TEMP/recovery-tls/server.key" -out "$RUNNER_TEMP/recovery-tls/server.csr" >/dev/null 2>&1
+            printf 'subjectAltName=DNS:review.example.test\nextendedKeyUsage=serverAuth\n' > "$RUNNER_TEMP/recovery-tls/extensions"
+            openssl x509 -req -in "$RUNNER_TEMP/recovery-tls/server.csr" -CA "$RUNNER_TEMP/recovery-tls/ca.crt" -CAkey "$RUNNER_TEMP/recovery-tls/ca.key" -CAcreateserial -days 1 -extfile "$RUNNER_TEMP/recovery-tls/extensions" -out "$RUNNER_TEMP/recovery-tls/server.crt" >/dev/null 2>&1
+            node test/helpers/owner-recovery-https-setup.ts caddy
+            if test "$OWNER_HTTPS_SCENARIO" = browser; then
+              python3 - <<'PY_TLS'
+          import os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'recovery-tls/Caddyfile'
+          data=path.read_text()
+          old='https://review.example.test:14443 {'
+          assert data.count(old)==1 and data.count(' bind 127.0.0.1\n')==1
+          path.write_text(data.replace(old,'https://review.example.test:443 {'))
+          PY_TLS
+            fi
+            docker run -d --name recovery-next-fixture --network host --read-only --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp --mount type=bind,src=/run/lifeos-platform,dst=/run/lifeos-platform,readonly "lifeos-synthetic:$image_sha" >/dev/null
+            docker run -d --name recovery-caddy-fixture --network host --read-only --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_DATA_HOME=/tmp/data --mount "type=bind,src=$RUNNER_TEMP/recovery-tls,dst=/fixture,readonly" --entrypoint caddy docker.io/library/caddy@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5 run --config /fixture/Caddyfile --adapter caddyfile >/dev/null
+            if test "$OWNER_HTTPS_SCENARIO" = browser; then
+              node test/helpers/owner-recovery-browser-fixture.ts wait-https
+            else
+              node test/helpers/owner-recovery-https-setup.ts wait
+            fi
+            (cd "$fixture_root" && node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/rendered-$OWNER_HTTPS_SCENARIO.xml" "$test_file")
+          )
+          run_scenario recovery
+          run_scenario permit
+          run_scenario browser
+          (
+            export RUNNER_TEMP="$RUNNER_TEMP/vtable-baseline"
+            mkdir -m 0700 "$RUNNER_TEMP"
+            baseline=0371234b6b472790a4b1bc78a5869a2251fda68e
+            git fetch --no-tags --depth=1 origin "$baseline"
+            test "$(git rev-parse FETCH_HEAD)" = "$baseline"
+            fixture_root="$RUNNER_TEMP/source"
+            mkdir "$fixture_root"
+            # The pinned Git tree supplies all application bytes. Only the packaging recipe is shared.
+            git archive "$baseline" | tar -xf - -C "$fixture_root"
+            if test -f "$fixture_root/.env.example"; then
+              mkdir -p "$fixture_root/docs"
+              mv "$fixture_root/.env.example" "$fixture_root/docs/benchmark-environment-example.txt"
+            fi
+            cp Dockerfile.platform-review .dockerignore "$fixture_root/"
+            docker build --pull --build-arg SOURCE_COMMIT="$baseline" --file "$fixture_root/Dockerfile.platform-review" --tag "lifeos-synthetic:$baseline" "$fixture_root"
+            test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "lifeos-synthetic:$baseline")" = "$baseline"
+            docker create --name baseline-image-proof "lifeos-synthetic:$baseline" >/dev/null
+            trap 'docker rm -f baseline-image-proof >/dev/null 2>&1 || true' EXIT
+            mkdir "$fixture_root/.next"
+            docker cp baseline-image-proof:/app/.image-source-proof.json "$fixture_root/.image-source-proof.json"
+            docker cp baseline-image-proof:/app/.next/BUILD_ID "$fixture_root/.next/BUILD_ID"
+            node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(process.argv[1]));if(p.sourceSha!==process.argv[2])throw Error("Baseline image source mismatch");' "$fixture_root/.image-source-proof.json" "$baseline"
+            python3 scripts/attach-vtable-benchmark.py "$fixture_root" "$PWD"
+            (cd "$fixture_root" && npm ci --ignore-scripts --no-audit --no-fund)
+            export LIFEOS_REVIEW_GIT_SHA="$baseline"
+            run_scenario browser "$fixture_root" "$baseline"
+          )
+      - name: Verify every enabled case and the finite synthetic capture manifest
+        id: capture-guard
+        env:
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: |
+          python3 - <<'PY_GUARD'
+          import os, json, hashlib, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])
+          expected={
+              'recovery':{'isolated real Next, Caddy TLS and PostgreSQL recovery'},
+              'permit':{'isolated Next permits logout after a previously valid business permit is revoked'},
+              'browser':{'no-JS page lifecycle finishes and closes before the next page opens',
+                         'isolated browser owner recovery and password flow',
+                         'isolated private business route boundaries',
+                         'isolated private appearance and draft lifecycle',
+                         'isolated private business presentation matrix'},
+          }
+          for group,names in expected.items():
+              cases=list(ET.parse(root/f'rendered-{group}.xml').getroot().iter('testcase'))
+              assert len(cases)==len(names) and {c.get('name') for c in cases}==names, 'Unexpected enabled case set'
+              assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Skipped or failed fixture is not acceptance'
+          manifest=json.loads((root/'synthetic-rendered-qualification.json').read_text())
+          assert set(manifest)=={'version','kind','repository','repositoryId','sourceSha','runId','runAttempt','buildId','captureGuard','images'}
+          assert manifest['version']==1 and manifest['kind']=='synthetic-rendered-qualification'
+          assert manifest['repository']=='Nirvana-Chow/lifeos-app' and manifest['repositoryId']=='1443243170'
+          assert manifest['sourceSha']==os.environ['SOURCE_SHA']==os.environ['CI_HEAD_SHA']
+          assert manifest['runId']==os.environ['GITHUB_RUN_ID'] and manifest['runAttempt']==os.environ['GITHUB_RUN_ATTEMPT']
+          assert manifest['buildId']==Path('.next/BUILD_ID').read_text().strip()
+          assert manifest['captureGuard']=='finite-source-and-synthetic-content-v1'
+          assert len(manifest['images'])==118 and len({row['name'] for row in manifest['images']})==118
+          for row in manifest['images']:
+              assert set(row)=={'name','directory','route','viewport','theme','sha256','bytes','image'}
+              assert set(row['viewport'])=={'width','height'} and set(row['image'])=={'width','height'}
+              assert row['theme'] in ('light','dark') and row['viewport']['width'] in (1365,360,390,430)
+              assert row['route'].startswith('/personal') or row['route'] in ('/','/login','/account/recover')
+              assert row['directory'] in ('owner-recovery-browser-screenshots','owner-personal-browser-screenshots')
+              assert '/' not in row['name'] and row['name'].endswith('.png')
+              path=root/row['directory']/row['name']
+              assert path.is_file() and not path.is_symlink()
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==row['sha256'] and path.stat().st_size==row['bytes']
+          assert not Path('/run/lifeos-platform').exists() and not (root/'recovery-tls').exists() and not (root/'owner-recovery-browser-nss.json').exists(), 'Fixture cleanup did not finish'
+          print('PASS: recovery + permit + all five browser groups, zero skips; 118 guarded synthetic PNGs, cleanup complete.')
+          PY_GUARD
+      - name: Upload only named synthetic images and their finite manifest
+        if: success() && steps.rendered-qualification.outcome == 'success' && steps.capture-guard.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 official
+        with:
+          name: synthetic-rendered-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 6
+          path: |
+            ${{ runner.temp }}/synthetic-rendered-qualification.json
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/recovery-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/recovery-mobile.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/login-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/login-mobile.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/mfa-login-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/mfa-login-mobile.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-430-dark.png
       - name: Confirm verification preserved the committed lock
         run: git diff --exit-code -- package.json package-lock.json

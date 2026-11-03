@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.77",
-    "@visactor/vtable": "1.26.8",
-    "@visactor/vtable-editors": "1.26.8",
+    "@tanstack/react-table": "9.3.1",
+    "@tanstack/react-virtual": "3.14.25",
     "ai": "7.0.150",
     "bcryptjs": "3.0.3",
     "better-auth": "1.7.15",

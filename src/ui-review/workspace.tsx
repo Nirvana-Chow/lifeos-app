@@ -57,9 +57,12 @@ import type {
   TaskView,
 } from "./contract";
 import "./review.css";
+import {ThemeSwitch} from "../workbench/theme-switch";
 import {CategoryEntries} from "../personal-candidate/category-entries";
 import {SourceSummary} from "./source-summary";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
+
+import {privateNavigation,privateHrefs,primaryPrivateIds,workspaceHref} from '../workbench/private-navigation';
 
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -138,6 +141,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const returnFocus = useRef<HTMLButtonElement | null>(null),
     menuButton = useRef<HTMLButtonElement | null>(null),
     helpButton = useRef<HTMLButtonElement | null>(null),
+    helpReturnFocus = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
@@ -199,10 +203,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span>{label}</span>
           </Button>
         ))}
-        <a href="/review/admin/schedule" aria-label="日程" title={collapsed ? "日程" : undefined}><CalendarDays size={19}/><span>日程</span></a>
-        <a href="/review/admin/journal" aria-label="日记" title={collapsed ? "日记" : undefined}><BookOpen size={19}/><span>日记</span></a>
+        <a href={privateHrefs.schedule} aria-label="日程" title={collapsed ? "日程" : undefined}><CalendarDays size={19}/><span>日程</span></a>
+        <a href={privateHrefs.journal} aria-label="日记" title={collapsed ? "日记" : undefined}><BookOpen size={19}/><span>日记</span></a>
+        <details className="lo-more-business"><summary aria-label="更多业务" title="更多业务"><Layers size={19}/><span>更多业务</span></summary><nav aria-label="更多业务">{(['inbox','areas','projects'] as const).map(id=><a key={id} href={workspaceHref(id)}>{pageTitles[id]}</a>)}{privateNavigation.filter(item=>!primaryPrivateIds.includes(item.id)&&item.id!=='inbox'&&item.id!=='settings').map(item=><a key={item.id} href={item.href} aria-label={item.title} title={item.title}>{item.title}</a>)}</nav></details>
       </nav>
       <div className="lo-sidebar-bottom">
+        <Button variant="ghost" className="lo-mobile-help" aria-label="帮助" onClick={()=>{helpReturnFocus.current=menuButton.current;setMobileOpen(false);setHelpOpen(true);}}><HelpCircle size={19}/><span>帮助</span></Button>
         <Button
           variant="ghost"
           aria-label="设置"
@@ -357,8 +363,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     <div
       data-lifeos-surface="personal"
       className={`lo-shell ${collapsed ? "lo-is-collapsed" : ""}`}
+      onClickCapture={event=>{if((props.saving||props.uncertain)&&(event.target as Element).closest?.('a[href]')){event.preventDefault();event.stopPropagation();}}}
       ref={setPortalContainer}
     >
+      <a className="lo-skip" href="#personal-main">跳到主要内容</a>
       <header className="lo-header">
         <Button
           variant="ghost"
@@ -380,15 +388,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <span className="lo-header-divider" />
         <span className="lo-header-context">{pageTitles[page]}</span>
         <div className="lo-header-actions">
+          <ThemeSwitch/>
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
           )}
           <Button
             variant="ghost"
-            className="lo-icon-button"
+            className="lo-icon-button lo-header-help"
             aria-label="帮助"
             ref={helpButton}
-            onClick={() => setHelpOpen(true)}
+            onClick={(event) => {helpReturnFocus.current=event.currentTarget;setHelpOpen(true);}}
           >
             <HelpCircle size={19} />
           </Button>
@@ -413,11 +422,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
-        <main className="lo-main">
+        <main id="personal-main" className="lo-main">
           <div className="lo-content">
           <div className="lo-page-heading">
             <div className="lo-heading-title">
               <h1>{pageTitles[page]}</h1>
+              {access.authenticated===true&&access.writable===false&&<Badge variant="outline" className="lo-mobile-read-only">只读</Badge>}
               {state.status === "ready" && page !== "settings" && (
                 <span className="lo-result-count">
                   {page === "tasks" || page === "inbox"
@@ -836,7 +846,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               <h2>分类管理</h2>
               <div className="lo-settings-links"><Button variant="outline" onClick={()=>navigate('areas')}>领域</Button><Button variant="outline" onClick={()=>navigate('projects')}>项目</Button></div>
               <CategoryEntries allowedTypes={access.allowedTypes} writable={canWrite && pendingIds.size === 0 && !props.mutationError} className="lo-category-entries"/>
-              <details><summary>数据与权限</summary>{state.status === 'ready' && <SourceSummary data={state.data}/>}<a href="/review/admin/personal?type=journal">数据管理与导出</a></details>
+              <details><summary>数据与权限</summary>{state.status === 'ready' && <SourceSummary data={state.data}/>}<a href={privateHrefs.database}>数据管理与导出</a></details>
             </div>
           )}
           </div>
@@ -915,7 +925,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           className="lo-detail"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            helpButton.current?.focus();
+            (helpReturnFocus.current??helpButton.current)?.focus();
           }}
         >
           <DialogTitle>帮助</DialogTitle>

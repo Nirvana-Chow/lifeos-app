@@ -1,0 +1,10 @@
+.root { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--card, var(--background)); color: var(--text, var(--foreground)); }
+.root .table { font-family: var(--font-sans), system-ui, sans-serif; font-size: 16px; }
+.header { height: 44px; background: color-mix(in srgb, currentColor 6%, transparent); }
+.header th { padding: 0 16px; height: 44px; text-align: left; font-size: 16px; }
+.row { height: 48px; }
+.row:hover { background: color-mix(in srgb, currentColor 6%, transparent); }
+.cell { height: 48px; padding: 0 16px; border-bottom: 1px solid var(--border); font-size: 16px; }
+.value { display: flex; align-items: center; min-height: 44px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.root .sort { justify-content: flex-start; min-height: 44px; padding: 0; gap: 8px; border: 0; background: transparent; font: inherit; color: inherit; }
+.root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior: contain; }

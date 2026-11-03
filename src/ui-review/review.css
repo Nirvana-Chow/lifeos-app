@@ -2,12 +2,7 @@
   background: var(--background);
   color: var(--foreground);
   min-height: 100dvh;
-  font:
-    16px/1.5 -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    "PingFang SC",
-    sans-serif;
+  font: var(--lo-font-body);
   isolation: isolate;
 }
 .lo-shell * {
@@ -20,7 +15,7 @@
   margin: 0;
 }
 .lo-shell h1 {
-  font-size: 26px;
+  font-size: var(--lo-font-title);
   line-height: 1.5;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -32,34 +27,13 @@
   line-height: 1.5;
 }
 .lo-shell button,
-.lo-shell input,
+.lo-shell input:not([type="radio"]):not([type="checkbox"]),
 .lo-shell select {
   font: inherit;
 }
-.lo-shell button {
-  height: auto;
-  min-height: 44px;
-  min-width: 44px;
-  border: 1px solid transparent;
-  box-shadow: none;
-  background: var(--card);
-  color: var(--foreground);
-  padding: 9px 12px;
-  font-size: 16px;
-  border-radius: 8px;
-  white-space: normal;
-  cursor: pointer;
-}
-.lo-shell button:hover {
-  background: var(--accent);
-}
-.lo-shell button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.lo-shell button[data-variant="outline"] {
-  border-color: var(--border);
-}
+/* Native business actions share primitives without overriding Radix variants. */
+.lo-shell button:not([data-slot]) {min-height:44px;min-width:44px;border:1px solid var(--border);background:var(--card);color:var(--foreground);padding:9px 12px;font-size:16px;border-radius:var(--lo-radius-control);cursor:pointer}
+.lo-shell button:disabled {opacity:.45;cursor:not-allowed}
 .lo-shell button:focus-visible,
 .lo-shell a:focus-visible,
 .lo-shell input:focus-visible,
@@ -86,16 +60,7 @@
 .lo-shell .lo-primary:hover {
   background: var(--primary);
 }
-.lo-shell [data-slot="badge"] {
-  font-size: 16px;
-  font-weight: 400;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted-foreground);
-  background: var(--card);
-  padding: 2px 7px;
-}
-.lo-shell input,
+.lo-shell input:not([type="radio"]):not([type="checkbox"]),
 .lo-shell select {
   min-width: 0;
   min-height: 44px;
@@ -114,7 +79,7 @@
   display: none !important;
 }
 .lo-header {
-  height: 60px;
+  height: var(--lo-header-height);
   display: flex;
   align-items: center;
   gap: 20px;
@@ -176,13 +141,13 @@
 }
 .lo-body {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
-  min-height: calc(100dvh - 60px);
+  grid-template-columns: var(--lo-sidebar-width) minmax(0, 1fr);
+  min-height: calc(100dvh - var(--lo-header-height));
 }
 .lo-sidebar {
   position: sticky;
-  top: 60px;
-  height: calc(100dvh - 60px);
+  top: var(--lo-header-height);
+  height: calc(100dvh - var(--lo-header-height));
   display: flex;
   flex-direction: column;
   padding: 20px 12px 14px;
@@ -228,7 +193,7 @@
   border-top: 1px solid var(--border);
 }
 .lo-is-collapsed .lo-body {
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: var(--lo-sidebar-collapsed) minmax(0, 1fr);
 }
 .lo-is-collapsed .lo-sidebar {
   padding-inline: 10px;
@@ -247,7 +212,7 @@
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 30px 32px 40px;
+  padding: var(--lo-content-padding);
 }
 .lo-page-heading {
   display: flex;
@@ -545,12 +510,6 @@
   border-radius: 7px;
   overflow: hidden;
 }
-.lo-vtable {
-  width: 100%;
-  height: 540px;
-  min-width: 0;
-  background: var(--card);
-}
 .lo-table-loading {
   position: absolute;
   inset: 0;
@@ -812,7 +771,7 @@
   box-shadow: 0 16px 60px #0002;
 }
 .lo-detail > [data-slot="dialog-title"] {
-  font-size: 19px;
+  font-size: 18px;
   line-height: 1.6;
   padding-right: 38px;
   font-weight: 600;
@@ -931,7 +890,7 @@
     gap: 14px;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 850px) {
   .lo-header {
     height: 56px;
     padding: 0 12px;
@@ -966,14 +925,14 @@
     display: none;
   }
   .lo-shell .lo-main {
-    padding: 24px 18px 32px;
+    padding: var(--lo-content-padding);
   }
   .lo-page-heading {
     gap: 12px;
     margin-bottom: 22px;
   }
   .lo-shell h1 {
-    font-size: 26px;
+    font-size: var(--lo-font-title);
   }
   .lo-page-actions {
     gap: 4px;
@@ -1097,9 +1056,6 @@
   .lo-filter-panel > button {
     justify-self: end;
   }
-  .lo-vtable {
-    height: 480px;
-  }
   .lo-board {
     grid-template-columns: repeat(4, 260px);
     gap: 14px;
@@ -1163,9 +1119,6 @@
 .lo-table-wrap:has(.lo-screen-reader-table:focus-within) {
   overflow: auto;
 }
-.lo-table-wrap:has(.lo-screen-reader-table:focus-within) .lo-vtable {
-  display: none;
-}
 .lo-table-wrap .lo-screen-reader-table:focus-within {
   position: static !important;
   width: 100% !important;
@@ -1201,7 +1154,7 @@
   justify-content: flex-start;
   background: transparent;
 }
-@media (max-width: 760px) {
+@media (max-width: 850px) {
   .lo-shell .lo-brand {
     font-size: 18px;
   }
@@ -1215,7 +1168,7 @@
  * continue to scroll inside their existing table/board containers. */
 .lo-content {
   width: 100%;
-  max-width: 1200px;
+  max-width: var(--lo-content-width);
   min-width: 0;
   margin-inline: auto;
   text-align: left;
@@ -1264,3 +1217,32 @@
 .lo-settings-links{display:flex;gap:16px;flex-wrap:wrap}
 .lo-settings a{display:inline-flex;align-items:center;min-height:44px}
 .lo-shell .lo-inline-error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
+
+/* Shared workspace rhythm; details retain their own scroll and focus boundary. */
+.lo-header{padding-inline:var(--lo-content-padding);gap:16px}
+.lo-sidebar{overflow-y:auto;overscroll-behavior:contain;gap:24px}
+.lo-nav{flex:1;align-content:start}.lo-sidebar-bottom{flex:none}
+.lo-content{overflow-wrap:anywhere}.lo-panel,.lo-settings,.lo-board-card{border-radius:var(--lo-radius-surface)}
+.lo-result-count,.lo-source-summary,.lo-nav-count,.lo-task-date,.lo-task-project{font-size:14px}
+.lo-metrics strong{font-variant-numeric:tabular-nums}.lo-task-title{text-align:left}
+.lo-mobile-sidebar{overflow:auto;overscroll-behavior:contain;padding-bottom:max(16px,env(safe-area-inset-bottom))!important}
+.lo-skip{position:absolute;top:-100px;left:16px;z-index:100;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 16px}
+.lo-skip:focus{top:8px}.lo-mobile-help{display:none!important}.lo-mobile-read-only{display:none!important}
+@media(max-width:850px){
+ .lo-header{gap:8px;padding-inline:8px;min-height:56px}
+ .lo-header-actions{gap:4px;flex:none}.lo-header-help,.lo-header-actions>[data-slot="badge"]{display:none!important}
+ .lo-mobile-help{display:flex!important}.lo-mobile-read-only{display:inline-flex!important}.lo-shell .lo-brand{font-size:18px;min-width:52px}
+ .lo-shell .lo-mobile-menu{min-width:44px;width:44px;padding:8px!important}
+ .lo-shell .lo-account{min-width:44px;width:44px;padding:4px}
+ .lo-page-heading{flex-wrap:wrap}.lo-page-actions{margin-left:auto}
+}
+/* Keep the primary route group compact; all other business pages remain discoverable. */
+.lo-shell .lo-sidebar{overflow-y:auto;overscroll-behavior:contain}
+.lo-more-business{min-width:0}
+.lo-more-business>summary{display:flex;align-items:center;gap:11px;min-height:44px;padding:10px 12px;cursor:pointer;color:var(--muted-foreground);font-size:16px}
+.lo-more-business>summary:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+.lo-more-business>nav{display:grid;gap:4px;padding-left:12px}
+.lo-is-collapsed .lo-sidebar .lo-more-business>summary{justify-content:center;padding:10px}
+.lo-is-collapsed .lo-sidebar .lo-more-business>summary>span{display:none}
+.lo-is-collapsed .lo-sidebar .lo-more-business>nav a{white-space:normal;overflow-wrap:anywhere}
+.lo-shell .lo-mobile-sidebar{overflow-y:auto;overscroll-behavior:contain}

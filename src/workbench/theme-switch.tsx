@@ -1,16 +1,14 @@
 'use client';
-import{useEffect,useRef,useState}from'react';
-import{themeStorageKey,readThemePreference,resolveTheme,saveThemePreference,type ThemePreference}from'./theme';
-import s from'./styles.module.css';
+import {useId,useSyncExternalStore} from 'react';
+import {serverThemeSnapshot,themeStore} from './theme-store';
+import s from './theme-switch.module.css';
+const modes=[['light','浅色'],['dark','深色'],['system','系统']] as const;
 export function ThemeSwitch(){
- const currentPreference=useRef<ThemePreference>('system');
- const[preference,setPreference]=useState<ThemePreference>('system'),[notice,setNotice]=useState('');
- const apply=(next:ThemePreference)=>{const theme=resolveTheme(next,window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.lifeosTheme=theme;document.documentElement.style.colorScheme=theme;};
- useEffect(()=>{let value:ThemePreference='system';try{value=readThemePreference(localStorage.getItem(themeStorageKey));}catch{}currentPreference.current=value;setPreference(value);apply(value);
-  const system=window.matchMedia('(prefers-color-scheme: dark)');
-  const sync=()=>apply(currentPreference.current);
-  const storage=(event:StorageEvent)=>{if(event.key===themeStorageKey||event.key===null){const next=readThemePreference(event.key===null?null:event.newValue);currentPreference.current=next;setPreference(next);apply(next);}};
-  system.addEventListener('change',sync);window.addEventListener('storage',storage);return()=>{system.removeEventListener('change',sync);window.removeEventListener('storage',storage);};
- },[]);
- return <div className={s.themeControl}><select aria-label="外观模式" title="外观模式" value={preference} onChange={event=>{const next=readThemePreference(event.target.value);currentPreference.current=next;setPreference(next);apply(next);let saved=false;try{saved=saveThemePreference(localStorage,next);}catch{}setNotice(saved?'':'外观已切换，浏览器未允许保存偏好。');}}><option value="system">系统</option><option value="light">浅色</option><option value="dark">深色</option></select>{notice&&<span className={s.themeNotice} role="status">{notice}</span>}</div>;
+ const id=useId(),{ready,preference,notice}=useSyncExternalStore(themeStore.subscribe,themeStore.getSnapshot,()=>serverThemeSnapshot);
+ return <div className={s.control} data-lifeos-theme-control="">
+  <fieldset className={`${s.modes}${ready?'':' '+s.pending}`} disabled={!ready} aria-hidden={!ready||undefined} aria-label="外观模式" aria-describedby={notice?id+'-notice':undefined}>
+   {modes.map(([value,label])=><label key={value} className={s.mode}><input type="radio" name={id+'-appearance'} value={value} checked={ready&&preference===value} onChange={()=>themeStore.setPreference(value)}/><span>{label}</span></label>)}
+  </fieldset>
+  {notice&&<span id={id+'-notice'} className={s.notice} role="status">{notice}</span>}
+ </div>;
 }

@@ -9,13 +9,19 @@ export function renderedContrast(foreground:string,layers:ContrastLayer[]){
    let hex=color.slice(1);if(hex.length<=4)hex=hex.split('').map(c=>c+c).join('');
    return [parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16),hex.length===8?parseInt(hex.slice(6),16)/255:1];
   }
-  const match=/^rgba?\(([^()]+)\)$/.exec(color);if(!match)return fail();
-  const body=match[1],parts=body.includes(',')?body.split(',').map(v=>v.trim()):body.trim().split(/\s*\/\s*|\s+/);
-  if(parts.length!==3&&parts.length!==4)return fail();
   const number=(part:string,max:number)=>{
    if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)%?$/.test(part))return fail();
    const result=parseFloat(part)*(part.endsWith('%')?max/100:1);if(result<0||result>max)return fail();return result;
   };
+  // Chrome serializes a computed color-mix(in srgb, ...) in CSS Color 4 form.
+  const srgb=/^color\(srgb\s+([^\s/()]+)\s+([^\s/()]+)\s+([^\s/()]+)(?:\s*\/\s*([^\s/()]+))?\s*\)$/.exec(color);
+  if(srgb){
+   const [,red,green,blue,alpha]=srgb;
+   return [number(red,1)*255,number(green,1)*255,number(blue,1)*255,alpha===undefined?1:number(alpha,1)];
+  }
+  const match=/^rgba?\(([^()]+)\)$/.exec(color);if(!match)return fail();
+  const body=match[1],parts=body.includes(',')?body.split(',').map(v=>v.trim()):body.trim().split(/\s*\/\s*|\s+/);
+  if(parts.length!==3&&parts.length!==4)return fail();
   return [number(parts[0],255),number(parts[1],255),number(parts[2],255),parts[3]===undefined?1:number(parts[3],1)];
  };
  // These effects need a richer renderer; never substitute a passing default.
