@@ -101,6 +101,9 @@ jobs:
             for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
               await pool.query(readFileSync('db/' + file, 'utf8'));
             }
+            await pool.query("CREATE ROLE lifeos_agent_fixture_verifier LOGIN PASSWORD 'fixture-agent-verifier-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("CREATE ROLE lifeos_agent_fixture_issuer LOGIN PASSWORD 'fixture-agent-issuer-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query(readFileSync('test/helpers/agent-api-postgres-fixture.sql', 'utf8'));
             console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');
           } finally { await pool.end(); }
           JS
@@ -142,6 +145,29 @@ jobs:
           assert len(cases) == 5, f'Expected 5 explicit PG/auth tests, found {len(cases)}'
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG/auth skip or failure is not acceptance'
           print('PASS: 5 explicit PG/auth tests, zero skips. No HTTP/browser/restart/restore acceptance claimed.')
+          PY
+      - name: Verify machine grants, revocation and todo writes on synthetic PostgreSQL
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_fixture_verifier:fixture-agent-verifier-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_ISSUER_DATABASE_URL: postgresql://lifeos_agent_fixture_issuer:fixture-agent-issuer-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          RUN_AGENT_API_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/agent-pg.xml" test/agent-api-postgres.integration.test.ts
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'agent-pg.xml')).getroot()
+          cases = list(root.iter('testcase'))
+          assert cases, 'Expected explicit machine authorization test'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Agent PG skip or failure is not acceptance'
+          print(f'PASS: {len(cases)} explicit Agent PG tests, zero skips.')
           PY
       - name: Run actual Next HTTP, login, ownership, rate-limit and capture tests
         env:
