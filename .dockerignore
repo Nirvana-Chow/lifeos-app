@@ -22,6 +22,7 @@
 !public/**
 !LICENSE
 !NOTICE
+!THIRD_PARTY_NOTICES.md
 !third-party/
 !third-party/**
 **/.env

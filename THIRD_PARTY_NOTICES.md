@@ -6,7 +6,7 @@ LifeOS-authored code is MIT licensed. Upstream components and dependencies retai
 
 - `components/ui/card.tsx` adapts shadcn/ui commit `30a58d4498f270af1c1e981a7d78a15cf5740841`, `apps/v4/registry/new-york-v4/ui/card.tsx`. Full MIT: `third-party/licenses/shadcn-LICENSE.md`.
 - Button, Input, Badge and Dialog under `src/ui-review/ui/` retain source headers. Registry hashes and full MIT are in `src/ui-review/THIRD_PARTY_NOTICES.md`. Changes redirect imports, add a scoped Dialog portal container and localize the close label.
-- The ReUI Data Grid sources under `src/ui-review/reui/` adapt [ReUI commit `067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a`](https://github.com/keenthemes/reui/tree/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a). Full MIT: `third-party/reui/LICENSE`; upstream SHA256 and local changes: `third-party/reui/provenance.json`. Checkbox and Spinner are local Radix/Lucide adapters. The five adapted grid files retain upstream headers.
+- The ReUI Data Grid sources under `src/ui-review/reui/` adapt [ReUI commit `067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a`](https://github.com/keenthemes/reui/tree/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a). Each adapted file includes a local upstream attribution header. Full MIT: `third-party/reui/LICENSE`; upstream SHA256 and local changes: `third-party/reui/provenance.json`. Checkbox and Spinner are local Radix/Lucide adapters.
 - `@tanstack/react-table` 9.3.1 and `@tanstack/react-virtual` 3.14.25 use public npm APIs (MIT); their locked source and license paths are included in `third-party/dependencies.json`.
 - Layout references [shadcn-admin](https://github.com/satnaing/shadcn-admin); its application source is not copied.
 

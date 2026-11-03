@@ -1,3 +1,7 @@
+/* Adapted from ReUI commit 067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a.
+ * Copyright (c) 2025 Keenthemes Inc. MIT; full license: third-party/reui/LICENSE.
+ * Source hashes and local adaptations: third-party/reui/provenance.json.
+ */
 /**
  * Every built-in user-facing string in the data grid, overridable in one
  * place: `<DataGrid i18n={{ labels: { ... } }}>`. The shape follows the
