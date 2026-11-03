@@ -95,7 +95,8 @@ jobs:
             await pool.query("CREATE ROLE lifeos_platform_candidate_runtime LOGIN PASSWORD 'fixture-ci-runtime-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
             await pool.query("CREATE ROLE lifeos_platform_candidate_bootstrap LOGIN PASSWORD 'fixture-ci-bootstrap-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
             await pool.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
-            await pool.query('REVOKE CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
+            await pool.query('REVOKE CONNECT, CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
+            await pool.query('GRANT CONNECT ON DATABASE lifeos_platform_test_local TO lifeos_platform_candidate_runtime, lifeos_platform_candidate_bootstrap');
             await pool.query("SET lifeos.calendar_migration_approved = '1'");
             await pool.query("SET lifeos.chat_migration_approved = '1'");
             for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
@@ -103,6 +104,8 @@ jobs:
             }
             await pool.query("CREATE ROLE lifeos_agent_verifier LOGIN PASSWORD 'fixture-agent-verifier-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
             await pool.query("CREATE ROLE lifeos_agent_issuer LOGIN PASSWORD 'fixture-agent-issuer-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            // Mirror the native MFA session column that can precede Agent installation.
+            await pool.query('ALTER TABLE lifeos_platform.platform_session ADD COLUMN "mfaVerified" boolean NOT NULL DEFAULT false');
             await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
             await pool.query(readFileSync('db/0006_agent_api.proposed.sql', 'utf8'));
             console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');

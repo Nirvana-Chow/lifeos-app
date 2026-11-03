@@ -32,6 +32,7 @@ BEGIN
    RAISE EXCEPTION 'Pre-existing isolated Agent issuer and verifier roles required';
   END IF;
  END LOOP;
+ EXECUTE format('GRANT CONNECT ON DATABASE %I TO lifeos_agent_issuer, lifeos_agent_verifier', current_database());
 END
 $$;
 
@@ -39,9 +40,10 @@ CREATE SCHEMA lifeos_agent;
 REVOKE ALL ON SCHEMA lifeos_agent FROM PUBLIC;
 
 -- Better Auth verifies its core schema at startup even for a server-only
--- key plugin. Copy only the column definitions, never auth rows.
+-- key plugin. Copy only the column definitions, never auth rows. The session
+-- defaults also cover optional auth columns such as the native MFA flag.
 CREATE TABLE lifeos_agent."user" (LIKE lifeos_platform.platform_user);
-CREATE TABLE lifeos_agent.session (LIKE lifeos_platform.platform_session);
+CREATE TABLE lifeos_agent.session (LIKE lifeos_platform.platform_session INCLUDING DEFAULTS);
 CREATE TABLE lifeos_agent.account (LIKE lifeos_platform.platform_account);
 CREATE TABLE lifeos_agent.verification (LIKE lifeos_platform.platform_verification);
 GRANT SELECT ON lifeos_agent."user", lifeos_agent.session,

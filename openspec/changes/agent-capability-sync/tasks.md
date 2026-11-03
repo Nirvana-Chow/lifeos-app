@@ -20,7 +20,7 @@
 
 ## 5. Production Agent ingress
 
-- [ ] 5.1 Verify both lock acquisition orders for concurrent todo writes and revocation against the proposed migration on disposable PostgreSQL.
-- [ ] 5.2 Verify the default-closed HTTPS mount and separation of business, issuer, and verifier roles on the same fixture.
-- [ ] 5.3 Qualify and deploy the approved source on the production receiver. Confirm the running source and HTTPS access.
-- [ ] 5.4 Issue one revocable and expiring todo grant through the private control path, then create, complete, and read back one authorized todo via the Skill.
+- [x] 5.1 Verify both lock acquisition orders for concurrent todo writes and revocation against the proposed migration on disposable PostgreSQL.
+- [x] 5.2 Verify the default-closed HTTPS mount and separation of business, issuer, and verifier roles on the same fixture.
+- [x] 5.3 Qualify and deploy the approved source on the production receiver. Confirm the running source and HTTPS access.
+- [x] 5.4 Issue one revocable and expiring todo grant through the private control path, then create, complete, and read back one authorized todo via the Skill.
