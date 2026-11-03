@@ -13,6 +13,24 @@ test('OPT-IN exact configured Next HTTP + Auth + PG todo/finance/ownership accep
   cookie=signed.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');assert.ok(cookie.length>0);assert.equal((await send('requirements')).body.baseline.baselineVersion,requirements().baselineVersion,'HTTP must serve the committed requirement baseline');
   const todo=await send('todos','POST',{title:batch,notes:'Synthetic HTTP acceptance only'},batch+'-todo');assert.equal(todo.status,201);const id=todo.body.entry.id;ids.push(id);const direct=await service.get(config.ownerId,'todo',id);assert.equal(direct.source.id,todo.body.entry.source.id,'HTTP and direct PG must address the same stored object');
   assert.equal((await send('todos','POST',{title:batch,notes:'Synthetic HTTP acceptance only'},batch+'-todo')).body.duplicate,true);assert.equal((await send('todos','POST',{title:batch+' changed'},batch+'-todo')).status,409);
+  const pin = {type:'todo',id,sourceId:direct.source.id,revision:1};
+  const project = await send('records/project','POST',{
+    title:'Synthetic linked project',text:'Cross-module source acceptance',occurredOn:null,
+    confirmed:true,syntheticOnly:true,
+    record:{type:'project',syntheticOnly:true,stage:'active',nextStep:'Review the pinned task',
+      completion:{selfReported:true,status:'not-complete',evidence:null},
+      testing:{manuallyRecorded:true,outcome:'not-run',evidence:null},
+      review:{decision:'pending',evidence:null},links:[pin]},
+  },batch+'-project');
+  assert.equal(project.status,201);
+  const projectPath = 'records/project/' + project.body.entry.id;
+  ids.push(project.body.entry.id);
+  const review = {expectedRevision:1,decision:'accepted',evidence:'Synthetic network review',confirmed:true,syntheticOnly:true};
+  assert.equal((await send(projectPath+'/review','POST',review,batch+'-review')).status,200);
+  const recapPath = projectPath+'/recap?includeSynthetic=true';
+  const initialRecap = await send(recapPath);
+  assert.equal(initialRecap.status,200);
+  assert.equal(initialRecap.body.reviewApplicable,true);
   const patched=await send('todos/'+id,'PATCH',{expectedRevision:1,status:'done'},batch+'-todo-edit');assert.equal(patched.status,200);assert.equal(patched.body.entry.revision,2);assert.equal((await send('todos/'+id,'PATCH',{expectedRevision:1,title:'stale'},batch+'-stale')).status,409);assert.equal((await send('todos/'+id)).body.entry.source.original.title,batch);
   assert.equal((await send('todos','POST',{title:batch,ownerId:'fixture-owner-b'},batch+'-forged')).status,400);assert.equal((await send('todos','POST',{title:batch,dueOn:'2026-02-30'},batch+'-date')).status,400);
   const foreignIdentity = syntheticIdentities[1];
@@ -41,6 +59,33 @@ test('OPT-IN exact configured Next HTTP + Auth + PG todo/finance/ownership accep
   const ownSource = await send(source(id));
   assert.equal(ownSource.status, 200);
   assert.equal(ownSource.body.current.sourceId, direct.source.id);
+  const corrected = await send('todos/'+id,'PATCH',{expectedRevision:2,notes:'Second synthetic correction'},batch+'-correct-again');
+  assert.equal(corrected.status,200);
+  assert.equal(corrected.body.entry.revision,3);
+  const timeline = await send('timeline/page?includeSynthetic=true&axis=changed&timeZone=UTC');
+  assert.equal(timeline.status,200);
+  const events = timeline.body.items.filter((event: {id:string}) => event.id === id);
+  assert.deepEqual(events.map(({sourceId,revision,currentRevision}: {sourceId:string;revision:number;currentRevision:number}) =>
+    ({sourceId,revision,currentRevision})), [
+    {sourceId:pin.sourceId,revision:3,currentRevision:3},
+    {sourceId:pin.sourceId,revision:2,currentRevision:3},
+  ]);
+  const correctedSource = await send(source(id));
+  assert.equal(correctedSource.status,200);
+  assert.equal(correctedSource.body.current.id,id);
+  assert.equal(correctedSource.body.current.sourceId,pin.sourceId);
+  assert.equal(correctedSource.body.current.revision,3);
+  assert.equal(correctedSource.body.original.title,batch);
+  assert.equal(correctedSource.body.original.revision,1);
+  assert.deepEqual(correctedSource.body.history.map((event: {revision:number}) => event.revision),[3,2,1]);
+  const staleRecap = await send(recapPath);
+  assert.equal(staleRecap.status,200);
+  assert.equal(staleRecap.body.reviewApplicable,false);
+  assert.equal(staleRecap.body.reviewApplicability,'stale-links');
+  assert.deepEqual(staleRecap.body.project.draft.record.links,[pin]);
+  assert.deepEqual(staleRecap.body.project.source.original.record.links,[pin]);
+  assert.equal((await send(projectPath+'/review','POST',{...review,expectedRevision:2},batch+'-stale-review')).status,409);
+  t.diagnostic('Cross-module source, timeline revision, and stale project recap verified over Next HTTP and PostgreSQL.');
   const foreignSource = await send(source(foreignId));
   assert.equal(foreignSource.status, 404);
   assert.deepEqual(foreignSource, await send(source(missingId)));
