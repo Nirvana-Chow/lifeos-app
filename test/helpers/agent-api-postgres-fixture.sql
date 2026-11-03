@@ -9,6 +9,17 @@ $$;
 
 CREATE SCHEMA lifeos_agent_fixture;
 REVOKE ALL ON SCHEMA lifeos_agent_fixture FROM PUBLIC;
+
+-- Better Auth verifies its core schema at startup even for a server-only
+-- key plugin. Copy only the disposable column definitions, never auth rows.
+CREATE TABLE lifeos_agent_fixture."user" (LIKE lifeos_platform.platform_user);
+CREATE TABLE lifeos_agent_fixture.session (LIKE lifeos_platform.platform_session);
+CREATE TABLE lifeos_agent_fixture.account (LIKE lifeos_platform.platform_account);
+CREATE TABLE lifeos_agent_fixture.verification (LIKE lifeos_platform.platform_verification);
+GRANT SELECT ON lifeos_agent_fixture."user", lifeos_agent_fixture.session,
+ lifeos_agent_fixture.account, lifeos_agent_fixture.verification
+ TO lifeos_agent_fixture_issuer, lifeos_agent_fixture_verifier;
+
 CREATE TABLE lifeos_agent_fixture.apikey (
  id text PRIMARY KEY,
  "configId" text NOT NULL,

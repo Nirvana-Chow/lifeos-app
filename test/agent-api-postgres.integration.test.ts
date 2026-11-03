@@ -68,6 +68,12 @@ test('OPT-IN isolated PostgreSQL Agent grants, revocation and todo write/readbac
     const {rows: [runtimeGrants]} = await runtime.query(
       "SELECT NOT has_schema_privilege(current_user,'lifeos_agent_fixture','USAGE') AS no_key_access");
     assert.equal(runtimeGrants.no_key_access, true);
+    for (const pool of [issuer, verifier]) {
+      const {rows: [core]} = await pool.query(`SELECT
+        (SELECT count(*)::int FROM lifeos_agent_fixture."user") AS users,
+        NOT has_table_privilege(current_user,'lifeos_agent_fixture.session','INSERT,UPDATE,DELETE') AS cannot_manage_sessions`);
+      assert.deepEqual(core, {users: 0, cannot_manage_sessions: true});
+    }
     const issuance = auth(issuer);
     const verification = auth(verifier);
     const [owner, other] = syntheticIdentities;
