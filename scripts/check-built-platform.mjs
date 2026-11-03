@@ -14,6 +14,7 @@ const buildId=readFileSync(resolve(root,buildDirectory,'BUILD_ID'),'utf8').trim(
 const checks=[];
 for (const [artifact,requests] of [
   ['app/api/platform/[[...resource]]/route.js',[
+    ...['capabilities','preview','lease','pull','observation','receipt','ack'].map(operation=>['POST','personal/apple-sync/'+operation]),
     ['GET','status'],['GET','personal/availability'],['GET','personal/status'],['GET','personal/todo'],['POST','personal/todo'],['GET','personal/journal'],['POST','personal/journal'],['GET','personal/export'],['GET','ai/chat/status'],['POST','ai/chat'],['GET','ai/chat/turns'],['GET','ai/chat/turns/fixture-id'],['POST','ai/chat/turns/fixture-id/cancel'],['GET','ai/chat/export?includeSynthetic=true'],['GET','ai/chat/export-page?includeSynthetic=true'],['GET','ai/settings'],['PUT','ai/settings'],['PUT','ai/secret'],
     ['POST','ai/connection-test'],['GET','capture/status'],['POST','capture/preview'],['POST','capture/confirm'],
     ['GET','capture/runs/fixture-id'],['POST','capture/runs/fixture-id/cancel'],

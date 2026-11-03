@@ -1,9 +1,11 @@
+import type {SyncCapture} from '../apple-sync-candidate/capture.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
 import {ownerMaintenanceKey} from '../deployment-candidate/owner-maintenance-key.ts';
 import type{PlatformRepository,Kind,StoredEntry,Receipt,Transaction}from'./contracts.ts';import{PlatformError}from'./domain.ts';
 export interface SqlClient{query(sql:string,values?:unknown[]):Promise<{rows:Record<string,unknown>[];rowCount:number|null}>;release():void}
 export interface SqlPool{connect():Promise<SqlClient>}
+export type BoundSqlScope={client:SqlClient;owner:string};
 type Purpose='runtime'|'synthetic-bootstrap';
 export function assertRestrictedMetadata(m:Record<string,unknown>,purpose:Purpose='runtime'):void{
  if(purpose!=='runtime'&&purpose!=='synthetic-bootstrap')throw Error('Restricted isolated PostgreSQL target required');
@@ -40,8 +42,9 @@ function decode(row:Record<string,unknown>):StoredEntry{
  return{id:row.id as string,ownerId:row.owner_id as string,kind:row.kind as Kind,...(row.inbox_id?{inboxId:row.inbox_id as string}:{}),draft:row.draft as StoredEntry['draft'],source:{id:row.source_id as string,system:'website',externalId:row.external_id as string,version:row.source_version as number,asOf:iso(row.as_of),original:row.original},revision:row.revision as number,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),syncState:'draft',externalStatus:null};
 }
 export class PostgresPlatformRepository implements PlatformRepository{
- private pool:SqlPool;private personalOwnerGate:boolean;constructor(pool:SqlPool,personalOwnerGate=false){this.pool=pool;this.personalOwnerGate=personalOwnerGate;}
+ private pool:SqlPool;private personalOwnerGate:boolean;private capture?:SyncCapture;private bound?:BoundSqlScope;constructor(pool:SqlPool,personalOwnerGate=false,capture?:SyncCapture,bound?:BoundSqlScope){this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.capture=capture;this.bound=bound;}
  private async scoped<T>(owner:string,fn:(client:SqlClient)=>Promise<T>,consistentRead=false):Promise<T>{
+  if(this.bound){if(owner!==this.bound.owner)throw Error('SYNC_OWNER_MISMATCH');return fn(this.bound.client);}
   const client=await this.pool.connect();try{await client.query(consistentRead?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN ISOLATION LEVEL READ COMMITTED');await client.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner]);const result=await fn(client);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
  }
  async readWindow(owner:string,mode:WindowMode,position:WindowPosition,limit:number):Promise<WindowRow[]>{
@@ -64,6 +67,7 @@ export class PostgresPlatformRepository implements PlatformRepository{
  async get(owner:string,kind:Kind,id:string):Promise<StoredEntry|null>{return this.scoped(owner,async c=>{const result=await c.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3',[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;});}
  async transaction<T>(owner:string,key:string,fn:(tx:Transaction)=>Promise<T>):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
+  if(this.capture)await this.capture.begin(client,owner);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([owner,key])]);
   const tx:Transaction={
    peek:async(kind,id)=>{const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3',[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;},
@@ -83,6 +87,7 @@ export class PostgresPlatformRepository implements PlatformRepository{
      if(result.rowCount!==1)throw new PlatformError(409,'REVISION_CONFLICT','记录已更新，请读取当前版本再核对。');
     }
     await client.query('INSERT INTO lifeos_platform.platform_history(owner_id,record_id,revision,raw,snapshot,created_at) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6)',[owner,entry.id,entry.revision,JSON.stringify(raw),JSON.stringify(entry),entry.updatedAt]);
+    if(this.capture&&entry.kind==='todo')await this.capture.append(client,owner,{kind:'todo',entityId:entry.id,sourceId:entry.source.id,revision:entry.revision,commandKey:key,snapshot:entry});
    },
   };return fn(tx);
  });}
