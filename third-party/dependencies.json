@@ -68,6 +68,19 @@
       ]
     },
     {
+      "path": "node_modules/@better-auth/api-key",
+      "name": "@better-auth/api-key",
+      "version": "1.7.15",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@better-auth/api-key/-/api-key-1.7.15.tgz",
+      "integrity": "sha512-ilTWBv4RIRNpIh/5jz8crSi3rBfYvBv6+2jDKcEG83yuQ5SxfS+Szn6a4IDx6M4a0HbJf9wR4yR3gy+d3ZBJQg==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE.md"
+      ]
+    },
+    {
       "path": "node_modules/@better-auth/core",
       "name": "@better-auth/core",
       "version": "1.7.15",
