@@ -100,6 +100,22 @@ test('first-visible diagnostic projection limits output to finite enums and roun
   {theme:'light',scheme:'light',checked:'system',control:'visible'},
  ]);
 });
+test('appearance failure projection emits only fixed phase and error-kind enums',()=>{
+ const privateValue='private-appearance-secret';
+ const error=Object.assign(new Error(`${privateValue} https://private.example.test/${privateValue}`),{
+  url:`https://private.example.test/${privateValue}`,body:privateValue,cookie:privateValue,privatevalue:privateValue,
+ });
+ const projected=fixture.projectPrivateAppearanceFailure(privateValue,error);
+ assert.deepEqual(projected,{phase:'other',errorKind:'Error'});
+ assert.equal(JSON.stringify(projected).includes(privateValue),false);
+ assert.equal(JSON.stringify(projected).includes('private.example.test'),false);
+ assert.deepEqual(fixture.projectPrivateAppearanceFailure('journal',new TypeError(privateValue)),{phase:'journal',errorKind:'TypeError'});
+ const timeout=Object.assign(new Error(privateValue),{name:'TimeoutError'});
+ assert.deepEqual(fixture.projectPrivateAppearanceFailure('denied-getItem',timeout),{phase:'denied-getItem',errorKind:'TimeoutError'});
+ const assertion=Object.assign(new Error(privateValue),{name:'AssertionError'});
+ assert.deepEqual(fixture.projectPrivateAppearanceFailure('receipt-readback',assertion),{phase:'receipt-readback',errorKind:'AssertionError'});
+ assert.deepEqual(fixture.projectPrivateAppearanceFailure('unlisted-phase',{}),{phase:'other',errorKind:'other'});
+});
 test('independent destination literals cover the actual frozen map and source paths cannot expand',()=>{
  assert.deepEqual(Object.fromEntries(fixture.privateDestinations.map(([id,path])=>[id,path])),privateHrefs);
  const texts=fixture.captureSourceText();assert.equal(texts.has('财务'),true);assert.equal([...texts].some(text=>/ICP备/.test(text)),false);assert.equal(texts.has('待办'),true);assert.equal(texts.has('详情'),true);
