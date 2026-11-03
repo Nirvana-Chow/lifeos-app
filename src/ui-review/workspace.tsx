@@ -263,7 +263,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <Button
           variant="ghost"
           className="lo-task-title"
-          aria-label={`${canWrite && props.onOpenTask ? "编辑待办" : "查看待办"}：${task.title}`}
+          aria-label={`查看待办：${task.title}`}
           onClick={(event) => openTask(task, event.currentTarget)}
         >
           <span>{task.title}</span>
@@ -423,7 +423,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
         <main id="personal-main" className="lo-main">
-          <div className="lo-content">
+          <div className={(page === "tasks" || page === "inbox") && view === "table" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
               <h1>{pageTitles[page]}</h1>
@@ -946,7 +946,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               <dd>{data?.asOf ?? "尚未读取"}</dd>
             </div>
           </dl>
-          <p>点击待办标题打开编辑；表格可直接编辑标题、到期日和状态，Enter 打开完整内容。</p>
+          <p>点击待办标题或表格中的「查看详情」先查看，再选择「编辑待办」。表格中也可双击标题、到期日或状态直接修改该字段。</p>
           {access.message && <p>{access.message}</p>}
         </DialogContent>
       </Dialog>

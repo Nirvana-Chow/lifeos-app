@@ -16,7 +16,7 @@ type CellEdit = TaskCellDraft & { writeDraft: (draft: TaskCellDraft | null) => v
 const editableFields: readonly TaskCellField[] = ['title', 'status', 'due'];
 const columnLabels = ['待办', '状态', '到期日', '项目', '领域', '详情'];
 const columnIds = ['title', 'status', 'due', 'project', 'area', 'detail'];
-const columnWidths = [320, 110, 130, 180, 160, 130];
+const columnWidths = [284, 176, 176, 150, 130, 114];
 const valueOf = (task: TaskRow, field: TaskCellField) =>
   field === 'title' ? task.title : field === 'due' ? task.dueOn ?? '' : taskStatusLabels[task.status];
 const canWrite = (props: TaskGridProps) =>
@@ -89,9 +89,9 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
   const { edit, latest, open, close, advance, onError } = state;
   const index = columnIds.indexOf(column.id);
   if (index >= 3) {
-    return <Button variant="ghost" className={styles.open} disabled={latest.current.blocked}
+    return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
       aria-label={index === 5 ? `打开任务：${row.original.title}` : `${columnLabels[index]}：${String(getValue())}，打开任务：${row.original.title}`}
-      onClick={event => latest.current.onOpen(row.original, event.currentTarget)}>{String(getValue())}</Button>;
+      onClick={event => latest.current.onOpen(row.original, event.currentTarget)}><span>{String(getValue())}</span></Button>;
   }
   if (edit?.task.id === row.id && edit.field === column.id) {
     return <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError} />;
@@ -103,8 +103,10 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
 function TaskGridColumnHeader({ column }: HeaderContext<typeof dataGridFeatures, TaskRow, unknown>) {
   const index = columnIds.indexOf(column.id);
   if (index === 5) return columnLabels[index];
-  return <Button variant="ghost" className={styles.sort} onClick={column.getToggleSortingHandler()} aria-label={`按${columnLabels[index]}排序`}>
-    {columnLabels[index]}<span aria-hidden="true">{column.getIsSorted() === 'asc' ? '↑' : column.getIsSorted() === 'desc' ? '↓' : ''}</span>
+  const direction = column.getIsSorted();
+  return <Button variant="ghost" className={styles.sort} data-sorted={direction || undefined}
+    onClick={column.getToggleSortingHandler()} aria-label={`按${columnLabels[index]}排序`}>
+    {columnLabels[index]}<span className={styles.sortIndicator} aria-hidden="true">{direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '↕'}</span>
   </Button>;
 }
 
@@ -163,7 +165,7 @@ export function TaskGrid(props: TaskGridProps) {
       id,
       size: columnWidths[index],
       minSize: columnWidths[index],
-      accessorFn: task => index === 1 ? task.status : index < 3 ? valueOf(task, editableFields[index]) : index === 3 ? task.project?.title ?? '—' : index === 4 ? task.area?.title ?? '—' : '编辑 / 查看',
+      accessorFn: task => index === 1 ? task.status : index < 3 ? valueOf(task, editableFields[index]) : index === 3 ? task.project?.title ?? '—' : index === 4 ? task.area?.title ?? '—' : '查看详情',
       header: TaskGridColumnHeader,
       enableSorting: index < 5,
       meta: {

@@ -106,6 +106,17 @@ async function readyEditor(page:Page,value?:string){
  if(value!==undefined)await expect(title(page)).toHaveValue(value);
  await expect(page.getByText('正在读取完整快照…',{exact:true})).toHaveCount(0);
 }
+async function readyTaskDetail(page:Page,value:string){
+ const detail=page.getByRole('dialog',{name:'待办详情',exact:true});
+ await expect(detail.getByRole('heading',{name:value,exact:true})).toBeVisible();
+ await expect(detail.locator('form')).toHaveCount(0);
+ return detail;
+}
+async function editTask(page:Page,value:string){
+ const detail=await readyTaskDetail(page,value);
+ await detail.getByRole('button',{name:'编辑待办',exact:true}).click();
+ await readyEditor(page,value);
+}
 async function workspaceReady(page:Page){await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();await expect(page.locator('.lo-shell')).toBeVisible();}
 async function json(page:Pick<Page,'evaluate'>,path:string){
  const result=await page.evaluate(async path=>{const r=await fetch(path,{credentials:'same-origin',cache:'no-store'});return {ok:r.ok,body:await r.json()};},path);
@@ -171,7 +182,7 @@ async function screenshot(page:Page,name:string,records:PublicEntry[],todo:Publi
 async function presentation(page:Page,kind:'workspace'|'editor',width:number,theme:'light'|'dark',records:PublicEntry[],todo:PublicEntry,diagnostic:PresentationDiagnostic){
  diagnostic('viewport',{width});await page.setViewportSize({width,height:width===1365?900:844});await page.emulateMedia({colorScheme:theme});
  diagnostic('theme-init');await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.reload({waitUntil:'domcontentloaded'});
- diagnostic('ready');if(kind==='workspace')await workspaceReady(page);else await readyEditor(page,synthetic.title);
+ diagnostic('ready');if(kind==='workspace')await workspaceReady(page);else await editTask(page,synthetic.title);
  diagnostic('theme-resolved');await page.waitForFunction(t=>document.documentElement.dataset.lifeosTheme===t&&matchMedia('(prefers-color-scheme: '+t+')').matches,theme);
  diagnostic('native-paint');if(kind==='workspace')await requireNativeTable(page);
  diagnostic('fonts');await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
@@ -237,11 +248,11 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');
  phase='create-todo';await title(page).fill(synthetic.initial);await recordField(page,'正文').fill(synthetic.notes);await recordField(page,'到期日').fill(synthetic.date);let todo=await saveTask(page);assert.equal('status'in todo.draft?todo.draft.status:null,'open');
  await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
- const trigger=page.getByRole('button',{name:'编辑待办：'+synthetic.initial,exact:true});const editorStart=performance.now();await trigger.click();await readyEditor(page,synthetic.initial);latency('editor-form-ready',editorStart);
+ const trigger=page.getByRole('button',{name:'查看待办：'+synthetic.initial,exact:true});const editorStart=performance.now();await trigger.click();await editTask(page,synthetic.initial);latency('editor-form-ready',editorStart);
  phase='edit-and-readback';await title(page).fill(synthetic.title);const bodyStart=performance.now();await recordField(page,'正文').fill(synthetic.editedNotes);await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));latency('body-next-frame',bodyStart);await recordField(page,'到期日').fill(synthetic.editedDate);await recordField(page,'状态').selectOption('in_progress');await taskRelations(page);await recordField(page,'项目').selectOption(project.id);await recordField(page,'领域').selectOption(domain.id);todo=await saveTask(page,todo);
  assert.deepEqual(todo.draft,{title:synthetic.title,notes:synthetic.editedNotes,dueOn:synthetic.editedDate,status:'in_progress',personal:{project:reference(project),domain:reference(domain),topics:[]}});
  const editorURL=origin+'/personal/edit?type=todo&id='+encodeURIComponent(todo.id),tasksURL=origin+'/personal?page=tasks';
- const verifyFields=async()=>{await readyEditor(page,synthetic.title);await expect(recordField(page,'正文')).toHaveValue(synthetic.editedNotes);await expect(recordField(page,'到期日')).toHaveValue(synthetic.editedDate);await expect(recordField(page,'状态')).toHaveValue('status'in todo.draft?todo.draft.status:'');await taskRelations(page);await expect(recordField(page,'项目')).toHaveValue(project.id);await expect(recordField(page,'领域')).toHaveValue(domain.id);};
+ const verifyFields=async()=>{await editTask(page,synthetic.title);await expect(recordField(page,'正文')).toHaveValue(synthetic.editedNotes);await expect(recordField(page,'到期日')).toHaveValue(synthetic.editedDate);await expect(recordField(page,'状态')).toHaveValue('status'in todo.draft?todo.draft.status:'');await taskRelations(page);await expect(recordField(page,'项目')).toHaveValue(project.id);await expect(recordField(page,'领域')).toHaveValue(domain.id);};
  await page.goto(editorURL,{waitUntil:'domcontentloaded'});await page.reload({waitUntil:'domcontentloaded'});await verifyFields();await readTodo(page,todo,[domain,project,todo]);
  phase='four-states';for(const status of ['done','cancelled','in_progress'] as const){await recordField(page,'状态').selectOption(status);todo=await saveTask(page,todo);assert.equal('status'in todo.draft?todo.draft.status:null,status);await page.reload({waitUntil:'domcontentloaded'});await verifyFields();await readTodo(page,todo,[domain,project,todo]);}
  phase='unsaved-modal-cancel';await title(page).fill('合成未保存草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'取消',exact:true}).click();});await expect(title(page)).toHaveValue('合成未保存草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'取消',exact:true}).click();});await expect(page.getByRole('dialog')).toHaveCount(0);await readTodo(page,todo,[domain,project,todo]);
@@ -323,7 +334,13 @@ export async function verifyPersonalWorkspace(page:Page){
  const records=[domain,project,todo];
  phase='readonly-ui';const cleanupReadonly=await installReadonlyPersonalReads(page);let mutations=0;const count=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))mutations++;};page.on('request',count);
  try{await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});await expect(complete).toBeDisabled();await complete.evaluate((node:HTMLElement)=>node.click());await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page.getByRole('heading',{name:'分类管理',exact:true})).toBeVisible();await expect(page.locator('[aria-label="分类管理"] a')).toHaveCount(0);
- await page.goto(editorURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();await expect(title(page)).toHaveValue(synthetic.title);for(const label of ['标题','正文','到期日','状态'])await expect(recordField(page,label)).toBeDisabled();await taskRelations(page);for(const label of ['项目','领域'])await expect(recordField(page,label)).toBeDisabled();const disabledSave=form(page).getByRole('button',{name:'保存待办',exact:true});await expect(disabledSave).toBeDisabled();await disabledSave.evaluate((node:HTMLElement)=>node.click());assert.equal(mutations,0,'readonly UI attempted mutations');
+ await page.goto(editorURL,{waitUntil:'domcontentloaded'});
+ const detail=await readyTaskDetail(page,synthetic.title);
+ await expect(detail.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();
+ await expect(detail.getByText(synthetic.editedNotes,{exact:true})).toBeVisible();
+ await expect(detail.getByText(synthetic.editedDate,{exact:true})).toBeVisible();
+ await expect(detail.getByRole('button',{name:'编辑待办',exact:true})).toHaveCount(0);
+ assert.equal(mutations,0,'readonly UI attempted mutations');
  }finally{await cleanupReadonly();page.off('request',count);assert.equal((await json(page,'/api/platform/personal/status')).writable,true);assert.equal((await json(page,'/api/platform/personal/availability')).writable,true);await page.goto(editorURL,{waitUntil:'domcontentloaded'});await verifyFields();}
  phase='restore-personal';await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);await readTodo(page,todo,records);return {verifyPersisted:async()=>{await workspaceReady(page);await readTodo(page,todo,records);},entries:[domain,project,todo] as const};
  }catch(error){console.log('PERSONAL_BROWSER_PHASE '+phase);console.log('PERSONAL_BROWSER_FAILURE '+personalBrowserFailureKind(error));console.log('PERSONAL_BROWSER_PRESENTATION '+JSON.stringify(presentationFailure));throw Error('PERSONAL_BROWSER_FAILED');}
@@ -338,7 +355,7 @@ export async function verifyPersonalPresentations(page:Page,entries:readonly [Pu
  for(const theme of ['light','dark'] as const)for(const width of [1365,360,390,430]){
   phase='workspace-'+width+'-'+theme;await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await presentation(page,'workspace',width,theme,records,todo,diagnostic);
   const keyboardEntry=page.getByRole('button',{name:'打开任务：'+synthetic.title,exact:true});await keyboardEntry.focus();await expect(keyboardEntry).toBeFocused();await expect(keyboardEntry).toBeVisible();const scroll=await taskGridViewport(page).evaluate(node=>{const el=node as HTMLElement;el.scrollLeft=el.scrollWidth;return {internal:['auto','scroll'].includes(getComputedStyle(el).overflowX),overflow:el.scrollWidth>el.clientWidth,moved:el.scrollLeft>0};});assert.equal(scroll.internal,true);if(scroll.overflow)assert.equal(scroll.moved,true);
-  await keyboardEntry.press('Enter');await readyEditor(page,synthetic.title);await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();await expect(keyboardEntry).toBeFocused();
+  await keyboardEntry.press('Enter');const detail=await readyTaskDetail(page,synthetic.title);await detail.getByRole('button',{name:'关闭待办详情',exact:true}).click();await expect(keyboardEntry).toBeFocused();
   phase='editor-'+width+'-'+theme;await page.goto(editorURL,{waitUntil:'domcontentloaded'});await presentation(page,'editor',width,theme,records,todo,diagnostic);
  }
 

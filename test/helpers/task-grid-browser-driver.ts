@@ -42,7 +42,11 @@ export async function requireTaskGrid(page: Page, title: string, expectedRows = 
       grids: grids?.length ?? 0,
       expectedRows,
       declaredRows: Number(grid?.getAttribute('aria-rowcount') ?? 0),
-      headers: Array.from(grid?.querySelectorAll('thead th') ?? []).map(node => node.textContent?.trim() ?? ''),
+      headers: Array.from(grid?.querySelectorAll('thead th') ?? []).map(node => {
+        const label = node.cloneNode(true) as HTMLElement;
+        label.querySelectorAll('[aria-hidden="true"]').forEach(decoration => decoration.remove());
+        return label.textContent?.trim() ?? '';
+      }),
       renderedRows: rows.length,
       cellsPerRow: rows.map(row => row.querySelectorAll('td[aria-colindex]').length),
       nativeTitle: rows.some(row => row.querySelector('td[aria-colindex="1"]')?.textContent?.trim() === title),
