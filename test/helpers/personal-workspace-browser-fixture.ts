@@ -266,6 +266,34 @@ export async function verifyPersonalWorkspace(page:Page){
  }finally{page.off('request',countHidden);await page.evaluate(()=>Reflect.deleteProperty(document,'visibilityState'));}
  const cellReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');phase='native-title-submit';await input.press('Enter');phase='native-title-receipt';todo=(await(await cellReceipt).json()).entry;assert.equal('title'in todo.draft?todo.draft.title:null,synthetic.title+'（表格）');phase='native-title-projection';await expect(page.getByRole('button',{name:'打开任务：'+synthetic.title+'（表格）',exact:true})).toBeAttached();phase='native-title-input-closed';await expect(input).toBeHidden();
  phase='native-title-restore-open';await taskGridTitleCell(page,synthetic.title+'（表格）').dblclick();phase='native-title-restore-visible';await expect(input).toHaveCount(1);await expect(input).toBeVisible();await expect(input).toBeEditable();await input.fill(synthetic.title);const restoreReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');phase='native-title-restore-submit';await input.press('Enter');phase='native-title-restore-receipt';todo=(await(await restoreReceipt).json()).entry;phase='native-title-restore-projection';await expect(page.getByRole('button',{name:'打开任务：'+synthetic.title,exact:true})).toBeAttached();phase='native-title-restore-closed';await expect(input).toBeHidden();phase='native-title-final-readback';await readTodo(page,todo,[domain,project,todo]);
+ const nativeCell=(column:number)=>taskGridTitleCell(page,synthetic.title)
+  .locator('xpath=..').locator('td[aria-colindex="'+column+'"] span').first();
+ const saveNativeField=async(column:number,label:string,value:string,field:'status'|'dueOn')=>{
+  phase='native-'+field+'-open';
+  await nativeCell(column).dblclick();
+  const editor=page.getByLabel(label,{exact:true});
+  await expect(editor).toBeVisible();
+  if(field==='status')await editor.selectOption(value);else await editor.fill(value);
+  const previous=todo;
+  const receipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+previous.id&&r.request().method()==='PATCH');
+  phase='native-'+field+'-receipt';
+  await editor.press('Enter');
+  const response=await receipt;
+  assert.equal(response.status(),200);
+  const saved=await response.json() as {entry:PublicEntry;duplicate:boolean};
+  assert.equal(saved.duplicate,false);
+  todo=saved.entry;
+  assert.equal(todo.id,previous.id);
+  assert.equal(todo.source.id,previous.source.id);
+  assert.equal(todo.revision,previous.revision+1);
+  assert.equal((todo.draft as Record<string,unknown>)[field],value);
+  await expect(editor).toBeHidden();
+  await readTodo(page,todo,[domain,project,todo]);
+ };
+ await saveNativeField(2,'编辑状态','open','status');
+ await saveNativeField(2,'编辑状态','in_progress','status');
+ await saveNativeField(3,'编辑到期日','2030-11-04','dueOn');
+ await saveNativeField(3,'编辑到期日',synthetic.editedDate,'dueOn');
  phase='source-settings';await page.getByRole('button',{name:'设置',exact:true}).click();await page.locator('.lo-settings details > summary').click();const source=page.locator('section[aria-label="待办来源与读取范围"]');await expect(source).toContainText('已验证完整快照');await expect(source).toContainText('手工录入：1');await expect(source).toContainText('Apple 提醒事项：0');await expect(source).toContainText('非实时同步');await expect(page.getByRole('link',{name:'数据管理与导出',exact:true})).toHaveAttribute('href','/personal/settings/data');
  const records=[domain,project,todo];
  phase='readonly-ui';const cleanupReadonly=await installReadonlyPersonalReads(page);let mutations=0;const count=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))mutations++;};page.on('request',count);
