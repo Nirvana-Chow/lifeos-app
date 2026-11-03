@@ -1,5 +1,6 @@
 .control{position:relative;flex:none;font:var(--lo-font-body);color:var(--foreground)}
 .control .modes{display:flex;gap:0;min-width:0;margin:0;padding:0;border:1px solid var(--border);border-radius:var(--lo-radius-control);background:var(--background)}
+.pending{visibility:hidden;pointer-events:none}
 .control .mode{position:relative;display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer;margin:0;font-size:16px;font-weight:500}
 .control .mode input{position:absolute;opacity:0;width:1px;height:1px;min-height:0;padding:0;border:0;margin:0}
 .mode span{display:grid;place-items:center;align-self:stretch;min-width:44px;padding:0 6px;border-radius:6px;transition:background-color 120ms,color 120ms}

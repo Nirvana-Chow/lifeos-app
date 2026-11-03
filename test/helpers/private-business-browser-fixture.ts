@@ -75,6 +75,12 @@ export type FirstVisibleTheme={theme:string|undefined;scheme:string;checked:stri
 export function assertFirstVisibleTheme(frames:FirstVisibleTheme[],theme:'light'|'dark',preference:'light'|'dark'|'system'){
  if(!frames.length||frames.some(frame=>frame.theme!==theme||frame.scheme!==theme||frame.checked!==preference||!Number.isFinite(frame.time)||frame.time<0))throw Error('PRIVATE_FIRST_VISIBLE_THEME');
 }
+/** Preserve the Header's first paint independently of control hydration. A control
+ * that never appears, or appears with a wrong checked value, still fails. */
+export function assertFirstVisibleAppearance(palette:FirstVisibleTheme[],controls:FirstVisibleTheme[],theme:'light'|'dark',preference:'light'|'dark'|'system'){
+ if(palette.length!==3||controls.length!==3||palette.some(frame=>frame.theme!==theme||frame.scheme!==theme||!Number.isFinite(frame.time)||frame.time<0)||controls.some(frame=>frame.control!=='visible'))throw Error('PRIVATE_FIRST_VISIBLE_THEME');
+ assertFirstVisibleTheme(controls,theme,preference);
+}
 type FirstVisiblePhase='initial-system'|'saved-dark-reload'|'saved-dark-navigation';
 type FirstVisibleDocument='new'|'same'|'unknown';
 export function projectFirstVisibleDiagnostic(phase:unknown,frames:readonly unknown[],document:unknown){
@@ -90,22 +96,25 @@ export function projectFirstVisibleDiagnostic(phase:unknown,frames:readonly unkn
 const firstVisibleTimeOrigins=new WeakMap<Page,number>();
 /** Passive init observer: never changes theme, storage, checked controls or CSS. */
 export async function observeFirstVisibleTheme(context:BrowserContext){await context.addInitScript(()=>{
- const w=window as unknown as {__lifeosFirstVisible?:{theme?:string;scheme:string;checked:string|null;control:'missing'|'hidden'|'visible';time:number}[]};w.__lifeosFirstVisible=[];
- let seen=false,count=0;const tick=()=>{
+ type Frame={theme?:string;scheme:string;checked:string|null;control:'missing'|'hidden'|'visible';time:number};
+ const w=window as unknown as {__lifeosFirstVisible?:Frame[];__lifeosFirstVisibleControls?:Frame[]};w.__lifeosFirstVisible=[];w.__lifeosFirstVisibleControls=[];
+ const tick=()=>{
   const header=document.querySelector('header'),r=header?.getBoundingClientRect();
   if(header&&r&&r.width>0&&r.height>0&&getComputedStyle(header).visibility!=='hidden'){
    const root=document.documentElement,radio=header.querySelector<HTMLInputElement>('input[type="radio"]'),label=radio?.closest('label'),labelRect=label?.getBoundingClientRect();
-   const control=!radio?'missing':label&&labelRect&&labelRect.width>0&&labelRect.height>0&&getComputedStyle(label).visibility!=='hidden'?'visible':'hidden';
-   w.__lifeosFirstVisible!.push({theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:header.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value??null,control,time:performance.now()});seen=true;count++;
+   const control:Frame['control']=!radio?'missing':label&&labelRect&&labelRect.width>0&&labelRect.height>0&&getComputedStyle(label).visibility!=='hidden'?'visible':'hidden';
+   const frame={theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:header.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value??null,control,time:performance.now()};
+   if(w.__lifeosFirstVisible!.length<3)w.__lifeosFirstVisible!.push(frame);
+   if(control==='visible'&&w.__lifeosFirstVisibleControls!.length<3)w.__lifeosFirstVisibleControls!.push(frame);
   }
-  if(!seen||count<3)requestAnimationFrame(tick);
+  if(w.__lifeosFirstVisible!.length<3||w.__lifeosFirstVisibleControls!.length<3)requestAnimationFrame(tick);
  };requestAnimationFrame(tick);
  });}
 export async function checkFirstVisibleTheme(page:Page,theme:'light'|'dark',preference:'light'|'dark'|'system',phase:FirstVisiblePhase){
- await page.waitForFunction(()=>((window as unknown as {__lifeosFirstVisible?:unknown[]}).__lifeosFirstVisible?.length??0)>=3);
- const observation=await page.evaluate(()=>({frames:(window as unknown as {__lifeosFirstVisible:FirstVisibleTheme[]}).__lifeosFirstVisible,timeOrigin:performance.timeOrigin}));
+ await page.waitForFunction(()=>{const w=window as unknown as {__lifeosFirstVisible?:unknown[];__lifeosFirstVisibleControls?:unknown[]};return w.__lifeosFirstVisible?.length===3&&w.__lifeosFirstVisibleControls?.length===3;});
+ const observation=await page.evaluate(()=>{const w=window as unknown as {__lifeosFirstVisible:FirstVisibleTheme[];__lifeosFirstVisibleControls:FirstVisibleTheme[]};return{frames:w.__lifeosFirstVisible,controls:w.__lifeosFirstVisibleControls,timeOrigin:performance.timeOrigin};});
  const previous=firstVisibleTimeOrigins.get(page),timeOrigin=observation.timeOrigin,document=Number.isFinite(previous)&&Number.isFinite(timeOrigin)?previous===timeOrigin?'same':'new':'unknown';
- firstVisibleTimeOrigins.set(page,timeOrigin);try{assertFirstVisibleTheme(observation.frames,theme,preference);}catch(error){if(error instanceof Error&&error.message==='PRIVATE_FIRST_VISIBLE_THEME')console.error('PRIVATE_FIRST_VISIBLE_DIAGNOSTIC '+JSON.stringify(projectFirstVisibleDiagnostic(phase,observation.frames,document)));throw error;}
+ firstVisibleTimeOrigins.set(page,timeOrigin);try{assertFirstVisibleAppearance(observation.frames,observation.controls,theme,preference);}catch(error){if(error instanceof Error&&error.message==='PRIVATE_FIRST_VISIBLE_THEME')console.error('PRIVATE_FIRST_VISIBLE_DIAGNOSTIC '+JSON.stringify({...projectFirstVisibleDiagnostic(phase,observation.frames,document),controls:projectFirstVisibleDiagnostic(phase,observation.controls,document).frames}));throw error;}
 }
 // The text source set is finite and reviewed. AST literals/JSX text are admitted
 // exactly, never source prefixes, arbitrary file paths or body-derived expected data.

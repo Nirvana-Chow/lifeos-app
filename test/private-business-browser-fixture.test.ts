@@ -45,6 +45,35 @@ test('first-visible observations include checked preference and reject final-sta
  assert.doesNotThrow(()=>fixture.assertFirstVisibleTheme([first], 'dark','dark'));
  for(const observations of [[],[{...first,checked:'system'}],[{...first,theme:'light'},first],[{...first,scheme:'light'},first]])assert.throws(()=>fixture.assertFirstVisibleTheme(observations,'dark','dark'),/PRIVATE_FIRST_VISIBLE_THEME/);
 });
+test('appearance checks keep the first three Header palette frames and the first three visible control frames',()=>{
+ const first={theme:'dark',scheme:'dark',checked:null,control:'hidden',time:4} as const;
+ const palette=Array.from({length:3},(_,i)=>({...first,time:i+1}));
+ const controls:fixture.FirstVisibleTheme[]=Array.from({length:3},(_,i)=>({...first,checked:'dark',control:'visible',time:i+10}));
+ assert.doesNotThrow(()=>fixture.assertFirstVisibleAppearance(palette,controls,'dark','dark'));
+ for(const [header,visible] of [[[],controls],[palette,[]],[palette.slice(1),controls],[palette,controls.slice(1)],[[{...first,theme:'light'},...palette.slice(1)],controls],[palette,[{...controls[0],checked:'system'},...controls.slice(1)]],[palette,[{...controls[0],control:'hidden'},...controls.slice(1)]],[palette,[{...controls[0],time:Number.NaN},...controls.slice(1)]]] as const){
+  assert.throws(()=>fixture.assertFirstVisibleAppearance([...header],[...visible],'dark','dark'),/PRIVATE_FIRST_VISIBLE_THEME/);
+ }
+});
+test('the passive init observer records early palette and control mistakes without waiting for repair',async()=>{
+ for(const fault of ['none','palette','checked','missing-checked'] as const){
+  let install!:()=>void;
+  await fixture.observeFirstVisibleTheme({addInitScript:async(script:()=>void)=>{install=script;}} as never);
+  const w={} as {__lifeosFirstVisible:fixture.FirstVisibleTheme[];__lifeosFirstVisibleControls:fixture.FirstVisibleTheme[]};
+  let frame=0;const queued:Function[]=[];
+  const label={getBoundingClientRect:()=>({width:44,height:44})};
+  const radio={closest:()=>label,value:'dark'};
+  const root={dataset:{lifeosTheme:'dark'}};
+  const header={getBoundingClientRect:()=>({width:300,height:60}),querySelector:(selector:string)=>selector.endsWith(':checked')?(frame<3?null:frame===3&&fault==='missing-checked'?null:{value:frame===3&&fault==='checked'?'system':'dark'}):radio};
+  const getComputedStyle=(node:unknown)=>({visibility:node===label&&frame<3?'hidden':'visible',colorScheme:root.dataset.lifeosTheme});
+  new Function('window','document','getComputedStyle','performance','requestAnimationFrame',`(${install.toString()})()`)(w,{documentElement:root,querySelector:()=>header},getComputedStyle,{now:()=>frame*16},(fn:Function)=>queued.push(fn));
+  while(queued.length&&frame<10){root.dataset.lifeosTheme=frame===0&&fault==='palette'?'light':'dark';queued.shift()!();frame++;}
+  assert.equal(queued.length,0);assert.equal(w.__lifeosFirstVisible.length,3);assert.equal(w.__lifeosFirstVisibleControls.length,3);
+  assert.deepEqual(w.__lifeosFirstVisible.map(item=>item.time),[0,16,32]);
+  assert.deepEqual(w.__lifeosFirstVisibleControls.map(item=>item.time),[48,64,80]);
+  if(fault==='none')assert.doesNotThrow(()=>fixture.assertFirstVisibleAppearance(w.__lifeosFirstVisible,w.__lifeosFirstVisibleControls,'dark','dark'));
+  else assert.throws(()=>fixture.assertFirstVisibleAppearance(w.__lifeosFirstVisible,w.__lifeosFirstVisibleControls,'dark','dark'),/PRIVATE_FIRST_VISIBLE_THEME/);
+ }
+});
 test('first-visible diagnostic projection limits output to finite enums and rounded relative times',()=>{
  const privateValue='private-secret-value';
  const projected=fixture.projectFirstVisibleDiagnostic(privateValue,[

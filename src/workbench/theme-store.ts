@@ -1,7 +1,7 @@
 import {readThemePreference,resolveTheme,saveThemePreference,themeStorageKey,type ThemePreference} from './theme';
 
-export type ThemeSnapshot=Readonly<{preference:ThemePreference;resolved:'light'|'dark';notice:string}>;
-export const serverThemeSnapshot:ThemeSnapshot={preference:'system',resolved:'light',notice:''};
+export type ThemeSnapshot=Readonly<{ready:boolean;preference:ThemePreference;resolved:'light'|'dark';notice:string}>;
+export const serverThemeSnapshot:ThemeSnapshot={ready:false,preference:'system',resolved:'light',notice:''};
 /** One document store. Controls only subscribe; the root runtime owns listeners. */
 export function createThemeStore(){
  let snapshot=serverThemeSnapshot,initialized=false,owners=0,stop:(()=>void)|undefined;
@@ -11,8 +11,8 @@ export function createThemeStore(){
   const resolved=resolveTheme(preference,system()?.matches??false);
   document.documentElement.dataset.lifeosTheme=resolved;
   document.documentElement.style.colorScheme=resolved;
-  if(snapshot.preference===preference&&snapshot.resolved===resolved&&snapshot.notice===notice)return;
-  snapshot={preference,resolved,notice};subscribers.forEach(fn=>fn());
+  if(snapshot.ready&&snapshot.preference===preference&&snapshot.resolved===resolved&&snapshot.notice===notice)return;
+  snapshot={ready:true,preference,resolved,notice};subscribers.forEach(fn=>fn());
  }
  return {
   getSnapshot:()=>snapshot,
