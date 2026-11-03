@@ -34,7 +34,7 @@ export function assertPrivateHandoff(h:PrivateBrowserHandoff|undefined):asserts 
   const ref=(e:PublicEntry)=>({id:e.id,sourceId:e.source.id,revision:e.revision});
   assert.deepEqual(h.entries[1].draft,{title:titles[1],text:'隔离合成项目目标',occurredOn:null,disposition:'reference',personal:{type:'project',stage:'idea',purpose:null,nextStep:'',domain:ref(h.entries[0]),topics:[]}});
   assert.deepEqual(h.entries[2].draft,{title:titles[2],notes:'仅用于隔离浏览器的合成更正内容',dueOn:'2030-11-03',status:'in_progress',personal:{project:ref(h.entries[1]),domain:ref(h.entries[0]),topics:[]}});
-  const c=h.cookies[0];if(c.name!=='__Secure-lifeos-platform-candidate.session_token'||c.domain!=='review.example.test'||c.path!=='/'||!c.secure||!c.httpOnly||c.sameSite!=='Strict'||!c.value||c.expires<=Date.now()/1000)throw Error();
+  const c=h.cookies[0];if(c.name!=='__Secure-lifeos-platform-candidate.session_token'||c.domain!=='review.example.test'||c.path!=='/'||!c.secure||!c.httpOnly||c.sameSite!=='Strict'||!c.value||(c.expires!==-1&&(!Number.isFinite(c.expires)||c.expires<=Date.now()/1000)))throw Error();
  }catch{throw Error('BROWSER_PRIVATE_HANDOFF_UNAVAILABLE');}
 }
 export function assertPrivateSnapshot(value:unknown,entries:readonly PublicEntry[]):void{

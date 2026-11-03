@@ -67,6 +67,9 @@ test('handoff admits only three exact synthetic receipts with structured safe ti
  const entries=drafts.map((draft,i)=>({id:ids[i],kind:i===2?'todo':'inbox',revision:1,createdAt:iso,updatedAt:iso,syncState:'draft',externalStatus:null,draft,source:{id:sourceId(ids[i]),system:'website',externalId:ids[i],version:1,asOf:iso,original:{marker:'personal-manual-v1',spaceId,type:types[i],input:{spaceId,confirmed:true,fields:i===2?{title:'合成浏览器待办',notes:'仅用于隔离浏览器的合成补充内容',dueOn:'2030-11-02',status:'open'}:Object.fromEntries(Object.entries(draft).filter(([key])=>key!=='disposition'))}}}}));
  const clean={origin:'https://review.example.test',ownerId:'personal-review-user',spaceId,sourceSha:'a'.repeat(40),cookies:[{name:'__Secure-lifeos-platform-candidate.session_token',value:'fixture-memory-only',domain:'review.example.test',path:'/',secure:true,httpOnly:true,sameSite:'Strict',expires:Date.now()/1000+60}],entries};
  assert.doesNotThrow(()=>fixture.assertPrivateHandoff(clean as never));
+ const sessionCookie={...clean.cookies[0],expires:-1};
+ assert.doesNotThrow(()=>fixture.assertPrivateHandoff({...clean,cookies:[sessionCookie]} as never));
+ for(const change of [{expires:Number.NaN},{expires:Number.POSITIVE_INFINITY},{expires:Date.now()/1000-60},{expires:-2},{domain:'foreign.example.test'}])assert.throws(()=>fixture.assertPrivateHandoff({...clean,cookies:[{...clean.cookies[0],...change}]} as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
  for(const change of [{createdAt:'private record body'},{updatedAt:'private@example.com'},{source:{...entries[0].source,asOf:'private body'}}]){const poisoned={...clean,entries:[{...entries[0],...change},entries[1],entries[2]]};assert.throws(()=>fixture.assertPrivateHandoff(poisoned as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);}
 });
 
