@@ -300,7 +300,17 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
  },{dialog,selectors,chevronImage});
  mark('overflow');assert.equal(facts.overflow,false,'private horizontal overflow');mark('palette');assert.equal(facts.theme,theme);assert.equal(facts.scheme,theme);mark('header',[facts.header.height,facts.header.gap,facts.header.childHeights.length,...facts.header.childHeights.slice(0,3),Number(facts.header.contained),Number(facts.header.display==='flex'),Number(facts.header.wrap==='wrap')]);assertPrivateHeaderGeometry(surface,width,facts.header);mark('title',[facts.heading]);assert.equal(facts.heading>= (width===1365?28:24),true,'private title typography');mark('typography',[facts.fonts.filter(n=>!(n.size>=(n.form?16:14))).length]);assert.equal(facts.fonts.every(n=>n.size>= (n.form?16:14)),true,'private readable typography');mark('hit-targets',[facts.targets.length,...facts.targets.slice(0,3).flatMap(n=>[n.width,n.height])]);assert.equal(facts.targets.length,3);assert.equal(facts.targets.every(n=>n.width>=44&&n.height>=44),true,'Header radio hit targets');
  for(const [index,c] of facts.contrasts.entries()){mark('contrast',[index,Number(c.layers.some(l=>Number(l.opacity??'1')!==1)),Number(c.layers.some(l=>(l.backgroundImage??'none')!=='none')),Number(c.layers.some(l=>(l.filter??'none')!=='none'||(l.backdropFilter??'none')!=='none')),Number(c.layers.some(l=>(l.mixBlendMode??'normal')!=='normal'||(l.backgroundBlendMode??'normal')!=='normal'))]);const contrast=renderedContrast(c.foreground,c.layers);mark('contrast',[index,contrast.contrast]);assert.equal(contrast.contrast>=4.5,true,'private rendered text contrast');}
- mark('dialog');if(facts.dialog){assert.equal(facts.dialog.width<=width,true);assert.equal(facts.dialog.scroll,true);await expect(page.getByRole('button',{name:'返回页面',exact:true})).toBeVisible();}
+ mark('dialog');
+ if(facts.dialog){
+  assert.equal(facts.dialog.width<=width,true);assert.equal(facts.dialog.scroll,true);
+  const bounds=await page.getByRole('dialog').evaluate(dialog=>{
+   const {left,right,top,bottom}=dialog.getBoundingClientRect();
+   return {left,rightGap:innerWidth-right,top,bottomGap:innerHeight-bottom};
+  });
+  assert.ok(bounds.left>=15&&bounds.rightGap>=15&&bounds.top>=0&&bounds.bottomGap>=0,'dialog stays inside viewport margins');
+  assert.ok(Math.abs(bounds.left-bounds.rightGap)<=2&&Math.abs(bounds.top-bounds.bottomGap)<=2,'dialog centers in viewport');
+  await expect(page.getByRole('button',{name:'返回页面',exact:true})).toBeVisible();
+ }
  if(dialog){const button=page.getByRole('button',{name:'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
  mark('keyboard');const focus=page.locator('header input[type="radio"]:checked');await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>{const label=n.closest('label');return document.activeElement===n&&n.matches(':focus-visible')&&!!label&&(getComputedStyle(n).outlineStyle!=='none'||getComputedStyle(label).outlineStyle!=='none'||getComputedStyle(label).boxShadow!=='none'||!!n.nextElementSibling&&getComputedStyle(n.nextElementSibling).outlineStyle!=='none');}),true,'private keyboard focus');
 }
@@ -313,6 +323,25 @@ async function privateLocalInteractions(page:Page,key:string){
  else if(key==='private-tools'){const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'授权与执行要求'})}).first();await details.locator('summary').click();await expect(details).toContainText('需确认来源');await details.locator('summary').click();await expect(page.getByRole('button',{name:'连接 · 未实现',exact:true}).first()).toBeDisabled();}
  else if(key==='private-chat')await expect(page.locator('main').getByRole('heading',{level:2,name:'AI 聊天尚未接入',exact:true})).toBeVisible();
  else if(key==='private-data')await expect(page.getByRole('button',{name:'恢复 · 未验证',exact:true})).toBeDisabled();
+ if(key==='private-finance'||key==='private-health'){
+  const notice=page.getByText('本模块来源尚未连接，当前没有查询结果。',{exact:true});
+  await expect(notice).toBeVisible();
+  const fits=await notice.evaluate(element=>{
+   const range=document.createRange();
+   range.selectNodeContents(element);
+   const lines=Array.from(range.getClientRects());
+   return lines.length>0&&lines.every(rect=>{
+    if(rect.left<0||rect.right>document.documentElement.clientWidth)return false;
+    for(let parent=element.parentElement;parent;parent=parent.parentElement){
+     if(getComputedStyle(parent).overflowX==='visible')continue;
+     const left=parent.getBoundingClientRect().left+parent.clientLeft;
+     if(rect.left<left-1||rect.right>left+parent.clientWidth+1)return false;
+    }
+    return true;
+   });
+  });
+  assert.equal(fits,true,'empty state text fits the visible content width');
+ }
 }
 // Bind the visible timestamp to the exact snapshot that this navigation fetched.
 async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture['entries']):Promise<string>{
