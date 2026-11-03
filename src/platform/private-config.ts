@@ -1,3 +1,4 @@
+import{agentRuntimeKeys,readAgentRuntimeConfig}from'../agent-api/config.ts';
 import{personalConfigKeys,readPersonalConfig}from'../personal-candidate/config.ts';
 import{readCaptureRunCandidateFlag}from'../capture-runs-candidate/config.ts';
 import{readChatCandidateFlag}from'../chat-candidate/config.ts';
@@ -16,11 +17,11 @@ export function validateReviewConfig(value:Record<string,unknown>):Record<string
  try{
   const keys=['LIFEOS_PLATFORM_CANDIDATE','LIFEOS_PLATFORM_TARGET','LIFEOS_PLATFORM_BASE_URL','LIFEOS_PLATFORM_OWNER_ID','LIFEOS_PLATFORM_OWNER_EMAIL','LIFEOS_PLATFORM_SECRET','LIFEOS_PLATFORM_TEST_DATABASE_URL'];
   if(value.LIFEOS_PLATFORM_TRANSPORT==='https-origin')keys.push('LIFEOS_PLATFORM_TRANSPORT','LIFEOS_PLATFORM_HTTPS_HOST');
-  keys.push(...aiSettingsRuntimeKeys.filter(k=>value[k]!==undefined),...personalConfigKeys.filter(k=>value[k]!==undefined));
+  keys.push(...aiSettingsRuntimeKeys.filter(k=>value[k]!==undefined),...personalConfigKeys.filter(k=>value[k]!==undefined),...agentRuntimeKeys.filter(k=>value[k]!==undefined));
   for(const key of ['LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'])if(value[key]!==undefined)keys.push(key);
   if(Object.keys(value).length!==keys.length||keys.some(k=>k!=='LIFEOS_PERSONAL_RECOVERY_APPROVAL'&&typeof value[k]!=='string'))throw Error();
   const env={...value} as Record<string,string>;if(typeof value.LIFEOS_PERSONAL_RECOVERY_APPROVAL!=='string')delete env.LIFEOS_PERSONAL_RECOVERY_APPROVAL;const config=readPlatformConfig(env);if(!config)throw Error();
-  const personal=readPersonalConfig(env,config);
+  const personal=readPersonalConfig(env,config);readAgentRuntimeConfig(env,config,personal);
   if(personal){
    // Personal mode is manual-only. It cannot inherit optional model, import or fixture capabilities.
    if([...aiSettingsRuntimeKeys,'LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'].some(k=>value[k]!==undefined))throw Error();
@@ -37,5 +38,5 @@ export function loadReviewEnvironment(path:string,env:Record<string,string|undef
 
 /** Pure application of an already read configuration; never reopen its source. */
 export function applyReviewEnvironment(value:Record<string,string>,env:Record<string,string|undefined>):void{
- const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;for(const key of personalConfigKeys)delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
+ const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;for(const key of [...personalConfigKeys,...agentRuntimeKeys])delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
 }

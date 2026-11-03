@@ -3,11 +3,14 @@ import {object, PlatformError, todoKeys} from '../platform/domain.ts';
 import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {PersonalService} from '../personal-candidate/service.ts';
+import {assertAgentTodoWriteGrant} from './grant-fence.ts';
 import {agentApiVersion, agentOperations, type AgentScope} from './capabilities.ts';
 
 type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[]}>;
 type Options = {
   enabled?: boolean;
+  mountPath?: '/api/platform/agent';
+  fenceWrites?: boolean;
   config: PersonalConfig;
   repository: PlatformRepository;
   verify: (key: string) => Promise<Grant | null>;
@@ -36,15 +39,17 @@ function updateFields(value: unknown) {
   return fields;
 }
 
-/** Isolated adapter. A host must supply verified grants and a write guard. */
+/** A host must supply verified grants and a write guard. Mounted writes require a PostgreSQL fence. */
 export function createAgentHandler(options: Options) {
   const config = Object.freeze(structuredClone(options.config));
   const service = new PersonalService(options.repository, config);
   return async (request: Request): Promise<Response> => {
     const path = new URL(request.url);
-    const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(path.pathname)?.[1];
+    const mount = options.mountPath ?? '';
+    const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
+    const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
     const operation = agentOperations.find(entry =>
-      entry.method === request.method && entry.path === (recordId ? '/v1/todos/{id}' : path.pathname));
+      entry.method === request.method && entry.path === (recordId ? '/v1/todos/{id}' : route));
     if (options.enabled !== true || !config.allowedTypes.includes('todo') || !operation || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
@@ -76,13 +81,14 @@ export function createAgentHandler(options: Options) {
         return respond(404, {error: 'NOT_FOUND'});
       }
 
+      if (options.mountPath && options.fenceWrites !== true) return respond(503, {error: 'AGENT_WRITE_FENCE_UNAVAILABLE'});
       const input = object(await readJSONBody(request), operation.id === 'updateTodo' ? ['fields', 'expectedRevision'] : ['fields']);
       const result = await service.mutate(grant.ownerId, 'todo', recordId ?? null,
         {...input, ...(operation.id === 'updateTodo' ? {fields: updateFields(input.fields)} : {}), spaceId: config.spaceId, confirmed: true}, request.headers.get('idempotency-key') ?? '',
         async () => {
           if (request.signal.aborted) throw new PlatformError(499, 'REQUEST_CANCELLED', '已取消。');
           await options.assertWritable(grant);
-        });
+        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant) : undefined);
       return respond(operation.id === 'createTodo' && !result.duplicate ? 201 : 200,
         {entry: detail(result.entry), duplicate: result.duplicate});
     } catch (error) {

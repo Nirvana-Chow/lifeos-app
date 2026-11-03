@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.77",
+    "@better-auth/api-key": "1.7.15",
     "@tanstack/react-table": "9.3.1",
     "@tanstack/react-virtual": "3.14.25",
     "ai": "7.0.150",
@@ -38,7 +39,6 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@better-auth/api-key": "1.7.15",
     "@emnapi/core": "1.11.3",
     "@emnapi/wasi-threads": "2.2.0",
     "@napi-rs/wasm-runtime": "1.2.5",

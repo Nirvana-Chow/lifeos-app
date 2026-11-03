@@ -3,7 +3,7 @@ import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {normalizePersonalFields,personalTypes,personalReferences,type ObjectFields} from './business.ts';
 import {createHash,randomUUID} from 'node:crypto';
 import {PlatformError,object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox,type TodoDraft,type InboxDraft} from '../platform/domain.ts';
-import type {PlatformRepository,StoredEntry,PublicEntry,MutationResult} from '../platform/contracts.ts';
+import type {PlatformRepository,StoredEntry,PublicEntry,MutationResult,Transaction} from '../platform/contracts.ts';
 import {compareWindowKeys,windowKey} from '../platform/window-domain.ts';
 import type {PersonalConfig,PersonalType} from './config.ts';
 export type PersonalGuard=()=>Promise<void>;
@@ -55,12 +55,12 @@ export class PersonalService{
  async overview(owner:string,today:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(today)||Number.isNaN(Date.parse(today+'T00:00:00Z'))||new Date(today+'T00:00:00Z').toISOString().slice(0,10)!==today)fail(400,'INVALID_DATE','需要有效日期。');const items=await this.currentSnapshot(owner),drafts=items.filter(e=>personalEntryType(e,this.config.spaceId)==='todo').map(e=>e.draft as TodoDraft);return{items,scope:'full-current-snapshot' as const,total:items.length,truncated:false,observedAt:new Date().toISOString(),today,counts:{open:drafts.filter(d=>d.status==='open'||d.status==='in_progress').length,done:drafts.filter(d=>d.status==='done').length,cancelled:drafts.filter(d=>d.status==='cancelled').length,overdue:drafts.filter(d=>(d.status==='open'||d.status==='in_progress')&&d.dueOn&&d.dueOn<today).length},projects:items.filter(e=>personalEntryType(e,this.config.spaceId)==='project'),domains:items.filter(e=>personalEntryType(e,this.config.spaceId)==='domain')};}
  async search(owner:string,query:string){if(typeof query!=='string'||query.length>240)fail(400,'INVALID_QUERY','搜索内容过长。');const items=await this.currentSnapshot(owner),q=query.trim().toLocaleLowerCase();return{scope:'full-current-snapshot',items:items.filter(e=>JSON.stringify(e.draft).toLocaleLowerCase().includes(q)),query};}
  async referenceStates(owner:string,id:string){this.owner(owner);const entry=await this.repository.get(owner,'todo',validateId(id));if(!this.matches(entry,owner,'todo',id))return missing();return Promise.all(personalReferences(entry.draft as TodoDraft).map(async({type,link})=>{const target=await this.repository.get(owner,'inbox',link.id),allowed=this.matches(target,owner,type,link.id)&&target.source.id===link.sourceId;return{type,link,status:!allowed?'unavailable':target!.revision===link.revision?'current':'updated',current:allowed?publicEntry(target!):null};}));}
- async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{}):Promise<MutationResult>{
+ async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<MutationResult>{
   this.owner(owner);this.enabled(type);validateIdempotencyKey(key);if(id)id=validateId(id);validatePersonalBody(type,id,input,this.config.spaceId);const raw=structuredClone(input),body=validatePersonalBody(type,id,raw,this.config.spaceId),kind=type==='todo'?'todo':'inbox';
   const digest=createHash('sha256').update(canonical({action:'personal-manual-v1',owner,spaceId:this.config.spaceId,type,id,raw})).digest('hex');
   await guard();
   return this.repository.transaction(owner,key,async tx=>{
-   await guard();const receipt=await tx.receipt();
+   await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
    if(receipt){if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!personalEntryType(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
    const now=new Date().toISOString(),draft=type==='todo'?body.fields as TodoDraft:{...body.fields,disposition:'reference'} as InboxDraft;let entry:StoredEntry;
    if(id){const old=await tx.get(kind,id);if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');entry={...old,draft,revision:old.revision+1,updatedAt:now};}

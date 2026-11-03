@@ -101,9 +101,10 @@ jobs:
             for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
               await pool.query(readFileSync('db/' + file, 'utf8'));
             }
-            await pool.query("CREATE ROLE lifeos_agent_fixture_verifier LOGIN PASSWORD 'fixture-agent-verifier-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
-            await pool.query("CREATE ROLE lifeos_agent_fixture_issuer LOGIN PASSWORD 'fixture-agent-issuer-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
-            await pool.query(readFileSync('test/helpers/agent-api-postgres-fixture.sql', 'utf8'));
+            await pool.query("CREATE ROLE lifeos_agent_verifier LOGIN PASSWORD 'fixture-agent-verifier-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("CREATE ROLE lifeos_agent_issuer LOGIN PASSWORD 'fixture-agent-issuer-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
+            await pool.query(readFileSync('db/0006_agent_api.proposed.sql', 'utf8'));
             console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');
           } finally { await pool.end(); }
           JS
@@ -156,10 +157,17 @@ jobs:
           LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
           LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
           LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
-          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_fixture_verifier:fixture-agent-verifier-never-live@127.0.0.1:55432/lifeos_platform_test_local
-          LIFEOS_AGENT_TEST_ISSUER_DATABASE_URL: postgresql://lifeos_agent_fixture_issuer:fixture-agent-issuer-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_verifier:fixture-agent-verifier-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_ISSUER_DATABASE_URL: postgresql://lifeos_agent_issuer:fixture-agent-issuer-never-live@127.0.0.1:55432/lifeos_platform_test_local
           RUN_AGENT_API_POSTGRES_TESTS: '1'
         run: |
+          node --input-type=module <<'JS'
+          import {Pool} from 'pg';
+          const pool = new Pool({host:'127.0.0.1',port:55432,user:'postgres',password:'fixture-ci-admin-never-live',database:'lifeos_platform_test_local',max:1});
+          try {
+            await pool.query('INSERT INTO lifeos_platform.platform_user (id,name,email) VALUES ($1,$2,$3)', ['agent-runtime-owner','Synthetic Agent Runtime','agent-runtime@example.test']);
+          } finally { await pool.end(); }
+          JS
           node --test --test-isolation=none --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/agent-pg.xml" test/agent-api-postgres.integration.test.ts
           python3 - <<'PY'
           import os, xml.etree.ElementTree as ET
