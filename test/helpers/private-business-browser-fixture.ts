@@ -6,6 +6,7 @@ import {chromium,expect,type Browser,type BrowserContext,type Cookie,type Page,t
 import ts from 'typescript';
 import type {PublicEntry} from '../../src/platform/contracts.ts';
 import {personalEntryType} from '../../src/personal-candidate/service.ts';
+import {projectRows,taskStats} from '../../src/personal-candidate/projection.ts';
 import {draftTitles} from '../../src/workbench/draft-contract.ts';
 import {privateHrefs} from '../../src/workbench/private-navigation.ts';
 import {trustFixtureCA} from './owner-recovery-browser-fixture.ts';
@@ -137,6 +138,26 @@ export const privateCaptureSources=[
  'src/personal-candidate/privacy.tsx','app/layout.tsx','src/personal-candidate/projection.ts',
 ] as const;
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
+/** Exact joined text nodes rendered by the standalone editor's snapshot cards. */
+export function journalSnapshotCaptureText(entries:readonly PublicEntry[],today:string):Set<string>{
+ const rows=projectRows([...entries],'personal-review-space',today);
+ const stats=taskStats(rows);
+ const texts=new Set([
+  '记录日期（可留空）',
+  `${stats.done} 已完成 · ${stats.open} 未完成 · ${stats.cancelled} 已取消 · ${stats.overdue} 逾期 · ${stats.total} 项任务`,
+ ]);
+ for(const row of rows){
+  texts.add(`${row.kind} · ${row.domain} · ${row.status}${row.overdue?' · 逾期':''}`);
+  texts.add(String(row.revision));
+  texts.add(`版本 ${row.revision}`);
+  if(row.kind==='项目'){
+   const purpose=({maintain:'维系',advance:'推进',explore:'探索'} as Record<string,string>)[row.purpose]??'未选';
+   texts.add(normalize(`阶段 ${row.stage} · 用途 ${purpose}`));
+   texts.add(normalize(`下一步：${row.nextStep||'未填写'}`));
+  }
+ }
+ return texts;
+}
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
  const out=new Set<string>();for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
@@ -153,7 +174,11 @@ async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[numbe
  mark('capture-content');const texts=captureSourceText(),values=new Set(['','on','all','journal','todo','open','in_progress','system','light','dark','all-day','CNY','Asia/Shanghai','input']);
  for(const value of ['0','1','2','3','—','我','本','L','LifeOS','1 项','1 项待办','待办导航','日记导航'])texts.add(value);for(const title of Object.values(draftTitles)){texts.add('新建'+title);texts.add('填写'+title+'草稿');}
  for(const entry of entries){const collect=(value:unknown)=>{if(typeof value==='string'){texts.add(normalize(value));values.add(value);}else if(value&&typeof value==='object')Object.values(value).forEach(collect);};collect(entry);texts.add(JSON.stringify(entry.source.original,null,2).replace(/\s+/g,' ').trim());texts.add('版本 '+entry.revision+' · ID '+entry.id);if('title'in entry.draft){texts.add(entry.draft.title+' · 版本 '+entry.revision);texts.add('打开任务：'+entry.draft.title);}}
- for(const value of texts)values.add(value);assertPrivateCaptureContent(facts,texts,values,entries.map(e=>e.id));
+ for(const value of texts)values.add(value);
+ if(row.key==='private-journal'){
+  for(const text of journalSnapshotCaptureText(entries,new Date().toLocaleDateString('sv-SE')))texts.add(text);
+ }
+ assertPrivateCaptureContent(facts,texts,values,entries.map(e=>e.id));
  mark('capture-image');const directory=resolve(process.env.RUNNER_TEMP!,'owner-personal-browser-screenshots');mkdirSync(directory,{recursive:true,mode:0o700});await page.screenshot({path:join(directory,row.name),fullPage:true});mark('capture-manifest');recordSyntheticCapture({name:row.name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});
 }
 

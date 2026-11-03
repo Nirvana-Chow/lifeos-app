@@ -142,6 +142,15 @@ test('handoff admits only three exact synthetic receipts with structured safe ti
  assert.doesNotThrow(()=>fixture.assertPrivateHandoff({...clean,cookies:[sessionCookie]} as never));
  for(const change of [{expires:Number.NaN},{expires:Number.POSITIVE_INFINITY},{expires:Date.now()/1000-60},{expires:-2},{domain:'foreign.example.test'}])assert.throws(()=>fixture.assertPrivateHandoff({...clean,cookies:[{...clean.cookies[0],...change}]} as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
  for(const change of [{createdAt:'private record body'},{updatedAt:'private@example.com'},{source:{...entries[0].source,asOf:'private body'}}]){const poisoned={...clean,entries:[{...entries[0],...change},entries[1],entries[2]]};assert.throws(()=>fixture.assertPrivateHandoff(poisoned as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);}
+ const revised={...clean,entries:[entries[0],entries[1],{...entries[2],revision:9}]} as unknown as fixture.PrivateBrowserHandoff;
+ fixture.assertPrivateHandoff(revised);
+ const expected=fixture.journalSnapshotCaptureText(revised.entries,'2030-11-02');
+ const facts={forbidden:0,values:[''],texts:['记录日期（可留空）','9','版本 9','待办 · 合成浏览器领域 · 进行中','0 已完成 · 1 未完成 · 0 已取消 · 0 逾期 · 1 项任务'],editable:[],recordIds:ids};
+ const allowedValues=new Set(['']);
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,expected,allowedValues,ids));
+ for(const change of [{texts:['版本 10']},{texts:['待办 · 未知领域 · 进行中']},{values:['版本 9']},{recordIds:['foreign-id']}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},expected,allowedValues,ids),/PRIVATE_CAPTURE_DENIED/);
+ }
 });
 
 // Execute the actual components and local dependencies. Only CSS module loading
