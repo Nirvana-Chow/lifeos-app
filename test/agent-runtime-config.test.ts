@@ -67,3 +67,55 @@ test('the mounted Agent route closes without an explicit validated runtime bindi
     if(previous!==undefined)process.env.LIFEOS_AGENT_API_ENABLED=previous;
   }
 });
+
+test('business module flags are closed and reject invalid combinations', async () => {
+  const {readAgentBusinessModules} = await import('../src/agent-api/config.ts');
+  assert.deepEqual(readAgentBusinessModules({}, null), {organization:false,classification:false});
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'}, null));
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'yes'}, null));
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'organization-v1'}, null));
+  const binding = {ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal'] as const,approval:'personal-manual-v1' as const,baseURL:origin};
+  assert.deepEqual(readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'}, binding), {organization:true,classification:true});
+});
+
+test('current grant lookup rejects disabled, expired, malformed and changed grants without selecting secrets', async () => {
+  const runtime = await import('../src/agent-api/runtime.ts');
+  const read = (runtime as typeof runtime & {readCurrentAgentGrant:(pool:{query:(sql:string, values:unknown[])=>Promise<{rows:unknown[]}>},id:string)=>Promise<unknown>}).readCurrentAgentGrant;
+  let row: Record<string,unknown> = {id:'grant',referenceId:'owner',metadata:JSON.stringify({spaceId:'space'}),permissions:JSON.stringify({todo:['read']}),enabled:true,expiresAt:null};
+  const pool = {query:async (sql:string,values:unknown[]) => {
+    assert.match(sql,/SELECT\s+id\s*,\s*"referenceId"\s*,\s*metadata\s*,\s*permissions\s*,\s*enabled\s*,\s*"expiresAt"/i);
+    assert.deepEqual(values,['grant']); return {rows:row ? [row] : []};
+  }};
+  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  row = {...row,enabled:null};
+  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  for(const update of [{enabled:false},{expiresAt:new Date(0)},{metadata:'{}'},{permissions:'{"todo":["write"]}'},{id:'different'}]) {
+    const original=row; row={...row,...update}; assert.equal(await read(pool,'grant'),null); row=original;
+  }
+});
+
+test('runtime operation readiness follows current business write policy and fence', async () => {
+  const runtime=await import('../src/agent-api/runtime.ts');
+  const available=(runtime as typeof runtime & {agentOperationAvailable:(id:string,personal:import('../src/personal-candidate/config.ts').PersonalConfig,fence:boolean)=>boolean}).agentOperationAvailable;
+  const base={ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal'] as const,approval:'personal-manual-v1' as const,baseURL:origin};
+  assert.equal(available('listTodos',{...base,businessWriteMode:'disabled'},true),true);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'disabled'},true),false);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'owner-managed'},false),false);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'owner-managed'},true),true);
+  assert.equal(available('unimplemented',{...base,businessWriteMode:'owner-managed'},true),false);
+});
+
+test('organization operations require the module, full native types, actual fence readiness and write policy',async()=>{
+ const {agentOperationAvailable}=await import('../src/agent-api/runtime.ts');
+ const personal={ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal','project','domain','topic'] as const,approval:'personal-manual-v1' as const,baseURL:origin,businessWriteMode:'owner-managed' as const};
+ const modules={organization:true,classification:false};
+ for(const id of ['snapshotOrganization','getOrganization','createOrganization','updateOrganization']){
+  assert.equal(agentOperationAvailable(id,personal,true),false);
+  assert.equal(agentOperationAvailable(id,personal,false,modules),false);
+  assert.equal(agentOperationAvailable(id,{...personal,allowedTypes:['todo','journal']},true,modules),false);
+  assert.equal(agentOperationAvailable(id,personal,true,modules),true);
+ }
+ assert.equal(agentOperationAvailable('snapshotOrganization',{...personal,businessWriteMode:'disabled'},true,modules),true);
+ assert.equal(agentOperationAvailable('updateOrganization',{...personal,businessWriteMode:'disabled'},true,modules),false);
+ assert.equal(agentOperationAvailable('classifyTodos',personal,true,{...modules,classification:true}),false);
+});

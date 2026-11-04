@@ -1,3 +1,6 @@
+import type {AgentModules} from '../agent-api/config.ts';
+import type {AgentScope} from '../agent-api/scopes.ts';
+import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
 import {ownerMaintenanceKey} from '../deployment-candidate/owner-maintenance-key.ts';
@@ -40,8 +43,8 @@ function decode(row:Record<string,unknown>):StoredEntry{
  return{id:row.id as string,ownerId:row.owner_id as string,kind:row.kind as Kind,...(row.inbox_id?{inboxId:row.inbox_id as string}:{}),draft:row.draft as StoredEntry['draft'],source:{id:row.source_id as string,system:'website',externalId:row.external_id as string,version:row.source_version as number,asOf:iso(row.as_of),original:row.original},revision:row.revision as number,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),syncState:'draft',externalStatus:null};
 }
 export class PostgresPlatformRepository implements PlatformRepository{
- private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;
- constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false){this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
+ private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;private readonly businessFeatures?:AgentModules;
+ constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false,businessFeatures?:AgentModules){this.businessFeatures=businessFeatures;this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
  private async scoped<T>(owner:string,fn:(client:SqlClient)=>Promise<T>,consistentRead=false):Promise<T>{
   const client=await this.pool.connect();try{await client.query(consistentRead?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN ISOLATION LEVEL READ COMMITTED');await client.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner]);const result=await fn(client);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
  }
@@ -67,7 +70,13 @@ export class PostgresPlatformRepository implements PlatformRepository{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([owner,key])]);
   const tx:Transaction={
+   ...(this.businessFeatures?.organization?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
+    if(grant.ownerId!==owner)return false;
+    const result=await client.query('SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes]);
+    return result.rows[0]?.allowed===true;
+   }}:{}),
    ...(this.agentWriteFenceEnabled?{lockAgentTodoWriteGrant:async(grant:Readonly<{grantId:string;ownerId:string;spaceId:string}>)=>{
+    if(grant.ownerId!==owner)return false;
     const result=await client.query('SELECT lifeos_agent.assert_todo_write_grant($1,$2,$3) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId]);
     return result.rows[0]?.allowed===true;
    }}:{}),

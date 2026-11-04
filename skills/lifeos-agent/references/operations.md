@@ -2,13 +2,18 @@
 
 # LifeOS Agent API operations
 
-API version `1`.
+Legacy catalog API version `1`; the v2 catalog uses API version `2` and requiredScopes arrays. Business paths retain their listed versions.
 
-| ID | Method | Path | Scope | Purpose |
+| ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
+| `discoverV2` | `GET` | `/v2/capabilities` | `valid grant` | Discover operations permitted for the current grant. |
 | `discover` | `GET` | `/v1/capabilities` | `todo:read` | Discover operations permitted for the current grant. |
 | `listTodos` | `GET` | `/v1/todos` | `todo:read` | Read a bounded list of todo summaries. |
 | `snapshotTodos` | `GET` | `/v1/todos/snapshot` | `todo:read` | Read the complete current todo snapshot with fields and revisions, or fail if complete coverage cannot be verified. |
 | `getTodo` | `GET` | `/v1/todos/{id}` | `todo:read` | Read a todo and its current revision. |
 | `createTodo` | `POST` | `/v1/todos` | `todo:write` | Create one todo with an idempotency key. |
 | `updateTodo` | `PATCH` | `/v1/todos/{id}` | `todo:write` | Update one todo with its expected revision and an idempotency key. |
+| `snapshotOrganization` | `GET` | `/v1/organization/snapshot` | `organization:read` | Read the complete current project, domain and topic snapshot with source IDs and revisions, or fail without returning a partial inventory. |
+| `getOrganization` | `GET` | `/v1/organization/{type}/{id}` | `organization:read` | Read one project, domain or topic with complete fields and its current revision. |
+| `createOrganization` | `POST` | `/v1/organization/{type}` | `organization:read, organization:write` | Create one project, domain or topic with fields and an idempotency key; identical names remain independent records. |
+| `updateOrganization` | `PATCH` | `/v1/organization/{type}/{id}` | `organization:read, organization:write` | Update one project, domain or topic with expectedRevision, all four fields (title, text, occurredOn, personal) and an idempotency key. |

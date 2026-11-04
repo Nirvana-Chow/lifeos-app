@@ -62,3 +62,23 @@ test('session cookie authentication rejects tampering, duplicate values and inse
   assert.equal(await readSignedOwnerSession(pair+'; '+pair,secret),null);
   assert.equal(await readSignedOwnerSession(pair.replace('__Secure-',''),secret),null);
 });
+
+test('business issuer validates explicit scope CAS and exposes safe grant digest only when enabled', async()=>{
+  const calls: unknown[]=[];
+  const grant={...item,grantDigest:'a'.repeat(64)};
+  const deps={authenticate:async(value:string)=>value===cookie,list:async()=>({keys:[grant]}),
+    issue:async()=>({grant,key:'synthetic-only'}),revoke:async()=>true,
+    setScopes:async(input:unknown,session:string)=>{calls.push({input,session});return grant;}};
+  const enabled=createKeyIssuer(deps,()=>now,'organization-v1');
+  const input={id:item.id,expectedGrantDigest:'a'.repeat(64),scopes:['organization:read']};
+  assert.deepEqual(await enabled('setScopes',cookie,input),{status:200,body:{grant}});
+  assert.deepEqual(calls,[{input,session:cookie}]);
+  const list=(await enabled('list',cookie,{})).body;
+  assert.deepEqual(list,{keys:[grant],availableScopes:['todo:read','todo:write','organization:read','organization:write']});
+  for(const body of [{...input,ownerId:'spoof'},{...input,key:'spoof'},{...input,expectedGrantDigest:'bad'},
+    {...input,scopes:[]},{...input,scopes:['organization:write']},{...input,scopes:['unknown:read']}])
+    assert.equal((await enabled('setScopes',cookie,body)).status,400);
+  assert.equal((await enabled('setScopes','invalid',input)).status,401);
+  assert.equal((await createKeyIssuer(deps,()=>now)('setScopes',cookie,input)).status,503);
+  assert.equal((await enabled('create',cookie,{name:'organization',scopes:['organization:read'],expiresInDays:7})).status,201);
+});

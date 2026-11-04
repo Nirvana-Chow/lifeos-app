@@ -224,3 +224,27 @@ test('every private business alias uses the native owner MFA principal gate befo
  const verified=f.db.platform_two_factor[0].verified;f.db.platform_two_factor[0].verified=false;await denied();f.db.platform_two_factor[0].verified=verified;
  for(const session of f.db.platform_session)session.expiresAt=new Date(0);await denied();
 });
+
+test('verified owner authority session requires current native MFA and revokes with the session',async()=>{
+ const f=await fixture(),first=await f.login(),passwordHeaders=new Headers({cookie:cookies(first)});
+ const read=(authentication as typeof authentication & {readVerifiedOwnerSession:(auth:typeof f.auth,config:typeof f.config,headers:Headers)=>Promise<{principal:{userId:string};sessionRef:string}|null>}).readVerifiedOwnerSession;
+ assert.equal(await read(f.auth,f.config,passwordHeaders),null);
+ const bound=await enrollSyntheticOwnerMfa(f.auth,f.config.ownerId,password,f.send,cookies(first)),headers=new Headers({cookie:bound.cookie});
+ const {createOwnerAuthority}=await import('../src/agent-authority/owner-adapter.ts');
+ const authority=createOwnerAuthority(f.auth,f.config,{ownerId:f.config.ownerId,spaceId:'fixture-space'});
+ const actor=await authority.resolveOwnerActor(headers);
+ assert.equal(actor?.ownerId,f.config.ownerId);
+ assert.equal(actor?.spaceId,'fixture-space');
+ await authority.assertCurrentAuthority(actor!, 'listTodos');
+ const verified=await read(f.auth,f.config,headers);
+ assert.equal(verified?.principal.userId,f.config.ownerId);
+ assert.equal(verified?.sessionRef,f.db.platform_session.find(row=>row.mfaVerified===true)?.id);
+ f.db.platform_two_factor[0].verified=false;
+ assert.equal(await read(f.auth,f.config,headers),null);
+ f.db.platform_two_factor[0].verified=true;
+ f.db.platform_session.length=0;
+ assert.equal(await read(f.auth,f.config,headers),null);
+ await assert.rejects(authority.assertCurrentAuthority(actor!, 'listTodos'));
+ const legacy=authentication.createPlatformAuth(f.config,memoryAdapter(f.db));
+ assert.equal(await read(legacy,f.config,headers),null);
+});

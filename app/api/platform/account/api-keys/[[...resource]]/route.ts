@@ -5,3 +5,4 @@ export const dynamic = 'force-dynamic';
 export const GET = handleKeyManagementRequest;
 export const POST = handleKeyManagementRequest;
 export const DELETE = handleKeyManagementRequest;
+export const PATCH = handleKeyManagementRequest;

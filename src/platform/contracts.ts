@@ -1,3 +1,5 @@
+import type {AgentScope} from '../agent-api/scopes.ts';
+import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import type {TodoDraft,FinanceDraft,InboxDraft} from './domain.ts';
 export type Kind='todo'|'finance'|'inbox';
@@ -8,6 +10,7 @@ export type PublicEntry=Omit<StoredEntry,'ownerId'>;
 export type MutationResult={entry:PublicEntry;duplicate:boolean};
 export type Receipt={digest:string;result:MutationResult};
 export interface Transaction {
+ lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[]):Promise<boolean>;
  /** Agent-only capability, held until this same transaction ends. */
  lockAgentTodoWriteGrant?(grant: Readonly<{grantId:string;ownerId:string;spaceId:string}>):Promise<boolean>;
  /** Nonlocking discovery on this transaction's connection. Decisions must use

@@ -2,7 +2,7 @@ import {createServer} from 'node:http';
 import {lstatSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {readPrivateObject} from '../platform/private-config.ts';
-import {createPostgresKeyIssuer,readKeyIssuerConfig} from './key-issuer.ts';
+import {createPostgresKeyIssuer,readKeyIssuerConfig,type KeyOperation} from './key-issuer.ts';
 
 async function main() {
   if (process.argv.length!==3) throw Error('Private issuer configuration required');
@@ -12,8 +12,8 @@ async function main() {
       (parent.mode&0o700)!==0o700) throw Error('Protected issuer socket directory required');
   process.umask(0o117); // Unix socket is created with 0660, never world-accessible.
   const issuer=await createPostgresKeyIssuer(config);
-  const routes=new Map<string,'list'|'create'|'revoke'>([
-    ['/v1/keys/list','list'], ['/v1/keys/create','create'], ['/v1/keys/revoke','revoke'],
+  const routes=new Map<string,KeyOperation>([
+    ['/v1/keys/list','list'], ['/v1/keys/create','create'], ['/v1/keys/revoke','revoke'], ['/v1/keys/setScopes','setScopes'],
   ]);
   const server=createServer({maxHeaderSize:16384,requestTimeout:5000},async (request,response)=>{
     response.setHeader('Cache-Control','private, no-store');

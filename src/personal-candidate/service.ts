@@ -1,3 +1,4 @@
+import {lockPersonalRecords} from './personal-record-locks.ts';
 import {reminderSourceDigest} from '../import-preview/reminders.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {normalizePersonalFields,personalTypes,personalReferences,type ObjectFields} from './business.ts';
@@ -63,9 +64,11 @@ export class PersonalService{
    await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
    if(receipt){if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!personalEntryType(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
    const now=new Date().toISOString(),draft=type==='todo'?body.fields as TodoDraft:{...body.fields,disposition:'reference'} as InboxDraft;let entry:StoredEntry;
-   if(id){const old=await tx.get(kind,id);if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');entry={...old,draft,revision:old.revision+1,updatedAt:now};}
+   const references=personalReferences(draft);
+   const records=await lockPersonalRecords(tx,[...(id?[{kind,id} as const]:[]),...references.map(({link})=>({kind:'inbox' as const,id:link.id}))]);
+   if(id){const old=records.get(JSON.stringify([kind,id]))??null;if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');entry={...old,draft,revision:old.revision+1,updatedAt:now};}
    else{const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
-   for(const {type:targetType,link} of personalReferences(entry.draft as TodoDraft|InboxDraft).sort((a,b)=>a.link.id.localeCompare(b.link.id))){const target=await tx.get('inbox',link.id);if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');}
+   for(const {type:targetType,link} of references){const target=records.get(JSON.stringify(['inbox',link.id]))??null;if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');}
    await guard();await tx.write(entry,raw,!id);const result={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest,result});return result;
   });
  }
