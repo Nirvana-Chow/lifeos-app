@@ -37,8 +37,12 @@ export function RequirementsTable({rows,phases,onOpen}:ViewProps){
  </div>;
 }
 export function RequirementsBoard({rows,phases,onOpen}:ViewProps){
- return <div className={styles.board} aria-label="按阶段查看需求">{phases.map(phase=>{
-  const items=rows.filter(item=>item.roadmap?.phaseId===phase.id);
+ const phaseIds=new Set(phases.map(phase=>phase.id));
+ const unassigned=rows.filter(item=>!item.roadmap||!phaseIds.has(item.roadmap.phaseId));
+ const columns=phases.map(phase=>({...phase,items:rows.filter(item=>item.roadmap?.phaseId===phase.id)}));
+ if(unassigned.length)columns.push({id:'__unassigned',order:0,title:'未排阶段',goal:'',items:unassigned});
+ return <div className={styles.board} aria-label="按阶段查看需求">{columns.map(phase=>{
+  const items=phase.items;
   return <section key={phase.id} className={styles.column} aria-label={phase.title}><header className={styles.columnHeader}><h3>{phase.title}</h3><span>{items.length}</span></header><div className={styles.cards}>{items.map(item=><article className={styles.card} key={item.id}><RequirementTitle item={item} onOpen={onOpen}/><div className={styles.badges}><Badge variant="outline">{item.roadmap?.priority??'待定'}</Badge><Badge variant="secondary">{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</Badge><span>{acceptanceLabels[item.status]}</span></div></article>)}{items.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
  })}</div>;
 }

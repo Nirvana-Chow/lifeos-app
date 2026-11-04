@@ -22,6 +22,7 @@ export function RequirementsPage(){
  const route=baseline.roadmap,current=phases.find(phase=>phase.id===route?.currentPhaseId);
  const setFilter=(name:keyof RequirementFilters,value:string)=>setFilters(previous=>({...previous,[name]:value}));
  return <section className={styles.page} aria-label="需求池" data-requirements-page>
+  <div className={styles.frame}>
   <header className={styles.intro}><p>{route?.goal??baseline.scopeNote}</p><div className={styles.route}><span>当前阶段：<strong>{current?.title??'待明确'}</strong></span><span className={styles.routeNext}>下一步：{route?.nextStep??'逐项补充验收证据。'}</span></div></header>
   <div className={styles.controls}>
    <div className={styles.filters} role="search" aria-label="筛选需求">
@@ -34,6 +35,7 @@ export function RequirementsPage(){
    <div className={styles.viewBar}><div className={styles.viewSwitch} role="group" aria-label="需求视图">{Object.entries(viewLabels).map(([key,label])=><button key={key} ref={view===key?viewButton:undefined} type="button" aria-pressed={view===key} aria-label={`${label}视图`} onClick={()=>setView(key as RequirementView)}>{label}</button>)}</div><p role="status" aria-live="polite">{rows.length} / {baseline.requirements.length} 项</p></div>
   </div>
   <div className={styles.view}>{view==='table'?<RequirementsTable rows={rows} phases={phases} onOpen={open}/>:view==='board'?<RequirementsBoard rows={rows} phases={phases} onOpen={open}/>:<RequirementsGantt rows={rows} onOpen={open}/>}</div>
+  </div>
   <RequirementDetail item={selected} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>setSelected(null)} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
  </section>;
 }

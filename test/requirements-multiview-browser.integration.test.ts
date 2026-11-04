@@ -36,6 +36,11 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
   await expect(page.locator('[data-requirements-grid="reui"]')).toBeVisible();
   await expect(page.getByText('验收条件',{exact:true})).toHaveCount(0);
+  await t.test(`readable table typography ${width}/${theme}`,async()=>{
+   const sizes=await page.locator('[data-requirement-id]').first().evaluate(node=>({body:parseFloat(getComputedStyle(node.querySelector('button')!).fontSize),metadata:parseFloat(getComputedStyle(node.querySelector('button span')!).fontSize)}));
+   assert.ok(sizes.body>=16,`Requirement body must be at least 16px, got ${sizes.body}`);
+   assert.ok(sizes.metadata>=14,`Requirement metadata must be at least 14px, got ${sizes.metadata}`);
+  });
   const visibleIds=async()=>page.locator('[data-requirement-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-requirement-id')!).sort());
   assert.deepEqual(await visibleIds(),allIds);
   await page.getByRole('button',{name:'按需求排序',exact:true}).click();
@@ -50,6 +55,8 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   assert.ok(Math.abs((await header.boundingBox())!.y-headerY)<2);
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
   assert.deepEqual(await visibleIds(),allIds);
+  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16),true);
+  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=14)),true,'Board metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-board-${width}-${theme}.png`)});
   await page.getByRole('button',{name:'甘特视图',exact:true}).click();assert.deepEqual(await visibleIds(),allIds);
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
@@ -64,6 +71,8 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await expect(page.getByRole('heading',{name:`未排期（${expected.length}）`,exact:true})).toBeVisible();
   await expect(page.getByText('尚未设置计划日期',{exact:true})).toBeVisible();
   await expect(page.locator('[data-gantt-bar],time')).toHaveCount(0);
+  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16),true);
+  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=14)),true,'Gantt metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-gantt-${width}-${theme}.png`)});
   const trigger=page.locator(`[data-requirement-id="${expected[0]}"] button`);await trigger.click();
   const dialog=page.getByRole('dialog'),title=dialog.getByRole('heading',{level:2});
@@ -88,4 +97,23 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(errors,[]);await page.close();
  }
+ for(const view of ['table','board','gantt'] as const)await t.test(`390x400 ${view} keeps first and last records reachable`,async()=>{
+  const page=await browser.newPage({viewport:{width:390,height:400},colorScheme:'dark'});page.setDefaultTimeout(8000);t.after(()=>page.close());
+  await page.route('**/*',route=>new URL(route.request().url()).origin===origin&&['GET','HEAD'].includes(route.request().method())?route.continue():route.abort());
+  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+  await page.getByRole('button',{name:({table:'表格',board:'看板',gantt:'甘特'}[view])+'视图',exact:true}).click();
+  const populatedColumn=page.locator('[aria-label="按阶段查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
+  const viewport=view==='table'?page.locator('[data-slot="data-grid-table-viewport"]'):view==='gantt'?page.getByRole('region',{name:'需求甘特'}).locator(':scope > div'):populatedColumn.first().locator(':scope > div');
+  const headerHeight=view==='table'?(await viewport.locator('thead').boundingBox())!.height:0;
+  const height=(await viewport.boundingBox())!.height;
+  assert.ok(height-headerHeight>=96,`${view} requires visible row area, got ${height-headerHeight}px`);
+  const entries=page.locator('[data-requirement-id] button');
+  for(const trigger of [entries.first(),entries.last()]){
+   await trigger.scrollIntoViewIfNeeded();await expect(trigger).toBeInViewport({ratio:0.5});
+   const id=await trigger.locator('span').first().textContent();
+   await trigger.click();await expect(page.getByRole('dialog').getByText(id!,{exact:true})).toBeVisible();await page.keyboard.press('Escape');
+  }
+  await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ });
 });

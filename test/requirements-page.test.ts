@@ -9,7 +9,7 @@ import ts from 'typescript';
 const native=createRequire(import.meta.url);
 
 // Execute real React and the real baseline; CSS is the only loader replacement.
-function renderPage(){
+function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',props:Record<string,unknown>={}){
  const cache=new Map<string,any>();
  function load(file:string):any{
   if(cache.has(file))return cache.get(file);
@@ -23,8 +23,8 @@ function renderPage(){
    if(!found)throw Error('Missing component dependency '+key);return load(found);
   },module,module.exports);return module.exports;
  }
- const Page=load(resolve('src/ui-review/requirements-page.tsx')).RequirementsPage;
- return renderToStaticMarkup(React.createElement(Page));
+ const Page=load(resolve('src/ui-review',file))[exportName];
+ return renderToStaticMarkup(React.createElement(Page,props));
 }
 
 test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
@@ -38,4 +38,13 @@ test('requirement pool renders a compact shared ReUI table and three reachable v
  assert.doesNotMatch(html,/<details|验收条件|来源与源码依据/);
  assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
  assert.match(html,/本人验收/);
+});
+
+
+test('board retains legacy undated requirements without optional roadmap metadata',()=>{
+ const item={id:'LO-LEGACY-001',version:1,title:'保留旧基线需求',description:'原始描述',status:'not_started',delivery:'backlog',sourceRefs:['README.md'],acceptanceCriteria:['保留稳定 ID'],evidence:[],blockedBy:[]};
+ const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:[],onOpen:()=>{}});
+ assert.match(html,/未排阶段/);
+ assert.match(html,/data-requirement-id="LO-LEGACY-001"/);
+ assert.match(html,/查看需求 LO-LEGACY-001 保留旧基线需求/);
 });
