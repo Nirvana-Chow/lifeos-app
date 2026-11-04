@@ -104,7 +104,7 @@
     },
     {
       "id": "LO-PRIVACY-001",
-      "version": 2,
+      "version": 3,
       "title": "公开源码与私人数据隔离",
       "description": "公开代码包含通用实现与合成样例，不包含私人运行资料。",
       "status": "in_progress",
@@ -130,13 +130,15 @@
           "ref": "src/agent-api/http.ts"
         }
       ],
-      "blockedBy": [],
+      "blockedBy": [
+        "现有身份隔离验收不能代替新增敏感数据的运行防护与独立恢复验收。"
+      ],
       "roadmap": {
         "phaseId": "foundation",
         "priority": "P0",
-        "implementation": "implemented",
-        "summary": "公开源码、合成夹具和默认私有接口已有边界。",
-        "nextStep": "新增公开基线和 UI 不携带个人记录、凭据或私有运行资料。",
+        "implementation": "partial",
+        "summary": "公开源码与默认私有接口已有边界；扩展敏感业务的存储、备份和日志防护仍待核验。",
+        "nextStep": "接入更多敏感资料前，补齐加密与密钥保管、本机恢复缓存、日志保留和独立恢复证据。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
         ],
@@ -994,9 +996,9 @@
     },
     {
       "id": "LO-AI-001",
-      "version": 1,
-      "title": "AI 默认关闭与调用状态",
-      "description": "配置、连接测试与正式启用分别确认。",
+      "version": 2,
+      "title": "个人智能体与受控 AI 接入",
+      "description": "理解授权接入的数据、目标与偏好，通过可检查和纠正的工作台自动整理、提出洞察并受控执行。",
       "status": "in_progress",
       "delivery": "backlog",
       "sourceRefs": [
@@ -1006,7 +1008,11 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "个人上下文保留来源、时效与覆盖边界，事实、本人确认的偏好和模型推断分开，可追溯和更正。",
+        "系统先自动形成分类、关联和疑似重复候选，展示逐项依据与变更差异，本人集中审核后通过受限 API 执行。",
+        "按本人目标发现遗漏、阻塞和改善机会；可视工作台展示依据、不确定性、进度、结果与失败。",
+        "AI SDK、RAG、流程编排和模型训练分别论证必要性；外部调用、私密数据传出、费用和持续后台执行保留对应授权。"
       ],
       "evidence": [
         {
@@ -1025,8 +1031,8 @@
         "phaseId": "integration",
         "priority": "P1",
         "implementation": "partial",
-        "summary": "已有 AI 配置与调用状态候选，默认关闭；不包含真实服务启用。",
-        "nextStep": "用离线模拟核验一次调用、取消和配置失效；真实调用需对应授权。",
+        "summary": "已有默认关闭的 AI 配置与调用状态候选；个人上下文、自动整理、主动洞察及助理工作台仍待实现。",
+        "nextStep": "先补统一 API 与分类审核执行，再基于现有 AI SDK 和成熟编排方案确定个人智能体架构与最小闭环。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/19"
         ],
@@ -1036,7 +1042,7 @@
     },
     {
       "id": "LO-BACKUP-001",
-      "version": 1,
+      "version": 2,
       "title": "独立备份恢复演练",
       "description": "在独立实例核对数据、权限及可读性。",
       "status": "not_started",
@@ -1046,7 +1052,10 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "备份访问权限、加密与密钥保管、保留和异地范围明确；压缩或权限控制不能代替加密。",
+        "在独立实例实际恢复并逐项读回记录、来源、权限和主流程；仅解析备份不计恢复演练。",
+        "损坏、解密或恢复失败可识别且不覆盖原实例；生产启用按具体固定包与授权执行。"
       ],
       "evidence": [],
       "blockedBy": [
@@ -1057,7 +1066,7 @@
         "priority": "P0",
         "implementation": "not_started",
         "summary": "公开验收要求已记录；本基线没有独立恢复完成证据。",
-        "nextStep": "从合成数据制作备份，在隔离实例实际恢复并逐项核对。",
+        "nextStep": "用隔离数据验证备份加密及独立恢复，核对记录、来源、账号边界和主流程，真实启用另按固定包授权。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/20"
         ],
