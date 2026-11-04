@@ -5,7 +5,6 @@
   min-height: 0;
   overflow: hidden;
   font: var(--lo-font-body);
-  isolation: isolate;
 }
 .lo-shell * {
   box-sizing: border-box;
@@ -195,6 +194,7 @@
   display: none;
 }
 .lo-shell .lo-main {
+  isolation: isolate;
   max-width: none;
   width: 100%;
   min-width: 0;

@@ -254,6 +254,70 @@ async function taskRelations(page:Page){const details=form(page).locator('detail
 type LatencyPhase='tasks-table-ready'|'native-input-visible'|'editor-form-ready'|'body-next-frame';
 // Synthetic fixture only: fixed labels and elapsed numbers, never data or request details.
 function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.now()-start;assert.equal(Number.isFinite(elapsedMs)&&elapsedMs>=0,true);console.log('PERSONAL_LATENCY',JSON.stringify({phase,elapsedMs:Math.round(elapsedMs*100)/100}));}
+
+/** Actual Undo notice and body-portal modal, using only a temporary synthetic filing footer. */
+export async function verifyUndoFooterPresentation(page:Page):Promise<void>{
+ const viewport=page.viewportSize();
+ assert.ok(viewport);
+ const undo=page.locator('.lo-undo-notice');
+ await expect(undo).toBeVisible();
+ await expect(page.locator('body > .lifeos-filing-footer')).toHaveCount(0);
+ const start=performance.now();
+ const previousPointer=await undo.evaluate(node=>(node as HTMLElement).style.pointerEvents);
+ const modal=page.getByRole('dialog',{name:'新建待办',exact:true});
+ try{
+  await page.evaluate(()=>{
+   const footer=document.createElement('footer');
+   footer.className='lifeos-filing-footer';
+   footer.dataset.syntheticUndoFooter='true';
+   for(const label of ['合成页脚链接 A','合成页脚链接 B']){
+    const link=document.createElement('a');
+    link.href='#synthetic-undo-footer';
+    link.textContent=label;
+    footer.append(link);
+   }
+   document.body.append(footer);
+  });
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+  await expect.poll(()=>page.evaluate(()=>{
+   const footer=document.querySelector<HTMLElement>('[data-synthetic-undo-footer="true"]');
+   const shell=document.querySelector<HTMLElement>('.lo-shell');
+   return !!footer&&!!shell&&Math.abs(parseFloat(shell.style.getPropertyValue('--lo-filing-footer-space'))-footer.getBoundingClientRect().height)<=1;
+  }),{timeout:1000}).toBe(true);
+  const geometry=await undo.evaluate(node=>{
+   const toast=node.getBoundingClientRect();
+   const footer=document.querySelector<HTMLElement>('[data-synthetic-undo-footer="true"]')!.getBoundingClientRect();
+   return {gap:footer.top-toast.bottom,footerHeight:footer.height};
+  });
+  console.log('PERSONAL_UNDO_FOOTER_GEOMETRY',JSON.stringify(geometry));
+  assert.equal(geometry.gap>=16,true,'The actual Undo notice must clear the filing footer by at least 16px');
+  await page.getByRole('button',{name:'新建待办',exact:true}).click();
+  await expect(modal).toBeVisible();
+  await expect(modal.getByLabel('标题',{exact:true})).toHaveValue('');
+  const hit=await undo.evaluate(node=>{
+   (node as HTMLElement).style.pointerEvents='auto';
+   const rect=node.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+   return {
+    bodyPortal:!!target?.closest('[data-slot="dialog-content"],[data-slot="dialog-overlay"]')&&!target?.closest('.lo-shell'),
+    toast:!!target?.closest('.lo-undo-notice'),
+   };
+  });
+  console.log('PERSONAL_UNDO_MODAL_HIT',JSON.stringify({...hit,elapsedMs:Math.round(performance.now()-start)}));
+  assert.equal(hit.bodyPortal,true,'A body-portal dialog or overlay must cover the Undo notice');
+  assert.equal(hit.toast,false);
+ }finally{
+  if(await undo.count())await undo.evaluate((node,value)=>{(node as HTMLElement).style.pointerEvents=value;},previousPointer);
+  await page.setViewportSize(viewport);
+  await page.evaluate(()=>{
+   document.querySelector('[data-synthetic-undo-footer="true"]')?.remove();
+   window.dispatchEvent(new Event('resize'));
+  });
+  if(await modal.count())await modal.getByRole('button',{name:'关闭待办编辑',exact:true}).click();
+ }
+ await expect(page.getByRole('button',{name:'撤销',exact:true})).toBeVisible();
+}
+
 /** Runs once inside the existing authenticated MFA lifecycle; no extra login. */
 export async function verifyPersonalWorkspace(page:Page){
  let phase='empty-workspace-ready';
@@ -293,6 +357,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await discard(true,traverse('Forward'));await page.waitForURL(projectURL);await readyEditor(page,synthetic.project);await expect(recordField(page,'目标')).toHaveValue('隔离合成项目目标');
  phase='status-undo';const tasksStart=performance.now();await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await workspaceReady(page);await requireNativeTable(page);latency('tasks-table-ready',tasksStart);await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
  const statusReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');await page.getByRole('button',{name:'完成：'+synthetic.title,exact:true}).click();todo=(await(await statusReceipt).json()).entry;assert.equal('status'in todo.draft?todo.draft.status:null,'done');
+ phase='status-undo-footer';await verifyUndoFooterPresentation(page);
  const undoReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');await page.getByRole('button',{name:'撤销',exact:true}).click();todo=(await(await undoReceipt).json()).entry;assert.equal('status'in todo.draft?todo.draft.status:null,'in_progress');await readTodo(page,todo,[domain,project,todo]);
  phase='native-table-view';await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'表格',exact:true}).click();phase='native-paint-ready';await requireNativeTable(page);
  phase='native-column-resize';

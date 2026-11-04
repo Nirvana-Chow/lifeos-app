@@ -400,9 +400,31 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
     await page.getByRole('button',{name:'展开侧栏',exact:true}).click();
     for(const height of [300,240]){await page.setViewportSize({width,height});const short=await geometry();assert.equal(short.document,height);assert.ok(short.bottom.bottom<=height,'short viewport retains settings and collapse');}
    }else{
-    assert.equal(end.footer.left,0);await page.getByRole('button',{name:'打开导航',exact:true}).click();const drawer=page.locator('.lo-mobile-sidebar');await expect(drawer).toBeVisible();
-    await drawer.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');
+    assert.equal(end.footer.left,0);await page.getByRole('button',{name:'打开导航',exact:true}).click();const drawer=page.locator('.lo-mobile-sidebar');await expect(drawer).toBeVisible();await expect(drawer).toHaveCSS('pointer-events','auto');
+    const settings=drawer.getByRole('button',{name:'设置',exact:true});
+    const settingsAboveFooter=await settings.evaluate(button=>{
+     const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!;
+     const previous=footer.style.pointerEvents;
+     // Radix disables body pointer events. Temporarily let the footer receive
+     // hit tests so a visually covering but click-through footer cannot pass.
+     footer.style.pointerEvents='auto';
+     try{const rect=button.getBoundingClientRect();return button.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));}
+     finally{footer.style.pointerEvents=previous;}
+    });
+    assert.equal(settingsAboveFooter,true,'mobile settings paint above the filing footer');
+    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');
    }
+   await page.getByRole('button',{name:'帮助',exact:true}).click();
+   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toBeVisible();
+   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCSS('pointer-events','auto');
+   const overlayAboveFooter=await page.evaluate(()=>{
+    const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!,previous=footer.style.pointerEvents;
+    footer.style.pointerEvents='auto';
+    try{const rect=footer.getBoundingClientRect();return document.elementFromPoint(innerWidth-8,rect.y+rect.height/2)?.matches('[data-slot="dialog-overlay"]')??false;}
+    finally{footer.style.pointerEvents=previous;}
+   });
+   assert.equal(overlayAboveFooter,true,'help backdrop paints above the filing footer');
+   await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCount(0);await expect(page.locator('body')).toHaveCSS('pointer-events','auto');
   }finally{
    await page.evaluate(()=>{document.querySelector('[data-synthetic-filing-probe]')?.remove();document.querySelector('[data-synthetic-scroll-probe]')?.remove();window.dispatchEvent(new Event('resize'));});
   }

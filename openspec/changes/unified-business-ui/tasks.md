@@ -35,6 +35,8 @@ This is the sole mapped execution checklist for `unified-business-ui`. The origi
 | `7fb7746` / `41773622197` | Cancelled before completion after a read-only fixture audit found stale category summary locators. | `e5d02eb` aligns those locators and strengthens Settings/readonly negative assertions. |
 | `e5d02eb` / `41773926573` | Core job and recovery HTTPS passed; native MFA, CRUD, four statuses and history advanced to the table precondition, where the header oracle included ReUI's hidden resize fill cell. Downstream private groups had no handoff. | Real Chrome reproduced seven business cells plus the hidden fill header. Exclude only the explicitly marked decorative header, retaining strict business-column, title, row and visibility checks; rerun the original fixed-SHA CI. |
 
+`9009109` / CI `41775150041` advanced past the native table and editing, then stopped in legacy history. Diagnostic-only `a059387` / CI `41777165414` identified Settings URL with stale Todo content. A production GET-only listener trace proved that router commit removed/replaced the application listener during the restoration event. `10aa4ed` keeps that subscription stable and reads layout-committed handlers; its behavior regression and 13 production loops passed with zero writes. Final fixed-source CI remains required.
+
 These are source qualification attempts, not production or owner acceptance. Failed and cancelled runs remain failures/cancellations; they do not close the original rendered, benchmark or delivery gates.
 
 ## Owner requests awaiting their independent implementation phase
