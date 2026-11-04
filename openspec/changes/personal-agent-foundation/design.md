@@ -44,6 +44,16 @@ Classification uses immutable plans, owner approval and a separate batch receipt
 
 Preview requires only todo:read and organization:read: private candidate creation is not a business write. API commit also requires todo:write plus stored owner approval. Owner website commit uses the owner's existing write authority and rechecks the producer's original preview/read scopes, not a fabricated producer write permission. A read-only Agent can propose for owner execution but cannot commit itself. The generalized SQL fence is `assert_business_grant` and accepts explicit read sets; any write requirement still includes its matching read. Legacy todo write wrappers retain their existing fallback.
 
+### Visible review completion
+
+The owner review response includes the validated stored result for that plan, obtained through an owner/space/plan-scoped query over the existing unique batch receipt. Reading an outcome is not a commit or a business-write permission. Current owner MFA and the producer read fence still govern the response; a later edit is reported separately from the historical committed result. This adds no table, migration or role grant.
+
+New plans bind `referenceObservationDigest` to the owner/space and all directly locked todo/target identities, types, sources and current revisions in the existing physical lock order. A stored before reference can be older than its current target, while its source/type and the todo's exact before remain fixed; after references must be current. Approval/new commit/review recheck the observation. Legacy plans without this optional field retain strict reference validation. The proposed0012 validator alone needs this additive JSON-field allowance; no new table or privilege is introduced.
+
+Partial selection uses owner-only `POST /api/platform/personal/todo-classifications/{planId}/preview` with only `selectedTodoIds`. Before approval, the server validates the entire current base under its producer fence and plan/record locks, then selects immutable changes in original order, retaining producer/grant/policy provenance and the original expiry. Revoked producers, expired/policy-invalid bases, approved or consumed plans and unissued run provenance are rejected. The new plan has a new ID/digest and no approval. Original and derived plans remain independent; deriving or closing does not revoke an existing server approval. No owner preview/approval endpoint is advertised to Agent or MCP.
+
+A finite `modal=classification&planId=<UUID>` workspace location preserves the canonical background, drafts, scroll and focus. The client derives the 68-character command key `cls-` plus SHA256 of JSON.stringify([planId,digest]) through Web Crypto, within the existing 8..96 limit, and preserves the exact commit body. Reload or outcome readback performs no write; unknown state offers only explicit retry of the original command. No business text or credential is persisted in browser storage. Busy/unknown navigation remains guarded with an explicit reauthentication path; ordinary idle dismissal and full-screen expansion reuse existing Dialog/theme patterns.
+
 ### Typed context and source migration
 
 Evidence references, confirmed facts/goals/preferences, inferences and action proposals remain distinct typed records. Source packages preserve original identity, version, digest, coverage and mapper versions. Previews separate accepted/rejected/unknown/duplicate/no-op and require a fixed selected batch before application. Domain projections use explicit fields, enums, units and CHECK constraints; raw evidence is private and cannot become a free-form derived JSON database.
@@ -62,7 +72,7 @@ Use official split SDK server/client2.4.0 and protocol2026-07-28 as fixed candid
 - [Private context or logs escape] → Minimal source references, current-message-only default until explicit data-scope activation, no cloud tracing, outbound assertions and independently restored encrypted backups before sensitive intake.
 - [At-least-once delivery or unknown provider cost] → Stable command identity, atomic budget reservation, conservative unknown settlement and one retry owner.
 - [Stale approval or revoked grant] → Approval binds delta/revisions/producer policy; transaction fence rechecks current authority, and changes require a new preview.
-- [Broader plan hides unfinished work] → Original IDs/Issues, finite stable tasks and per-slice website/readback criteria; original UI5 tasks remain2/5.
+- [Broader plan hides unfinished work] → Original IDs/Issues, finite stable tasks and per-slice website/readback criteria; the original UI five IDs and inherited 2/5 baseline remain; later qualification stays in its sole checklist.
 
 ## Migration Plan
 

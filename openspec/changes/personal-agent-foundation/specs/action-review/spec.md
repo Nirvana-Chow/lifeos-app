@@ -86,5 +86,35 @@ The website SHALL show readable before/after differences, source versions, no-op
 
 #### Scenario: Owner selects only part of an atomic proposal
 
-- **WHEN** the owner adjusts the selection before committing
-- **THEN** the system creates a new proposal and digest rather than reusing approval for a different batch
+- **WHEN** the owner adjusts the selection before approval
+- **THEN** the system creates a new proposal and digest from the selected immutable changes, retains current producer/grant/policy provenance, and never reuses approval or converts an Agent-origin plan into owner-origin authority
+
+#### Scenario: Selection cannot bypass a revoked producer
+
+- **WHEN** the owner requests a subset preview after its producer is revoked or any part of its base is stale, expired, approved, consumed or policy-invalid
+- **THEN** the new preview is rejected without a business write, reused approval or replacement producer
+
+#### Scenario: Selection does not revoke independent plans
+
+- **WHEN** an unapproved current base produces a subset preview
+- **THEN** the subset retains the original expiry and requires its own approval, while the immutable base remains independent and neither deriving nor closing claims to revoke an approval
+
+#### Scenario: A historical before reference survives a normal target edit
+
+- **WHEN** a todo still stores an older source-matching project, domain or topic reference and a fresh proposal changes its relations
+- **THEN** a new preview accepts its exact actual before and current after, binds all directly locked source/target observations into the immutable digest, and later target changes invalidate approval or a new commit; legacy plans without an observation retain strict validation
+
+#### Scenario: Review reload reads an actual stored result
+
+- **WHEN** a currently authorized owner reloads a committed plan after an unknown result
+- **THEN** the review returns its validated stored batch result through owner/space/plan isolation without performing a commit, and the website reads current entities separately
+
+#### Scenario: Later edits follow a verified commit
+
+- **WHEN** current entity revisions differ from the stored committed result
+- **THEN** the website distinguishes the historical commit from subsequent changes and does not overwrite them
+
+#### Scenario: Reload preserves command identity
+
+- **WHEN** a commit result is unknown and the owner reloads the finite review location
+- **THEN** the same plan/digest yields the original bounded command identity, outcome reading performs no write, and any retry requires an explicit action using the unchanged command/body without browser business-data storage

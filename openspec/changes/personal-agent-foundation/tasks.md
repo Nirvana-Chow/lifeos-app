@@ -7,13 +7,13 @@ This is the sole execution checklist for the new PersonalAgent intent. The exist
 - [x] 1.1 [A1.1] Add the shared trusted owner/Agent authority seam, explicit four-scope codecs and distinct legacy-v1/multi-scope-v2 catalogs; verify malformed grants, organization-only discovery and unchanged legacy scope behavior with focused tests and current Skill references.
 - [x] 1.2 [A1.2] Add proposed0011 narrow same-key CAS scope management, secret-free audit and generalized read/write transaction fence; verify owner MFA, expiry, direct-ACL denial, usage-stable digest, revocation races and old todo fallback on enabled isolated PostgreSQL with zero skips.
 - [x] 1.3 [A1.3] Add project/domain/topic API operations using PersonalService and the affected record-lock ordering fix; verify complete inventory, typed references, full-field CAS, replay and deterministic todo/project concurrency, with registry/discovery/Skill parity.
-- [ ] 1.4 [A1.4] Deliver usable organization and explicit permission website flows, including cancel/CAS/unknown recovery; verify actual mobile/desktop light/dark Chrome, independent review and exact-SHA source CI, preserving closed defaults and original UI gates.
+- [x] 1.4 [A1.4] Deliver usable organization and explicit permission website flows, including cancel/CAS/unknown recovery; verify actual mobile/desktop light/dark Chrome, independent review and exact-SHA source CI, preserving closed defaults and original UI gates.
 
 ## 2. Fixed review and atomic classification — A2
 
 - [x] 2.1 [A2.1] Add immutable classification plan, exact owner approval and separate batch receipt contracts with proposed0012 storage; verify strict schemas, owner/space isolation, SELECT/INSERT-only ACLs and no secret-bearing state on isolated PostgreSQL.
 - [x] 2.2 [A2.2] Implement shared classification preview/review/approve/commit with operation-narrowed trusted actors: read-only producers can preview, owner commits use owner write authority, API commits need write scope and all producer fences remain current; verify final-item rollback, all-no-op races, stale approval, revocation, same-command recovery and cross-entrypoint parity on enabled PostgreSQL.
-- [ ] 2.3 [A2.3] Deliver fixed-diff owner review and receipt/readback in the website and portable Skill; verify readable360px/desktop themes, cancel/adjust/unknown/conflict, no business-field editing and real Chrome with independent review/exact-SHA CI. Prepare concrete activation and classification packages without applying unapproved writes.
+- [ ] 2.3 [A2.3] Deliver fixed-diff owner review, producer-preserving subset previews and read-only stored-plan receipt/readback in the website and portable Skill; verify readable360px/desktop themes, cancel/adjust/unknown/conflict, no business-field editing and real Chrome with independent review/exact-SHA CI. Prepare concrete activation and classification packages without applying unapproved writes.
 
 ## 3. Inspectable context and coverage — V2
 
