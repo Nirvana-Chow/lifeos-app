@@ -79,7 +79,7 @@ export class ClassificationService {
   return this.repository.classificationTransaction(this.config.ownerId,this.config.spaceId,'approve-'+randomUUID(),async tx=>{
    await this.authorize(actor,'approveTodoClassification',false,false);const plan=await this.plan(tx,body.planId);await this.fence(tx,actor,plan);await tx.lockClassificationPlan(body.planId);await this.current(plan);
    if(plan.preview.digest!==body.digest||await tx.classificationPlanCommitted(body.planId))return conflict();this.validate(plan.preview.changes,await this.records(tx,plan.preview.changes));await this.current(plan);
-   const existing=await tx.classificationApproval(body.planId);if(existing){assertApprovalMatchesPlan(existing,plan);return existing;}
+   const existing=await tx.classificationApproval(body.planId);if(existing){assertApprovalMatchesPlan(existing,plan);await this.authorize(actor,'approveTodoClassification',false,false);return existing;}
    const approval=decodeApproval({planId:body.planId,proposalRevision:plan.proposalRevision,digest:body.digest,operationIds:['commitTodoClassification'],bindingsDigest:classificationBindingsDigest(plan),producerAuthorizationRevision:plan.producerAuthorizationRevision,policyRevision:plan.policyRevision,approvedAt:new Date(this.now()).toISOString(),expiresAt:plan.preview.expiresAt});assertApprovalMatchesPlan(approval,plan);await this.authorize(actor,'approveTodoClassification',false,false);await tx.saveClassificationApproval(approval);return approval;
   });
  }

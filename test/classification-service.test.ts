@@ -23,3 +23,17 @@ test('approval digest, policy and producer binding substitution never writes bus
 test('100 distinct no-op entries qualify and 101 never produces a plan',async()=>{const f=await fixture();const original=f.port.rows.get(f.todos[0].id)!;const changes=Array.from({length:100},(_,i)=>{const id=`00000000-0000-4000-8000-${String(i+1000).padStart(12,'0')}`,row=structuredClone(original);row.id=id;row.source.id=id;row.source.externalId=id;f.port.rows.set(id,row);return{todo:{id,sourceId:id,expectedRevision:1},before:null,after:{project:null,domain:null,topics:[]}};});const p=await f.service.preview(f.agent,{changes});assert.equal(p.unchangedIds.length,100);await assert.rejects(f.service.preview(f.agent,{changes:[...changes,changes[0]]}),status(400));assert.equal(f.port.plans.size,1);});
 
 for(const action of ['approve','commit'] as const)test('plan expiry reached while acquiring physical locks rejects '+action+' before writes',async()=>{const f=await fixture(),p=await f.service.preview(f.agent,{changes:f.changes});if(action==='commit')await f.service.approve(f.owner,body(p));const original=f.port.classificationTransaction.bind(f.port);f.port.classificationTransaction=(owner,space,key,fn)=>original(owner,space,key,tx=>fn({...tx,get:async(kind,id)=>{const row=await tx.get(kind,id);f.setNow(Date.parse(p.expiresAt)+1);return row;}}));const before=structuredClone(f.port.rows);await assert.rejects(action==='approve'?f.service.approve(f.owner,body(p)):f.service.commit(f.owner,body(p),'lock-expiry-command'),status(409));assert.deepEqual(f.port.rows,before);assert.equal(f.port.classificationReceipts.size,0);if(action==='approve')assert.equal(f.port.approvals.size,0);});
+
+for(const revoked of [true,false])test('repeated approval after plan-lock wait '+(revoked?'rejects a revoked owner session':'returns the original approval for a current owner'),async()=>{
+ const f=await fixture(),p=await f.service.preview(f.agent,{changes:f.changes}),approval=await f.service.approve(f.owner,body(p));
+ const before={approvals:structuredClone(f.port.approvals),rows:structuredClone(f.port.rows),history:structuredClone(f.port.historyRows),receipts:structuredClone(f.port.classificationReceipts)};
+ let entered!:()=>void,release!:()=>void;const waiting=new Promise<void>(resolve=>{entered=resolve;}),resume=new Promise<void>(resolve=>{release=resolve;});
+ const original=f.port.classificationTransaction.bind(f.port);
+ f.port.classificationTransaction=(owner,space,key,fn)=>original(owner,space,key,tx=>fn({...tx,lockClassificationPlan:async id=>{await tx.lockClassificationPlan(id);entered();await resume;}}));
+ const work=f.service.approve(f.owner,body(p));
+ try{
+  await Promise.race([waiting,work.then(()=>assert.fail('Approval bypassed the plan-lock barrier'))]);if(revoked)f.setSession(false);release();
+  if(revoked)await assert.rejects(work,status(403));else assert.deepEqual(await work,approval);
+  assert.deepEqual({approvals:f.port.approvals,rows:f.port.rows,history:f.port.historyRows,receipts:f.port.classificationReceipts},before);
+ }finally{release();await work.catch(()=>{});f.port.classificationTransaction=original;}
+});
