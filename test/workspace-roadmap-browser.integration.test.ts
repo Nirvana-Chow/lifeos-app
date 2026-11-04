@@ -6,6 +6,7 @@ import {join, resolve} from 'node:path';
 import {once} from 'node:events';
 import test from 'node:test';
 import {chromium, expect} from '@playwright/test';
+import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 
 const source=resolve(import.meta.dirname,'..');
 const ids=Array.from({length:7},(_,index)=>`${String(index+1).repeat(8)}-1111-4111-8111-${String(index+1).repeat(12)}`);
@@ -69,12 +70,16 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:55000});
   await expect(page.getByRole('heading',{level:1,name:'待办',exact:true})).toBeVisible();
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办甲',{exact:true})).toBeVisible();
+  if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','待办','需求池']);
+  if(width<850)await page.getByRole('button',{name:'关闭导航',exact:true}).click();
   const sections=page.getByRole('navigation',{name:'待办分类视图'});
   await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
   await sections.getByRole('button',{name:'项目分类视图',exact:true}).click();
   await expect(page).toHaveURL(origin+'/personal?page=projects');
   const projects=page.locator('[data-category-grid="reui"]');
   await expect(projects.getByText('合成项目甲',{exact:true})).toBeVisible();
+  await readyHeading(page,'项目');
   await expect(projects.getByRole('link',{name:'编辑项目：合成项目甲'})).toHaveAttribute('href','/personal/edit?type=project&id='+ids[2]);
   await page.getByLabel('搜索项目',{exact:true}).fill('合成项目乙');
   await expect(projects.getByText('合成项目甲',{exact:true})).toHaveCount(0);
@@ -90,6 +95,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办乙',{exact:true})).toHaveCount(0);
   await sections.getByRole('button',{name:'领域分类视图',exact:true}).click();
   await expect(page.locator('[data-category-grid="reui"]').getByText('合成领域甲',{exact:true})).toBeVisible();
+  await readyHeading(page,'领域');
   const nav=async(name:string)=>{
    if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
    await page.getByRole('button',{name,exact:true}).click();

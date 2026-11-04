@@ -190,3 +190,10 @@ test('real RecordGrid SSR headers pass only the finite direct-adapter source cap
  assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,values:[],texts:[...headers,'项目 / 待办 private body'],editable:[],recordIds:[]},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
  assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/ui-review/record-grid.module.css']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
 });
+
+
+test('category capture admits only the reviewed category component labels and still rejects unknown body text',()=>{
+ const texts=fixture.captureSourceText();
+ for(const label of ['未完待办','项目数','操作','全部阶段','搜索'])assert.ok(texts.has(label),label);
+ assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,texts:['unreviewed private sentinel'],values:[],editable:[],recordIds:[]},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+});
