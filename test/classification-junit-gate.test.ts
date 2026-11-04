@@ -21,10 +21,10 @@ test('actual native PG JUnit requires both enabled suites and all 64 leaf cases'
  assert.equal(result.status, 0, result.stderr);
  assert.match(result.stdout, /64 leaf cases/);
 });
-test('actual enabled Chrome JUnit requires both enabled direct browser cases', () => {
+test('actual enabled Chrome JUnit requires all four enabled direct browser cases', () => {
  const result = check(browserPassed, 'browser');
  assert.equal(result.status, 0, result.stderr);
- assert.match(result.stdout, /0 suites, 2 leaf cases/);
+ assert.match(result.stdout, /0 suites, 4 leaf cases/);
 });
 const entityReport = browserPassed.replace('encoding="utf-8"', 'encoding="utf-16"')
  .replace('<testsuites>', '<!DOCTYPE testsuites [<!ENTITY prefix "classification">]><testsuites>')
@@ -49,6 +49,9 @@ for (const [name, bytes] of byteReports) test(`classification JUnit gate rejects
 const browserLeaves = browserPassed.match(/<testcase[^>]+\/>/g)!;
 const browserMutations: [string, (xml: string) => string][] = [
  ['missing second case', xml => xml.replace(browserLeaves[1], '')],
+ ['missing new read-serialization case', xml => xml.replace(browserLeaves[2], '')],
+ ['missing new reference-version case', xml => xml.replace(browserLeaves[3], '')],
+ ['missing both new cases', xml => xml.replace(browserLeaves[2], '').replace(browserLeaves[3], '')],
  ['duplicate case with unchanged total', xml => xml.replace(browserLeaves[1], browserLeaves[0])],
  ['substituted case with unchanged total', xml => xml.replace('classification guards and readback preserve the workspace under uncertain outcomes', 'unqualified replacement')],
  ['skipped direct case', xml => xml.replace(browserLeaves[1], browserLeaves[1].replace('/>', '><skipped/></testcase>'))],

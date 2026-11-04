@@ -2,9 +2,11 @@
 <testsuites>
 	<testcase name="classification dialog preserves context and recovers explicit commands" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
 	<testcase name="classification guards and readback preserve the workspace under uncertain outcomes" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
-	<!-- tests 2 -->
+	<testcase name="classification serializes reads and fences stale responses from commands and auth" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
+	<testcase name="classification details distinguish same-named and historical reference versions" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
+	<!-- tests 4 -->
 	<!-- suites 0 -->
-	<!-- pass 2 -->
+	<!-- pass 4 -->
 	<!-- fail 0 -->
 	<!-- cancelled 0 -->
 	<!-- skipped 0 -->
