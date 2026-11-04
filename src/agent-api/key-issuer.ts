@@ -157,7 +157,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       NOT has_column_privilege(current_user,'lifeos_agent.apikey','key','UPDATE') AS cannot_replace_key,
       NOT has_table_privilege(current_user,'lifeos_agent.apikey','TRUNCATE,REFERENCES,TRIGGER') AS no_key_table_admin,
       c.relrowsecurity AND c.relowner<>r.oid AS key_rls
-      FROM pg_roles r JOIN pg_class c ON c.oid='lifeos_agent.apikey'::regclass WHERE r.rolname=current_user`);
+      FROM pg_roles r JOIN pg_class c ON c.oid='lifeos_agent.apikey'::regclass WHERE r.rolname=current_user`,[config.ownerId,config.spaceId]);
     if (!permissions||permissions.role!==role||permissions.database!==config.databaseName||
         Object.entries(permissions).some(([key,value])=>key!=='role'&&key!=='database'&&value!==true)) throw Error('Restricted issuer role required');
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
