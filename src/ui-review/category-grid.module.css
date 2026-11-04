@@ -4,6 +4,7 @@
 .field input, .field select { min-width: 0; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font: inherit; font-size: 16px; }
 .create { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--primary-foreground); text-decoration: none; white-space: nowrap; }
 .root .table { min-width: 100%; font-family: inherit; font-size: 16px; }
+.stickyHeader { background: var(--background); }
 .header { height: 44px; background: var(--muted); color: var(--muted-foreground); }
 .header th { height: 44px; padding: 0 12px; text-align: left; }
 .row { height: 56px; }

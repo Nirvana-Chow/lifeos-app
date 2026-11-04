@@ -5,7 +5,8 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {once} from 'node:events';
 import test from 'node:test';
-import {chromium, expect} from '@playwright/test';
+import {chromium, expect,type Page} from '@playwright/test';
+import {renderedContrast} from './helpers/personal-contrast.ts';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 
 const source=resolve(import.meta.dirname,'..');
@@ -23,6 +24,38 @@ const items=[entry(0,'domain','合成领域甲'),entry(1,'domain','合成领域�
  entry(3,'project','合成项目乙',{type:'project',stage:'planned',purpose:'explore',nextStep:'检查后续阶段',domain:ref(1),topics:[]}),
  entry(4,'todo','合成待办甲',{project:ref(2),domain:null,topics:[]}),entry(5,'todo','合成待办乙',{project:ref(3),domain:null,topics:[]}),
  entry(6,'topic','合成主题')];
+
+// Enough explicit synthetic categories to exercise the native sticky viewport.
+for(let i=0;i<35;i++)for(const [index,type,label] of [[0,'domain','领域'],[2,'project','项目']] as const){
+ const id=`${(i+(type==='domain'?200:400)).toString(16).padStart(8,'0')}-1111-4111-8111-111111111111`;
+ const item=entry(index,type,'合成长'+label+i,type==='domain'?{type:'domain'}:{type:'project',stage:'active',purpose:'advance',nextStep:'合成下一步',domain:ref(0),topics:[]});
+ items.push({...item,id,source:{...item.source,id,externalId:id}});
+}
+async function categoryHeaderPresentation(page:Page){
+ await page.evaluate(()=>document.fonts.ready.then(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))));
+ const facts=await page.locator('[data-category-grid="reui"] thead').evaluate(head=>{
+  const visible=(node:Element)=>{const box=node.getBoundingClientRect(),style=getComputedStyle(node);return box.width>0&&box.height>0&&style.visibility!=='hidden'&&style.display!=='none';};
+  // Same nearest-first computed layer input as the original presentation oracle.
+  // No effect is removed and no opaque ancestor short-circuits collection.
+  const headers=Array.from(head.querySelectorAll('th')).filter(visible).filter(node=>node.textContent?.trim()).map(node=>{
+   const layers=[];
+   for(let current:Element|null=node;current;current=current.parentElement){const style=getComputedStyle(current);layers.push({backgroundColor:style.backgroundColor,backgroundImage:style.backgroundImage,mixBlendMode:style.mixBlendMode,backgroundBlendMode:style.backgroundBlendMode,opacity:style.opacity,filter:style.filter,backdropFilter:style.backdropFilter});}
+   return {foreground:getComputedStyle(node).color,layers};
+  });
+  const style=getComputedStyle(head),surface=head.closest('[data-lifeos-surface="personal"]');
+  return {headers,position:style.position,top:style.top,zIndex:style.zIndex,background:style.backgroundColor,surfaceBackground:surface?getComputedStyle(surface).backgroundColor:null,backdropFilter:style.backdropFilter};
+ });
+ assert.ok(facts.headers.length>0,'the real category header must be sampled');
+ for(const header of facts.headers)assert.ok(renderedContrast(header.foreground,header.layers).contrast>=4.5,'category header contrast keeps the original 4.5 threshold');
+ assert.equal(facts.position,'sticky');assert.equal(facts.top,'0px');assert.equal(facts.zIndex,'40');assert.equal(facts.backdropFilter,'none');
+ assert.equal(facts.background,facts.surfaceBackground,'sticky header has the existing opaque surface background');assert.notEqual(facts.background,'rgba(0, 0, 0, 0)');
+ const viewport=page.locator('[data-category-grid="reui"] [data-slot="data-grid-table-viewport"]'),head=viewport.locator('thead');
+ const before=(await head.boundingBox())!.y;
+ const moved=await viewport.evaluate(node=>new Promise<number>(resolve=>{node.scrollTop=300;requestAnimationFrame(()=>resolve(node.scrollTop));}));
+ assert.ok(moved>0,'actual category rows scroll beneath the sticky header');
+ assert.ok(Math.abs((await head.boundingBox())!.y-before)<=1,'native header stays fixed while category rows scroll');
+ await viewport.evaluate(node=>node.scrollTop=0);
+}
 
 async function fixture(root:string){
  await mkdir(join(root,'app/personal'),{recursive:true});
@@ -80,6 +113,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   const projects=page.locator('[data-category-grid="reui"]');
   await expect(projects.getByText('合成项目甲',{exact:true})).toBeVisible();
   await readyHeading(page,'项目');
+  await categoryHeaderPresentation(page);
   await expect(projects.getByRole('link',{name:'编辑项目：合成项目甲'})).toHaveAttribute('href','/personal/edit?type=project&id='+ids[2]);
   await page.getByLabel('搜索项目',{exact:true}).fill('合成项目乙');
   await expect(projects.getByText('合成项目甲',{exact:true})).toHaveCount(0);
@@ -96,6 +130,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await sections.getByRole('button',{name:'领域分类视图',exact:true}).click();
   await expect(page.locator('[data-category-grid="reui"]').getByText('合成领域甲',{exact:true})).toBeVisible();
   await readyHeading(page,'领域');
+  await categoryHeaderPresentation(page);
   const nav=async(name:string)=>{
    if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
    await page.getByRole('button',{name,exact:true}).click();
