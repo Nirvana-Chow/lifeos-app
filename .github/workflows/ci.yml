@@ -314,6 +314,38 @@ jobs:
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'MFA skip or failure is not acceptance'
           print('PASS: one isolated native MFA PostgreSQL test, zero skips; no browser/TLS/production acceptance claimed.')
           PY_MFA
+      - name: Verify isolated Agent key management after native MFA provisioning
+        env:
+          RUN_AGENT_KEY_MANAGEMENT_POSTGRES_TESTS: '1'
+          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_verifier:fixture-agent-verifier-never-live@127.0.0.1:55439/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_MANAGER_DATABASE_URL: postgresql://lifeos_agent_key_manager:fixture-agent-manager-never-live@127.0.0.1:55439/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_ADMIN_DATABASE_URL: postgresql://postgres:fixture-ci-admin-never-live@127.0.0.1:55439/lifeos_platform_test_local
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {Pool} from 'pg';
+          const pool = new Pool({connectionString:process.env.LIFEOS_AGENT_TEST_ADMIN_DATABASE_URL,max:1});
+          try {
+            for (const [role, password] of [
+              ['lifeos_agent_verifier','fixture-agent-verifier-never-live'],
+              ['lifeos_agent_issuer','fixture-agent-issuer-never-live'],
+              ['lifeos_agent_key_manager','fixture-agent-manager-never-live'],
+            ]) {
+              await pool.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`);
+            }
+            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_key_management_approved = '1'; SET lifeos.agent_key_manager_owner = 'agent-management-owner'; SET lifeos.agent_key_manager_space = 'synthetic-agent-management-space'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
+            for (const file of ['0006_agent_api.proposed.sql','0010_agent_key_management.proposed.sql']) {
+              await pool.query(readFileSync('db/' + file, 'utf8'));
+            }
+          } finally { await pool.end(); }
+          JS
+          node --test --test-isolation=none --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/agent-key-pg.xml" test/agent-key-issuer-postgres.integration.test.ts
+          python3 - <<'PY_AGENT_KEY'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'agent-key-pg.xml')).getroot().iter('testcase'))
+          assert cases and not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Agent key management fixture did not pass'
+          print(f'PASS: {len(cases)} isolated Agent key management tests, no skips')
+          PY_AGENT_KEY
       - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
         run: |
           set -euo pipefail
@@ -328,6 +360,11 @@ jobs:
           command -v google-chrome >/dev/null
           command -v certutil >/dev/null
           google-chrome --version
+      - name: Exercise Agent key settings in isolated desktop and mobile Chrome
+        env:
+          RUN_AGENT_KEY_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: node --test test/agent-key-management-browser.integration.test.ts
       - name: Build the exact public source image and read back its source proof
         run: |
           set -euo pipefail

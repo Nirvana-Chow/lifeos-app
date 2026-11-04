@@ -1,3 +1,4 @@
+import {keyManagementFlag} from '../src/agent-api/key-management-config.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -13,7 +14,7 @@ import * as workspaceSelectors from '../src/ui-review/selectors.ts';
 type Node = {type:unknown;props:Record<string,any>};
 const jsx={jsx:(type:unknown,props:Record<string,any>)=>({type,props}),jsxs:(type:unknown,props:Record<string,any>)=>({type,props}),Fragment:'fragment'};
 const react={useRef:(value:any)=>({current:value}),useState:(value:any)=>[value,()=>{}],useEffect:()=>{},useMemo:(fn:()=>unknown)=>fn()};
-function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
+function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{if(key.endsWith('/key-management-config'))return {keyManagementFlag};assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
 function find(node:any,predicate:(n:Node)=>boolean):Node|undefined{if(!node||typeof node!=='object')return;if(Array.isArray(node)){for(const item of node){const found=find(item,predicate);if(found)return found;}return;}return predicate(node)?node:find(node.props?.children,predicate);}
 const destinations:string[]=[];
 const id='11111111-1111-4111-8111-111111111111';

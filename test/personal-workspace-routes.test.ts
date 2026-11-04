@@ -1,3 +1,4 @@
+import {keyManagementFlag} from '../src/agent-api/key-management-config.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -10,6 +11,7 @@ function page(path:string,authenticated=true){
  const source=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  new Function('require','module','exports',source)((name:string)=>{
   if(name==='react/jsx-runtime')return {jsx:React.createElement,jsxs:React.createElement};
+  if(name.endsWith('/key-management-config'))return {keyManagementFlag};
   if(name.endsWith('/private-navigation'))return {readWorkspacePage};
   if(name==='next/headers')return {headers:async()=>new Headers()};
   if(name==='next/navigation')return {redirect:(url:string)=>{throw Error('REDIRECT '+url);}};
