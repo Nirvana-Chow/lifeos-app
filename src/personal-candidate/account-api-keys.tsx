@@ -240,8 +240,12 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     if (actionLock.current || uncertain || reveal || !dialogOpen || list.kind !== 'ready') return;
     const data = new FormData(event.currentTarget);
     const expiration = resolveApiKeyExpiry(expiry, String(data.get('custom-expiry') ?? ''));
-    if (!name.trim() || !expiration || (list.availableScopes && !createScopes.length)) {
+    if (!name.trim() || !expiration) {
       setMessage('请填写名称，并选择未来 365 天内的有效到期时间。');
+      return;
+    }
+    if (list.availableScopes && !createScopes.length) {
+      setMessage('请至少选择一项读取权限。');
       return;
     }
     actionLock.current = true;
@@ -519,7 +523,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         if (revoker.current?.isConnected) revoker.current.focus();
       }}>
         <DialogTitle>撤销密钥</DialogTitle>
-        <DialogDescription>撤销「{revoking?.name}」后，使用这把密钥的 Skill 将无法继续访问待办。</DialogDescription>
+        <DialogDescription>撤销「{revoking?.name}」后，所有使用这把密钥的客户端将无法继续访问其授权的数据。</DialogDescription>
         <div className={styles.actions}>
           <Button type="button" variant="outline" disabled={busy} onClick={() => setRevoking(null)}>取消</Button>
           <Button type="button" variant="destructive" disabled={busy} onClick={revoke}>{busy ? '正在撤销…' : '确认撤销'}</Button>

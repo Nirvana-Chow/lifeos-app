@@ -447,12 +447,19 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await newKey.click();
     await moduleCreate.locator('[name="name"]').fill('Synthetic organization-only');
     await moduleCreate.getByLabel('读取待办',{exact:true}).uncheck();
+    await moduleCreate.getByRole('button',{name:'创建密钥',exact:true}).click();
+    await expect(moduleCreate.getByRole('status')).toHaveText('请至少选择一项读取权限。');
+    assert.equal(posts.length,3,'empty permissions cannot send a create request');
     await moduleCreate.getByLabel('写入项目、领域和主题',{exact:true}).check();
     await moduleCreate.getByRole('button',{name:'创建密钥',exact:true}).click();
     await expect(reveal).toHaveText(syntheticKey);
     assert.deepEqual(posts[3],{name:'Synthetic organization-only',scopes:['organization:read','organization:write'],expiresInDays:30});
     await page.getByRole('button',{name:'关闭密钥',exact:true}).click();
     await expect(page.getByRole('button',{name:'修改权限 Synthetic organization-only',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'撤销 Synthetic organization-only',exact:true}).click();
+    await expect(dialog.getByText('撤销「Synthetic organization-only」后，所有使用这把密钥的客户端将无法继续访问其授权的数据。',{exact:true})).toBeVisible();
+    await dialog.getByRole('button',{name:'取消',exact:true}).click();
+    assert.equal(deletes,1,'viewing organization-only revocation consent does not revoke');
     await page.close();
   }
   // Actual Next route -> existing PersonalService writer -> memory storage port.
