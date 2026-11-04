@@ -63,6 +63,8 @@ test('OPT-IN legacy password keeps the disabled no-JS POST gate and enhances int
   });
   await page.exposeBinding('recordLegacyPasswordState',(_source,value:boolean)=>{legacyStates.push(value);});
   await page.goto(origin+'/account/password',{waitUntil:'domcontentloaded'});
+  // The canonical target is cold-compiled by this disposable Next fixture.
+  await page.waitForURL(origin+'/personal?modal=settings&panel=security',{timeout:30_000,waitUntil:'domcontentloaded'});
   await expect(page).toHaveURL(origin+'/personal?modal=settings&panel=security');
   const settings=page.getByRole('dialog',{name:'设置',exact:true});await expect(settings).toBeVisible();await expect(page.locator('form')).toHaveCount(1);
   await expect(settings.getByLabel('原密码',{exact:true})).toBeEnabled();await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('');
