@@ -125,14 +125,14 @@ export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   return Object.freeze({...config,databaseName:database.pathname.slice(1)});
 }
 
-type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean;permissions:unknown;cursorTime?:string};
+type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string};
 function fromRow(row: GrantRow): KeySummary {
   const permissions=typeof row.permissions==='string'?JSON.parse(row.permissions):row.permissions;
   const todo=permissions?.todo;
   if (!Array.isArray(todo)||!todo.includes('read')) throw Error('Unexpected grant metadata');
   return {id:row.id,name:row.name??'',scopes:todo.includes('write')?['todo:read','todo:write']:['todo:read'],
     createdAt:new Date(row.createdAt).toISOString(),expiresAt:row.expiresAt?.toISOString()??null,
-    status:!row.enabled?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
+    status:row.enabled===false?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
 }
 
 export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {

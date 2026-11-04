@@ -187,11 +187,22 @@ test('OPT-IN native-cookie owner MFA manages real PostgreSQL grants and uses the
       SELECT 'synthetic-page-'||n,'default',$1,'synthetic-page-digest-'||n,false,
         now()+interval '1 minute',now(),now()+interval '1 day',$2,'{"todo":["read"]}'
       FROM generate_series(1,100) n`,[ownerId,JSON.stringify({spaceId})]);
+
+    const legacyId='synthetic-legacy-null-enabled';
+    await admin.query(`INSERT INTO lifeos_agent.apikey
+      (id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions)
+      VALUES ($1,'default',$2,$1,NULL,now()-interval '1 day',now(),NULL,$3,'{"todo":["read"]}')`,
+    [legacyId,ownerId,JSON.stringify({spaceId})]);
     const firstPage=(await handle('list',good,{})).body as {keys:KeySummary[];nextCursor:string};
     assert.equal(firstPage.keys.length,100);
     assert.ok(firstPage.nextCursor);
     assert.ok(!firstPage.keys.some(row=>row.id===grant.id));
-    assert.deepEqual((await handle('list',good,{cursor:firstPage.nextCursor})).body,{keys:[{...grant,status:'revoked'}]});
+    const secondPage=(await handle('list',good,{cursor:firstPage.nextCursor})).body as {keys:KeySummary[];nextCursor?:string};
+    assert.equal(secondPage.nextCursor,undefined);
+    assert.deepEqual(secondPage.keys[0],{...grant,status:'revoked'});
+    assert.equal(secondPage.keys[1].id,legacyId);
+    assert.equal(secondPage.keys[1].status,'active');
+    assert.equal((await handle('revoke',good,{id:legacyId})).status,204);
     await admin.query('UPDATE lifeos_platform.platform_two_factor SET verified=false WHERE "userId"=$1',[ownerId]);
     assert.equal((await handle('list',good,{})).status,401);
   } finally {
