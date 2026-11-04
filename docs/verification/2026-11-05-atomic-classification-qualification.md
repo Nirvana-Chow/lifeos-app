@@ -1,0 +1,25 @@
+# Atomic classification source qualification — 2026-11-05
+
+This records A2 implementation under the [existing requirement and sole checklist](../../openspec/changes/personal-agent-foundation/tasks.md). It does not declare production enablement, real classification or owner experience acceptance. Original UI task3.2 remains open.
+
+## Candidate and behavior
+
+Local combined source `8a7d6078fad7be6f95973326698d0fc64365657b` integrates the separately reviewed storage, shared service, owner review dialog and finite CI checks. Package and npm lock are unchanged from main `1d7fc399524239062c88992c704c39d09268d917`; there are no new dependencies. The dialog shows names and relationship differences, with source IDs and versions inside expandable details; it supports fullscreen, producer-preserving subset previews, explicit owner approval, stable-command commit and receipt readback. It preserves background drafts, filters, scroll, history and focus. Cancel performs no business write.
+
+A read-only producer can propose without receiving write scope. Owner approval never widens that producer grant. Current owner MFA, current producer read authorization, exact plan/digest and transaction fences remain mandatory. Agent commit additionally requires its explicit todo write permission; owner-only approval is absent from Agent/Skill discovery. Unknown responses require explicit read or the original command/key; refresh does not auto-submit or silently adopt new revisions. A stored receipt remains historical after later record edits; current readback reports those differences.
+
+## Executed source checks
+
+On the combined source above: `npm test` reported1280 total,1248 pass,0 fail/cancelled,32 explicit opt-in skips. The output includes27 existing AI SDK feature warnings and7 warning-system notices; warnings were retained. Opt-in skips do not count as executed integrations. Types, default-closed webpack build, same-output compiled handler checks, both strict OpenSpec1.16.0 changes, generated Skill/artifact tests, whitespace and unchanged package/lock checks passed. The compiled checks execute exported Next userland handlers in-process; they do not establish HTTP transport or native authentication.
+
+Enabled restricted PostgreSQL17.11 qualification on the independently declared disposable fixture reported66 tests including2 parent suites,64 leaf cases,0 failure/error/skip. It covers immutable storage and ACLs, exact catalog readiness, cross-owner/space denial, all-or-none record/history/receipt behavior, no-op races, authorization and record-lock barriers, historical receipt recovery, current producer authorization after waits and subset constraints. This is native PG evidence, distinct from the browser response fixtures.
+
+The final dialog source `8ee034bbaeccb4b344d78eebc59a51375282a91e` separately passed four actual Chrome cases, four360/1365px light/dark combinations and independent scoped re-review. Four fullscreen/footer images were independently inspected; all nine capture hashes matched their unique-run manifest. These are internal synthetic checks, not personal records or owner acceptance. Earlier captures overwritten by development runs are historical and are not used as current hash evidence. The combined source above also passed all four enabled Chrome cases with zero failure/error/skip and the finite report gate. Its whole-branch review and fixed-SHA remote CI remain delivery gates to record in the PR when complete.
+
+The CI additions require all64 real PG leaf names and all four real browser names, zero skips/failures/errors and exact source suffixes. The stdlib checker rejects incomplete/substituted reports, unsupported encoding, NUL, DOCTYPE and ENTITY before XML parsing. Public CI permissions, existing native MFA/organization/recovery/TLS/render/performance checks, uploads and cleanup remain unchanged. Fixed-SHA remote CI is required before ordinary source merge.
+
+## Activation and acceptance remain separate
+
+Proposed0011 and0012 SQL are not executed on production by source merge. Classification remains default closed without its schema/ACL/readiness and explicit runtime settings. The private activation candidate must bind the final reviewed source/artifact, exact target, SQL hashes, private overlay/issuer lifecycle changes, current nonsecret grant metadata and required scopes, encrypted backup with independent restore, exact classification plan/digest/before→after entries and per-record readback. Missing fields remain explicit NO-GO; they are not filled through unauthorized data or privilege changes. Existing keys retain their present grants.
+
+Last separately verified production source remains `44ce13d7cd819ba8e61bc166add23d5d51d48233`, not this candidate. Native owner MFA→mounted classification HTTP→restricted PG, actual sensitive activation, real classification and owner experience have not been accepted by this record. Rollback of code or a feature flag does not reverse committed relationship changes; any inverse requires an exact current-version plan. The larger PersonalAgent checklist stays open.
