@@ -21,4 +21,4 @@ export function resolvePrivateModule(section:readonly string[]):WorkbenchModule|
  const path='/personal/'+section.join('/');
  return privateNavigation.find(module=>!module.href.includes('?')&&module.href===path)??null;
 }
-export const primaryPrivateIds:readonly ModuleId[]=Object.freeze(['overview','todos','schedule','journal']);
+export const primaryPrivateIds:readonly ModuleId[]=Object.freeze(['overview','todos','settings']);

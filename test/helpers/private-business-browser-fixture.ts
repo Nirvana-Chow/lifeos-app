@@ -6,7 +6,6 @@ import {chromium,expect,type Browser,type BrowserContext,type Cookie,type Page,t
 import ts from 'typescript';
 import type {PublicEntry} from '../../src/platform/contracts.ts';
 import {personalEntryType} from '../../src/personal-candidate/service.ts';
-import {projectRows,taskStats} from '../../src/personal-candidate/projection.ts';
 import {draftTitles} from '../../src/workbench/draft-contract.ts';
 import {privateHrefs} from '../../src/workbench/private-navigation.ts';
 import {trustFixtureCA} from './owner-recovery-browser-fixture.ts';
@@ -77,7 +76,7 @@ export function assertFirstVisibleTheme(frames:FirstVisibleTheme[],theme:'light'
  if(!frames.length||frames.some(frame=>frame.theme!==theme||frame.scheme!==theme||frame.checked!==preference||!Number.isFinite(frame.time)||frame.time<0))throw Error('PRIVATE_FIRST_VISIBLE_THEME');
 }
 /** Preserve the Header's first paint independently of control hydration. A control
- * that never appears, or appears with a wrong checked value, still fails. */
+ * that never appears, or appears with a wrong theme preference, still fails. */
 export function assertFirstVisibleAppearance(palette:FirstVisibleTheme[],controls:FirstVisibleTheme[],theme:'light'|'dark',preference:'light'|'dark'|'system'){
  if(palette.length!==3||controls.length!==3||palette.some(frame=>frame.theme!==theme||frame.scheme!==theme||!Number.isFinite(frame.time)||frame.time<0)||controls.some(frame=>frame.control!=='visible'))throw Error('PRIVATE_FIRST_VISIBLE_THEME');
  assertFirstVisibleTheme(controls,theme,preference);
@@ -95,16 +94,16 @@ export function projectFirstVisibleDiagnostic(phase:unknown,frames:readonly unkn
  })};
 }
 const firstVisibleTimeOrigins=new WeakMap<Page,number>();
-/** Passive init observer: never changes theme, storage, checked controls or CSS. */
+/** Passive init observer: never changes theme, storage, theme controls or CSS. */
 export async function observeFirstVisibleTheme(context:BrowserContext){await context.addInitScript(()=>{
  type Frame={theme?:string;scheme:string;checked:string|null;control:'missing'|'hidden'|'visible';time:number};
  const w=window as unknown as {__lifeosFirstVisible?:Frame[];__lifeosFirstVisibleControls?:Frame[]};w.__lifeosFirstVisible=[];w.__lifeosFirstVisibleControls=[];
  const tick=()=>{
   const header=document.querySelector('header'),r=header?.getBoundingClientRect();
   if(header&&r&&r.width>0&&r.height>0&&getComputedStyle(header).visibility!=='hidden'){
-   const root=document.documentElement,radio=header.querySelector<HTMLInputElement>('input[type="radio"]'),label=radio?.closest('label'),labelRect=label?.getBoundingClientRect();
-   const control:Frame['control']=!radio?'missing':label&&labelRect&&labelRect.width>0&&labelRect.height>0&&getComputedStyle(label).visibility!=='hidden'?'visible':'hidden';
-   const frame={theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:header.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value??null,control,time:performance.now()};
+   const root=document.documentElement,button=header.querySelector<HTMLButtonElement>('[data-slot="theme-toggle"]'),bounds=button?.getBoundingClientRect();
+   const control:Frame['control']=!button?'missing':bounds&&bounds.width>0&&bounds.height>0&&getComputedStyle(button).visibility!=='hidden'?'visible':'hidden';
+   const frame={theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,checked:button?.dataset.themePreference??null,control,time:performance.now()};
    if(w.__lifeosFirstVisible!.length<3)w.__lifeosFirstVisible!.push(frame);
    if(control==='visible'&&w.__lifeosFirstVisibleControls!.length<3)w.__lifeosFirstVisibleControls!.push(frame);
   }
@@ -135,34 +134,14 @@ export const privateCaptureSources=[
  'src/ui-review/workspace.tsx','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
  'src/workbench/shell.tsx','src/workbench/navigation.ts','src/workbench/draft-workspace.tsx','src/workbench/draft-contract.ts','src/workbench/domain.tsx','src/workbench/empty-state.tsx','src/workbench/entry-preview.tsx','src/workbench/entry-fields.ts','src/workbench/workflow.tsx','src/workbench/settings.tsx','src/workbench/theme-switch.tsx',
  'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/connected-workspace.tsx',
- 'src/personal-candidate/privacy.tsx','app/layout.tsx','src/personal-candidate/projection.ts',
+ 'src/personal-candidate/privacy.tsx','src/personal-candidate/live-workspace.tsx','app/layout.tsx','app/personal/[...section]/page.tsx',
 ] as const;
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
-/** Exact joined text nodes rendered by the standalone editor's snapshot cards. */
-export function journalSnapshotCaptureText(entries:readonly PublicEntry[],today:string):Set<string>{
- const rows=projectRows([...entries],'personal-review-space',today);
- const stats=taskStats(rows);
- const texts=new Set([
-  '记录日期（可留空）',
-  `${stats.done} 已完成 · ${stats.open} 未完成 · ${stats.cancelled} 已取消 · ${stats.overdue} 逾期 · ${stats.total} 项任务`,
- ]);
- for(const row of rows){
-  texts.add(`${row.kind} · ${row.domain} · ${row.status}${row.overdue?' · 逾期':''}`);
-  texts.add(String(row.revision));
-  texts.add(`版本 ${row.revision}`);
-  if(row.kind==='项目'){
-   const purpose=({maintain:'维系',advance:'推进',explore:'探索'} as Record<string,string>)[row.purpose]??'未选';
-   texts.add(normalize(`阶段 ${row.stage} · 用途 ${purpose}`));
-   texts.add(normalize(`下一步：${row.nextStep||'未填写'}`));
-  }
- }
- return texts;
-}
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
  const out=new Set<string>();for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
 }
-async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark,settingsObservedAt?:string){
+async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark){
  mark('capture-receipts');requireFixture();await assertPrivateReceipts(page,entries);
  mark('capture-dom');const facts=await page.evaluate(()=>{
   const forbidden=document.querySelectorAll('input[type="password"],input[name="otp"],input[autocomplete="one-time-code"],input[autocomplete="username"],input[autocomplete="current-password"],input[autocomplete="new-password"],#mfa-setup-key,canvas[aria-label="验证器绑定二维码"],[aria-label="备用恢复码"]').length;
@@ -176,14 +155,10 @@ async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[numbe
  for(const entry of entries){const collect=(value:unknown)=>{if(typeof value==='string'){texts.add(normalize(value));values.add(value);}else if(value&&typeof value==='object')Object.values(value).forEach(collect);};collect(entry);texts.add(JSON.stringify(entry.source.original,null,2).replace(/\s+/g,' ').trim());texts.add('版本 '+entry.revision+' · ID '+entry.id);if('title'in entry.draft){texts.add(entry.draft.title+' · 版本 '+entry.revision);texts.add('打开任务：'+entry.draft.title);}}
  for(const value of texts)values.add(value);
  if(row.key==='private-journal'){
-  for(const text of journalSnapshotCaptureText(entries,new Date().toLocaleDateString('sv-SE')))texts.add(text);
+  texts.add('记录日期（可留空）');
+  for(const entry of entries)if('title'in entry.draft)assert.ok(!facts.texts.includes(entry.draft.title),'other record titles are absent from Journal');
  }
- if(row.key==='private-settings'){
-  if(!settingsObservedAt)throw Error('PRIVATE_SNAPSHOT_DENIED');
-  texts.add('修改密码');
-  texts.add(settingsObservedAt);
- }
- assertPrivateCaptureContent(facts,texts,values,entries.map(e=>e.id));
+ assertPrivateCaptureContent(facts,texts,values,row.key==='private-journal'?[]:entries.map(e=>e.id));
  mark('capture-image');const directory=resolve(process.env.RUNNER_TEMP!,'owner-personal-browser-screenshots');mkdirSync(directory,{recursive:true,mode:0o700});await page.screenshot({path:join(directory,row.name),fullPage:true});mark('capture-manifest');recordSyntheticCapture({name:row.name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});
 }
 
@@ -194,25 +169,36 @@ function watchPrivateTransport(page:Page,{legacy=false}:{legacy?:boolean}={}){
  page.on('request',request);page.on('response',response);
  return {async close(){page.off('request',request);page.off('response',response);await Promise.all(pending);if(forbidden||mutations)console.error('PRIVATE_TRANSPORT_FAILURE '+JSON.stringify({forbidden:Math.min(forbidden,1000000),mutations:Math.min(mutations,1000000)}));assert.equal(forbidden,0,'private transport boundary');assert.equal(mutations,0,'UI group must not mutate business data');},facts:()=>({privateResponses,rsc})};
 }
-async function readyHeading(page:Page,heading:string){await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();if(await page.locator('.lo-shell').count()){if(heading==='设置')await expect(page.getByText('可写入',{exact:true})).toBeVisible();else await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();}}
-async function assertSelected(page:Page,id:string,path:string){
- if(path.includes('?page=')||id==='overview'){const name=id==='overview'?'总览':id==='todos'?'待办':id==='settings'?'设置':'收件箱';await expect(page.locator('.lo-header-context')).toHaveText(name);if(id==='settings')await expect(page.locator('.lo-sidebar-bottom button[aria-label="设置"]')).toHaveClass(/is-current/);else if(id!=='inbox')await expect(page.locator('nav [aria-current="page"]').filter({hasText:name})).toHaveCount(1);}
- else if(id!=='journal')await expect(page.locator('aside nav a[aria-current="page"][href="'+path+'"]')).toHaveCount(1);
+async function readyHeading(page:Page,heading:string){
+ await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
+ if(heading==='设置')await expect(page.getByRole('link',{name:'修改密码',exact:true})).toBeVisible();
+ else if(heading==='日历与日程'||heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(await page.locator('.lo-shell').count())await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();
 }
-async function navigateDestination(page:Page,id:string,path:string,heading:string,width:number){
- if(await page.locator('.lo-shell,[data-lifeos-surface="personal"]').count())await page.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});
- if(width<800)await page.getByRole('button',{name:'打开导航',exact:true}).click();
- const nav=page.locator('nav[aria-label="工作台导航"]:visible');const link=nav.locator('a[href="'+path+'"]');
- if(!await link.isVisible())await nav.locator('summary').click();
- await link.click();await page.waitForURL(privateOrigin+path);await readyHeading(page,heading);await assertSelected(page,id,path);
- await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,heading);await assertSelected(page,id,path);
+async function navigateDestination(page:Page,id:string,path:string,heading:string){
+ await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});await readyHeading(page,heading);
+ await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,heading);
+ if(['overview','todos','settings'].includes(id)){
+  const name=id==='overview'?'总览':id==='todos'?'待办':'设置';
+  await expect(page.locator('aside [aria-current="page"][aria-label="'+name+'"]')).toHaveCount(1);
+ }
+ if(id==='journal'){
+  await expect(page.getByLabel('标题',{exact:true})).toBeEnabled();
+  await expect(page.getByText(/项目与行动总项|导出记录窗口/)).toHaveCount(0);
+ }
 }
 export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
  const {page,browser,entries}=f;assert.deepEqual(Object.fromEntries(privateDestinations.map(([id,path])=>[id,path])),privateHrefs);
  const transport=watchPrivateTransport(page);let routes=0;
  try{
-  for(const width of [1365,390]){await page.setViewportSize({width,height:width===1365?900:844});await page.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});
-   for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading,width);routes++;}
+  for(const width of [1365,390]){await page.setViewportSize({width,height:width===1365?900:844});await page.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});
+   await readyHeading(page,'总览');
+   if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+   const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
+   await expect(navigation.getByRole('button')).toHaveCount(2);
+   await expect(navigation.locator('a,summary')).toHaveCount(0);
+   await navigation.getByRole('button',{name:'待办',exact:true}).click();await readyHeading(page,'待办');
+   for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading);routes++;}
   }
   for(const path of ['/personal/no-such-module','/personal/finance/extra','/personal/login','/personal/reference','/personal/data','/personal/capture','/personal/financ','/personal/%2Ffinance']){const r=await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});assert.equal([400,404].includes(r?.status()??0),true);assert.equal(new URL(page.url()).origin,privateOrigin);await expect(page.getByRole('heading',{level:1,name:'财务',exact:true})).toHaveCount(0);}
   for(const [,path,heading] of privateDestinations.filter(([,path])=>!path.includes('?')&&path!=='/personal'))for(const query of ['?mode=synthetic-review','?ownerId=foreign&spaceId=foreign','?next=https%3A%2F%2Fevil.example&module=finance']){await page.goto(privateOrigin+path+query,{waitUntil:'domcontentloaded'});await readyHeading(page,heading);assert.equal(page.url(),privateOrigin+path+query);}
@@ -224,30 +210,32 @@ export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
  // Explicit negative probes are separate from ordinary private navigation.
  const denial=await page.evaluate(async()=>{const paths=['/review/admin/reference','/review/admin/articles/workspace','/review/admin','/review/admin/tools','/review/admin/reference/extra','/review/admin/articles/workspace/extra','/review/admin/data','/api/review-version'];const facts=[];for(const path of paths){const r=await fetch(path,{cache:'no-store'});facts.push(r.status===404);}for(const path of ['/review/admin/reference','/review/admin/articles/workspace'])for(const method of ['POST','PUT','PATCH','DELETE']){const r=await fetch(path,{method,headers:{'content-type':'application/json'},body:'{}'});facts.push(r.status===404);}return facts;});assert.equal(denial.every(Boolean),true);
 }
-async function radio(page:Page,mode:'light'|'dark'|'system'){await page.locator('header').getByRole('radio',{name:mode==='light'?'浅色':mode==='dark'?'深色':'系统',exact:true}).check();}
+const themeButtonSelector='header [data-slot="theme-toggle"]';
+async function switchTheme(page:Page,mode:'light'|'dark'){
+ await page.locator('header').getByRole('button',{name:mode==='light'?'切换到浅色模式':'切换到深色模式',exact:true}).click();
+}
 async function themeState(page:Page,theme:'light'|'dark',preference:'light'|'dark'|'system'){
- await expect.poll(()=>page.evaluate(()=>({theme:document.documentElement.dataset.lifeosTheme,scheme:getComputedStyle(document.documentElement).colorScheme,checked:document.querySelector<HTMLInputElement>('header input[type="radio"]:checked')?.value}))).toEqual({theme,scheme:theme,checked:preference});
+ await expect.poll(()=>page.evaluate(()=>({theme:document.documentElement.dataset.lifeosTheme,scheme:getComputedStyle(document.documentElement).colorScheme,checked:document.querySelector<HTMLButtonElement>('header [data-slot="theme-toggle"]')?.dataset.themePreference}))).toEqual({theme,scheme:theme,checked:preference});
 }
 async function verifyPrivateAppearanceAndDraftsBody(f:PrivateFixture,setPhase:(phase:PrivateAppearancePhase)=>void){
  const {page,context,entries}=f,transport=watchPrivateTransport(page);
  try{
   setPhase('initial-system');await observeFirstVisibleTheme(context);await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,'总览');await checkFirstVisibleTheme(page,'light','system','initial-system');
-  setPhase('dark-selection');await radio(page,'dark');await themeState(page,'dark','dark');setPhase('dark-storage-readback');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
+  setPhase('dark-selection');await switchTheme(page,'dark');await themeState(page,'dark','dark');setPhase('dark-storage-readback');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
   setPhase('dark-reload');await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark','saved-dark-reload');await themeState(page,'dark','dark');
-  // Schedule uses ordinary anchor/document navigation, not a second injected initializer.
-  setPhase('dark-navigation');await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true}).click();await readyHeading(page,'日历与日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
-  setPhase('os-media');await page.emulateMedia({colorScheme:'dark'});await radio(page,'light');await themeState(page,'light','light');await radio(page,'system');await themeState(page,'dark','system');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');
-  // storage events reach the other window only. The source radio is still dark
-  // after removeItem, so make a real changed selection before selecting dark again.
-  setPhase('cross-tab');const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await radio(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await radio(sibling,'system');await radio(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}
+  // The retained Schedule bookmark tests first paint on a new document.
+  setPhase('dark-navigation');await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true})).toHaveCount(0);await page.goto(privateOrigin+'/personal/schedule',{waitUntil:'domcontentloaded'});await readyHeading(page,'日历与日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
+  setPhase('os-media');await page.emulateMedia({colorScheme:'dark'});await switchTheme(page,'light');await themeState(page,'light','light');await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.reload({waitUntil:'domcontentloaded'});await themeState(page,'dark','system');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');
+  // Storage events reach the other window only. The source is still dark after removeItem.
+  setPhase('cross-tab');const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await switchTheme(sibling,'light');await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}
   setPhase('todo-list');await page.goto(privateOrigin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});await readyHeading(page,'待办');await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();const todo=entries[2],savedTitle='title'in todo.draft?todo.draft.title:'';
-  setPhase('todo-dialog');await radio(page,'system');await page.getByRole('button',{name:'查看待办：'+savedTitle,exact:true}).click();const detail=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(detail.getByRole('heading',{name:savedTitle,exact:true})).toBeVisible();await expect(detail.locator('form')).toHaveCount(0);await detail.getByRole('button',{name:'编辑待办',exact:true}).click();const title=page.getByRole('dialog').getByLabel('标题',{exact:true});await title.fill('合成主题切换草稿');await page.emulateMedia({colorScheme:'dark'});await themeState(page,'dark','system');await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});
-  // Keep the dirty input focused: choosing a Header radio would deliberately blur-save.
+  setPhase('todo-dialog');await page.getByRole('button',{name:'查看待办：'+savedTitle,exact:true}).click();const detail=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(detail.getByRole('heading',{name:savedTitle,exact:true})).toBeVisible();await expect(detail.locator('form')).toHaveCount(0);await detail.getByRole('button',{name:'编辑待办',exact:true}).click();const title=page.getByRole('dialog').getByLabel('标题',{exact:true});await title.fill('合成主题切换草稿');await page.emulateMedia({colorScheme:'dark'});await themeState(page,'dark','system');await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});
+  // Keep the dirty input focused: using the header theme button would deliberately blur-save.
   setPhase('todo-grid');await themeState(page,'dark','system');await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'表格',exact:true}).click();await requireTaskGrid(page,savedTitle);await taskGridTitleCell(page,savedTitle).dblclick();const cell=taskGridInput(page);await expect(cell).toBeVisible();await cell.fill('合成主题原生草稿');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await page.evaluate(()=>{Reflect.deleteProperty(document,'visibilityState');document.dispatchEvent(new Event('visibilitychange'));});await expect(cell).toBeVisible();await expect(cell).toHaveValue('合成主题原生草稿');await cell.fill(savedTitle);await cell.press('Escape');
-  setPhase('journal');await page.goto(privateOrigin+'/personal/edit?type=journal',{waitUntil:'domcontentloaded'});const journal=page.getByLabel('标题',{exact:true});await expect(journal).toBeEnabled();await journal.fill('合成未保存日记');await page.getByLabel(/^说明 \/ 正文/).fill('合成日记主题检查');await radio(page,'dark');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,false,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,true,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await readyHeading(page,'总览');setPhase('receipt-readback');await assertPrivateReceipts(page,entries);
+  setPhase('journal');await page.goto(privateOrigin+'/personal/edit?type=journal',{waitUntil:'domcontentloaded'});const journal=page.getByLabel('标题',{exact:true});await expect(journal).toBeEnabled();await journal.fill('合成未保存日记');await page.getByLabel(/^说明 \/ 正文/).fill('合成日记主题检查');await switchTheme(page,'dark');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,false,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,true,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await readyHeading(page,'总览');setPhase('receipt-readback');await assertPrivateReceipts(page,entries);
  }finally{await transport.close();}
  // Only this fresh isolated context denies the theme key; sessionStorage remains real.
- for(const denied of ['getItem','setItem','getter'] as const){setPhase(denied==='getter'?'denied-getter':denied==='getItem'?'denied-getItem':'denied-setItem');const c=await f.browser.newContext({colorScheme:'light'});try{await c.addCookies(await context.cookies(privateOrigin));await c.addInitScript(({key,denied})=>{if(denied==='getter'){Object.defineProperty(window,'localStorage',{get(){throw new DOMException('denied','SecurityError');}});return;}const original=Storage.prototype[denied];Storage.prototype[denied]=function(...args:unknown[]){if(this===window.localStorage&&args[0]===key)throw new DOMException('denied','SecurityError');return Reflect.apply(original,this,args);};},{key:themeStorageKey,denied});const p=await c.newPage();await p.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});await radio(p,'dark');await themeState(p,'dark','dark');if(denied!=='getItem')await expect(p.getByRole('status').filter({hasText:'浏览器未允许保存偏好'})).toBeVisible();await p.reload({waitUntil:'domcontentloaded'});await themeState(p,'light','system');await assertPrivateReceipts(p,entries);}finally{await c.close();}}
+ for(const denied of ['getItem','setItem','getter'] as const){setPhase(denied==='getter'?'denied-getter':denied==='getItem'?'denied-getItem':'denied-setItem');const c=await f.browser.newContext({colorScheme:'light'});try{await c.addCookies(await context.cookies(privateOrigin));await c.addInitScript(({key,denied})=>{if(denied==='getter'){Object.defineProperty(window,'localStorage',{get(){throw new DOMException('denied','SecurityError');}});return;}const original=Storage.prototype[denied];Storage.prototype[denied]=function(...args:unknown[]){if(this===window.localStorage&&args[0]===key)throw new DOMException('denied','SecurityError');return Reflect.apply(original,this,args);};},{key:themeStorageKey,denied});const p=await c.newPage();await p.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});await switchTheme(p,'dark');await themeState(p,'dark','dark');if(denied!=='getItem')await expect(p.getByRole('status').filter({hasText:'浏览器未允许保存偏好'})).toBeVisible();await p.reload({waitUntil:'domcontentloaded'});await themeState(p,'light','system');await assertPrivateReceipts(p,entries);}finally{await c.close();}}
 }
 export async function verifyPrivateAppearanceAndDrafts(f:PrivateFixture){
  let phase:unknown='initial-system';
@@ -281,7 +269,7 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
   const root=document.documentElement,header=document.querySelector(selectors.header),scope=document.querySelector(selectors.content);
   if(!header||!scope)throw Error('PRIVATE_PRESENTATION_STRUCTURE');
   const h=header.getBoundingClientRect(),headerStyle=getComputedStyle(header),children=Array.from(header.children).map(n=>n.getBoundingClientRect());
-  const nodes=Array.from(scope.querySelectorAll('p,small,th,td,label,input,textarea,select,h1,h2,h3')).filter(visible),controls=Array.from(header.querySelectorAll('[data-lifeos-theme-control] label')).filter(visible);
+  const nodes=Array.from(scope.querySelectorAll('p,small,th,td,label,input,textarea,select,h1,h2,h3')).filter(visible),controls=Array.from(header.querySelectorAll('[data-slot="theme-toggle"]')).filter(visible);
   const layers=(n:Element)=>{
    const result:ContrastLayer[]=[];
    for(let e:Element|null=n;e;e=e.parentElement){
@@ -298,7 +286,7 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
   // Transparent native choices have no text ink; retain their labels, hit targets and keyboard checks.
   return {overflow:root.scrollWidth>root.clientWidth,header:{height:h.height,display:headerStyle.display,wrap:headerStyle.flexWrap,gap:parseFloat(headerStyle.rowGap),contained:children.every(r=>r.x>=h.x-1&&r.y>=h.y-1&&r.right<=h.right+1&&r.bottom<=h.bottom+1),childHeights:children.map(r=>r.height)},theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,heading:parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),fonts:nodes.map(n=>({size:parseFloat(getComputedStyle(n).fontSize),form:n.matches('input,textarea,select')})),targets:controls.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})),contrasts:nodes.filter(n=>(n.textContent?.trim()||n.matches('input,textarea,select'))&&!(n.matches('input[type="radio"],input[type="checkbox"]')&&getComputedStyle(n).opacity==='0')).map(n=>({foreground:getComputedStyle(n).color,layers:layers(n)})),dialog:dialog?{width:scope.getBoundingClientRect().width,height:scope.getBoundingClientRect().height,scroll:scope.scrollHeight>=scope.clientHeight}:null};
  },{dialog,selectors,chevronImage});
- mark('overflow');assert.equal(facts.overflow,false,'private horizontal overflow');mark('palette');assert.equal(facts.theme,theme);assert.equal(facts.scheme,theme);mark('header',[facts.header.height,facts.header.gap,facts.header.childHeights.length,...facts.header.childHeights.slice(0,3),Number(facts.header.contained),Number(facts.header.display==='flex'),Number(facts.header.wrap==='wrap')]);assertPrivateHeaderGeometry(surface,width,facts.header);mark('title',[facts.heading]);assert.equal(facts.heading>= (width===1365?28:24),true,'private title typography');mark('typography',[facts.fonts.filter(n=>!(n.size>=(n.form?16:14))).length]);assert.equal(facts.fonts.every(n=>n.size>= (n.form?16:14)),true,'private readable typography');mark('hit-targets',[facts.targets.length,...facts.targets.slice(0,3).flatMap(n=>[n.width,n.height])]);assert.equal(facts.targets.length,3);assert.equal(facts.targets.every(n=>n.width>=44&&n.height>=44),true,'Header radio hit targets');
+ mark('overflow');assert.equal(facts.overflow,false,'private horizontal overflow');mark('palette');assert.equal(facts.theme,theme);assert.equal(facts.scheme,theme);mark('header',[facts.header.height,facts.header.gap,facts.header.childHeights.length,...facts.header.childHeights.slice(0,3),Number(facts.header.contained),Number(facts.header.display==='flex'),Number(facts.header.wrap==='wrap')]);assertPrivateHeaderGeometry(surface,width,facts.header);mark('title',[facts.heading]);assert.equal(facts.heading>= (width===1365?28:24),true,'private title typography');mark('typography',[facts.fonts.filter(n=>!(n.size>=(n.form?16:14))).length]);assert.equal(facts.fonts.every(n=>n.size>= (n.form?16:14)),true,'private readable typography');mark('hit-targets',[facts.targets.length,...facts.targets.slice(0,3).flatMap(n=>[n.width,n.height])]);assert.equal(facts.targets.length,1);assert.equal(facts.targets.every(n=>n.width>=44&&n.height>=44),true,'Header theme button hit target');
  for(const [index,c] of facts.contrasts.entries()){mark('contrast',[index,Number(c.layers.some(l=>Number(l.opacity??'1')!==1)),Number(c.layers.some(l=>(l.backgroundImage??'none')!=='none')),Number(c.layers.some(l=>(l.filter??'none')!=='none'||(l.backdropFilter??'none')!=='none')),Number(c.layers.some(l=>(l.mixBlendMode??'normal')!=='normal'||(l.backgroundBlendMode??'normal')!=='normal'))]);const contrast=renderedContrast(c.foreground,c.layers);mark('contrast',[index,contrast.contrast]);assert.equal(contrast.contrast>=4.5,true,'private rendered text contrast');}
  mark('dialog');
  if(facts.dialog){
@@ -312,7 +300,7 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
   await expect(page.getByRole('button',{name:'返回页面',exact:true})).toBeVisible();
  }
  if(dialog){const button=page.getByRole('button',{name:'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
- mark('keyboard');const focus=page.locator('header input[type="radio"]:checked');await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>{const label=n.closest('label');return document.activeElement===n&&n.matches(':focus-visible')&&!!label&&(getComputedStyle(n).outlineStyle!=='none'||getComputedStyle(label).outlineStyle!=='none'||getComputedStyle(label).boxShadow!=='none'||!!n.nextElementSibling&&getComputedStyle(n.nextElementSibling).outlineStyle!=='none');}),true,'private keyboard focus');
+ mark('keyboard');const focus=page.locator(themeButtonSelector);await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>document.activeElement===n&&n.matches(':focus-visible')&&getComputedStyle(n).outlineStyle!=='none'),true,'private keyboard focus');
 }
 async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'){
@@ -322,7 +310,15 @@ async function privateLocalInteractions(page:Page,key:string){
  else if(key==='private-workflows'){await page.getByRole('tab',{name:'设计草稿',exact:true}).click();await page.getByRole('button',{name:'添加步骤',exact:true}).click();await page.getByRole('textbox',{name:'步骤1名称',exact:true}).fill('合成审核步骤');await page.getByRole('button',{name:'移除此步骤',exact:true}).click();await expect(page.getByRole('button',{name:'保存流程 · 待接入',exact:true})).toBeDisabled();}
  else if(key==='private-tools'){const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'授权与执行要求'})}).first();await details.locator('summary').click();await expect(details).toContainText('需确认来源');await details.locator('summary').click();await expect(page.getByRole('button',{name:'连接 · 未实现',exact:true}).first()).toBeDisabled();}
  else if(key==='private-chat')await expect(page.locator('main').getByRole('heading',{level:2,name:'AI 聊天尚未接入',exact:true})).toBeVisible();
- else if(key==='private-data')await expect(page.getByRole('button',{name:'恢复 · 未验证',exact:true})).toBeDisabled();
+ else if(key==='private-data'){
+  await expect(page.getByRole('status')).toHaveText('数据管理入口已收起。');
+  await expect(page.getByRole('link',{name:/管理|导出/})).toHaveCount(0);
+ }else if(key==='private-settings'){
+  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理/)).toHaveCount(0);
+  const settings=page.locator('.lo-settings'),bounds=await settings.boundingBox(),main=await page.locator('.lo-main').boundingBox();
+  assert.ok(bounds&&main&&Math.abs((bounds.x+bounds.width/2)-(main.x+main.width/2))<=1,'settings are centered in their workspace');
+ }
  if(key==='private-finance'||key==='private-health'){
   const notice=page.getByText('本模块来源尚未连接，当前没有查询结果。',{exact:true});
   await expect(notice).toBeVisible();
@@ -377,13 +373,13 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  try{
   for(const item of privateCaptureCases){
    row=item;mark('navigation');
-   await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});let settingsObservedAt:string|undefined;
-   if(row.key==='private-settings')settingsObservedAt=await openPrivateSettings(page,row.path,entries);
+   await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});
+   if(row.key==='private-settings')await openPrivateSettings(page,row.path,entries);
    else await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});
-   mark('heading');await readyHeading(page,row.heading);mark('theme');await radio(page,'system');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
+   mark('heading');await readyHeading(page,row.heading);mark('theme');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
    if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.getByRole('button').filter({hasText:'title'in entry.draft?entry.draft.title:''}).first()).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
-   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark,settingsObservedAt);cells++;
+   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark);cells++;
    mark('close-dialog');if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
    mark('mobile-navigation');if(row.width<800&&row.key==='private-finance'){const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();const drawer=page.getByRole('dialog',{name:'手机导航',exact:true});await expect(drawer).toBeVisible();await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();}
   }

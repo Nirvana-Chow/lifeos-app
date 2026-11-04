@@ -95,11 +95,12 @@ function renderRecordForm(type:'todo'|'project'|'domain'){
  const {PersonalRecordForm}=loadProductModule('src/personal-candidate/record-form.tsx');
  return renderToStaticMarkup(React.createElement(PersonalRecordForm,{type,fields:{title:'合成标题',text:'合成已保存正文',date:'',status:'open',personal:type==='project'?{type:'project',stage:'idea',purpose:null,nextStep:'合成下一步',domain:null,topics:[]}:undefined},setFields:()=>{},confirmed:false,setConfirmed:()=>{},options:{domain:[],project:[],topic:[]},allowedTypes:['todo','journal','project','domain','topic'],disabled:false,onSubmit:()=>{},onCancel:()=>{}}));
 }
-test('actual ThemeSwitch radio values pass the fixed screenshot allowlist without admitting foreign input',()=>{
+test('actual ThemeSwitch contributes no form values to a synthetic screenshot',()=>{
  const {ThemeSwitch}=loadProductModule('src/workbench/theme-switch.tsx');
  const html=renderToStaticMarkup(React.createElement(ThemeSwitch));
  const values=Array.from(html.matchAll(/<input\b[^>]*\bvalue="([^"]*)"/g),match=>match[1]);
- assert.deepEqual(values,['light','dark','system']);
+ assert.deepEqual(values,[]);
+ assert.match(html,/data-slot="theme-toggle"/);
  assert.doesNotThrow(()=>assertPersonalCapture({...clean,values}));
  assert.throws(()=>assertPersonalCapture({...clean,values:[...values,'foreign-private-input']}),/PERSONAL_SCREENSHOT_DENIED/);
 });

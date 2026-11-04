@@ -209,7 +209,7 @@ test('every private business alias uses the native owner MFA principal gate befo
   'next/navigation':{redirect:(url:string)=>{throw Error('REDIRECT '+url);},notFound:()=>{throw Error('NOT_FOUND');}},
   '../../../src/platform/runtime':{readPlatformPagePrincipal:(headers:Headers)=>authentication.readOwnerPrincipal(f.auth,config,headers)},
   '../../../src/workbench/private-navigation':map,'../../../src/workbench/shell':{WorkbenchShell:'shell'},
-  '../../../src/workbench/draft-workspace':{BasicWorkspace:'basic',DraftEditor:'draft'},'../../../src/workbench/domain':{DomainPage:'domain'},'../../../src/workbench/settings':{DataSettings:'data'},
+  '../../../src/workbench/draft-workspace':{BasicWorkspace:'basic',DraftEditor:'draft'},'../../../src/workbench/domain':{DomainPage:'domain'},'../../../src/ui-review/workspace':{LifeOSWorkspace:'workspace'},'../../../src/personal-candidate/privacy':{PrivacyBoundary:'privacy'},
  };
  const m={exports:{} as {default:(props:unknown)=>Promise<unknown>}};
  new Function('require','module','exports',ts.transpileModule(readFileSync('app/personal/[...section]/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText)((name:string)=>{assert.ok(name in imports,name);return imports[name];},m,m.exports);

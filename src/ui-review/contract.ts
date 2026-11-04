@@ -83,6 +83,10 @@ export type LifeOSWorkspaceProps = {
     nextStatus: TaskStatus,
   ) => void;
   onOpenTask?: (task: Pick<TaskRow, "id" | "revision">) => void;
+  onEditTaskInline?: (task: Pick<TaskRow, "id" | "revision">, trigger?: HTMLElement) => void;
+  inlineTask?: { id: string; content: ReactNode } | null;
+  /** Close the inline editor only after its existing draft and in-flight guards agree. */
+  onLeaveTaskInline?: () => boolean;
   onSaveTask?: (task: Pick<TaskRow,"id"|"revision">|null, fields: PersonalEditorFields) => Promise<PublicEntry|null>;
   getTaskFields?: (task: Pick<TaskRow,"id"|"revision">) => PersonalEditorFields|null;
   taskCellDraftMemory?: TaskCellDraftMemory;
@@ -93,6 +97,7 @@ export type LifeOSWorkspaceProps = {
   pendingTaskIds?: readonly string[];
   mutationError?: string | null;
   settingsContent?: ReactNode;
+  unavailablePage?: {title: string; message: string};
   /** QA-only banner, never a replacement for real data in the default route. */
   testLabel?: string;
 };

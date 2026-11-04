@@ -30,10 +30,16 @@ test('pre-paint script resolves stored, invalid and unavailable preferences with
 test('neutral light and dark tokens keep body, card, muted and error text at readable contrast',()=>{
  const css=readFileSync(new URL('../app/theme.css',import.meta.url),'utf8');
  const ratio=(a:string,b:string)=>{const lum=(hex:string)=>{let s=hex.slice(1);if(s.length===3)s=s.split('').map(x=>x+x).join('');const v=[0,2,4].map(at=>parseInt(s.slice(at,at+2),16)/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4);return v[0]*.2126+v[1]*.7152+v[2]*.0722;};const x=lum(a),y=lum(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
- for(const selector of [':root{',':root[data-lifeos-theme=dark]{']){
-  const start=css.indexOf(selector)+selector.length,block=css.slice(start,css.indexOf('}',start));
-  const tokens=Object.fromEntries([...block.matchAll(/--([\w-]+):(#[0-9a-f]{3,6})\b/g)].map(m=>[m[1],m[2]]));
-  for(const [ink,paper] of [['foreground','background'],['card-foreground','card'],['muted-foreground','muted'],['primary-foreground','primary'],['danger','danger-background']])assert.ok(ratio(tokens[ink],tokens[paper])>=4.5,`${selector} ${ink}/${paper}`);
+ const blockFor=(selector:string)=>{const start=css.indexOf(selector)+selector.length;return css.slice(start,css.indexOf('}',start));};
+ const light=':root{',dark=':root[data-lifeos-theme=dark]{';
+ assert.equal(blockFor(dark),blockFor(':root:not([data-lifeos-theme=light]){'),'system dark and explicit dark share a palette');
+ for(const selector of [light,dark]){
+  const tokens=Object.fromEntries([...blockFor(selector).matchAll(/--([\w-]+):(#[0-9a-f]{3,6})\b/g)].map(m=>[m[1],m[2]]));
+  assert.equal(tokens['lo-chrome'],selector===dark?'#181818':'#f8f8f8');
+  assert.equal(tokens.background,selector===dark?'#1f1f1f':'#ffffff');
+  for(const [ink,paper] of [['foreground','background'],['card-foreground','card'],['muted-foreground','muted'],['primary-foreground','primary'],['danger','danger-background'],['lo-link','background'],['lo-link','lo-chrome'],['muted-foreground','lo-chrome'],['popover-foreground','popover']])assert.ok(ratio(tokens[ink],tokens[paper])>=4.5,`${selector} ${ink}/${paper}`);
+  assert.ok(ratio(tokens.ring,tokens.background)>=3,selector+' keyboard focus');
+  assert.ok(ratio(tokens.input,tokens.card)>=3,selector+' input outline');
   for(const name of ['background','card','muted']){let c=tokens[name].slice(1);if(c.length===3)c=c.split('').map(x=>x+x).join('');const channels=[0,2,4].map(at=>parseInt(c.slice(at,at+2),16));assert.ok(Math.max(...channels)-Math.min(...channels)<=6,'neutral/zinc surface, no cream cast');}
  }
 });

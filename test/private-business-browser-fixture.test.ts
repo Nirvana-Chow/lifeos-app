@@ -60,11 +60,13 @@ test('the passive init observer records early palette and control mistakes witho
   await fixture.observeFirstVisibleTheme({addInitScript:async(script:()=>void)=>{install=script;}} as never);
   const w={} as {__lifeosFirstVisible:fixture.FirstVisibleTheme[];__lifeosFirstVisibleControls:fixture.FirstVisibleTheme[]};
   let frame=0;const queued:Function[]=[];
-  const label={getBoundingClientRect:()=>({width:44,height:44})};
-  const radio={closest:()=>label,value:'dark'};
+  const button={
+   getBoundingClientRect:()=>({width:44,height:44}),
+   get dataset(){return {themePreference:frame<3||frame===3&&fault==='missing-checked'?undefined:frame===3&&fault==='checked'?'system':'dark'};},
+  };
   const root={dataset:{lifeosTheme:'dark'}};
-  const header={getBoundingClientRect:()=>({width:300,height:60}),querySelector:(selector:string)=>selector.endsWith(':checked')?(frame<3?null:frame===3&&fault==='missing-checked'?null:{value:frame===3&&fault==='checked'?'system':'dark'}):radio};
-  const getComputedStyle=(node:unknown)=>({visibility:node===label&&frame<3?'hidden':'visible',colorScheme:root.dataset.lifeosTheme});
+  const header={getBoundingClientRect:()=>({width:300,height:60}),querySelector:(selector:string)=>selector==='[data-slot="theme-toggle"]'?button:null};
+  const getComputedStyle=(node:unknown)=>({visibility:node===button&&frame<3?'hidden':'visible',colorScheme:root.dataset.lifeosTheme});
   new Function('window','document','getComputedStyle','performance','requestAnimationFrame',`(${install.toString()})()`)(w,{documentElement:root,querySelector:()=>header},getComputedStyle,{now:()=>frame*16},(fn:Function)=>queued.push(fn));
   while(queued.length&&frame<10){root.dataset.lifeosTheme=frame===0&&fault==='palette'?'light':'dark';queued.shift()!();frame++;}
   assert.equal(queued.length,0);assert.equal(w.__lifeosFirstVisible.length,3);assert.equal(w.__lifeosFirstVisibleControls.length,3);
@@ -144,12 +146,12 @@ test('handoff admits only three exact synthetic receipts with structured safe ti
  for(const change of [{createdAt:'private record body'},{updatedAt:'private@example.com'},{source:{...entries[0].source,asOf:'private body'}}]){const poisoned={...clean,entries:[{...entries[0],...change},entries[1],entries[2]]};assert.throws(()=>fixture.assertPrivateHandoff(poisoned as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);}
  const revised={...clean,entries:[entries[0],entries[1],{...entries[2],revision:9}]} as unknown as fixture.PrivateBrowserHandoff;
  fixture.assertPrivateHandoff(revised);
- const expected=fixture.journalSnapshotCaptureText(revised.entries,'2030-11-02');
- const facts={forbidden:0,values:[''],texts:['记录日期（可留空）','9','版本 9','待办 · 合成浏览器领域 · 进行中','0 已完成 · 1 未完成 · 0 已取消 · 0 逾期 · 1 项任务'],editable:[],recordIds:ids};
+ const expected=fixture.captureSourceText();
+ const facts={forbidden:0,values:[''],texts:['当前记录'],editable:[],recordIds:[]};
  const allowedValues=new Set(['']);
- assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,expected,allowedValues,ids));
- for(const change of [{texts:['版本 10']},{texts:['待办 · 未知领域 · 进行中']},{values:['版本 9']},{recordIds:['foreign-id']}]){
-  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},expected,allowedValues,ids),/PRIVATE_CAPTURE_DENIED/);
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,expected,allowedValues,[]));
+ for(const change of [{texts:['版本 10']},{texts:['待办 · 未知领域 · 进行中']},{values:['版本 9']},{recordIds:[ids[2]]}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},expected,allowedValues,[]),/PRIVATE_CAPTURE_DENIED/);
  }
 });
 
