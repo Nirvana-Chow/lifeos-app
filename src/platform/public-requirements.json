@@ -6,7 +6,7 @@
   "requirements": [
     {
       "id": "LO-UI-001",
-      "version": 1,
+      "version": 2,
       "title": "日常工作台",
       "description": "连接个人任务与记录的工作界面。",
       "status": "in_progress",
@@ -14,7 +14,8 @@
       "sourceRefs": [
         "README.md",
         "src/ui-review/workspace.tsx",
-        "src/ui-review/task-grid.tsx"
+        "src/ui-review/task-grid.tsx",
+        "docs/verification/2026-11-05-unified-ui-qualification.md"
       ],
       "acceptanceCriteria": [
         "保留原五项 OpenSpec 任务及继承的 2/5 状态，不以新需求池取代原清单。",
@@ -29,23 +30,29 @@
         {
           "scope": "source",
           "ref": "src/ui-review/task-grid.tsx"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
         }
       ],
       "blockedBy": [
-        "原任务 2.1 的对比性能测量、3.1 的完整渲染门禁未收口。"
+        "原任务 3.2 的运行制品映射、发布恢复读回与本人体验仍未收口；其他事项交互保留原验收。"
       ],
       "roadmap": {
         "phaseId": "workspace",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "已有统一 Header、Modern 主题、ReUI 待办表与详情编辑。甘特、看板拖拽、换行批量录入及可恢复删除仍待做。",
-        "nextStep": "先核验需求池和分类视图；其余交互沿原任务分阶段实现。",
+        "summary": "统一工作台、ReUI 编辑与详情已实现，原性能和渲染资格已通过；事项甘特、看板拖拽、换行批录及恢复删除仍待实现。",
+        "nextStep": "沿原 3.2 核对运行制品映射与本人体验，再接续未完成事项交互。",
         "issueRefs": [],
         "prRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/pull/1",
           "https://github.com/Nirvana-Chow/lifeos-app/pull/23",
           "https://github.com/Nirvana-Chow/lifeos-app/pull/28",
-          "https://github.com/Nirvana-Chow/lifeos-app/pull/29"
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/29",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/36",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/37"
         ],
         "specTaskRefs": [
           "openspec/changes/unified-business-ui/tasks.md#1.1",
@@ -230,7 +237,7 @@
     },
     {
       "id": "LO-REQ-001",
-      "version": 2,
+      "version": 3,
       "title": "范围与验收",
       "description": "计划、实现与实际验收分别记录。",
       "status": "in_progress",
@@ -239,7 +246,8 @@
         "README.md",
         "src/platform/requirements.ts",
         "src/platform/public-requirements.json",
-        "https://github.com/Nirvana-Chow/lifeos-app/issues/30"
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/30",
+        "docs/verification/2026-11-05-unified-ui-qualification.md"
       ],
       "acceptanceCriteria": [
         "项目目标、当前阶段、下一步、实现状态及验收依据从同一基线读取。",
@@ -256,6 +264,10 @@
         {
           "scope": "source",
           "ref": "src/platform/public-requirements.json"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
         }
       ],
       "blockedBy": [],
@@ -263,12 +275,15 @@
         "phaseId": "workspace",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "已有稳定需求 ID 与本人验收证据门禁；本阶段补充同一基线的路线图。",
-        "nextStep": "完成需求池和来源链接核验，再按优先级接续原任务。",
+        "summary": "同一需求基线已有表格、看板、需求路线图甘特和展开详情；实现、部署与本人验收分别展示。",
+        "nextStep": "持续把新要求先入池并更新实际证据，按统一工具、分类审核与个人智能体依赖接续交付。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/30"
         ],
-        "prRefs": [],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/36",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/37"
+        ],
         "specTaskRefs": [
           "openspec/changes/unified-business-ui/tasks.md#1.2",
           "openspec/changes/unified-business-ui/tasks.md#3.2"
@@ -277,7 +292,7 @@
     },
     {
       "id": "LO-TASK-001",
-      "version": 1,
+      "version": 2,
       "title": "待办编辑与来源去重",
       "description": "可靠保存、回读并连接待办与项目。",
       "status": "in_progress",
@@ -287,7 +302,10 @@
         "src/ui-review/task-grid.tsx",
         "src/personal-candidate/service.ts",
         "src/agent-api/capabilities.ts",
-        "skills/lifeos-agent/SKILL.md"
+        "skills/lifeos-agent/SKILL.md",
+        "docs/verification/2026-11-05-unified-ui-qualification.md",
+        "docs/superpowers/specs/2026-11-05-personal-agent-design.md",
+        "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
       ],
       "acceptanceCriteria": [
         "保存保留记录/来源 ID、修订和幂等回执；刷新后可回读。",
@@ -310,6 +328,18 @@
         {
           "scope": "source",
           "ref": "skills/lifeos-agent/SKILL.md"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/specs/2026-11-05-personal-agent-design.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
         }
       ],
       "blockedBy": [
@@ -320,8 +350,8 @@
         "phaseId": "workspace",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "已有标题、状态、日期、详情编辑及待办 Agent API。尚无批量提交、拖拽和可恢复删除。",
-        "nextStep": "先验证筛选和分类入口；后续逐项补充批量预检/提交、拖拽与删除恢复。",
+        "summary": "已有标题、状态、日期、详情编辑和待办 API；分类审核开发中，换行批录、拖拽与恢复删除仍待实现。",
+        "nextStep": "先交付分类预览与审核闭环，再按原验收补齐批量录入和事项交互。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/5"
         ],
@@ -330,7 +360,9 @@
           "https://github.com/Nirvana-Chow/lifeos-app/pull/24",
           "https://github.com/Nirvana-Chow/lifeos-app/pull/27",
           "https://github.com/Nirvana-Chow/lifeos-app/pull/29",
-          "https://github.com/Nirvana-Chow/lifeos-app/pull/2"
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/2",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/36",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/37"
         ],
         "specTaskRefs": [
           "openspec/changes/unified-business-ui/tasks.md#1.2",
@@ -341,7 +373,7 @@
     },
     {
       "id": "LO-PROJECT-001",
-      "version": 1,
+      "version": 2,
       "title": "项目阶段与证据关联",
       "description": "在待办入口管理项目、领域和关联证据。",
       "status": "in_progress",
@@ -349,7 +381,12 @@
       "sourceRefs": [
         "https://github.com/Nirvana-Chow/lifeos-app/issues/7",
         "src/personal-candidate/business.ts",
-        "src/records-workbench/project-links-view.tsx"
+        "src/records-workbench/project-links-view.tsx",
+        "docs/verification/2026-11-05-unified-ui-qualification.md",
+        "docs/superpowers/specs/2026-11-05-personal-agent-design.md",
+        "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md",
+        "src/agent-api/organization.ts",
+        "src/agent-api/scopes.ts"
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
@@ -363,22 +400,43 @@
         {
           "scope": "source",
           "ref": "src/records-workbench/project-links-view.tsx"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/specs/2026-11-05-personal-agent-design.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/organization.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/scopes.ts"
         }
       ],
       "blockedBy": [
-        "Agent API 尚无项目/领域的创建、更新与发现操作，不能将密钥描述为全系统权限。"
+        "组织 API 已有源码及独立 CI；SQL、运行配置与现有 Key 新 scope 尚未真实启用，目录和分类清单仍需核验。"
       ],
       "roadmap": {
         "phaseId": "workspace",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "已有本人项目/领域关系、阶段和下一步字段，以及合成项目证据关联候选。",
-        "nextStep": "核验待办内项目/领域分区；真实分类先提供建议，项目和领域 API 尚待补齐。",
+        "summary": "已有项目、领域、主题管理界面及组织 API 源码，支持受限快照、详情和创建更新；尚未在真实环境启用新增权限。",
+        "nextStep": "按固定包核对 SQL、运行配置、目录覆盖与分类清单，再审核真实整理差异。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/7"
         ],
         "prRefs": [
-          "https://github.com/Nirvana-Chow/lifeos-app/pull/28"
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/28",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/38"
         ],
         "specTaskRefs": [
           "openspec/changes/unified-business-ui/tasks.md#1.2",
@@ -996,7 +1054,7 @@
     },
     {
       "id": "LO-AI-001",
-      "version": 2,
+      "version": 3,
       "title": "个人智能体与受控 AI 接入",
       "description": "理解授权接入的数据、目标与偏好，通过可检查和纠正的工作台自动整理、提出洞察并受控执行。",
       "status": "in_progress",
@@ -1004,7 +1062,10 @@
       "sourceRefs": [
         "https://github.com/Nirvana-Chow/lifeos-app/issues/19",
         "src/platform/ai-settings-service.ts",
-        "src/capture-runs-candidate/service.ts"
+        "src/capture-runs-candidate/service.ts",
+        "docs/verification/2026-11-05-unified-ui-qualification.md",
+        "docs/superpowers/specs/2026-11-05-personal-agent-design.md",
+        "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
@@ -1022,6 +1083,18 @@
         {
           "scope": "source",
           "ref": "src/capture-runs-candidate/service.ts"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/specs/2026-11-05-personal-agent-design.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
         }
       ],
       "blockedBy": [
@@ -1031,12 +1104,14 @@
         "phaseId": "integration",
         "priority": "P1",
         "implementation": "partial",
-        "summary": "已有默认关闭的 AI 配置与调用状态候选；个人上下文、自动整理、主动洞察及助理工作台仍待实现。",
-        "nextStep": "先补统一 API 与分类审核执行，再基于现有 AI SDK 和成熟编排方案确定个人智能体架构与最小闭环。",
+        "summary": "PersonalAgent 已确定 LangGraph、PostgreSQL 与成熟 worker 的架构方向；统一工具层已有源码，分类审核开发中，持久智能体尚未启用。",
+        "nextStep": "完成统一工具与分类审核闭环，再实现可溯源上下文、持久运行和助理工作台；模型、worker 与 RAG 接入分别验证。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/19"
         ],
-        "prRefs": [],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/38"
+        ],
         "specTaskRefs": []
       }
     },
@@ -1370,16 +1445,21 @@
     },
     {
       "id": "LO-AGENT-001",
-      "version": 1,
+      "version": 2,
       "title": "Agent接入与Skill分发",
-      "description": "已有待办API与Skill，本轮补完整读取、下载与密钥弹窗，运行验收待做。",
+      "description": "同一 Key 按显式 scope 使用待办与组织能力，网页提供能力发现和通用 Skill；真实启用与运行验收分开记录。",
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
         "AGENTS.md",
         "src/agent-api/capabilities.ts",
         "skills/lifeos-agent/SKILL.md",
-        "https://github.com/Nirvana-Chow/lifeos-app/issues/35"
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/35",
+        "docs/verification/2026-11-05-unified-ui-qualification.md",
+        "docs/superpowers/specs/2026-11-05-personal-agent-design.md",
+        "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md",
+        "src/agent-api/organization.ts",
+        "src/agent-api/scopes.ts"
       ],
       "acceptanceCriteria": [
         "网页下载完整通用Skill并复制安装说明，相对引用完整，包内没有账号配置或密钥。",
@@ -1397,6 +1477,26 @@
         {
           "scope": "source",
           "ref": "skills/lifeos-agent/SKILL.md"
+        },
+        {
+          "scope": "qualification",
+          "ref": "docs/verification/2026-11-05-unified-ui-qualification.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/specs/2026-11-05-personal-agent-design.md"
+        },
+        {
+          "scope": "design",
+          "ref": "docs/superpowers/plans/2026-11-05-personal-agent-foundation.md"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/organization.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/scopes.ts"
         }
       ],
       "blockedBy": [],
@@ -1404,12 +1504,14 @@
         "phaseId": "foundation",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "已有待办API与Skill，本轮补完整读取、下载与密钥弹窗，运行验收待做。",
-        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "summary": "已有同一 Key 的显式权限管理、能力发现与通用 Skill 下载源码；现有 Key 仍仅有已授 scope，不能视为全系统权限。",
+        "nextStep": "完成新增组织权限的真实启用核验与分类审核交付，再补运行工作台和薄 MCP 适配。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/35"
         ],
-        "prRefs": [],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/38"
+        ],
         "specTaskRefs": [
           "openspec/changes/unified-business-ui/tasks.md#1.2",
           "openspec/changes/unified-business-ui/tasks.md#3.2"
@@ -1418,9 +1520,9 @@
     }
   ],
   "roadmap": {
-    "goal": "把训练、睡眠、健康、财务、日程、日记与人生阶段连接成可追溯、可恢复的个人数据系统。",
-    "currentPhaseId": "workspace",
-    "nextStep": "完成工作台、需求视图与账户交互核验，再逐项接入个人数据。",
+    "goal": "把训练、睡眠、健康、财务、日程、日记与人生阶段连接成可追溯、可恢复的个人数据系统，由 PersonalAgent 基于授权资料提出建议并受控执行。",
+    "currentPhaseId": "integration",
+    "nextStep": "完成统一工具与分类审核闭环，逐项接入个人业务数据，再推进可溯源上下文与持久 PersonalAgent；运行启用和本人验收分别收口。",
     "phases": [
       {
         "id": "foundation",
