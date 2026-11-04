@@ -61,6 +61,8 @@ export type WorkspacePage =
   | "projects"
   | "settings"
   | "requirements";
+export type SettingsPanel = "general" | "topics" | "security" | "api-keys";
+export type WorkspaceLocation = {page: Exclude<WorkspacePage,"settings">; modal?: "settings"; panel?: SettingsPanel};
 export type TaskView = "list" | "table" | "board";
 export type TaskFilter = {
   query: string;
@@ -75,6 +77,12 @@ export type LifeOSWorkspaceProps = {
   access: WorkspaceAccess;
   initialPage?: WorkspacePage;
   initialView?: TaskView;
+  initialModal?: "settings";
+  initialSettingsPanel?: SettingsPanel;
+  onBeforeSettingsChange?: () => boolean;
+  settingsCloseGuard?: {current: (() => boolean) | null};
+  renderSettingsPanel?: (panel: SettingsPanel) => ReactNode;
+  availableSettingsPanels?: readonly SettingsPanel[];
   onRefresh?: () => void;
   onLogin?: () => void;
   onLogout?: () => void;

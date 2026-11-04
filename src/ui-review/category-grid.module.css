@@ -19,3 +19,7 @@
 .root :is(input, select, a, button):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior: contain; }
 @media (max-width: 600px) { .toolbar { gap: 12px; padding: 12px; } .field { min-width: calc(50% - 12px); } .field:first-child { flex-basis: 100%; } .create { width: 100%; } }
+
+.root { display:flex; flex-direction:column; min-height:0; flex:1; height:100%; }
+.root > :global([data-slot="data-grid"]) { flex:1; min-height:0; }
+.root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior:contain; scroll-padding-top:48px; }

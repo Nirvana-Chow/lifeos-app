@@ -15,6 +15,7 @@ type TaskActions={
  onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:()=>boolean;
  onOpenTask:(task:TaskIdentity,trigger?:HTMLElement)=>boolean;
  onBeforeNavigate:()=>boolean;
+ onBeforeSettingsChange:()=>boolean;
  taskCellDraftMemory:TaskCellDraftMemory;
  onRetryTaskMutation:()=>Promise<PublicEntry|null>;
  onSaveTask:(task:TaskIdentity|null,fields:PersonalEditorFields)=>Promise<PublicEntry|null>;
@@ -93,6 +94,12 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   onCreateTask:()=>open({mode:'create'}),
   onOpenTask:(task,trigger)=>open({mode:'edit',task},trigger),
   onBeforeNavigate:beforeNavigate,
+  onBeforeSettingsChange:()=>{
+   const current=controller.current?.getSnapshot();
+   if(current?.saving||current?.uncertain)return false;
+   cellDrafts.captureCurrent();
+   return true;
+  },
   onSaveTask:save,getTaskFields,taskCellDraftMemory:cellDrafts,onRetryTaskMutation:retry,
   onUndoTaskStatus:()=>{if(beforeNavigate())void controller.current?.undoTaskStatus();},
   onSetTaskStatus:(task,status)=>{

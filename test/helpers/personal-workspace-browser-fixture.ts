@@ -330,12 +330,12 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
- phase='create-domain';await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'领域分类视图',exact:true}).click();await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
+ phase='create-domain';await page.getByRole('button',{name:'事项',exact:true}).click();await page.getByRole('button',{name:'领域分类视图',exact:true}).click();await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
  await title(page).fill(synthetic.domain);await recordField(page,'说明 / 正文').fill('隔离合成领域说明');const domain=await save(page,'domain');
- await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
+ await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'事项',exact:true}).click();await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await page.getByRole('link',{name:'新建项目',exact:true}).click();await readyEditor(page,'');
  phase='create-project';await title(page).fill(synthetic.project);await recordField(page,'目标').fill('隔离合成项目目标');await selectReference(page,'所属领域',domain);const project=await save(page,'project');assert.deepEqual((project.draft as {personal:{domain:unknown}}).personal.domain,reference(domain));
- await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');
+ await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'事项',exact:true}).click();await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');
  phase='create-todo';await title(page).fill(synthetic.initial);await recordField(page,'正文').fill(synthetic.notes);await recordField(page,'到期日').fill(synthetic.date);let todo=await saveTask(page);assert.equal('status'in todo.draft?todo.draft.status:null,'open');
  await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
  const trigger=page.getByRole('button',{name:'展开详情：'+synthetic.initial,exact:true});const editorStart=performance.now();await trigger.click();await editTask(page,synthetic.initial);latency('editor-form-ready',editorStart);
@@ -469,7 +469,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await readyTaskDetail(page,synthetic.title);
  await recordField(page,'正文').fill(synthetic.editedNotes);todo=await saveTask(page,todo);
  phase='settings-actions';await page.getByRole('button',{name:'设置',exact:true}).click();
- await expect(page.getByRole('link',{name:'修改密码',exact:true})).toBeVisible();
+ await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
  const records=[domain,project,todo];
@@ -486,10 +486,10 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='workspace-history-url';
  await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);
- await page.getByRole('button',{name:'待办',exact:true}).click();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings');
+ await page.getByRole('button',{name:'事项',exact:true}).click();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
+ await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
+ await page.goForward();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  await page.reload({waitUntil:'domcontentloaded'});await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  phase='workspace-history-draft-refusal';
@@ -501,11 +501,11 @@ export async function verifyPersonalWorkspace(page:Page){
   await confirmDiscard(page,false,async()=>{await page.goBack();});
   await expect(page).toHaveURL(tasksURL);await expect(historyField).toHaveValue('合成后退保留草稿');
   assert.equal(historyWrites,0);await historyField.press('Escape');await expect(historyField).toHaveCount(0);
-  await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings');
+  await page.goForward();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');
   await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();assert.equal(historyWrites,0);
-  // Simulate an older same-document entry, preserving all Next.js router state.
+  // Simulate an older real page departure, preserving Next.js router state. Overlay traversal retains drafts; actual page departure still confirms.
   phase='workspace-history-legacy-mark';historyCanary='legacy';
-  await page.evaluate(()=>{const state={...history.state};delete state.__lifeosWorkspace;history.replaceState(state,'',location.href);});
+  await page.evaluate(()=>{const state={...history.state};delete state.__lifeosWorkspace;history.replaceState(state,'','/personal?page=requirements');});
   phase='workspace-history-legacy-back-navigation';await page.goBack();
   phase='workspace-history-legacy-back-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-legacy-back-grid';await requireNativeTable(page);
@@ -515,8 +515,8 @@ export async function verifyPersonalWorkspace(page:Page){
   phase='workspace-history-legacy-refusal-draft';await expect(legacyField).toHaveValue('合成旧历史保留草稿');assert.equal(historyWrites,0);
   phase='workspace-history-legacy-escape';await legacyField.press('Escape');
   phase='workspace-history-legacy-accept-navigation';await page.goForward();
-  phase='workspace-history-legacy-accept-url';await expect(page).toHaveURL(origin+'/personal?page=settings');
-  phase='workspace-history-legacy-accept-heading';await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
+  phase='workspace-history-legacy-accept-url';await expect(page).toHaveURL(origin+'/personal?page=requirements');
+  phase='workspace-history-legacy-accept-heading';await expect(page.getByRole('heading',{name:'需求池',exact:true})).toBeVisible();
   phase='workspace-history-accepted-legacy-back-navigation';historyCanary='accepted';await page.goBack();
   phase='workspace-history-accepted-legacy-back-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-accepted-legacy-back-grid';await requireNativeTable(page);

@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   CheckSquare2,
   Folder,
-  Layers,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -52,6 +51,7 @@ import type {
   TaskRow,
   TaskStatus,
   WorkspacePage,
+  SettingsPanel,
   WorkspaceState,
   TaskFilter,
   TaskView,
@@ -62,11 +62,11 @@ import {CategoryGrid} from "./category-grid";
 import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 
-import {readWorkspacePage,workspaceHref} from '../workbench/private-navigation';
+import {readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
 
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
-  { id: "tasks", label: "待办", icon: CheckSquare2 },
+  { id: "tasks", label: "事项", icon: CheckSquare2 },
   { id: "requirements", label: "需求池", icon: ClipboardList },
 ] as const;
 const viewItems = [
@@ -141,8 +141,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const [page, setPage] = useState<WorkspacePage>(
-    props.initialPage ?? "overview",
+    props.initialPage === "settings" ? "overview" : props.initialPage ?? "overview",
   );
+  const [settingsOpen,setSettingsOpen]=useState(props.initialModal==='settings'||props.initialPage==='settings');
+  const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??'general');
+  const settingsTrigger=useRef<HTMLButtonElement|null>(null);
+  const settingsOpeners=useRef(new Map<number,{href:string;index:number;scope:string}>());
+  const locationState=useRef({page,settingsOpen,settingsPanel});
+  locationState.current={page,settingsOpen,settingsPanel};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
@@ -161,15 +167,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
+  const approvedSettingsClose=useRef<{href:string;scope:string;index:number}|null>(null);
   const currentBrowserIndex = useRef<number | null>(null);
   const currentHistoryState = useRef<unknown>(null);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
   // A router commit can occur inside popstate dispatch. Keep the native
   // subscription intact and expose only the latest committed handlers to it.
-  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate});
+  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, saving: props.saving, uncertain: props.uncertain});
   useLayoutEffect(() => {
-    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate};
+    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, saving: props.saving, uncertain: props.uncertain};
   });
   const metrics = useMemo(() => taskMetrics(state), [state]);
   const rows = useMemo(
@@ -179,8 +186,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const pendingIds = new Set(props.pendingTaskIds ?? []);
   const canWrite = mayWrite(access) && !props.saving && !props.uncertain;
   const [undoNow,setUndoNow]=useState(0);
-  const [topicsOpen,setTopicsOpen]=useState(false),[topicQuery,setTopicQuery]=useState("");
-  const topicTrigger=useRef<HTMLButtonElement|null>(null);
+  const [topicQuery,setTopicQuery]=useState("");
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
   const overviewTasks = page === "overview" && state.status === "ready"
     ? filterTasks(tasks, defaultFilter).slice(0, 6)
@@ -225,16 +231,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         restoringHistory.current = false;
         return;
       }
-      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate} = historyHandlers.current;
+      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate, onBeforeSettingsChange, settingsCloseGuard, saving, uncertain} = historyHandlers.current;
       const entry = workspaceHistoryEntry(event.state);
       const url = new URL(window.location.href);
+      const approval=approvedSettingsClose.current;
+      approvedSettingsClose.current=null;
+      const closingApproved=!!approval&&approval.href===url.pathname+url.search&&approval.scope===entry?.scope&&approval.index===entry.index;
       const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
       if (url.pathname !== "/personal" && !isTaskLink) return;
-      const historyPage = readWorkspacePage(url.searchParams.get("page"));
+      const nextLocation = readWorkspaceLocation(Object.fromEntries(url.searchParams));
+      const historyPage=nextLocation.page;
+      const sameBackground=!isTaskLink&&historyPage===locationState.current.page;
+      const overlayChange=sameBackground&&(!!nextLocation.modal||locationState.current.settingsOpen);
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
       const wantsCreate = isTaskLink ? !url.searchParams.has("id") : historyPage !== "requirements" && url.searchParams.get("create") === "todo";
       let allowed;
-      if (task && onOpenTask) allowed = onOpenTask(task);
+      if (overlayChange) allowed = saving||uncertain ? false :
+        locationState.current.settingsOpen&&!closingApproved&&settingsCloseGuard?.current?.()===false ? false : onBeforeSettingsChange?.();
+      else if (locationState.current.settingsOpen&&settingsCloseGuard?.current?.()===false) allowed=false;
+      else if (task && onOpenTask) allowed = onOpenTask(task);
       else if (wantsCreate && onCreateTask) allowed = onCreateTask();
       else allowed = onBeforeNavigate?.();
       if (allowed === false) {
@@ -261,10 +276,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         return;
       }
       setPage(isTaskLink ? "tasks" : historyPage);
-      setFilter(defaultFilter);
+      setSettingsOpen(!!nextLocation.modal);
+      setSettingsPanel(nextLocation.panel??'general');
+      if(!overlayChange)setFilter(defaultFilter);
       setMobileOpen(false);
-      setFiltersOpen(false);
-      setDetailId(null);
+      if(!overlayChange){setFiltersOpen(false);setDetailId(null);}
       currentHref.current = url.pathname + url.search;
       currentBrowserIndex.current = browserHistoryIndex();
       currentHistory.current = entry ?? {scope: crypto.randomUUID(), index: 0};
@@ -274,12 +290,53 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [props.syncUrl]);
+  function settingsAllowed() {
+    return !restoringHistory.current&&!approvedSettingsClose.current&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
+  }
+  function openSettings(trigger?:HTMLButtonElement|null) {
+    if(!settingsAllowed())return false;
+    if(unavailablePage||contentPage){window.location.assign(workspaceHref('settings'));return true;}
+    settingsTrigger.current=trigger??settingsTrigger.current;
+    if(props.syncUrl&&!settingsOpen){
+      const active=currentHistory.current??{scope:crypto.randomUUID(),index:0};
+      const entry={scope:active.scope,index:active.index+1};
+      const background=window.location.pathname+window.location.search;
+      const href=workspaceLocationHref({page:page==='settings'?'overview':page,modal:'settings',panel:'general'});
+      settingsOpeners.current.set(entry.index,{href:background,index:active.index,scope:active.scope});
+      window.history.pushState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
+      currentHistory.current=entry;currentHistoryState.current=window.history.state;currentHref.current=href;currentBrowserIndex.current=browserHistoryIndex();
+    }
+    setSettingsPanel('general');setSettingsOpen(true);setMobileOpen(false);return true;
+  }
+  function selectSettingsPanel(panel:SettingsPanel) {
+    if(panel===settingsPanel)return;
+    if(!settingsAllowed()||props.settingsCloseGuard?.current?.()===false)return;
+    if(props.syncUrl){
+      const href=workspaceLocationHref({page:page==='settings'?'overview':page,modal:'settings',panel});
+      window.history.replaceState(window.history.state,'',href);currentHref.current=href;
+    }
+    setSettingsPanel(panel);
+  }
+  function closeSettings() {
+    if(!settingsAllowed()||props.settingsCloseGuard?.current?.()===false)return;
+    if(props.syncUrl){
+      const active=currentHistory.current,opener=active&&settingsOpeners.current.get(active.index);
+      if(opener&&active&&opener.scope===active.scope&&opener.index===active.index-1&&opener.href===workspaceHref(page)){
+        approvedSettingsClose.current={href:opener.href,scope:opener.scope,index:opener.index};
+        window.history.back();return;
+      }
+      const href=workspaceHref(page);
+      window.history.replaceState(window.history.state,'',href);currentHref.current=href;currentHistoryState.current=window.history.state;
+    }
+    setSettingsOpen(false);
+  }
   function navigate(
     next: WorkspacePage,
     areaId: string | null = null,
     projectId: string | null = null,
   ) {
-    if (restoringHistory.current || props.onBeforeNavigate?.() === false) return false;
+    if(next==="settings")return openSettings();
+    if (restoringHistory.current || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     if (props.onNavigatePage) {
       props.onNavigatePage(next);
       return true;
@@ -330,10 +387,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <Button
             variant="ghost"
             key={id}
-            className={!unavailablePage && !contentPage && page === id ? "is-current" : ""}
+            className={!unavailablePage && !contentPage && (page === id || id === "tasks" && ["projects","areas","inbox"].includes(page)) ? "is-current" : ""}
             title={collapsed ? label : undefined}
             aria-label={label}
-            aria-current={!unavailablePage && !contentPage && page === id ? "page" : undefined}
+            aria-current={!unavailablePage && !contentPage && (page === id || id === "tasks" && ["projects","areas","inbox"].includes(page)) ? "page" : undefined}
             data-workspace-nav
             onClick={() => navigate(id)}
           >
@@ -347,10 +404,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           variant="ghost"
           aria-label="设置"
           title={collapsed ? "设置" : undefined}
-          className={page === "settings" ? "is-current" : ""}
-          aria-current={page === "settings" ? "page" : undefined}
+          className={settingsOpen ? "is-current" : ""}
+          aria-expanded={settingsOpen}
           data-workspace-nav
-          onClick={() => navigate("settings")}
+          onClick={event => openSettings(event.currentTarget)}
         >
           <Settings size={19} />
           <span>设置</span>
@@ -398,7 +455,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <TaskTitleField
           task={task}
           writable={canWrite}
-          blocked={!!props.saving || !!props.uncertain || pendingIds.has(task.id)}
+          blocked={settingsOpen || mobileOpen || !!props.saving || !!props.uncertain || pendingIds.has(task.id)}
           onSave={props.onSaveTask}
           getTaskFields={props.getTaskFields}
           draftMemory={props.taskCellDraftMemory}
@@ -426,7 +483,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <TaskTable
           tasks={rows}
           writable={canWrite}
-          blocked={!!props.saving || !!props.uncertain}
+          blocked={settingsOpen || mobileOpen || !!props.saving || !!props.uncertain}
           onSave={props.onSaveTask}
           getTaskFields={props.getTaskFields}
           draftMemory={props.taskCellDraftMemory}
@@ -463,7 +520,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span>项目</span>
             <span>状态</span>
           </div>
-          {rows.map((task) => taskCard(task))}
+          <div className="lo-list-rows">{rows.map((task) => taskCard(task))}</div>
         </div>
       );
     const columns: {
@@ -489,8 +546,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 {column.title}
                 <span>{items.length}</span>
               </h2>
-              {items.map((task) => taskCard(task, true))}
-              {!items.length && <div className="lo-board-empty">暂无待办</div>}
+              <div className="lo-board-cards">{items.map((task) => taskCard(task, true))}
+              {!items.length && <div className="lo-board-empty">暂无待办</div>}</div>
             </section>
           );
         })}
@@ -507,8 +564,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }}
       onClickCapture={event => {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-        const href = (event.target as Element).closest?.('a[href]')?.getAttribute("href");
-        if (href && !href.startsWith("#") && (props.saving || props.uncertain || props.onBeforeNavigate?.() === false)) {
+        const link = (event.target as Element).closest?.('a[href]');
+        const href = link?.getAttribute("href");
+        if (link?.hasAttribute?.('download') || link?.getAttribute('target') === '_blank') return;
+        if (href && !href.startsWith("#") && (props.saving || props.uncertain || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -521,6 +580,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           variant="ghost"
           className="lo-mobile-menu"
           aria-label="打开导航"
+          data-workspace-nav
           ref={menuButton}
           onClick={() => setMobileOpen(true)}
         >
@@ -556,7 +616,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
-        <main id="personal-main" className="lo-main">
+        <main id="personal-main" className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""}`}>
           <div className={contentPage ? "lo-content lo-content-account" : page === "settings" ? "lo-content lo-content-settings" :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
@@ -879,7 +939,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 </div>
               )}
               {((filter.due && filter.due !== 'all') || filter.inboxOnly) && <div className="lo-active-filter"><span>{filter.due === 'today'?'今日到期':filter.due === 'overdue'?'已逾期':''}{filter.inboxOnly?' 收件箱':''}</span><Button variant="ghost" aria-label="清除日期与收件箱筛选" onClick={()=>setFilter({...filter,due:'all',inboxOnly:false})}><X size={15}/></Button></div>}
-              {taskContent()}
+              <div className="lo-workspace-view">{taskContent()}</div>
             </>
           )}
           {(page === "projects" || page === "areas") &&
@@ -889,15 +949,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 onViewTasks={(areaId,projectId) => navigate("tasks",areaId,projectId)}/>
             )}
           {page === "requirements" && <RequirementsPage/>}
-          {page === "settings" && (
+          </>}
+          </div>
+        </main>
+      </div>
+      <Dialog open={settingsOpen} onOpenChange={open=>{if(!open)closeSettings();}}>
+        <DialogContent container={portalContainer} className="lo-settings-dialog" aria-labelledby="lo-settings-title" aria-describedby={undefined}
+          onOpenAutoFocus={event=>{event.preventDefault();document.getElementById('lo-settings-title')?.focus();}}
+          onCloseAutoFocus={event=>{event.preventDefault();if(settingsTrigger.current?.isConnected)settingsTrigger.current.focus();}}>
+          <DialogTitle id="lo-settings-title" tabIndex={-1}>设置</DialogTitle>
+          <div className="lo-settings-layout">
+            <nav aria-label="设置分类" className="lo-settings-panels">
+              {([{id:'general',label:'通用'},{id:'topics',label:'管理主题'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'}] as const)
+                .filter(item=>item.id==='general'||item.id==='topics'&&access.allowedTypes?.includes('topic')||props.availableSettingsPanels?.includes(item.id))
+                .map(item=><Button variant="ghost" key={item.id} aria-pressed={settingsPanel===item.id} onClick={()=>selectSettingsPanel(item.id)}>{item.label}</Button>)}
+            </nav>
+            <div className="lo-settings-panel" data-settings-panel={settingsPanel}>
+          {settingsPanel === "general" && (
             <div className="lo-settings">
               {access.authenticated === true && props.settingsContent}
-              {access.authenticated === true && access.allowedTypes?.includes("topic") &&
-                <Button variant="ghost" className="lo-topic-settings" ref={topicTrigger} onClick={() => {
-                  if(props.onBeforeNavigate?.() === false)return;
-                  setTopicQuery("");setTopicsOpen(true);
-                }}><Layers size={18}/>管理主题<ChevronRight size={16} className="lo-settings-arrow"/></Button>}
-
               {access.authenticated === false &&
                 access.loginAllowed === true &&
                 props.onLogin && (
@@ -914,16 +984,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
           )}
-          </>}
-          </div>
-        </main>
-      </div>
-      <Dialog open={topicsOpen && access.authenticated === true} onOpenChange={setTopicsOpen}>
-        <DialogContent container={portalContainer} className="lo-topics-dialog" onCloseAutoFocus={event => {
-          event.preventDefault();if(topicTrigger.current?.isConnected)topicTrigger.current.focus();
-        }}>
-          <DialogTitle>管理主题</DialogTitle>
-          <DialogDescription>主题用于给待办和项目添加关联标签。</DialogDescription>
+              {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="管理主题">
+                <h2>管理主题</h2>
           {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : <>
             <label className="lo-topic-search">搜索主题<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按主题名称搜索"/></label>
             {data?.topics === undefined ? <p role="status">主题列表暂不可用，请重新读取。</p> : <>
@@ -935,6 +997,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             </>}
             {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建主题</a>}
           </>}
+              </section>}
+              {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>

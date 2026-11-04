@@ -109,9 +109,9 @@ export function CategoryGrid({kind, areas, projects, tasks, coverage, writable, 
     <DataGridContainer>
       <DataGrid table={table} recordCount={table.getFilteredRowModel().rows.length}
         i18n={{labels: {empty: `没有符合条件的${label}`, loading: '正在加载表格…', allRowsLoaded: '已显示全部记录'}}}
-        tableLayout={{width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: false}}
+        tableLayout={{headerSticky: true, width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: false}}
         tableClassNames={{base: styles.table, headerRow: styles.header, bodyRow: styles.row}}>
-        <DataGridTableVirtual height={420} estimateSize={56} overscan={10}/>
+        <DataGridTableVirtual height="100%" estimateSize={56} overscan={10}/>
       </DataGrid>
     </DataGridContainer>
   </section>;

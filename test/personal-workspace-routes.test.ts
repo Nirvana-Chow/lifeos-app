@@ -5,18 +5,18 @@ import {readFileSync} from 'node:fs';
 import * as React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
-import{readWorkspacePage}from'../src/workbench/private-navigation.ts';
+import{readWorkspacePage,readWorkspaceLocation}from'../src/workbench/private-navigation.ts';
 function page(path:string,authenticated=true){
  const module={exports:{} as {default:(props?:unknown)=>Promise<React.ReactNode>}};
  const source=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  new Function('require','module','exports',source)((name:string)=>{
   if(name==='react/jsx-runtime')return {jsx:React.createElement,jsxs:React.createElement};
   if(name.endsWith('/key-management-config'))return {keyManagementFlag};
-  if(name.endsWith('/private-navigation'))return {readWorkspacePage};
+  if(name.endsWith('/private-navigation'))return {readWorkspacePage,readWorkspaceLocation};
   if(name==='next/headers')return {headers:async()=>new Headers()};
   if(name==='next/navigation')return {redirect:(url:string)=>{throw Error('REDIRECT '+url);}};
-  if(name.endsWith('/runtime'))return {readPlatformPagePrincipal:async()=>authenticated?{ownerId:'synthetic-owner'}:null};
-  if(name.endsWith('/live-workspace'))return {LivePersonalWorkspace:(props:Record<string,unknown>)=>React.createElement('div',{'data-page':props.initialPage,'data-id':props.initialTaskId,'data-create':String(props.initialCreateTask??false)})};
+  if(name.endsWith('/runtime'))return {readPlatformPasswordCapability:async()=>false,readPlatformPagePrincipal:async()=>authenticated?{ownerId:'synthetic-owner'}:null};
+  if(name.endsWith('/live-workspace'))return {LivePersonalWorkspace:(props:Record<string,unknown>)=>React.createElement('div',{'data-page':props.initialPage,'data-modal':props.initialModal,'data-panel':props.initialSettingsPanel,'data-id':props.initialTaskId,'data-create':String(props.initialCreateTask??false)})};
   if(name.endsWith('/workspace'))return {PersonalWorkspace:()=>React.createElement('div',{'data-legacy':'true'})};
   if(name.endsWith('/domain'))return {validateId:(id:string)=>id};
   if(name.endsWith('/workbench/navigation'))return {findModule:()=>({id:'todos'})};
@@ -50,7 +50,7 @@ test('legacy todo navigation redirects to the single shell while synthetic revie
  await assert.rejects(legacy({searchParams:Promise.resolve({type:'todo',id:'bad/id'})}),/REDIRECT \/personal\/edit\?type=todo&id=bad%2Fid/);
 });
 
-test('canonical finite page queries reach the existing controller without arbitrary routes',async()=>{const route=page('app/personal/page.tsx');for(const name of ['inbox','areas','projects','settings'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),new RegExp('data-page="'+name+'"'));for(const name of ['constructor','unknown','settings/data'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),/data-page="overview"/);});
+test('canonical finite page queries reach the existing controller without arbitrary routes',async()=>{const route=page('app/personal/page.tsx');for(const name of ['inbox','areas','projects'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),new RegExp('data-page="'+name+'"'));for(const name of ['constructor','unknown','settings/data'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),/data-page="overview"/);});
 
 test('requirements has a canonical owner-gated destination and does not enable create from another query',async()=>{
  const route=page('app/personal/page.tsx');
@@ -58,4 +58,12 @@ test('requirements has a canonical owner-gated destination and does not enable c
  assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:'requirements',create:'todo'})})),/data-create="false"/);
  for(const name of ['requirements/extra','requirements&create=todo','Requirements'])assert.equal(readWorkspacePage(name),'overview');
  await assert.rejects(page('app/personal/page.tsx',false)({searchParams:Promise.resolve({page:'requirements'})}),/REDIRECT \/login/);
+});
+
+test('legacy and explicit settings queries become finite overlays without replacing the background',async()=>{
+ const route=page('app/personal/page.tsx');
+ for(const query of [{page:'settings'},{page:'overview',modal:'settings',panel:'arbitrary'}]){
+  const html=renderToStaticMarkup(await route({searchParams:Promise.resolve(query)}));assert.match(html,/data-page="overview"/);assert.match(html,/data-modal="settings"/);assert.match(html,/data-panel="general"/);
+ }
+ const html=renderToStaticMarkup(await route({searchParams:Promise.resolve({page:'projects',modal:'settings',panel:'api-keys'})}));assert.match(html,/data-page="projects"/);assert.match(html,/data-panel="api-keys"/);
 });

@@ -1,7 +1,7 @@
 import {keyManagementFlag} from '../../../src/agent-api/key-management-config';
 import {headers} from 'next/headers';
 import {redirect} from 'next/navigation';
-import {readPlatformPagePrincipal} from '../../../src/platform/runtime';
+import {readPlatformPagePrincipal,readPlatformPasswordCapability} from '../../../src/platform/runtime';
 import {LivePersonalWorkspace} from '../../../src/personal-candidate/live-workspace';
 import {PersonalWorkspace} from '../../../src/personal-candidate/workspace';
 import type {PersonalType} from '../../../src/personal-candidate/config';
@@ -15,7 +15,7 @@ export default async function Page({searchParams}:{searchParams:Promise<{type?:s
  if(!principal)redirect('/login');
  const q=await searchParams;
  const type=['todo','journal','project','domain','topic'].includes(q.type??'')?q.type as PersonalType:'todo';
- if(type==='todo')return <LivePersonalWorkspace showApiKeys={process.env[keyManagementFlag]==='1'} initialPage="tasks" initialTaskId={q.id} initialCreateTask={q.id===undefined}/>;
+ if(type==='todo')return <LivePersonalWorkspace passwordEnabled={await readPlatformPasswordCapability()} showApiKeys={process.env[keyManagementFlag]==='1'} initialPage="tasks" initialTaskId={q.id} initialCreateTask={q.id===undefined}/>;
  let id:string|undefined;
  try{if(q.id)id=validateId(q.id);}catch{}
  return <PersonalWorkspace initialType={type} initialId={id} returnHref="/personal" focused/>;

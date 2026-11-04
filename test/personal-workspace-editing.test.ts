@@ -75,13 +75,12 @@ test('enabled form does not offer category creation without verified type capabi
  }
 });
 
-test('settings centers the heading and keeps topic management beside account actions',()=>{
- const settings=workspace({initialPage:'settings',onLogout:()=>{},settingsContent:React.createElement('a',{href:'/account/api-keys'},'API 密钥')});
- assert.match(settings,/lo-content-settings/);
- assert.match(settings,/API 密钥/);assert.match(settings,/退出登录/);
- assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|管理项目与领域|刷新数据/);
- assert.match(settings,/管理主题/);
- assert.doesNotMatch(workspace(),/管理项目与领域|管理主题/);
+test('settings uses a modal while the overview remains mounted',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
+ const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['topic']},initialPage:'settings',onLogout:()=>{}});
+ assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='总览').length);
+ assert.ok(elements(tree,n=>n.props.className==='lo-settings-dialog').length);
+ assert.ok(elements(tree,n=>n.props.className==='lo-logout').length);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
  const html=workspace({initialPage:'overview'});
@@ -102,7 +101,7 @@ test('personal navigation hides unfinished business and record management',()=>{
  for(const initialPage of ['overview','tasks','settings'] as const){
   const html=workspace({initialPage});
   assert.doesNotMatch(html,/href="\/personal\/(?:schedule|settings\/data|edit\?type=journal)"|更多业务|href="\/review\/admin/);
-  assert.match(html,/aria-label="待办"/);
+  assert.match(html,/aria-label="事项"/);
   assert.match(html,/aria-label="帮助"/);
  }
 });
@@ -127,4 +126,22 @@ test('all reused private business pages render only private navigation including
 test('personal data settings acknowledge records and bounded export without mounting test import or claiming full backup',()=>{
  const {DataSettings,PersonalSettings}=load('src/workbench/settings.tsx');const html=renderToStaticMarkup(React.createElement(DataSettings,{surface:'personal',syntheticReview:true}));assert.match(html,/已有个人手工记录/);assert.match(html,/100/);assert.match(html,/不是完整备份/);assert.match(html,/恢复尚未/);assert.match(html,/href="\/personal\/edit\?type=journal"/);assert.doesNotMatch(html,/href="\/review\/admin|隔离评审数据库|个人数据未接入|未导入/);
  const settings=renderToStaticMarkup(React.createElement(PersonalSettings,{dataHref:'/personal/settings/data',aiHref:'/personal/settings/ai'}));assert.doesNotMatch(settings,/href="\/review\/admin/);
+});
+
+test('settings overlay retains task background and opening captures without leaving or discarding',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');let captured=0,left=0;
+ const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'tasks',initialModal:'settings',onBeforeSettingsChange:()=>{captured++;return true;},onBeforeNavigate:()=>{left++;return true;}});
+ assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='待办').length);
+ const settings=elements(tree,n=>n.props.className==='lo-settings-dialog')[0];assert.ok(settings,'entire settings needs a dialog overlay');
+ const trigger=elements(tree,n=>n.props['aria-label']==='设置')[0];trigger.props.onClick({currentTarget:null});
+ assert.equal(captured,1);assert.equal(left,0,'overlay opener must not run destructive leave guard');
+ assert.ok(elements(tree,n=>n.props['aria-label']==='事项').length);
+});
+
+test('settings downloads preserve background drafts and departing links respect panel guard',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');let left=0,blocked=0;
+ const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialModal:'settings',settingsCloseGuard:{current:()=>false},onBeforeNavigate:()=>{left++;return true;}});
+ const click=(download:boolean)=>tree.props.onClickCapture({button:0,target:{closest:()=>({hasAttribute:(name:string)=>download&&name==='download',getAttribute:(name:string)=>name==='href'?'/api/agent-skill':null})},preventDefault:()=>blocked++,stopPropagation:()=>{}});
+ click(true);assert.equal(left,0,'downloading Skill does not leave the background');assert.equal(blocked,0);
+ click(false);assert.equal(left,0,'pending settings panel guards before any destructive background leave');assert.equal(blocked,1);
 });
