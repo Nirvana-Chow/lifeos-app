@@ -42,7 +42,9 @@ export async function requireTaskGrid(page: Page, title: string, expectedRows = 
       grids: grids?.length ?? 0,
       expectedRows,
       declaredRows: Number(grid?.getAttribute('aria-rowcount') ?? 0),
-      headers: Array.from(grid?.querySelectorAll('thead th') ?? []).map(node => {
+      // Resizing adds a native, aria-hidden fill strip outside the semantic
+      // column model. Keep blank/extra business headers in the strict oracle.
+      headers: Array.from(grid?.querySelectorAll('thead th:not([data-slot="data-grid-table-fill-head-cell"][aria-hidden="true"])') ?? []).map(node => {
         const label = node.cloneNode(true) as HTMLElement;
         label.querySelectorAll('[aria-hidden="true"]').forEach(decoration => decoration.remove());
         return label.textContent?.trim() ?? '';

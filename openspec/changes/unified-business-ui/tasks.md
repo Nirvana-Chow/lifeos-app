@@ -27,6 +27,16 @@ This is the sole mapped execution checklist for `unified-business-ui`. The origi
 - Archive only when the complete acceptance of all five tasks has evidence; unrelated original requirements and owner-only acceptance stay open.
 - Private operational records and the fixed comparison source remain outside the public tree; this mapping does not import or replace them.
 
+## Current qualification evidence
+
+| Source / public CI | Observed result | Follow-up |
+|---|---|---|
+| `8e5f7a6` / `41772729988` | Core tests, types, build, Auth and PostgreSQL passed; recovery HTTPS stopped on the previous standalone password heading. | `7fb7746` aligns the expected shared-shell heading while retaining denial and recovery assertions. |
+| `7fb7746` / `41773622197` | Cancelled before completion after a read-only fixture audit found stale category summary locators. | `e5d02eb` aligns those locators and strengthens Settings/readonly negative assertions. |
+| `e5d02eb` / `41773926573` | Core job and recovery HTTPS passed; native MFA, CRUD, four statuses and history advanced to the table precondition, where the header oracle included ReUI's hidden resize fill cell. Downstream private groups had no handoff. | Real Chrome reproduced seven business cells plus the hidden fill header. Exclude only the explicitly marked decorative header, retaining strict business-column, title, row and visibility checks; rerun the original fixed-SHA CI. |
+
+These are source qualification attempts, not production or owner acceptance. Failed and cancelled runs remain failures/cancellations; they do not close the original rendered, benchmark or delivery gates.
+
 ## Owner requests awaiting their independent implementation phase
 
 The 2026-11-04 feedback also requests draggable Kanban, newline batch entry, public Issue/Milestone roadmap, Codex/Roo Skill setup, reversible task deletion, calendar/Gantt and real task-to-project review through the API, plus bounded release retention and a smaller image. These requirements remain recorded; they are not implemented or accepted by the shell/editing correction. New capability/data/permission choices require their own approved plan and acceptance. Calendar/Gantt must retain truthful unavailable states until supported; cancelled status is not deletion. Real records require authorized owner API access and independent readback. Private deployment retention must preserve all controller-referenced recovery paths and keep database backups separate.
