@@ -151,6 +151,7 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
       const url = new URL(request.url());
       if (url.origin !== origin) return route.abort();
       const path = url.pathname;
+      if(request.method()==='DELETE'&&(path===keyEndpoint||path.startsWith(keyEndpoint+'/')))deletes++;
       if(path==='/api/platform/status')return route.fulfill({json:{authenticated:true}});
       if(path.startsWith('/api/platform/personal/')){
         personalReads++;
@@ -192,7 +193,6 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
         return route.fulfill({status: 201, json: {key: syntheticKey, grant}});
       }
       if (path === keyEndpoint + '/fixture-grant-1' && request.method() === 'DELETE') {
-        deletes += 1;
         grants[0].status = 'revoked';
         return route.fulfill({status: 204});
       }
@@ -456,10 +456,16 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     assert.deepEqual(posts[3],{name:'Synthetic organization-only',scopes:['organization:read','organization:write'],expiresInDays:30});
     await page.getByRole('button',{name:'关闭密钥',exact:true}).click();
     await expect(page.getByRole('button',{name:'修改权限 Synthetic organization-only',exact:true})).toHaveCount(0);
+    const deletesBeforeOrganizationDialog=deletes;
     await page.getByRole('button',{name:'撤销 Synthetic organization-only',exact:true}).click();
     await expect(dialog.getByText('撤销「Synthetic organization-only」后，所有使用这把密钥的客户端将无法继续访问其授权的数据。',{exact:true})).toBeVisible();
     await dialog.getByRole('button',{name:'取消',exact:true}).click();
-    assert.equal(deletes,1,'viewing organization-only revocation consent does not revoke');
+    assert.equal(deletes,deletesBeforeOrganizationDialog,'viewing organization-only revocation consent does not revoke');
+    // Fixture-only negative probe: even a rejected DELETE for this target must be counted.
+    const organizationGrant=grants.find(grant=>grant.name==='Synthetic organization-only')!;
+    const rejectedDelete=await page.evaluate(async url=>(await fetch(url,{method:'DELETE'})).status,keyEndpoint+'/'+organizationGrant.id);
+    assert.equal(rejectedDelete,404);
+    assert.equal(deletes,deletesBeforeOrganizationDialog+1,'counter observes DELETE for the organization-only grant');
     await page.close();
   }
   // Actual Next route -> existing PersonalService writer -> memory storage port.
