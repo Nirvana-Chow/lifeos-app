@@ -459,7 +459,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <TaskTitleField
           task={task}
           writable={canWrite}
-          blocked={settingsOpen || mobileOpen || !!props.saving || !!props.uncertain || pendingIds.has(task.id)}
+          blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain || pendingIds.has(task.id)}
           onSave={props.onSaveTask}
           getTaskFields={props.getTaskFields}
           draftMemory={props.taskCellDraftMemory}
@@ -487,7 +487,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <TaskTable
           tasks={rows}
           writable={canWrite}
-          blocked={settingsOpen || mobileOpen || !!props.saving || !!props.uncertain}
+          blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain}
           onSave={props.onSaveTask}
           getTaskFields={props.getTaskFields}
           draftMemory={props.taskCellDraftMemory}
