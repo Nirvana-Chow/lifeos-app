@@ -9,7 +9,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 import {expect,type Dialog} from '@playwright/test';
 import assert from 'node:assert/strict';
-import {assertPersonalCapture,personalCaptureAllowedValues,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
+import {assertPersonalCapture,personalCaptureAllowedValues,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,projectPersonalHistoryDiagnostic,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
 
 // A missing fixture, auth node, foreign record, or arbitrary output path must
 // prevent capture, even when the browser otherwise contains synthetic text.
@@ -294,4 +294,14 @@ test('readonly fixture installs nothing for unverified bodies and cleans up a pa
   const page={evaluate:async()=>({ok:failure!=='auth',body:{writable:failure!=='mode'}}),route:async(path:string,handler:Function)=>{if(++installs===2&&failure==='install')throw Error('ROUTE_INSTALL_FAILED');routes.set(path,handler);},unroute:async(path:string)=>{routes.delete(path);}};
   await assert.rejects(installReadonlyPersonalReads(page as never));assert.equal(routes.size,0);if(failure!=='install')assert.equal(installs,0);
  }
+});
+
+
+test('history diagnostic projects finite facts and never emits private values or URLs',()=>{
+ const secret='private-history-value';
+ assert.deepEqual(projectPersonalHistoryDiagnostic({route:'tasks',markerIndex:1,nativeIndex:2,inputCount:1,canaryMatches:true,focused:false,url:secret,scope:secret,value:secret},0),{route:'tasks',markerIndex:1,nativeIndex:2,inputCount:1,canaryMatches:true,focused:false,writeAttempts:0});
+ const result=projectPersonalHistoryDiagnostic({route:secret,markerIndex:secret,nativeIndex:Number.NaN,inputCount:100001,canaryMatches:secret,focused:secret,cookie:secret},-1);
+ assert.deepEqual(result,{route:'other',markerIndex:null,nativeIndex:null,inputCount:null,canaryMatches:null,focused:null,writeAttempts:null});
+ assert.equal(JSON.stringify(result).includes(secret),false);
+ assert.deepEqual(projectPersonalHistoryDiagnostic(null,0),{route:'other',markerIndex:null,nativeIndex:null,inputCount:null,canaryMatches:null,focused:null,writeAttempts:0});
 });

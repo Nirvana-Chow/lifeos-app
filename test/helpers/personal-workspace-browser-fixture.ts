@@ -101,6 +101,24 @@ export function personalBrowserFailureKind(error:unknown):'assertion'|'expectati
  return 'other';
 }
 
+/** Public failure logs contain finite state only, never URLs, values or history scopes. */
+export function projectPersonalHistoryDiagnostic(value:unknown,writes:unknown){
+ const facts=value&&typeof value==='object'?value as Record<string,unknown>:{};
+ const number=(n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=100000?n:null;
+ const boolean=(v:unknown)=>typeof v==='boolean'?v:null;
+ return {route:['overview','tasks','settings'].includes(facts.route as string)?facts.route:'other',markerIndex:number(facts.markerIndex),nativeIndex:number(facts.nativeIndex),inputCount:number(facts.inputCount),canaryMatches:boolean(facts.canaryMatches),focused:boolean(facts.focused),writeAttempts:number(writes)};
+}
+async function personalHistoryDiagnostic(page:Page,canary:'known'|'legacy'|'accepted',writes:number){
+ let facts:unknown;
+ try{facts=await page.evaluate(kind=>{
+  const url=new URL(location.href),inputs=Array.from(document.querySelectorAll<HTMLInputElement>('[data-task-grid="reui"] input[aria-label="编辑待办"]'));
+  const expected={known:'合成后退保留草稿',legacy:'合成旧历史保留草稿',accepted:'合成已接收旧历史草稿'}[kind];
+  const navigation=(window as Window&{navigation?:{currentEntry?:{index:number}|null}}).navigation;
+  return {route:url.pathname==='/personal'?(url.searchParams.get('page')??'overview'):'other',markerIndex:history.state?.__lifeosWorkspace?.index,nativeIndex:navigation?.currentEntry?.index,inputCount:inputs.length,canaryMatches:inputs.some(input=>input.value===expected),focused:inputs.some(input=>input===document.activeElement)};
+ },canary);}catch{/* An unavailable/closed frame yields only null finite facts. */}
+ return projectPersonalHistoryDiagnostic(facts,writes);
+}
+
 async function readyEditor(page:Page,value?:string){
  await expect(title(page)).toBeEnabled();
  if(value!==undefined)await expect(title(page)).toHaveValue(value);
@@ -239,6 +257,7 @@ function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.no
 /** Runs once inside the existing authenticated MFA lifecycle; no extra login. */
 export async function verifyPersonalWorkspace(page:Page){
  let phase='empty-workspace-ready';
+ let historyWrites=0,historyCanary:'known'|'legacy'|'accepted'='known';
  let presentationFailure:{reason:PresentationReason;metadata:SafeMetadata}={reason:'not-started',metadata:{}};
  const diagnostic:PresentationDiagnostic=(reason,metadata={})=>{presentationFailure={reason,metadata:Object.fromEntries(Object.entries(metadata).filter(([,value])=>typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value))))};};
  try{
@@ -411,7 +430,7 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='workspace-history-draft-refusal';
  await taskGridTitleCell(page,synthetic.title).dblclick();const historyField=taskGridInput(page);
  await historyField.fill('合成后退保留草稿');
- let historyWrites=0;const countHistory=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))historyWrites++;};
+ const countHistory=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))historyWrites++;};
  page.on('request',countHistory);
  try{
   await confirmDiscard(page,false,async()=>{await page.goBack();});
@@ -420,18 +439,27 @@ export async function verifyPersonalWorkspace(page:Page){
   await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings');
   await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();assert.equal(historyWrites,0);
   // Simulate an older same-document entry, preserving all Next.js router state.
-  phase='workspace-history-legacy-forward';
+  phase='workspace-history-legacy-mark';historyCanary='legacy';
   await page.evaluate(()=>{const state={...history.state};delete state.__lifeosWorkspace;history.replaceState(state,'',location.href);});
-  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
-  await taskGridTitleCell(page,synthetic.title).dblclick();const legacyField=taskGridInput(page);await legacyField.fill('合成旧历史保留草稿');
-  await confirmDiscard(page,false,async()=>{await page.goForward();});
-  await expect(page).toHaveURL(tasksURL);await expect(legacyField).toHaveValue('合成旧历史保留草稿');assert.equal(historyWrites,0);
-  await legacyField.press('Escape');await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings');
-  await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
-  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
-  await taskGridTitleCell(page,synthetic.title).dblclick();const acceptedLegacyField=taskGridInput(page);await acceptedLegacyField.fill('合成已接收旧历史草稿');
-  await confirmDiscard(page,false,async()=>{await page.goForward();});
-  await expect(page).toHaveURL(tasksURL);await expect(acceptedLegacyField).toHaveValue('合成已接收旧历史草稿');await acceptedLegacyField.press('Escape');assert.equal(historyWrites,0);
+  phase='workspace-history-legacy-back-navigation';await page.goBack();
+  phase='workspace-history-legacy-back-url';await expect(page).toHaveURL(tasksURL);
+  phase='workspace-history-legacy-back-grid';await requireNativeTable(page);
+  phase='workspace-history-legacy-input';await taskGridTitleCell(page,synthetic.title).dblclick();const legacyField=taskGridInput(page);await legacyField.fill('合成旧历史保留草稿');
+  phase='workspace-history-legacy-refusal-confirm';await confirmDiscard(page,false,async()=>{await page.goForward();});
+  phase='workspace-history-legacy-refusal-url';await expect(page).toHaveURL(tasksURL);
+  phase='workspace-history-legacy-refusal-draft';await expect(legacyField).toHaveValue('合成旧历史保留草稿');assert.equal(historyWrites,0);
+  phase='workspace-history-legacy-escape';await legacyField.press('Escape');
+  phase='workspace-history-legacy-accept-navigation';await page.goForward();
+  phase='workspace-history-legacy-accept-url';await expect(page).toHaveURL(origin+'/personal?page=settings');
+  phase='workspace-history-legacy-accept-heading';await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
+  phase='workspace-history-accepted-legacy-back-navigation';historyCanary='accepted';await page.goBack();
+  phase='workspace-history-accepted-legacy-back-url';await expect(page).toHaveURL(tasksURL);
+  phase='workspace-history-accepted-legacy-back-grid';await requireNativeTable(page);
+  phase='workspace-history-accepted-legacy-input';await taskGridTitleCell(page,synthetic.title).dblclick();const acceptedLegacyField=taskGridInput(page);await acceptedLegacyField.fill('合成已接收旧历史草稿');
+  phase='workspace-history-accepted-legacy-refusal-confirm';await confirmDiscard(page,false,async()=>{await page.goForward();});
+  phase='workspace-history-accepted-legacy-refusal-url';await expect(page).toHaveURL(tasksURL);
+  phase='workspace-history-accepted-legacy-refusal-draft';await expect(acceptedLegacyField).toHaveValue('合成已接收旧历史草稿');
+  phase='workspace-history-accepted-legacy-escape';await acceptedLegacyField.press('Escape');assert.equal(historyWrites,0);
  }finally{page.off('request',countHistory);}
  phase='workspace-history-missing-task';
  const missingTaskURL=origin+'/personal/edit?type=todo&id=ffffffff-ffff-4fff-8fff-ffffffffffff&create=todo';
@@ -440,7 +468,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.goBack();await expect(page).toHaveURL(missingTaskURL);await expect(page.getByRole('dialog',{name:'待办不可用',exact:true})).toBeVisible();
  await expect(page.getByRole('dialog',{name:'新建待办',exact:true})).toHaveCount(0);await page.getByRole('button',{name:'关闭待办详情',exact:true}).click();
  phase='restore-personal';await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);await readTodo(page,todo,records);return {verifyPersisted:async()=>{await workspaceReady(page);await readTodo(page,todo,records);},entries:[domain,project,todo] as const};
- }catch(error){console.log('PERSONAL_BROWSER_PHASE '+phase);console.log('PERSONAL_BROWSER_FAILURE '+personalBrowserFailureKind(error));console.log('PERSONAL_BROWSER_PRESENTATION '+JSON.stringify(presentationFailure));throw Error('PERSONAL_BROWSER_FAILED');}
+ }catch(error){console.log('PERSONAL_BROWSER_PHASE '+phase);console.log('PERSONAL_BROWSER_FAILURE '+personalBrowserFailureKind(error));console.log('PERSONAL_BROWSER_PRESENTATION '+JSON.stringify(presentationFailure));if(phase.startsWith('workspace-history'))console.log('PERSONAL_HISTORY_DIAGNOSTIC '+JSON.stringify(await personalHistoryDiagnostic(page,historyCanary,historyWrites)));throw Error('PERSONAL_BROWSER_FAILED');}
 }
 
 /** Original eight-cell assertions and captures, after recovery and full cleanup. */
