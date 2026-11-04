@@ -19,10 +19,10 @@ export function renderAgentOperations(operations: readonly DocumentedOperation[]
     '',
     `Legacy catalog API version \`${agentApiVersion}\`; the v2 catalog uses API version \`2\` and requiredScopes arrays. Business paths retain their listed versions.`,
     '',
-    '| ID | Method | Path | Scope | Purpose |',
+    '| ID | Method | Path | Required scopes | Purpose |',
     '| --- | --- | --- | --- | --- |',
     ...operations.map(({ id, method, path, scope, requiredScopes, description }) =>
-      `| \`${id}\` | \`${method}\` | \`${path}\` | \`${scope ?? (requiredScopes?.length ? requiredScopes.join(', ') : 'valid grant')}\` | ${description.replaceAll('|', '\\|').replace(/\r?\n/g, ' ')} |`),
+      `| \`${id}\` | \`${method}\` | \`${path}\` | \`${requiredScopes?.length ? requiredScopes.join(', ') : scope ?? 'valid grant'}\` | ${description.replaceAll('|', '\\|').replace(/\r?\n/g, ' ')} |`),
     '',
   ];
   return lines.join('\n');

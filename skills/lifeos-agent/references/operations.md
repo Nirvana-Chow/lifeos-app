@@ -4,7 +4,7 @@
 
 Legacy catalog API version `1`; the v2 catalog uses API version `2` and requiredScopes arrays. Business paths retain their listed versions.
 
-| ID | Method | Path | Scope | Purpose |
+| ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
 | `discoverV2` | `GET` | `/v2/capabilities` | `valid grant` | Discover operations permitted for the current grant. |
 | `discover` | `GET` | `/v1/capabilities` | `todo:read` | Discover operations permitted for the current grant. |
