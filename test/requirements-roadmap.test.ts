@@ -61,3 +61,23 @@ test('roadmap rejects duplicate phase order and unsupported priorities instead o
  ];
  for(const edit of cases){const b=structuredClone(original);edit(b);assert.throws(()=>model.validateRequirementBaseline(b),/roadmap/i);}
 });
+
+
+test('shared requirement filters intersect phase, priority and acceptance while preserving source data',()=>{
+ const b=model.requirements(), before=JSON.stringify(b);
+ const selected=b.requirements.find(r=>r.id==='LO-TASK-001')!;
+ const filters={phase:selected.roadmap!.phaseId,priority:selected.roadmap!.priority,acceptance:selected.status};
+ const rows=model.selectRequirements(b,filters);
+ assert.ok(rows.length>0&&rows.length<b.requirements.length);
+ assert.ok(rows.every(r=>r.roadmap?.phaseId===filters.phase&&r.roadmap?.priority===filters.priority&&r.status===filters.acceptance));
+ assert.equal(model.selectRequirements(b,{...filters,query:'LO-TASK-001'}).length,1);
+ assert.deepEqual(model.selectRequirements(b,{...filters,acceptance:'accepted'}),[]);
+ assert.equal(model.selectRequirements(b,{phase:'missing'}).length,0);
+ assert.equal(model.selectRequirements(b,{phase:'all',priority:'all',acceptance:'all'}).length,b.requirements.length);
+ assert.equal(JSON.stringify(b),before);
+});
+
+test('project goal covers the connected personal data system',()=>{
+ const goal=model.requirements().roadmap!.goal;
+ for(const area of ['训练','睡眠','健康','财务','日程','日记','人生阶段'])assert.ok(goal.includes(area),area);
+});

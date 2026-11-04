@@ -27,21 +27,15 @@ function renderPage(){
  return renderToStaticMarkup(React.createElement(Page));
 }
 
-test('requirement pool renders the ordered route, searchable status table and expandable evidence from the real baseline',()=>{
- assert.ok(existsSync('src/ui-review/requirements-page.tsx'),'The private workspace needs its requirement pool renderer');
+test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
  const html=renderPage();
- assert.match(html,/项目目标/);assert.match(html,/当前阶段/);assert.match(html,/下一步/);
- assert.match(html,/<ol[^>]*aria-label="开发路径"/);
+ assert.match(html,/当前阶段/);assert.match(html,/下一步/);
  assert.match(html,/<input[^>]*type="search"/);
- assert.match(html,/<label[^>]*for="requirements-implementation"/);
- assert.match(html,/<table[\s\S]*<caption[^>]*>需求清单/);
- assert.match(html,/<details[\s\S]*<summary[^>]*>验收与依据/);
+ for(const id of ['phase','priority','implementation','acceptance'])assert.match(html,new RegExp('<label[^>]*for="requirements-'+id+'"'));
+ assert.match(html,/data-requirements-grid="reui"/);
+ for(const label of ['表格','看板','甘特'])assert.match(html,new RegExp('aria-label="'+label+'视图"'));
  assert.match(html,/LO-TASK-001/);assert.match(html,/LO-PROJECT-001/);
- assert.match(html,/href="https:\/\/github.com\/Nirvana-Chow\/lifeos-app\/issues\/5"/);
- assert.match(html,/href="https:\/\/github.com\/Nirvana-Chow\/lifeos-app\/pull\/2"/);
- assert.match(html,/API.*capability discovery.*Skill/);
- assert.match(html,/当前 Agent API 仅支持待办/);
- assert.match(html,/本人验收/);assert.doesNotMatch(html,/>已验收</);
- assert.doesNotMatch(html,/<h1\b/,'The host already owns the page heading');
- assert.doesNotMatch(html,/\d+%|javascript:|<main\b/);
+ assert.doesNotMatch(html,/<details|验收条件|来源与源码依据/);
+ assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
+ assert.match(html,/本人验收/);
 });

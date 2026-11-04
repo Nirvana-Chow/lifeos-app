@@ -64,12 +64,23 @@ function freeze<T>(v: T): T {if (v && typeof v === 'object') {for (const child o
 const fixed = freeze(validateRequirementBaseline(baseline));
 export function requirements(): RequirementBaseline {return fixed;}
 
-export function selectRequirements(b: RequirementBaseline, filter: {query?: string; implementation?: ImplementationStatus | 'all'} = {}): Requirement[] {
+export type RequirementFilters = {
+ query?: string;
+ implementation?: ImplementationStatus | 'all';
+ phase?: string;
+ priority?: RequirementRoadmap['priority'] | 'all';
+ acceptance?: Requirement['status'] | 'all';
+};
+
+export function selectRequirements(b: RequirementBaseline, filter: RequirementFilters = {}): Requirement[] {
  const query = (filter.query ?? '').trim().normalize('NFKC').toLowerCase();
  const orders = new Map(b.roadmap?.phases.map(p => [p.id, p.order]));
  return b.requirements.filter(r => {
   if (filter.implementation && filter.implementation !== 'all' && r.roadmap?.implementation !== filter.implementation) return false;
   const m = r.roadmap;
+  if (filter.phase && filter.phase !== 'all' && m?.phaseId !== filter.phase) return false;
+  if (filter.priority && filter.priority !== 'all' && m?.priority !== filter.priority) return false;
+  if (filter.acceptance && filter.acceptance !== 'all' && r.status !== filter.acceptance) return false;
   return !query || [r.id, r.title, r.description, ...r.sourceRefs, ...r.acceptanceCriteria, ...r.blockedBy, m?.summary, m?.nextStep, ...(m?.issueRefs ?? []), ...(m?.prRefs ?? []), ...(m?.specTaskRefs ?? [])].join('\n').normalize('NFKC').toLowerCase().includes(query);
  }).toSorted((a, c) => (orders.get(a.roadmap?.phaseId ?? '') ?? 99) - (orders.get(c.roadmap?.phaseId ?? '') ?? 99));
 }

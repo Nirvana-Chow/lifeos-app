@@ -1056,9 +1056,9 @@
     }
   ],
   "roadmap": {
-    "goal": "以待办为日常入口，把项目、领域与记录连接起来；每项能力可追溯、可恢复，并逐步开放给受限 Agent。",
+    "goal": "把训练、睡眠、健康、财务、日程、日记与人生阶段连接成可追溯、可恢复的个人数据系统。",
     "currentPhaseId": "workspace",
-    "nextStep": "先完成当前工作台的需求路径、分类视图与账户交互，再用合成数据验证。每个新增录入功能须同步交付 Agent API、capability discovery 和 Skill；当前 Agent API 仅支持待办。",
+    "nextStep": "完成工作台、需求视图与账户交互核验，再逐项接入个人数据。",
     "phases": [
       {
         "id": "foundation",
