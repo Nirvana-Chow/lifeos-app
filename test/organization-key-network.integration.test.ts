@@ -4,6 +4,7 @@ import {spawn,type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {lstat,readFile,unlink,writeFile} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
+import {request} from 'node:http';
 import {hashPassword} from 'better-auth/crypto';
 import {betterAuth} from 'better-auth';
 import {apiKey} from '@better-auth/api-key';
@@ -72,18 +73,31 @@ test('OPT-IN native TOTP same-key scope lifecycle through mounted Next PATCH and
         LIFEOS_PLATFORM_HTTPS_HOST:new URL(fixture.origin).hostname,LIFEOS_PLATFORM_OWNER_ID:fixture.ownerId,LIFEOS_PLATFORM_OWNER_EMAIL:fixture.email,
         LIFEOS_PLATFORM_SECRET:fixture.sessionSecret,LIFEOS_PLATFORM_TEST_DATABASE_URL:config.databaseURL,LIFEOS_AGENT_KEY_MANAGEMENT:'1'},stdio:'ignore',
     });
-    const send=(path:string,method='GET',body?:unknown,cookie='',extra:Record<string,string>={})=>fetch(endpoint+path,{
-      method,redirect:'manual',signal:AbortSignal.timeout(10000),headers:{host:new URL(fixture.origin).host,origin:fixture.origin,
-        'x-forwarded-host':new URL(fixture.origin).host,'x-forwarded-proto':'https','x-forwarded-port':'443',cookie,
-        ...(body===undefined?{}:{'content-type':'application/json'}),...extra},...(body===undefined?{}:{body:JSON.stringify(body)}),
+    // Native fetch drops Host; preserve the same exact proxy contract as the HTTPS fixture.
+    const send=(path:string,method='GET',body?:unknown,cookie='',extra:Record<string,string>={}):Promise<Response>=>new Promise((resolve,reject)=>{
+      const payload=body===undefined?undefined:JSON.stringify(body);
+      const req=request(endpoint+path,{method,signal:AbortSignal.timeout(10000),headers:{host:new URL(fixture.origin).host,origin:fixture.origin,
+        'x-forwarded-host':new URL(fixture.origin).host,'x-forwarded-proto':'https','x-forwarded-port':'443',...(cookie?{cookie}:{}),
+        ...(payload===undefined?{}:{'content-type':'application/json'}),...extra}},res=>{
+        const chunks:Buffer[]=[];let length=0;
+        res.on('error',reject);res.on('aborted',()=>reject(Error('Synthetic HTTP response interrupted')));
+        res.on('data',(chunk:Buffer)=>{length+=chunk.length;if(length>131072)req.destroy(Error('Synthetic HTTP response too large'));else chunks.push(chunk);});
+        res.on('end',()=>{
+          const status=res.statusCode??503;if(status<200||status>599)return reject(Error('Invalid synthetic HTTP response'));
+          const headers=new Headers();for(let i=0;i<res.rawHeaders.length;i+=2)headers.append(res.rawHeaders[i],res.rawHeaders[i+1]);
+          resolve(new Response([204,205,304].includes(status)?null:Buffer.concat(chunks).toString('utf8'),{status,headers}));
+        });
+      });
+      req.on('error',reject);req.end(payload);
     });
-    let ready=false;
+    let ready=false,last='NOT_ATTEMPTED';
     for(let i=0;i<100;i++){
-      const response=await send(keyPath).catch(()=>null);
+      const response=await send(keyPath).catch(()=>{last='TRANSPORT_ERROR';return null;});
       if(response?.status===401){ready=true;break;}
-      assert.equal(next.exitCode,null,'Next exited before mounted route readiness');await delay(100);
+      if(response){const body=await response.json().catch(()=>null);const code=['AUTH_REQUIRED','ORIGIN_DENIED','KEY_MANAGEMENT_UNAVAILABLE','NOT_FOUND'].includes(body?.error)?body.error:'OTHER';last='HTTP_'+response.status+'_'+code;}
+      assert.equal(next.exitCode,null,'Next exited before mounted route readiness: '+last);await delay(100);
     }
-    assert.ok(ready,'Mounted key-management route did not become ready');
+    assert.ok(ready,`Mounted key-management route did not become ready: ${last}; childExit=${next.exitCode}; childSignal=${next.signalCode}`);
     const create={name:'Synthetic native same-key organization access',scopes:['todo:read'],expiresInDays:7};
     assert.equal((await send(keyPath,'POST',create,passwordCookie)).status,401,'Password-only native session cannot create grants');
     const enabled=await authenticate('two-factor/enable',{password,method:'totp'},passwordCookie);assert.equal(enabled.status,200);

@@ -105,7 +105,16 @@ jobs:
           test ! -e /run/lifeos-agent-issuer
           sudo mkdir -m 0700 /run/lifeos-agent-issuer
           sudo chown "$(id -u):$(id -g)" /run/lifeos-agent-issuer
-          trap 'rmdir /run/lifeos-agent-issuer' EXIT
+          cleanup_issuer_fixture() {
+            local original_status=$? cleanup_status=0
+            sudo rmdir /run/lifeos-agent-issuer || cleanup_status=$?
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo '::error::Exact issuer fixture directory cleanup failed' >&2
+            fi
+            if [ "$original_status" -ne 0 ]; then exit "$original_status"; fi
+            exit "$cleanup_status"
+          }
+          trap cleanup_issuer_fixture EXIT
           node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-network.xml" test/organization-key-network.integration.test.ts
           python3 - <<'PY_ORGANIZATION_HTTP'
           import os, xml.etree.ElementTree as ET
@@ -425,6 +434,13 @@ jobs:
           mkdir -p .next
           docker cp recovery-image-proof:/app/.image-source-proof.json .image-source-proof.json
           docker cp recovery-image-proof:/app/.next/BUILD_ID .next/BUILD_ID
+          mkdir -p "$RUNNER_TEMP/current-bundle/.next"
+          cp .image-source-proof.json "$RUNNER_TEMP/current-bundle/.image-source-proof.json"
+          cp .next/BUILD_ID "$RUNNER_TEMP/current-bundle/.next/BUILD_ID"
+          docker cp recovery-image-proof:/app/package-lock.json "$RUNNER_TEMP/current-bundle/package-lock.json"
+          cmp package-lock.json "$RUNNER_TEMP/current-bundle/package-lock.json"
+          docker cp recovery-image-proof:/app/.next/static "$RUNNER_TEMP/current-bundle/.next/static"
+          node scripts/client-bundle-evidence.mjs "$RUNNER_TEMP/current-bundle" "$SOURCE_SHA"
           node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(".image-source-proof.json"));if(p.sourceSha!==process.env.SOURCE_SHA)throw Error("Image source mismatch");'
       - name: Run fresh synthetic TLS recovery permit and five browser groups
         id: rendered-qualification
@@ -475,6 +491,7 @@ jobs:
               recovery) mode=runtime; test_file=test/owner-recovery-https.integration.test.ts ;;
               permit) mode=runtime-permit; test_file=test/owner-permit-https.integration.test.ts ;;
               browser) mode=runtime-workspace; test_file=test/owner-recovery-browser.integration.test.ts ;;
+              journal) mode=runtime-workspace; test_file=test/owner-journal-browser.integration.test.ts ;;
               *) exit 1 ;;
             esac
             node test/helpers/owner-recovery-https-setup.ts "$mode"
@@ -485,7 +502,7 @@ jobs:
             printf 'subjectAltName=DNS:review.example.test\nextendedKeyUsage=serverAuth\n' > "$RUNNER_TEMP/recovery-tls/extensions"
             openssl x509 -req -in "$RUNNER_TEMP/recovery-tls/server.csr" -CA "$RUNNER_TEMP/recovery-tls/ca.crt" -CAkey "$RUNNER_TEMP/recovery-tls/ca.key" -CAcreateserial -days 1 -extfile "$RUNNER_TEMP/recovery-tls/extensions" -out "$RUNNER_TEMP/recovery-tls/server.crt" >/dev/null 2>&1
             node test/helpers/owner-recovery-https-setup.ts caddy
-            if test "$OWNER_HTTPS_SCENARIO" = browser; then
+            if test "$OWNER_HTTPS_SCENARIO" = browser || test "$OWNER_HTTPS_SCENARIO" = journal; then
               python3 - <<'PY_TLS'
           import os
           from pathlib import Path
@@ -498,7 +515,7 @@ jobs:
             fi
             docker run -d --name recovery-next-fixture --network host --read-only --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp --mount type=bind,src=/run/lifeos-platform,dst=/run/lifeos-platform,readonly "lifeos-synthetic:$image_sha" >/dev/null
             docker run -d --name recovery-caddy-fixture --network host --read-only --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_DATA_HOME=/tmp/data --mount "type=bind,src=$RUNNER_TEMP/recovery-tls,dst=/fixture,readonly" --entrypoint caddy docker.io/library/caddy@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5 run --config /fixture/Caddyfile --adapter caddyfile >/dev/null
-            if test "$OWNER_HTTPS_SCENARIO" = browser; then
+            if test "$OWNER_HTTPS_SCENARIO" = browser || test "$OWNER_HTTPS_SCENARIO" = journal; then
               node test/helpers/owner-recovery-browser-fixture.ts wait-https
             else
               node test/helpers/owner-recovery-https-setup.ts wait
@@ -508,6 +525,7 @@ jobs:
           run_scenario recovery
           run_scenario permit
           run_scenario browser
+          run_scenario journal
           (
             export RUNNER_TEMP="$RUNNER_TEMP/vtable-baseline"
             mkdir -m 0700 "$RUNNER_TEMP"
@@ -530,6 +548,10 @@ jobs:
             mkdir "$fixture_root/.next"
             docker cp baseline-image-proof:/app/.image-source-proof.json "$fixture_root/.image-source-proof.json"
             docker cp baseline-image-proof:/app/.next/BUILD_ID "$fixture_root/.next/BUILD_ID"
+            docker cp baseline-image-proof:/app/package-lock.json "$RUNNER_TEMP/baseline-image-lock.json"
+            cmp "$fixture_root/package-lock.json" "$RUNNER_TEMP/baseline-image-lock.json"
+            docker cp baseline-image-proof:/app/.next/static "$fixture_root/.next/static"
+            node scripts/client-bundle-evidence.mjs "$fixture_root" "$baseline"
             node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(process.argv[1]));if(p.sourceSha!==process.argv[2])throw Error("Baseline image source mismatch");' "$fixture_root/.image-source-proof.json" "$baseline"
             python3 scripts/attach-vtable-benchmark.py "$fixture_root" "$PWD"
             (cd "$fixture_root" && npm ci --ignore-scripts --no-audit --no-fund)
@@ -548,6 +570,7 @@ jobs:
           expected={
               'recovery':{'isolated real Next, Caddy TLS and PostgreSQL recovery'},
               'permit':{'isolated Next permits logout after a previously valid business permit is revoked'},
+              'journal':{'isolated synthetic journal receipt and refresh readback'},
               'browser':{'no-JS page lifecycle finishes and closes before the next page opens',
                          'isolated browser owner recovery and password flow',
                          'isolated private business route boundaries',
