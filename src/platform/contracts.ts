@@ -36,3 +36,17 @@ export interface PlatformRepository {
  transaction<T>(owner:string,key:string,fn:(tx:Transaction)=>Promise<T>):Promise<T>;
 }
 export interface SessionReader {read(headers:Headers):Promise<Principal|null>}
+
+export interface ClassificationTransaction extends Transaction {
+ getClassificationPlan(planId:string):Promise<import('../personal-candidate/classification-contracts.ts').ClassificationPlan|null>;
+ lockClassificationPlan(planId:string):Promise<void>;
+ saveClassificationPlan(plan:import('../personal-candidate/classification-contracts.ts').ClassificationPlan):Promise<void>;
+ classificationApproval(planId:string):Promise<import('../personal-candidate/classification-contracts.ts').ClassificationApproval|null>;
+ saveClassificationApproval(approval:import('../personal-candidate/classification-contracts.ts').ClassificationApproval):Promise<void>;
+ classificationReceipt():Promise<import('../personal-candidate/classification-contracts.ts').ClassificationReceipt|null>;
+ classificationPlanCommitted(planId:string):Promise<boolean>;
+ saveClassificationReceipt(receipt:import('../personal-candidate/classification-contracts.ts').ClassificationReceipt):Promise<void>;
+}
+export interface ClassificationRepository extends PlatformRepository {
+ classificationTransaction<T>(owner:string,spaceId:string,key:string,fn:(tx:ClassificationTransaction)=>Promise<T>):Promise<T>;
+}

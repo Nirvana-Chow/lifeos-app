@@ -63,3 +63,25 @@ test('legacy todo fence still works without the business migration',async()=>{
    {grantId:'fixture',ownerId:'fixture-owner',spaceId:'fixture-space'}));
  assert.equal(called,true);
 });
+
+test('classification is default closed before connecting and legacy transactions expose no feature queries',async()=>{
+ const d=driver();await assert.rejects(d.repo.classificationTransaction('fixture-owner','fixture-space','classify-1',async()=>null),{status:503});assert.equal(d.calls.length,0);
+ await d.repo.transaction('fixture-owner','ordinary',async tx=>assert.equal('getClassificationPlan' in tx,false));
+ assert.equal(d.calls.some(call=>call.sql.includes('platform_classification')),false);
+});
+
+test('enabled classification without all three qualified tables fails 503 before callback and rolls back',async()=>{
+ const d=driver();const calls:typeof d.calls=[];let released=0,invoked=false;
+ const repo=new PostgresPlatformRepository({connect:async()=>({query:async(sql,values=[])=>{calls.push({sql,values});return{rows:[],rowCount:0};},release(){released++;}})},true,true,{organization:true,classification:true});
+ await assert.rejects(repo.classificationTransaction('fixture-owner','fixture-space','classify-1',async()=>{invoked=true;}),{status:503});
+ assert.equal(invoked,false);assert.equal(released,1);assert.equal(calls.at(-1)?.sql,'ROLLBACK');
+ assert.equal(calls.some(c=>/INSERT INTO/.test(c.sql)),false);
+ assert.deepEqual(calls.find(c=>c.sql.includes('pg_advisory_xact_lock('))?.values,['["fixture-owner","todo-classification-v1","fixture-space","classify-1"]']);
+});
+test('stored classification JSON is decoded on read, never cast into trusted operation state',async()=>{
+ const {classificationQueries}=await import('../src/personal-candidate/classification-postgres.ts');
+ const client:SqlClient={query:async()=>({rows:[{plan:{title:'private text'},receipt:{requestDigest:'a'.repeat(64),result:{entry:{title:'private text'}}}}],rowCount:1}),release(){}};
+ const tx=classificationQueries(client,'fixture-owner','fixture-space','classify-1');
+ await assert.rejects(tx.getClassificationPlan('00000000-0000-4000-8000-000000000001'));
+ await assert.rejects(tx.classificationReceipt());
+});

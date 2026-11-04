@@ -1,10 +1,11 @@
+import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
 import type {AgentScope} from '../agent-api/scopes.ts';
 import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
 import {ownerMaintenanceKey} from '../deployment-candidate/owner-maintenance-key.ts';
-import type{PlatformRepository,Kind,StoredEntry,Receipt,Transaction}from'./contracts.ts';import{PlatformError}from'./domain.ts';
+import type{ClassificationRepository,ClassificationTransaction,Kind,StoredEntry,Receipt,Transaction}from'./contracts.ts';import{PlatformError}from'./domain.ts';
 export interface SqlClient{query(sql:string,values?:unknown[]):Promise<{rows:Record<string,unknown>[];rowCount:number|null}>;release():void}
 export interface SqlPool{connect():Promise<SqlClient>}
 type Purpose='runtime'|'synthetic-bootstrap';
@@ -42,7 +43,7 @@ function decode(row:Record<string,unknown>):StoredEntry{
  const iso=(value:unknown)=>new Date(value as string).toISOString();
  return{id:row.id as string,ownerId:row.owner_id as string,kind:row.kind as Kind,...(row.inbox_id?{inboxId:row.inbox_id as string}:{}),draft:row.draft as StoredEntry['draft'],source:{id:row.source_id as string,system:'website',externalId:row.external_id as string,version:row.source_version as number,asOf:iso(row.as_of),original:row.original},revision:row.revision as number,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),syncState:'draft',externalStatus:null};
 }
-export class PostgresPlatformRepository implements PlatformRepository{
+export class PostgresPlatformRepository implements ClassificationRepository{
  private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;private readonly businessFeatures?:AgentModules;
  constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false,businessFeatures?:AgentModules){this.businessFeatures=businessFeatures;this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
  private async scoped<T>(owner:string,fn:(client:SqlClient)=>Promise<T>,consistentRead=false):Promise<T>{
@@ -66,9 +67,14 @@ export class PostgresPlatformRepository implements PlatformRepository{
  async exportSnapshot(owner:string):Promise<{entries:StoredEntry[];history:StoredEntry[]}>{return this.scoped(owner,async client=>({entries:(await client.query(select+' WHERE r.owner_id=$1 ORDER BY r.id',[owner])).rows.map(decode),history:(await client.query('SELECT snapshot FROM lifeos_platform.platform_history WHERE owner_id=$1 ORDER BY record_id,revision',[owner])).rows.map(row=>row.snapshot as StoredEntry)}),true);}
  async history(owner:string,kind:Kind,id:string):Promise<StoredEntry[]>{return this.scoped(owner,async client=>(await client.query('SELECT h.snapshot FROM lifeos_platform.platform_history h JOIN lifeos_platform.platform_record r ON r.owner_id=h.owner_id AND r.id=h.record_id WHERE h.owner_id=$1 AND r.kind=$2 AND h.record_id=$3 ORDER BY h.revision DESC LIMIT 100',[owner,kind,id])).rows.map(row=>row.snapshot as StoredEntry));}
  async get(owner:string,kind:Kind,id:string):Promise<StoredEntry|null>{return this.scoped(owner,async c=>{const result=await c.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3',[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;});}
- async transaction<T>(owner:string,key:string,fn:(tx:Transaction)=>Promise<T>):Promise<T>{return this.scoped(owner,async client=>{
+ async transaction<T>(owner:string,key:string,fn:(tx:Transaction)=>Promise<T>):Promise<T>{return this.transactionImpl(owner,key,(tx)=>fn(tx));}
+ async classificationTransaction<T>(owner:string,spaceId:string,key:string,fn:(tx:ClassificationTransaction)=>Promise<T>):Promise<T>{
+  if(!this.businessFeatures?.classification||!this.businessFeatures.organization||!this.personalOwnerGate)throw classificationUnavailable();
+  return this.transactionImpl(owner,key,async(tx,client)=>{await verifyClassificationClient(client);await client.query("SELECT set_config('lifeos.classification_space_id',$1,true)",[spaceId]);return fn({...tx,...classificationQueries(client,owner,spaceId,key)});},classificationCommandKey(owner,spaceId,key));
+ }
+ private async transactionImpl<T>(owner:string,key:string,fn:(tx:Transaction,client:SqlClient)=>Promise<T>,commandLock=JSON.stringify([owner,key])):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
-  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([owner,key])]);
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
    ...(this.businessFeatures?.organization?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
     if(grant.ownerId!==owner)return false;
@@ -98,6 +104,6 @@ export class PostgresPlatformRepository implements PlatformRepository{
     }
     await client.query('INSERT INTO lifeos_platform.platform_history(owner_id,record_id,revision,raw,snapshot,created_at) VALUES($1,$2,$3,$4::jsonb,$5::jsonb,$6)',[owner,entry.id,entry.revision,JSON.stringify(raw),JSON.stringify(entry),entry.updatedAt]);
    },
-  };return fn(tx);
+  };return fn(tx,client);
  });}
 }
