@@ -8,7 +8,7 @@ import {renderAgentOperations} from '../scripts/agent-skill-reference.ts';
 // A missing file, stale operation reference, or accidentally bundled private
 // runtime would break installation or expose data to an anonymous downloader.
 test('the anonymous download is a self-contained, generic Skill archive', async () => {
-  const {GET} = await import('../app/api/agent-skill/route.ts');
+  const {GET} = await import('../app/api/platform/agent-skill/route.ts');
   const response = GET();
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/gzip');

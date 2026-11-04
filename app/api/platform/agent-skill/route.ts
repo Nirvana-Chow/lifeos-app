@@ -1,4 +1,4 @@
-import {buildSkillArtifact} from '../../../src/agent-api/skill-artifact.ts';
+import {buildSkillArtifact} from '../../../../src/agent-api/skill-artifact.ts';
 
 export const dynamic = 'force-static';
 export const runtime = 'nodejs';

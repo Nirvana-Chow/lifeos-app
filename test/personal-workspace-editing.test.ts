@@ -141,7 +141,7 @@ test('settings overlay retains task background and opening captures without leav
 test('settings downloads preserve background drafts and departing links respect panel guard',()=>{
  const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');let left=0,blocked=0;
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialModal:'settings',settingsCloseGuard:{current:()=>false},onBeforeNavigate:()=>{left++;return true;}});
- const click=(download:boolean)=>tree.props.onClickCapture({button:0,target:{closest:()=>({hasAttribute:(name:string)=>download&&name==='download',getAttribute:(name:string)=>name==='href'?'/api/agent-skill':null})},preventDefault:()=>blocked++,stopPropagation:()=>{}});
+ const click=(download:boolean)=>tree.props.onClickCapture({button:0,target:{closest:()=>({hasAttribute:(name:string)=>download&&name==='download',getAttribute:(name:string)=>name==='href'?'/api/platform/agent-skill':null})},preventDefault:()=>blocked++,stopPropagation:()=>{}});
  click(true);assert.equal(left,0,'downloading Skill does not leave the background');assert.equal(blocked,0);
  click(false);assert.equal(left,0,'pending settings panel guards before any destructive background leave');assert.equal(blocked,1);
 });

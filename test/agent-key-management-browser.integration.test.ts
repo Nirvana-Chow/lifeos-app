@@ -17,7 +17,7 @@ async function startFixture(root: string) {
   await mkdir(join(root, 'app/account/password'), {recursive:true});
   await mkdir(join(root, 'app/personal'), {recursive:true});
   await mkdir(join(root, 'app/login'), {recursive:true});
-  await mkdir(join(root, 'app/api/agent-skill'), {recursive:true});
+  await mkdir(join(root, 'app/api/platform'), {recursive:true});
   await Promise.all([
     cp(join(source, 'app/layout.tsx'), join(root, 'app/layout.tsx')),
     cp(join(source, 'app/globals.css'), join(root, 'app/globals.css')),
@@ -28,7 +28,7 @@ async function startFixture(root: string) {
     symlink(join(source, 'components'), join(root, 'components')),
     cp(join(source, 'app/account/api-keys/page.tsx'), join(root, 'app/account/api-keys/page.tsx')),
     cp(join(source, 'app/account/password/page.tsx'), join(root, 'app/account/password/page.tsx')),
-    cp(join(source, 'app/api/agent-skill/route.ts'), join(root, 'app/api/agent-skill/route.ts')),
+    cp(join(source, 'app/api/platform'), join(root, 'app/api/platform'), {recursive:true}),
     writeFile(join(root, 'app/personal/page.tsx'), `import {LivePersonalWorkspace} from '../../src/personal-candidate/live-workspace';
 import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
 export default async function Page({searchParams}:{searchParams:Promise<{page?:string;modal?:string;panel?:string}>}){const location=readWorkspaceLocation(await searchParams);return <LivePersonalWorkspace initialPage={location.page} initialModal={location.modal} initialSettingsPanel={location.panel} showApiKeys/>;}\n`),
@@ -38,7 +38,8 @@ export default async function Page({searchParams}:{searchParams:Promise<{page?:s
   // runtime supplies a fixed synthetic owner to those checks.
   await writeFile(join(root,'src/platform/runtime.ts'), `export const readPlatformPagePrincipal=async()=>({id:'synthetic-account-owner'});
 export const readPlatformPasswordCapability=async()=>true;
-export const readPlatformMfaState=async()=>({kind:'ready'});\n`);
+export const readPlatformMfaState=async()=>({kind:'ready'});
+export const handlePlatformRequest=async()=>Response.json({error:{code:'PLATFORM_UNAVAILABLE'}},{status:503});\n`);
   return spawn(process.execPath, [join(source, 'node_modules/next/dist/bin/next'), 'dev', '--webpack',
     '--hostname', '127.0.0.1', '--port', '0'], {
     cwd: root,
@@ -75,6 +76,28 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
   });
   const browser = await chromium.launch({executablePath: process.env.LIFEOS_TEST_CHROMIUM_PATH});
   t.after(() => browser.close());
+
+  // Exercise real Next routing alongside the actual optional catch-all module.
+  // A missing exact route would return the catch-all's closed 503 response;
+  // unsupported methods must stop at the exact route with 405 instead.
+  const transport = await browser.newContext();
+  for (const method of ['GET','HEAD']) {
+    const response=await transport.request.fetch(origin+'/api/platform/agent-skill',{method});
+    assert.equal(response.status(),200,method+' exact artifact must precede private catch-all');
+    assert.equal(response.headers()['content-type'],'application/gzip');
+    assert.equal(response.headers()['set-cookie'],undefined);
+    if (method==='HEAD') assert.equal((await response.body()).length,0);
+    else assert.ok(gunzipSync(await response.body()).includes(Buffer.from('lifeos-agent/SKILL.md')));
+  }
+  const unsupported=await transport.request.post(origin+'/api/platform/agent-skill',{data:{}});
+  assert.equal(unsupported.status(),405,'POST must not fall through to the private catch-all');
+  for (const path of ['/api/platform/agent-skill/unknown','/api/platform/status']) {
+    const response=await transport.request.get(origin+path);
+    assert.equal(response.status(),503,'only the exact public artifact bypasses the closed private runtime');
+    assert.equal((await response.json()).error.code,'PLATFORM_UNAVAILABLE');
+  }
+  assert.equal((await transport.request.get(origin+'/api/agent-skill')).status(),404,'removed alias is not exposed');
+  await transport.close();
 
   for (const theme of ['light','dark'] as const) for (const width of [360, 1365]) {
     const page = await browser.newPage({viewport: {width, height: 900}, timezoneId: 'Asia/Shanghai',colorScheme:theme});
@@ -285,9 +308,9 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await expect(newKey).toBeFocused();
     await page.getByRole('button',{name:'复制安装说明',exact:true}).click();
     const instructions=await page.evaluate(()=>(window as unknown as {copied:string}).copied);
-    assert.ok(instructions.includes(origin+'/api/agent-skill'));
+    assert.ok(instructions.includes(origin+'/api/platform/agent-skill'));
     assert.ok(!instructions.includes(syntheticKey));
-    await expect(page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true})).toHaveAttribute('href','/api/agent-skill');
+    await expect(page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true})).toHaveAttribute('href','/api/platform/agent-skill');
     const downloading=page.waitForEvent('download');
     await page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true}).click();
     const download=await downloading;
