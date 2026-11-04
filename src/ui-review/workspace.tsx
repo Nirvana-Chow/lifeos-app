@@ -1033,7 +1033,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <DialogTitle>帮助</DialogTitle>
           <DialogDescription>待办使用方式</DialogDescription>
           <ol className="lo-help-steps">
-            <li>双击标题、日期或状态，直接修改这个字段。</li>
+            <li>表格中双击标题、日期或状态，直接修改这个字段。</li>
             <li>点展开，查看并修改完整待办。</li>
             <li>点击列标题排序，拖动列边界调整宽度。</li>
           </ol>

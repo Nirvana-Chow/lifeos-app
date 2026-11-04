@@ -81,12 +81,12 @@ test('isolated real Next, Caddy TLS and PostgreSQL recovery',{skip:!enabled?'iso
   const isLoginRedirect=(response:{status:number;location:string;body:string})=>
    ([302,303,307,308].includes(response.status)&&response.location==='/login')||
    (response.status===200&&/<meta\b(?=[^>]*\bid=["']__next-page-redirect["'])(?=[^>]*\bhttp-equiv=["']refresh["'])(?=[^>]*\bcontent=["'][01];url=\/login["'])[^>]*>/i.test(response.body));
-  for(const [page,heading] of [['/personal','<h1>总览</h1>'],['/personal/edit','<h1>待办</h1>'],['/account/password','<h1>修改本人密码</h1>']] as const){
+  for(const [page,heading] of [['/personal','<h1>总览</h1>'],['/personal/edit','<h1>待办</h1>'],['/account/password','<h1>修改密码</h1>']] as const){
    for(const headers of [{},{cookie:foreignCookie}] as Record<string,string>[]){
     const denied=await send(page,undefined,headers);assert.ok(isLoginRedirect(denied)||[401,403].includes(denied.status));
     assert.ok(!denied.body.includes('Synthetic recovery fixture')&&!denied.body.includes('Synthetic foreign record'));
    }
-   const ownerPage=await send(page,undefined,{cookie:before.cookie});assert.equal(ownerPage.status,200);assert.ok(!isLoginRedirect(ownerPage));assert.ok(ownerPage.body.includes(heading));
+   const ownerPage=await send(page,undefined,{cookie:before.cookie});assert.equal(ownerPage.status,200);assert.ok(!isLoginRedirect(ownerPage));assert.ok(ownerPage.body.includes(heading),'owner shell heading '+page);
   }
   let snapshot=JSON.parse(originalTodo.body).entry;const sourceId=snapshot.source.id;
   const update=async(cookie:string,stage:string)=>{const previous=snapshot.revision,title='Synthetic recovery '+stage;
