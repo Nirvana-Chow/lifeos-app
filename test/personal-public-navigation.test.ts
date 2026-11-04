@@ -85,11 +85,12 @@ test('legacy journal manager sends todo to the canonical shell after dirty and r
  const cleanup=effects[0]();let prompts=0;const unload={preventDefault:()=>prompts++,returnValue:undefined};listeners.get('beforeunload')!(unload);assert.equal(prompts,0,'already confirmed document leave has no second prompt');listeners.get('beforeunload')!(unload);assert.equal(prompts,1,'approval is one-use, not a global removal');cleanup();
 });
 
-test('collapsed personal navigation keeps journal and schedule link names and tooltips',()=>{
+test('collapsed personal navigation keeps available tooltips and hides journal and schedule',()=>{
  const states:any[]=[];let cursor=0;const hooks={...react,useState:(initial:any)=>{const at=cursor++;if(!(at in states))states[at]=typeof initial==='function'?initial():initial;return[states[at],(value:any)=>{states[at]=value;}];}};
  const nativeRequire=createRequire(import.meta.url),workspace=load('../src/ui-review/workspace.tsx',{'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),'./ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},'./ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},'./selectors':workspaceSelectors,'./task-table':{},'./overview-chart':{},'./review.css':{},'../workbench/private-navigation':privateNavigation,'../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{},'./source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}}});
  const render=()=>{cursor=0;return workspace.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null}});};
- let tree=render();for(const [label,path] of [['日程','schedule'],['日记','journal']]){const link=find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path as 'schedule'|'journal'])!;assert.equal(link.props['aria-label'],label);}
+ let tree=render();
  find(tree,n=>n.props['aria-label']==='收起侧栏')!.props.onClick();tree=render();
- for(const [label,path] of [['日程','schedule'],['日记','journal']]){const link=find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path as 'schedule'|'journal'])!;assert.equal(link.props['aria-label'],label);assert.equal(link.props.title,label);}
+ for(const label of ['待办','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
+ for(const path of ['schedule','journal'] as const)assert.equal(find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path]),undefined);
 });

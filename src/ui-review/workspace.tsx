@@ -4,10 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   CheckSquare2,
-  CalendarDays,
-  BookOpen,
-  Layers,
   Folder,
+  Layers,
+  Pencil,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -59,10 +58,9 @@ import type {
 import "./review.css";
 import {ThemeSwitch} from "../workbench/theme-switch";
 import {CategoryEntries} from "../personal-candidate/category-entries";
-import {SourceSummary} from "./source-summary";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 
-import {privateNavigation,privateHrefs,primaryPrivateIds,workspaceHref} from '../workbench/private-navigation';
+import {workspaceHref} from '../workbench/private-navigation';
 
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -123,11 +121,12 @@ function DataState({
 }
 
 export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
-  const { access, onRefresh } = props;
+  const { access, onRefresh, unavailablePage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const [page, setPage] = useState<WorkspacePage>(
     props.initialPage ?? "overview",
   );
+  const title = unavailablePage?.title ?? pageTitles[page];
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
@@ -141,7 +140,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const returnFocus = useRef<HTMLButtonElement | null>(null),
     menuButton = useRef<HTMLButtonElement | null>(null),
     helpButton = useRef<HTMLButtonElement | null>(null),
-    helpReturnFocus = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
@@ -154,6 +152,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const canWrite = mayWrite(access) && !props.saving && !props.uncertain;
   const [undoNow,setUndoNow]=useState(0);
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
+  const overviewTasks = page === "overview" && state.status === "ready"
+    ? filterTasks(tasks, defaultFilter).slice(0, 6)
+    : emptyTasks;
+  const inlineRow = overviewTasks.findIndex(task => task.id === props.inlineTask?.id) + 1;
   const detail = data?.tasks.find((task) => task.id === detailId) ?? null;
   const filterActive =
     !!filter.query ||
@@ -165,17 +167,24 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     areaId: string | null = null,
     projectId: string | null = null,
   ) {
+    if (unavailablePage) {
+      window.location.assign(workspaceHref(next));
+      return;
+    }
+    if (props.onLeaveTaskInline?.() === false) return false;
     setPage(next);
     setFilter({ ...defaultFilter, areaId, projectId });
     setMobileOpen(false);
     setFiltersOpen(false);
     setDetailId(null);
+    return true;
   }
   function openTask(task: TaskRow, button?: HTMLButtonElement) {
     if (props.onOpenTask) {
       props.onOpenTask({ id: task.id, revision: task.revision });
       return;
     }
+    if (props.onLeaveTaskInline?.() === false) return;
     returnFocus.current = button ?? tableViewButton.current;
     setDetailId(task.id);
   }
@@ -193,27 +202,24 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <Button
             variant="ghost"
             key={id}
-            className={page === id ? "is-current" : ""}
+            className={!unavailablePage && page === id ? "is-current" : ""}
             title={collapsed ? label : undefined}
             aria-label={label}
-            aria-current={page === id ? "page" : undefined}
+            aria-current={!unavailablePage && page === id ? "page" : undefined}
             onClick={() => navigate(id)}
           >
             <Icon size={19} />
             <span>{label}</span>
           </Button>
         ))}
-        <a href={privateHrefs.schedule} aria-label="日程" title={collapsed ? "日程" : undefined}><CalendarDays size={19}/><span>日程</span></a>
-        <a href={privateHrefs.journal} aria-label="日记" title={collapsed ? "日记" : undefined}><BookOpen size={19}/><span>日记</span></a>
-        <details className="lo-more-business"><summary aria-label="更多业务" title="更多业务"><Layers size={19}/><span>更多业务</span></summary><nav aria-label="更多业务">{(['inbox','areas','projects'] as const).map(id=><a key={id} href={workspaceHref(id)}>{pageTitles[id]}</a>)}{privateNavigation.filter(item=>!primaryPrivateIds.includes(item.id)&&item.id!=='inbox'&&item.id!=='settings').map(item=><a key={item.id} href={item.href} aria-label={item.title} title={item.title}>{item.title}</a>)}</nav></details>
       </nav>
       <div className="lo-sidebar-bottom">
-        <Button variant="ghost" className="lo-mobile-help" aria-label="帮助" onClick={()=>{helpReturnFocus.current=menuButton.current;setMobileOpen(false);setHelpOpen(true);}}><HelpCircle size={19}/><span>帮助</span></Button>
         <Button
           variant="ghost"
           aria-label="设置"
           title={collapsed ? "设置" : undefined}
           className={page === "settings" ? "is-current" : ""}
+          aria-current={page === "settings" ? "page" : undefined}
           onClick={() => navigate("settings")}
         >
           <Settings size={19} />
@@ -235,10 +241,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </div>
     </>
   );
-  function taskCard(task: TaskRow, board = false) {
+  function taskCard(task: TaskRow, board = false, overview = false) {
+    const inlineEdit = overview && canWrite && !!props.onEditTaskInline && !pendingIds.has(task.id);
+    const edit = (trigger: HTMLElement) => props.onEditTaskInline?.(task, trigger);
     return (
       <article
-        className={board ? "lo-board-card" : "lo-task-row"}
+        className={board ? "lo-board-card" : overview ? "lo-task-row lo-overview-task" : "lo-task-row"}
         key={task.id}
       >
         <Button
@@ -247,7 +255,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           aria-label={`${task.status === "done" ? "重新打开" : "完成"}：${task.title}`}
           aria-busy={pendingIds.has(task.id)}
           disabled={
-            !canWrite ||
+            !canWrite || !!props.inlineTask ||
             !props.onSetTaskStatus ||
             pendingIds.has(task.id) ||
             task.status === "cancelled"
@@ -263,8 +271,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <Button
           variant="ghost"
           className="lo-task-title"
-          aria-label={`查看待办：${task.title}`}
-          onClick={(event) => openTask(task, event.currentTarget)}
+          aria-label={`${inlineEdit ? "就地编辑" : "查看待办"}：${task.title}`}
+          aria-keyshortcuts={inlineEdit ? "Enter F2" : undefined}
+          onClick={(event) => {
+            if (!inlineEdit) openTask(task, event.currentTarget);
+            else if (event.detail === 0) edit(event.currentTarget);
+          }}
+          onDoubleClick={inlineEdit ? (event) => edit(event.currentTarget) : undefined}
+          onKeyDown={inlineEdit ? (event) => {
+            if (event.key === "F2") {event.preventDefault();edit(event.currentTarget);}
+          } : undefined}
         >
           <span>{task.title}</span>
           {task.referenceChanged && (
@@ -278,6 +294,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <Badge variant="outline" className="lo-task-status">
           {statusLabels[task.status]}
         </Badge>
+        {overview && <div className="lo-overview-task-actions">
+          {inlineEdit && <Button variant="ghost" className="lo-icon-button" aria-label={`编辑：${task.title}`} title="就地编辑" onClick={event => edit(event.currentTarget)}><Pencil size={16}/></Button>}
+          <Button variant="ghost" className="lo-icon-button" aria-label={`展开详情：${task.title}`} title="展开详情" onClick={event => openTask(task,event.currentTarget)}><ArrowUpRight size={17}/></Button>
+        </div>}
       </article>
     );
   }
@@ -363,7 +383,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     <div
       data-lifeos-surface="personal"
       className={`lo-shell ${collapsed ? "lo-is-collapsed" : ""}`}
-      onClickCapture={event=>{if((props.saving||props.uncertain)&&(event.target as Element).closest?.('a[href]')){event.preventDefault();event.stopPropagation();}}}
+      onClickCapture={event => {
+        const href = (event.target as Element).closest?.('a[href]')?.getAttribute("href");
+        if (href && !href.startsWith("#") && (props.saving || props.uncertain || props.onLeaveTaskInline?.() === false)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       ref={setPortalContainer}
     >
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
@@ -386,7 +412,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           LifeOS
         </Button>
         <span className="lo-header-divider" />
-        <span className="lo-header-context">{pageTitles[page]}</span>
+        <span className="lo-header-context">{title}</span>
         <div className="lo-header-actions">
           <ThemeSwitch/>
           {access.authenticated === true && access.writable === false && (
@@ -397,36 +423,21 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             className="lo-icon-button lo-header-help"
             aria-label="帮助"
             ref={helpButton}
-            onClick={(event) => {helpReturnFocus.current=event.currentTarget;setHelpOpen(true);}}
+            title="帮助"
+            onClick={() => setHelpOpen(true)}
           >
             <HelpCircle size={19} />
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => navigate("settings")}
-            className="lo-account"
-            aria-label="账户设置"
-          >
-            <span className="lo-account-avatar">
-              {access.authenticated === true ? (
-                (access.displayName?.slice(0, 1) ?? "我")
-              ) : (
-                <LogIn size={16} />
-              )}
-            </span>
-            <span>
-              账户
-            </span>
           </Button>
         </div>
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
         <main id="personal-main" className="lo-main">
-          <div className={(page === "tasks" || page === "inbox") && view === "table" ? "lo-content lo-content-wide" : "lo-content"}>
+          <div className={page === "settings" ? "lo-content lo-content-settings" :
+            (page === "tasks" || page === "inbox") && view === "table" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
-              <h1>{pageTitles[page]}</h1>
+              <h1>{title}</h1>
               {access.authenticated===true&&access.writable===false&&<Badge variant="outline" className="lo-mobile-read-only">只读</Badge>}
               {state.status === "ready" && page !== "settings" && (
                 <span className="lo-result-count">
@@ -439,17 +450,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
             <div className="lo-page-actions">
-              {onRefresh && (
+              {page !== "settings" && !unavailablePage && onRefresh && (
                 <Button
                   variant="ghost"
                   className="lo-icon-button"
                   aria-label="刷新数据"
+                  disabled={!!props.inlineTask}
                   onClick={onRefresh}
                 >
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {page !== "settings" && (
+              {page !== "settings" && !unavailablePage && (
                 <span
                   title={
                     !canWrite
@@ -473,17 +485,20 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
           </div>
+          {unavailablePage ? (
+            <p className="lo-unavailable" role="status">{unavailablePage.message}</p>
+          ) : <>
           {props.testLabel && (
             <div className="lo-test-label">{props.testLabel}</div>
           )}
-          {props.undoDeadline && props.undoDeadline > undoNow && props.onUndoTaskStatus && <div role="status" className={`lo-undo-notice ${taskEditorStyles.undo}`}>状态已更新 <Button variant="ghost" disabled={!canWrite} onClick={props.onUndoTaskStatus}>撤销</Button></div>}
-          {props.mutationError && (
+          {props.undoDeadline && props.undoDeadline > undoNow && props.onUndoTaskStatus && <div role="status" className={`lo-undo-notice ${taskEditorStyles.undo}`}>状态已更新 <Button variant="ghost" disabled={!canWrite || !!props.inlineTask} onClick={props.onUndoTaskStatus}>撤销</Button></div>}
+          {props.mutationError && (!props.inlineTask || state.status !== "ready") && (
             <div className="lo-inline-error" role="alert">
               <AlertTriangle size={17} />
               {props.mutationError}
             </div>
           )}
-          {state.status === "ready" && data?.coverage === "partial" && (
+          {page !== "settings" && state.status === "ready" && data?.coverage === "partial" && (
             <div className="lo-inline-error" role="status">
               仅显示已读取内容，完整统计暂不可用。
             </div>
@@ -497,37 +512,29 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   {label:"已逾期",value:metrics.overdue,metric:"overdue"},
                   {label:"项目",value:data?.coverage === "complete" ? data.projects.length : null,metric:"projects"},
                 ] as const).map(({label,value,metric}) => (
-                  <button key={label} className="lo-metric" aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {navigate(metric === "projects" ? "projects" : "tasks");if(metric !== "projects")setFilter(metricTaskFilter(metric));}}>
+                  <button key={label} className="lo-metric" aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
                     <span>{label}</span><strong>{value === null ? "—" : value}</strong>
                   </button>
                 ))}
               </section>
-              {state.status !== "ready" ? (
-                <DataState state={state} onRefresh={onRefresh} />
-              ) : (
-                <>
-                  <div className="lo-overview-grid">
-                    <section className="lo-panel">
-                      <div className="lo-panel-heading">
-                        <h2>待办</h2>
-                        <Button
-                          variant="ghost"
-                          aria-label="查看全部待办"
-                          onClick={() => navigate("tasks")}
-                        >
-                          <ArrowUpRight size={18} />
-                        </Button>
-                      </div>
-                      {filterTasks(tasks, {
-                        ...defaultFilter,
-                        status: "pending",
-                      })
-                        .slice(0, 6)
-                        .map((task) => taskCard(task))}
-                      {metrics.pending === 0 && (
-                        <div className="lo-empty-compact">暂无待办</div>
-                      )}
-                    </section>
+              <div className="lo-overview-grid">
+                <section className="lo-panel" hidden={state.status !== "ready" && !props.inlineTask}>
+                  <div className="lo-panel-heading">
+                    <h2>待办</h2>
+                    <Button variant="ghost" aria-label="查看全部待办" onClick={() => navigate("tasks")}>
+                      <ArrowUpRight size={18} />
+                    </Button>
+                  </div>
+                  <div className="lo-overview-task-list">
+                    {[
+                      ...overviewTasks.slice(0, inlineRow).map(task => taskCard(task, false, true)),
+                      props.inlineTask && <div className="lo-overview-editor" key="inline-editor">{props.inlineTask.content}</div>,
+                      ...overviewTasks.slice(inlineRow).map(task => taskCard(task, false, true)),
+                    ]}
+                  </div>
+                  {metrics.pending === 0 && <div className="lo-empty-compact">暂无待办</div>}
+                </section>
+                {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : (
                     <section className="lo-panel">
                       <div className="lo-panel-heading">
                         <h2>任务状态</h2>
@@ -561,7 +568,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                         <div className="lo-empty-compact">完整统计暂不可用</div>
                       )}
                     </section>
-                  </div>
+                )}
+              </div>
+              {state.status === "ready" && (
                   <section className="lo-panel lo-project-overview">
                     <div className="lo-panel-heading">
                       <h2>项目</h2>
@@ -593,13 +602,21 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                       <div className="lo-empty-compact">暂无项目</div>
                     )}
                   </section>
-                </>
               )}
             </>
           )}
           {(page === "tasks" || page === "inbox") && (
             <>
-
+              {page === "tasks" && (
+                <details className="lo-task-categories">
+                  <summary>分类管理</summary>
+                  <div className="lo-category-entries">
+                    <Button variant="outline" onClick={() => navigate("areas")}>领域</Button>
+                    <Button variant="outline" onClick={() => navigate("projects")}>项目</Button>
+                    <CategoryEntries allowedTypes={access.allowedTypes} writable={canWrite && pendingIds.size === 0 && !props.mutationError} className="lo-category-entries"/>
+                  </div>
+                </details>
+              )}
               <div className="lo-task-toolbar">
                 <label className="lo-search">
                   <Search size={17} />
@@ -806,28 +823,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             ))}
           {page === "settings" && (
             <div className="lo-settings">
-              <h2>账户</h2>
-              <div>
-                <span>登录状态</span>
-                <strong>
-                  {access.authenticated === true
-                    ? "已登录"
-                    : access.authenticated === false
-                      ? "未登录"
-                      : "尚未验证"}
-                </strong>
-              </div>
-              <div>
-                <span>数据权限</span>
-                <strong>
-                  {access.writable === true
-                    ? "可写入"
-                    : access.writable === false
-                      ? "只读"
-                      : "尚未验证"}
-                </strong>
-              </div>
-              {access.message && <p>{access.message}</p>}
+              {access.authenticated === true && props.settingsContent}
               {access.authenticated === false &&
                 access.loginAllowed === true &&
                 props.onLogin && (
@@ -837,18 +833,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   </Button>
                 )}
               {access.authenticated === true && props.onLogout && (
-                <Button variant="outline" onClick={props.onLogout}>
+                <Button variant="ghost" className="lo-logout" onClick={props.onLogout}>
                   <LogOut size={17} />
                   退出登录
                 </Button>
               )}
-              {props.settingsContent}
-              <h2>分类管理</h2>
-              <div className="lo-settings-links"><Button variant="outline" onClick={()=>navigate('areas')}>领域</Button><Button variant="outline" onClick={()=>navigate('projects')}>项目</Button></div>
-              <CategoryEntries allowedTypes={access.allowedTypes} writable={canWrite && pendingIds.size === 0 && !props.mutationError} className="lo-category-entries"/>
-              <details><summary>数据与权限</summary>{state.status === 'ready' && <SourceSummary data={state.data}/>}<a href={privateHrefs.database}>数据管理与导出</a></details>
             </div>
           )}
+          </>}
           </div>
         </main>
       </div>
@@ -925,29 +917,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           className="lo-detail"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            (helpReturnFocus.current??helpButton.current)?.focus();
+            helpButton.current?.focus();
           }}
         >
           <DialogTitle>帮助</DialogTitle>
-          <DialogDescription>当前工作空间的读取范围</DialogDescription>
-          <dl>
-            <div>
-              <dt>数据范围</dt>
-              <dd>
-                {data?.coverage === "complete"
-                  ? "已验证完整快照"
-                  : data?.coverage === "partial"
-                    ? "部分内容"
-                    : "尚未确认"}
-              </dd>
-            </div>
-            <div>
-              <dt>快照时间</dt>
-              <dd>{data?.asOf ?? "尚未读取"}</dd>
-            </div>
-          </dl>
-          <p>点击待办标题或表格中的「查看详情」先查看，再选择「编辑待办」。表格中也可双击标题、到期日或状态直接修改该字段。</p>
-          {access.message && <p>{access.message}</p>}
+          <DialogDescription>待办使用方式</DialogDescription>
+          <p>在总览双击待办标题就地编辑，也可以点标题旁的编辑按钮。点展开按钮查看详情。</p>
+          <p>切到待办的表格视图，可点击列标题排序，双击标题、到期日或状态可直接修改该字段。</p>
         </DialogContent>
       </Dialog>
     </div>

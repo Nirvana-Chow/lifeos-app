@@ -12,7 +12,7 @@ The system SHALL use consistent typography, semantic colors, spacing, controls a
 #### Scenario: Move between business modules
 - **WHEN** the owner visits home, tasks, projects, areas, journal, data, settings or another registered business module
 - **THEN** the pages retain their available inputs, details and actions within the shared visual language
-- **AND** missing integrations remain explicit instead of displaying invented records, totals or success
+- **AND** an unavailable module uses a concise state in the shared shell when reached directly
 
 ### Requirement: Reachable private business navigation
 The system SHALL resolve registered business destinations exactly behind the existing owner/MFA gate and SHALL preserve canonical journal editing and unsaved-navigation protection without expanding API or edge access.
@@ -27,13 +27,31 @@ The system SHALL resolve registered business destinations exactly behind the exi
 - **WHEN** an anonymous, non-owner, expired or non-MFA-ready session requests a registered private page
 - **THEN** the existing access gate denies private content and retains private no-store behavior
 
+### Requirement: Keep owner pages focused on their purpose
+
+The system SHALL group domain and project actions with Todo, limit Journal to journal records and editing, and keep account and security controls in Settings. Primary navigation SHALL hide unfinished business entries and links to generic internal record management.
+
+#### Scenario: Navigate between tasks, journal and settings
+
+- **WHEN** the owner navigates between Overview, Todo, Journal and Settings
+- **THEN** the primary workspace uses consistent branding and navigation and the journal bookmark retains the same appearance preference
+- **AND** journal pages contain journal records and their actions, while Todo contains domain and project actions
+- **AND** settings content is centered and adapts to the available width
+
+#### Scenario: Edit a task from Overview
+
+- **WHEN** the owner double-clicks a writable task title, activates its keyboard shortcut or uses its edit button
+- **THEN** the editor opens inline and focuses the title without an intermediate detail dialog
+- **AND** a separate expand button opens detail
+- **AND** existing write, revision, receipt, dirty-draft and unknown-outcome safeguards apply
+
 ### Requirement: Header appearance control
-The system SHALL expose directly operable light, dark and system choices in both business Headers, including an identifiable selected state for keyboard and touch users.
+The system SHALL expose one keyboard-operable and touch-accessible icon button in the shared Header that switches between light and dark. It SHALL reflect the effective appearance and identify its next action. The initial preference SHALL follow the operating system.
 
 #### Scenario: Change appearance while using tasks
-- **WHEN** the owner selects a Header appearance choice on the tasks page
-- **THEN** the page, table and open dialogs immediately use the selected appearance without opening settings
-- **AND** another appearance control in the same document displays the same choice
+- **WHEN** the owner activates the Header appearance button on the tasks page
+- **THEN** the page, table and open dialogs immediately use the opposite appearance without opening settings
+- **AND** another appearance control in the same document reflects the same effective appearance
 
 ### Requirement: Consistent appearance lifecycle
 The system SHALL preserve a valid appearance preference across refresh and routes, follow operating-system changes only in system mode, synchronize cross-window changes and remain usable when storage is unavailable.

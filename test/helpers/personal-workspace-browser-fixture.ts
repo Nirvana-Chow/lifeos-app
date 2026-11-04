@@ -204,8 +204,8 @@ async function presentation(page:Page,kind:'workspace'|'editor',width:number,the
  diagnostic('overflow',{match:facts.noOverflow});assert.equal(facts.noOverflow,true,'personal document overflow');
  diagnostic('center',{width,centerDelta:facts.centerDelta});assert.equal(width!==1365||facts.centerDelta<=1,true,'personal container center');
  diagnostic('left',{match:facts.left});assert.equal(facts.left,true,'personal text alignment');
- diagnostic('paper',{match:facts.paper===(theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)')});assert.equal(facts.paper,theme==='dark'?'rgb(9, 9, 11)':'rgb(250, 250, 250)','personal themed surface');
- diagnostic('ink',{match:facts.ink===(theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)')});assert.equal(facts.ink,theme==='dark'?'rgb(250, 250, 250)':'rgb(24, 24, 27)','personal themed ink');
+ diagnostic('paper',{match:facts.paper===(theme==='dark'?'rgb(31, 31, 31)':'rgb(255, 255, 255)')});assert.equal(facts.paper,theme==='dark'?'rgb(31, 31, 31)':'rgb(255, 255, 255)','personal themed surface');
+ diagnostic('ink',{match:facts.ink===(theme==='dark'?'rgb(204, 204, 204)':'rgb(31, 31, 31)')});assert.equal(facts.ink,theme==='dark'?'rgb(204, 204, 204)':'rgb(31, 31, 31)','personal themed ink');
  diagnostic('scheme',{match:facts.scheme===theme});assert.equal(facts.scheme,theme,'personal theme scheme');
  if(kind==='editor'){
   diagnostic('input-size',{match:facts.inputSize>=16});assert.equal(facts.inputSize>=16,true,'editor readable inputs');
@@ -240,9 +240,9 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
- phase='create-domain';await page.getByRole('button',{name:'设置',exact:true}).click();await page.locator('[aria-label="分类管理"]').getByRole('link',{name:'新建 / 管理领域',exact:true}).click();await readyEditor(page,'');
+ phase='create-domain';await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByText('分类管理',{exact:true}).click();await page.locator('[aria-label="分类管理"]').getByRole('link',{name:'新建 / 管理领域',exact:true}).click();await readyEditor(page,'');
  await title(page).fill(synthetic.domain);await recordField(page,'说明 / 正文').fill('隔离合成领域说明');const domain=await save(page,'domain');
- await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'设置',exact:true}).click();
+ await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByText('分类管理',{exact:true}).click();
  await page.locator('[aria-label="分类管理"]').getByRole('link',{name:'新建 / 管理项目',exact:true}).click();await readyEditor(page,'');
  phase='create-project';await title(page).fill(synthetic.project);await recordField(page,'目标').fill('隔离合成项目目标');await selectReference(page,'所属领域',domain);const project=await save(page,'project');assert.deepEqual((project.draft as {personal:{domain:unknown}}).personal.domain,reference(domain));
  await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');
@@ -330,10 +330,28 @@ export async function verifyPersonalWorkspace(page:Page){
   await readTodo(page,todo,[domain,project,todo]);
   assert.equal(cancelledWrites,0);
  }finally{page.off('request',trackCancelledWrite);}
- phase='source-settings';await page.getByRole('button',{name:'设置',exact:true}).click();await page.locator('.lo-settings details > summary').click();const source=page.locator('section[aria-label="待办来源与读取范围"]');await expect(source).toContainText('已验证完整快照');await expect(source).toContainText('手工录入：1');await expect(source).toContainText('Apple 提醒事项：0');await expect(source).toContainText('非实时同步');await expect(page.getByRole('link',{name:'数据管理与导出',exact:true})).toHaveAttribute('href','/personal/settings/data');
+ phase='overview-inline-edit';await page.getByRole('button',{name:'总览',exact:true}).click();
+ const inlineTitle=page.getByRole('button',{name:'就地编辑：'+synthetic.title,exact:true});
+ await inlineTitle.dblclick();
+ const inline=page.getByRole('region',{name:'编辑待办',exact:true});
+ await expect(inline).toBeVisible();await expect(page.getByRole('dialog')).toHaveCount(0);
+ const inputTitle=inline.getByLabel('标题',{exact:true});await expect(inputTitle).toBeFocused();
+ await inputTitle.fill('合成未保存总览草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'设置',exact:true}).click();});
+ await expect(inputTitle).toHaveValue('合成未保存总览草稿');
+ await inputTitle.fill(synthetic.title);await recordField(page,'正文').fill('合成总览编辑回读');
+ todo=await saveTask(page,todo);await expect(inline).toHaveCount(0);await expect(inlineTitle).toBeFocused();
+ await readTodo(page,todo,[domain,project,todo]);
+ await page.getByRole('button',{name:'展开详情：'+synthetic.title,exact:true}).click();
+ const expanded=await readyTaskDetail(page,synthetic.title);await expect(expanded.getByText('合成总览编辑回读',{exact:true})).toBeVisible();
+ await expanded.getByRole('button',{name:'编辑待办',exact:true}).click();
+ await recordField(page,'正文').fill(synthetic.editedNotes);todo=await saveTask(page,todo);
+ phase='settings-actions';await page.getByRole('button',{name:'设置',exact:true}).click();
+ await expect(page.getByRole('link',{name:'修改密码',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+ await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理/)).toHaveCount(0);
  const records=[domain,project,todo];
  phase='readonly-ui';const cleanupReadonly=await installReadonlyPersonalReads(page);let mutations=0;const count=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))mutations++;};page.on('request',count);
- try{await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});await expect(complete).toBeDisabled();await complete.evaluate((node:HTMLElement)=>node.click());await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page.getByRole('heading',{name:'分类管理',exact:true})).toBeVisible();await expect(page.locator('[aria-label="分类管理"] a')).toHaveCount(0);
+ try{await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});await expect(complete).toBeDisabled();await complete.evaluate((node:HTMLElement)=>node.click());await expect(page.getByText('分类管理',{exact:true})).toBeVisible();await page.getByText('分类管理',{exact:true}).click();await expect(page.locator('[aria-label="分类管理"] a')).toHaveCount(0);
  await page.goto(editorURL,{waitUntil:'domcontentloaded'});
  const detail=await readyTaskDetail(page,synthetic.title);
  await expect(detail.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();

@@ -31,7 +31,7 @@
 /* Root controls and native dialogs retain their own layout boundaries. */
 .headerActions>button,.accountAction>button{min-height:44px;min-width:44px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--lo-radius-control);background:var(--card);color:var(--foreground)}
 .accountAction{position:relative;flex:none}.accountAction>[role=alert]{position:absolute;right:0;top:100%;width:min(280px,calc(100vw - 32px));padding:12px;background:var(--danger-background);color:var(--danger);border:1px solid var(--danger-border);border-radius:8px}
-.navigation,.modal,.drawer{overscroll-behavior:contain}.modal,.drawer{overflow:auto}.sidebar{margin:0}.navLinkActive{color:var(--primary)!important;background:var(--accent)}
+.navigation,.modal,.drawer{overscroll-behavior:contain}.modal,.drawer{overflow:auto}.sidebar{margin:0}.navLinkActive{color:var(--lo-link)!important;background:var(--accent)}
 .drawerHelp{margin-top:16px;padding-top:16px;border-top:1px solid var(--border)}.drawerHelp button{min-height:44px;background:var(--card);color:var(--foreground);border:1px solid var(--border);padding:8px 12px}
 @media(max-width:1100px){.page{padding:var(--lo-content-padding)}}
 @media(max-width:850px){.header{padding-inline:8px;gap:8px}.headerStart,.headerActions{gap:6px}.headerHelp{display:none!important}.page{padding:var(--lo-content-padding)}}

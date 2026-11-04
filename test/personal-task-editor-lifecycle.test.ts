@@ -13,9 +13,9 @@ type Node={type:unknown;props:Record<string,any>;key?:unknown};
 function find(node:any,predicate:(node:Node)=>boolean):Node|undefined{if(!node||typeof node!=='object')return;if(Array.isArray(node)){for(const child of node){const result=find(child,predicate);if(result)return result;}return;}return predicate(node)?node:find(node.props?.children,predicate);}
 function text(node:any):string{if(node==null||typeof node==='boolean')return '';if(Array.isArray(node))return node.map(text).join('');if(typeof node!=='object')return String(node);return String(node.props?.value??'')+text(node.props?.children);}
 const flush=async()=>{for(let i=0;i<8;i++)await new Promise<void>(r=>setImmediate(r));};
-function fixture(){
+function fixture(writable=true){
  const id='11111111-1111-4111-8111-111111111111';let owner='fixture-owner',space='fixture-space',revision=3,title='Original title',notes='Original notes',gate:Promise<void>|null=null,release:(()=>void)|null=null,retained:any=null,loseTask=false,deleted=false;let personal:any=undefined;const extras:any[]=[];const taskReceipts=new Map<string,any>(),taskRequests:any[]=[];const storage=new Map<string,string>(),writes:string[]=[],reads:string[]=[];
- const fetcher:typeof fetch=async(input,init)=>{const path=String(input);reads.push(path);if(path.endsWith('/availability'))return Response.json({configured:true,loginAllowed:true,https:true});if(path.endsWith('/status')){if(gate)await gate;return Response.json({scope:'personal-manual-candidate',ownerId:owner,spaceId:space,storageVerified:true,writable:true,allowedTypes:['todo','journal']});}if(path.includes('/overview')){const today=new URL(path,'https://fixture.invalid').searchParams.get('today');return Response.json({items:[...(deleted?[]:[{id,kind:'todo',draft:{title,notes,dueOn:null,status:'open',...(personal?{personal}:{})},source:{id:'22222222-2222-4222-8222-222222222222',system:'website',externalId:id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'todo',input:{}}},revision,syncState:'draft',externalStatus:null}]),...extras],total:(deleted?0:1)+extras.length,scope:'full-current-snapshot',truncated:false,today,observedAt:'2026-10-27T00:00:00Z'});}if(path==='/api/platform/personal/todo/'+id&&init?.method==='PATCH'){const key=new Headers(init.headers).get('idempotency-key')!,body=JSON.parse(String(init.body));taskRequests.push({key,body});writes.push(path);const duplicate=taskReceipts.has(key);if(!duplicate){revision=body.expectedRevision+1;title=body.fields.title;notes=body.fields.notes;taskReceipts.set(key,{id,kind:'todo',draft:body.fields,source:{id:'22222222-2222-4222-8222-222222222222',system:'website',externalId:id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'todo',input:{}}},revision,syncState:'draft',externalStatus:null});}if(loseTask){loseTask=false;throw Error('lost after commit');}return Response.json({entry:taskReceipts.get(key),duplicate});}if(retained&&path==='/api/platform/personal/journal'){assert.equal(new Headers(init?.headers).get('idempotency-key'),retained.command.key);assert.deepEqual(JSON.parse(String(init?.body)),retained.command.body);writes.push(path);return Response.json({entry:retained.entry,duplicate:true},{status:201});}writes.push(path);throw Error('unexpected mutation '+path);};
+ const fetcher:typeof fetch=async(input,init)=>{const path=String(input);reads.push(path);if(path.endsWith('/availability'))return Response.json({configured:true,loginAllowed:true,https:true});if(path.endsWith('/status')){if(gate)await gate;return Response.json({scope:'personal-manual-candidate',ownerId:owner,spaceId:space,storageVerified:true,writable,allowedTypes:['todo','journal']});}if(path.includes('/overview')){const today=new URL(path,'https://fixture.invalid').searchParams.get('today');return Response.json({items:[...(deleted?[]:[{id,kind:'todo',draft:{title,notes,dueOn:null,status:'open',...(personal?{personal}:{})},source:{id:'22222222-2222-4222-8222-222222222222',system:'website',externalId:id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'todo',input:{}}},revision,syncState:'draft',externalStatus:null}]),...extras],total:(deleted?0:1)+extras.length,scope:'full-current-snapshot',truncated:false,today,observedAt:'2026-10-27T00:00:00Z'});}if(path==='/api/platform/personal/todo/'+id&&init?.method==='PATCH'){const key=new Headers(init.headers).get('idempotency-key')!,body=JSON.parse(String(init.body));taskRequests.push({key,body});writes.push(path);const duplicate=taskReceipts.has(key);if(!duplicate){revision=body.expectedRevision+1;title=body.fields.title;notes=body.fields.notes;taskReceipts.set(key,{id,kind:'todo',draft:body.fields,source:{id:'22222222-2222-4222-8222-222222222222',system:'website',externalId:id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'todo',input:{}}},revision,syncState:'draft',externalStatus:null});}if(loseTask){loseTask=false;throw Error('lost after commit');}return Response.json({entry:taskReceipts.get(key),duplicate});}if(retained&&path==='/api/platform/personal/journal'){assert.equal(new Headers(init?.headers).get('idempotency-key'),retained.command.key);assert.deepEqual(JSON.parse(String(init?.body)),retained.command.body);writes.push(path);return Response.json({entry:retained.entry,duplicate:true},{status:201});}writes.push(path);throw Error('unexpected mutation '+path);};
  return{id,fetcher,writes,storage,taskRequests,withTopics(){const available={id:'33333333-3333-4333-8333-333333333333',sourceId:'44444444-4444-4444-8444-444444444444',revision:2},missing={id:'55555555-5555-4555-8555-555555555555',sourceId:'66666666-6666-4666-8666-666666666666',revision:7};personal={domain:null,project:null,topics:[missing,available]};extras.push({id:available.id,kind:'inbox',draft:{title:'Available synthetic topic',text:'',occurredOn:null,disposition:'reference',personal:{type:'topic'}},source:{id:available.sourceId,system:'website',externalId:available.id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'topic',input:{}}},revision:available.revision,syncState:'draft',externalStatus:null});return{available,missing};},loseTaskResponse(){loseTask=true;},pendingJournal(){const command=makePersonalCommand({ownerId:owner,spaceId:space},'journal',null,{title:'Retained journal',text:'Journal pending text',occurredOn:null},'retained-journal-ui',true);const recordId='99999999-9999-4999-8999-999999999999';retained={command,entry:{id:recordId,kind:'inbox',draft:{...command.body.fields,disposition:'reference'},source:{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',system:'website',externalId:recordId,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'journal',input:command.body}},revision:1,syncState:'draft',externalStatus:null}};storage.set('lifeos.personal.pending.v1:'+owner+':'+space,JSON.stringify(command));},holdIdentity(){gate=new Promise<void>(r=>release=r);},releaseIdentity(){gate=null;release?.();},changeBinding(mode:'owner'|'space'){if(mode==='owner')owner='other-owner';else space='other-space';title='Other binding title';notes='Other binding notes';},remoteEdit(){revision++;title='Remote updated title';notes='Remote updated notes';},remoteDelete(){deleted=true;}};
 }
 /** Runs the real host, controller and editor with separate hook lifecycles; only React/DOM and Radix boundaries are stubbed. */
@@ -31,7 +31,7 @@ function harness(f:ReturnType<typeof fixture>){
  const editor=load('../src/personal-candidate/task-editor.tsx',{'react/jsx-runtime':jsx,react:editorHooks.react,'../ui-review/ui/dialog':{Dialog:'dialog-root',DialogContent:'dialog-content',DialogTitle:'h2',DialogDescription:'p'},'./editor':editorModule,'./task-editor-state':stateModule,'./task-editor.module.css':{default:{}}});
  const host=load('../src/personal-candidate/connected-workspace.tsx',{'react/jsx-runtime':jsx,react:hostHooks.react,'./workspace-controller':{PersonalWorkspaceController},'./task-editor':editor,'./task-editor.module.css':{default:{}},'./editor':editorModule,'./task-editor-state':stateModule,'./task-cell-draft':{TaskCellDraftMemory},'react-dom':{flushSync:(fn:()=>void)=>fn()}});
  let tree:any;
- function render(){for(let iteration=0;iteration<10;iteration++){changed=false;hostHooks.reset();const hostTree=host.ConnectedPersonalWorkspace({children:(props:any)=>{actions=props;return {type:'workspace',props:{children:props.state.status==='ready'?props.state.data.tasks.map((t:any)=>t.title):props.state.status}};}});const node=find(hostTree,n=>n.type===editor.TaskEditor);if(node){editorMounted=true;editorHooks.reset();const editorTree=editor.TaskEditor(node.props);tree=[hostTree.props.children[0],editorTree];editorHooks.effects();}else{if(editorMounted)editorHooks.dispose();editorMounted=false;tree=hostTree;}hostHooks.effects();if(!changed)return tree;}throw Error('render loop did not settle');}
+ function render(){for(let iteration=0;iteration<10;iteration++){changed=false;hostHooks.reset();const hostTree=host.ConnectedPersonalWorkspace({children:(props:any)=>{actions=props;return {type:'workspace',props:{children:[props.state.status==='ready'?props.state.data.tasks.map((t:any)=>t.title):props.state.status,props.inlineTask?.content]}};}});const node=find(hostTree,n=>n.type===editor.TaskEditor);if(node){editorMounted=true;editorHooks.reset();const editorTree=editor.TaskEditor(node.props);tree=[hostTree.props.children[0],editorTree];editorHooks.effects();}else{if(editorMounted)editorHooks.dispose();editorMounted=false;tree=hostTree;}hostHooks.effects();if(!changed)return tree;}throw Error('render loop did not settle');}
  return{render,appearance:(mode:string)=>themeStore.setPreference(mode),theme:()=>document.documentElement.dataset.lifeosTheme,actions:()=>actions,hidden(){document.visibilityState='hidden';for(const fn of listeners.get('visibilitychange')??[])fn();return render();},visible(){document.visibilityState='visible';for(const fn of listeners.get('visibilitychange')??[])fn();return render();},dispose(){hostHooks.dispose();editorHooks.dispose();}};
 }
 function enterEdit(h:ReturnType<typeof harness>){
@@ -84,9 +84,35 @@ test('recovering an unrelated shared command keeps the concealed task draft and 
  await find(tree,n=>n.type==='button'&&text(n)==='重试同一请求')!.props.onClick();tree=h.render();assert.equal(h.actions().uncertain,false);assert.equal(f.storage.size,0);assert.equal(find(tree,n=>n.type==='input'&&n.props.maxLength===240)?.props.value,'Unsaved title');assert.equal(find(tree,n=>n.type==='textarea')?.props.value,'Unsaved private notes');assert.equal(find(tree,n=>n.type==='fieldset')?.props.disabled,false);assert.deepEqual(f.writes,['/api/platform/personal/journal']);h.dispose();
 });
 
-test('the popup closes only when its own submitted identity and fields are confirmed after a concealed retry',async()=>{
- const f=fixture(),h=harness(f);h.render();await flush();h.render();let tree=dirty(h,f.id);f.loseTaskResponse();await find(tree,n=>n.type==='form')!.props.onSubmit({preventDefault(){}});tree=h.render();assert.equal(h.actions().uncertain,true);assert.equal(find(tree,n=>n.type==='textarea')?.props.value,'Unsaved private notes');h.hidden();h.visible();await flush();tree=h.render();await find(tree,n=>n.type==='button'&&text(n)==='重试同一请求')!.props.onClick();tree=h.render();assert.equal(h.actions().uncertain,false);assert.equal(find(tree,n=>n.type==='textarea'),undefined);assert.equal(f.storage.size,0);assert.equal(f.taskRequests.length,2);assert.deepEqual(f.taskRequests[0],f.taskRequests[1]);assert.equal(h.actions().state.data.tasks[0].revision,4);assert.equal(h.actions().state.data.tasks[0].notes,'Unsaved private notes');h.dispose();
-});
+for(const presentation of ['popup','inline'] as const){
+ test(`the ${presentation} editor closes only after its own submitted fields are confirmed on retry`,async()=>{
+  const f=fixture(),h=harness(f);
+  try{
+   h.render();await flush();h.render();
+   if(presentation==='popup')dirty(h,f.id);
+   else {
+    h.actions().onEditTaskInline({id:f.id,revision:3});
+    find(h.render(),n=>n.type==='textarea')!.props.onChange({target:{value:'Unsaved private notes'}});
+   }
+   f.loseTaskResponse();
+   await find(h.render(),n=>n.type==='form')!.props.onSubmit({preventDefault(){}});
+   let tree=h.render();
+   assert.equal(h.actions().uncertain,true);
+   assert.equal(find(tree,n=>n.type==='textarea')?.props.value,'Unsaved private notes');
+   if(presentation==='inline')assert.equal(h.actions().onLeaveTaskInline(),false);
+   h.hidden();h.visible();await flush();
+   await find(h.render(),n=>n.type==='button'&&text(n)==='重试同一请求')!.props.onClick();
+   tree=h.render();
+   assert.equal(h.actions().uncertain,false);
+   assert.equal(find(tree,n=>n.type==='textarea'),undefined);
+   assert.equal(f.storage.size,0);
+   assert.equal(f.taskRequests.length,2);
+   assert.deepEqual(f.taskRequests[0],f.taskRequests[1]);
+   assert.equal(h.actions().state.data.tasks[0].revision,4);
+   assert.equal(h.actions().state.data.tasks[0].notes,'Unsaved private notes');
+  }finally{h.dispose();}
+ });
+}
 
 // Catches a controller cancellation that clears saving but leaves the editor awaiting preflight.
 test('stopping a held preflight unlocks the same form and retains its draft before the response arrives',async()=>{
@@ -107,4 +133,54 @@ test('changing shared appearance while the real task editor is dirty preserves i
  assert.equal(f.writes.length,0);assert.deepEqual([...f.storage], [['lifeos-ui-theme','system']]);
  await find(h.render(),n=>n.type==='form')!.props.onSubmit({preventDefault(){}});await flush();h.render();
  assert.equal(f.taskRequests.length,1);assert.equal(f.taskRequests[0].body.expectedRevision,3);assert.equal(f.taskRequests[0].body.fields.title,'Unsaved title');assert.equal(f.taskRequests[0].body.fields.notes,'Unsaved private notes');h.dispose();
+});
+
+test('opening inline starts directly with full fields and saves the authoritative task revision', async () => {
+ const f=fixture(),h=harness(f);
+ try {
+  h.render(); await flush(); h.render();
+  h.actions().onEditTaskInline({id:f.id,revision:3});
+  let tree=h.render();
+  assert.equal(h.actions().inlineTask.id,f.id);
+  assert.equal(find(tree,n=>n.type==='dialog-content'),undefined);
+  assert.equal(find(tree,n=>n.type==='textarea')?.props.value,'Original notes');
+  find(tree,n=>n.type==='textarea')!.props.onChange({target:{value:'Updated inline'}});
+  tree=h.render();
+  await find(tree,n=>n.type==='form')!.props.onSubmit({preventDefault(){}});
+  h.render();
+  assert.equal(h.actions().inlineTask,null);
+  assert.equal(f.taskRequests.length,1);
+  assert.equal(f.taskRequests[0].body.expectedRevision,3);
+  assert.equal(h.actions().state.data.tasks[0].notes,'Updated inline');
+ } finally { h.dispose(); }
+});
+
+test('inline draft is guarded across navigation and concealed until the same session is verified', async () => {
+ const f=fixture(),h=harness(f);
+ try {
+  h.render(); await flush(); h.render();
+  h.actions().onEditTaskInline({id:f.id,revision:3});
+  find(h.render(),n=>n.type==='textarea')!.props.onChange({target:{value:'Unsaved inline draft'}});
+  h.render();
+  assert.equal(h.actions().onLeaveTaskInline(),false);
+  h.actions().onOpenTask({id:f.id,revision:3});
+  assert.equal(find(h.render(),n=>n.type==='dialog-content'),undefined);
+  assert.doesNotMatch(text(h.hidden()),/Unsaved inline draft/);
+  h.visible(); await flush();
+  assert.equal(find(h.render(),n=>n.type==='textarea')?.props.value,'Unsaved inline draft');
+  assert.equal(f.writes.length,0);
+ } finally { h.dispose(); }
+});
+
+test('read-only and stale targets cannot start inline editing', async () => {
+ for (const writable of [false,true]) {
+  const f=fixture(writable),h=harness(f);
+  try {
+   h.render(); await flush(); h.render();
+   h.actions().onEditTaskInline({id:f.id,revision:writable?2:3});
+   assert.equal(find(h.render(),n=>n.type==='form'),undefined);
+   assert.equal(h.actions().inlineTask,null);
+   assert.equal(f.writes.length,0);
+  } finally { h.dispose(); }
+ }
 });

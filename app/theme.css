@@ -1,31 +1,34 @@
-/* Neutral semantic tokens following shadcn/ui theming, adapted to this workspace.
- * No external fonts, remote stylesheets or runtime theme service. */
+/* LifeOS semantic colors informed by VS Code Modern and Obsidian Minimal.
+ * See unified-business-ui/design.md for the source references and role mapping. */
 :root{
- --background:#fafafa;--foreground:#18181b;--card:#fff;--card-foreground:#18181b;
- --popover:#fff;--popover-foreground:#18181b;--primary:#4f46e5;--primary-foreground:#fff;
- --secondary:#f4f4f5;--secondary-foreground:#27272a;--muted:#f4f4f5;--muted-foreground:#52525b;
- --accent:#f4f4f5;--accent-foreground:#18181b;--border:#e4e4e7;--input:#d4d4d8;--ring:#4f46e5;
+ --background:#ffffff;--foreground:#1f1f1f;--card:#ffffff;--card-foreground:#1f1f1f;
+ --popover:#f8f8f8;--popover-foreground:#1f1f1f;--primary:#005fb8;--primary-foreground:#ffffff;
+ --secondary:#f8f8f8;--secondary-foreground:#1f1f1f;--muted:#f8f8f8;--muted-foreground:#616161;
+ --accent:#ededed;--accent-foreground:#1f1f1f;--border:#e5e5e5;--input:#8a8a8a;--ring:#005fb8;
+ --lo-chrome:#f8f8f8;--lo-link:#005fb8;
  --danger:#991b1b;--danger-background:#fef2f2;--danger-border:#fca5a5;color-scheme:light;
 }
 :root[data-lifeos-theme=dark]{
- --background:#09090b;--foreground:#fafafa;--card:#18181b;--card-foreground:#fafafa;
- --popover:#18181b;--popover-foreground:#fafafa;--primary:#a5b4fc;--primary-foreground:#18181b;
- --secondary:#27272a;--secondary-foreground:#fafafa;--muted:#27272a;--muted-foreground:#a1a1aa;
- --accent:#27272a;--accent-foreground:#fafafa;--border:#3f3f46;--input:#52525b;--ring:#a5b4fc;
+ --background:#1f1f1f;--foreground:#cccccc;--card:#1f1f1f;--card-foreground:#cccccc;
+ --popover:#2b2b2b;--popover-foreground:#cccccc;--primary:#005fb8;--primary-foreground:#ffffff;
+ --secondary:#2b2b2b;--secondary-foreground:#cccccc;--muted:#2b2b2b;--muted-foreground:#9d9d9d;
+ --accent:#2b2b2b;--accent-foreground:#cccccc;--border:#383838;--input:#6c6c6c;--ring:#4daafc;
+ --lo-chrome:#181818;--lo-link:#4daafc;
  --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
 }
 @media(prefers-color-scheme:dark){:root:not([data-lifeos-theme=light]){
- --background:#09090b;--foreground:#fafafa;--card:#18181b;--card-foreground:#fafafa;
- --popover:#18181b;--popover-foreground:#fafafa;--primary:#a5b4fc;--primary-foreground:#18181b;
- --secondary:#27272a;--secondary-foreground:#fafafa;--muted:#27272a;--muted-foreground:#a1a1aa;
- --accent:#27272a;--accent-foreground:#fafafa;--border:#3f3f46;--input:#52525b;--ring:#a5b4fc;
+ --background:#1f1f1f;--foreground:#cccccc;--card:#1f1f1f;--card-foreground:#cccccc;
+ --popover:#2b2b2b;--popover-foreground:#cccccc;--primary:#005fb8;--primary-foreground:#ffffff;
+ --secondary:#2b2b2b;--secondary-foreground:#cccccc;--muted:#2b2b2b;--muted-foreground:#9d9d9d;
+ --accent:#2b2b2b;--accent-foreground:#cccccc;--border:#383838;--input:#6c6c6c;--ring:#4daafc;
+ --lo-chrome:#181818;--lo-link:#4daafc;
  --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
 }}
 
 /* Shared Chinese business workspace geometry; palettes above remain semantic. */
 :root{
- --lo-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
- --lo-font-body:400 16px/1.6 var(--lo-font-family);--lo-font-title:28px;--lo-font-section:18px;--lo-font-meta:14px;
+ --lo-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei UI","Noto Sans CJK SC","Hiragino Sans GB",sans-serif;
+ --lo-font-body:400 16px/1.625 var(--lo-font-family);--lo-font-title:28px;--lo-font-section:18px;--lo-font-meta:14px;
  --lo-space-1:4px;--lo-space-2:8px;--lo-space-3:12px;--lo-space-4:16px;--lo-space-6:24px;--lo-space-8:32px;--lo-space-12:48px;
  --lo-radius-control:8px;--lo-radius-surface:12px;--lo-header-height:64px;--lo-sidebar-width:232px;--lo-sidebar-collapsed:72px;
  --lo-content-padding:32px;--lo-content-width:1280px;--lo-control-height:44px;

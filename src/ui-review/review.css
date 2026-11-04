@@ -38,7 +38,7 @@
 .lo-shell a:focus-visible,
 .lo-shell input:focus-visible,
 .lo-shell select:focus-visible {
-  outline: 2px solid var(--muted-foreground);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .lo-shell svg {
@@ -88,7 +88,7 @@
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--card);
+  background: var(--lo-chrome);
   width: 100%;
 }
 .lo-brand {
@@ -114,27 +114,11 @@
   align-items: center;
   gap: 10px;
 }
-.lo-header-actions .lo-account {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 16px;
-  padding: 4px 8px;
-}
-.lo-account-avatar {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--muted);
-  font-size: 16px;
-  font-weight: 550;
-}
 .lo-shell .lo-icon-button {
-  padding: 10px;
   display: grid;
   place-items: center;
+  width: 44px;
+  padding: 0;
 }
 .lo-mobile-menu {
   display: none !important;
@@ -152,7 +136,7 @@
   flex-direction: column;
   padding: 20px 12px 14px;
   border-right: 1px solid var(--border);
-  background: var(--card);
+  background: var(--lo-chrome);
 }
 .lo-nav {
   display: grid;
@@ -429,7 +413,7 @@
   flex: 1;
   color: var(--muted-foreground);
 }
-.lo-search input {
+.lo-shell .lo-search input:not([type="radio"]):not([type="checkbox"]) {
   border: 0;
   width: 100%;
   background: transparent;
@@ -728,34 +712,75 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
-.lo-settings {
-  max-width: 640px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 24px;
-  display: grid;
-  gap: 20px;
+.lo-content.lo-content-settings {
+  max-width: 720px;
 }
-.lo-settings > div {
+.lo-content-settings .lo-page-heading {
+  justify-content: center;
+}
+.lo-settings {
+  display: grid;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.lo-settings .lo-settings-links {
+  display: grid;
+}
+.lo-settings a,
+.lo-settings .lo-logout {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 12px clamp(16px, 4vw, 24px);
+  min-height: 52px;
+  text-decoration: none;
 }
-.lo-settings > div > span {
-  color: var(--muted-foreground);
-  font-size: 16px;
+.lo-settings a + a,
+.lo-settings .lo-settings-links + .lo-logout {
+  border-top: 1px solid var(--border);
 }
-.lo-settings strong {
-  font-size: 16px;
-  font-weight: 500;
+.lo-settings a {
+  color: var(--foreground);
 }
-.lo-settings p {
-  font-size: 16px;
-  color: var(--muted-foreground);
+.lo-settings a:hover {
+  background: var(--accent);
 }
-.lo-settings > button {
+.lo-settings > button:not(.lo-logout) {
   justify-self: start;
+  margin: 12px;
+}
+.lo-task-categories {
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.lo-task-categories summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.lo-task-categories summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.lo-task-categories .lo-category-entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+.lo-task-categories > .lo-category-entries {
+  padding-bottom: 12px;
+}
+.lo-task-categories a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--lo-link);
+}
+.lo-unavailable {
+  color: var(--muted-foreground);
 }
 .lo-shell .lo-detail {
   display: block;
@@ -837,7 +862,7 @@
   border-right: 1px solid var(--border);
   border-radius: 0;
   padding: 22px 14px 14px;
-  background: var(--card);
+  background: var(--lo-chrome);
   color: var(--foreground);
   gap: 0;
 }
@@ -902,8 +927,7 @@
     padding: 10px !important;
   }
   .lo-header-divider,
-  .lo-header-context,
-  .lo-account > span:last-child {
+  .lo-header-context {
     display: none;
   }
   .lo-header-actions {
@@ -912,9 +936,6 @@
   .lo-brand {
     font-size: 18px;
     min-width: 0;
-  }
-  .lo-header-actions .lo-account {
-    padding: 4px;
   }
   .lo-body,
   .lo-is-collapsed .lo-body {
@@ -1102,9 +1123,6 @@
   .lo-entity-list button > span {
     font-size: 16px;
   }
-  .lo-settings {
-    padding: 20px;
-  }
   .lo-detail dl > div {
     grid-template-columns: 78px minmax(0, 1fr);
   }
@@ -1213,10 +1231,6 @@
 .lo-shell .lo-metric{display:flex;flex-direction:column;align-items:flex-start;border-radius:0;text-align:left;padding:22px 24px}
 .lo-shell .lo-metric:disabled{opacity:1;cursor:default}
 .lo-metric:focus-visible{position:relative;z-index:1}
-.lo-settings details{padding:16px 0;border-block:1px solid var(--border)}
-.lo-settings summary{min-height:44px;align-content:center;cursor:pointer;color:var(--foreground)}
-.lo-settings-links{display:flex;gap:16px;flex-wrap:wrap}
-.lo-settings a{display:inline-flex;align-items:center;min-height:44px}
 .lo-shell .lo-inline-error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
 
 /* Shared workspace rhythm; details retain their own scroll and focus boundary. */
@@ -1228,22 +1242,24 @@
 .lo-metrics strong{font-variant-numeric:tabular-nums}.lo-task-title{text-align:left}
 .lo-mobile-sidebar{overflow:auto;overscroll-behavior:contain;padding-bottom:max(16px,env(safe-area-inset-bottom))!important}
 .lo-skip{position:absolute;top:-100px;left:16px;z-index:100;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 16px}
-.lo-skip:focus{top:8px}.lo-mobile-help{display:none!important}.lo-mobile-read-only{display:none!important}
+.lo-skip:focus{top:8px}.lo-mobile-read-only{display:none!important}
 @media(max-width:850px){
  .lo-header{gap:8px;padding-inline:8px;min-height:56px}
- .lo-header-actions{gap:4px;flex:none}.lo-header-help,.lo-header-actions>[data-slot="badge"]{display:none!important}
- .lo-mobile-help{display:flex!important}.lo-mobile-read-only{display:inline-flex!important}.lo-shell .lo-brand{font-size:18px;min-width:52px}
+ .lo-header-actions{gap:4px;flex:none}.lo-header-actions>[data-slot="badge"]{display:none!important}
+ .lo-mobile-read-only{display:inline-flex!important}.lo-shell .lo-brand{font-size:18px;min-width:52px}
  .lo-shell .lo-mobile-menu{min-width:44px;width:44px;padding:8px!important}
- .lo-shell .lo-account{min-width:44px;width:44px;padding:4px}
  .lo-page-heading{flex-wrap:wrap}.lo-page-actions{margin-left:auto}
 }
-/* Keep the primary route group compact; all other business pages remain discoverable. */
-.lo-shell .lo-sidebar{overflow-y:auto;overscroll-behavior:contain}
-.lo-more-business{min-width:0}
-.lo-more-business>summary{display:flex;align-items:center;gap:11px;min-height:44px;padding:10px 12px;cursor:pointer;color:var(--muted-foreground);font-size:16px}
-.lo-more-business>summary:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
-.lo-more-business>nav{display:grid;gap:4px;padding-left:12px}
-.lo-is-collapsed .lo-sidebar .lo-more-business>summary{justify-content:center;padding:10px}
-.lo-is-collapsed .lo-sidebar .lo-more-business>summary>span{display:none}
-.lo-is-collapsed .lo-sidebar .lo-more-business>nav a{white-space:normal;overflow-wrap:anywhere}
 .lo-shell .lo-mobile-sidebar{overflow-y:auto;overscroll-behavior:contain}
+
+.lo-settings-arrow { margin-inline-start: auto; color: var(--muted-foreground); }
+
+
+.lo-overview-task-list { display: flex; flex-direction: column; }
+.lo-overview-task.lo-task-row {
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  column-gap: 4px;
+}
+.lo-overview-grid .lo-overview-task .lo-task-status { display: none; }
+.lo-overview-task-actions { display: flex; grid-column: 4; }
+.lo-overview-editor { min-width: 0; }

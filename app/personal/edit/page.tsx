@@ -8,7 +8,7 @@ import type {PersonalType} from '../../../src/personal-candidate/config';
 import {validateId} from '../../../src/platform/domain';
 
 export const dynamic='force-dynamic';
-export const metadata={title:'LifeOS · 本人空间',robots:{index:false,follow:false}};
+export const metadata={title:'LifeOS · 工作台',robots:{index:false,follow:false}};
 export default async function Page({searchParams}:{searchParams:Promise<{type?:string;id?:string}>}){
  let principal=null;
  try{principal=await readPlatformPagePrincipal(await headers());}catch{}
@@ -18,5 +18,5 @@ export default async function Page({searchParams}:{searchParams:Promise<{type?:s
  if(type==='todo')return <LivePersonalWorkspace showApiKeys={process.env[keyManagementFlag]==='1'} initialPage="tasks" initialTaskId={q.id} initialCreateTask={q.id===undefined}/>;
  let id:string|undefined;
  try{if(q.id)id=validateId(q.id);}catch{}
- return <PersonalWorkspace initialType={type} initialId={id} returnHref="/personal"/>;
+ return <PersonalWorkspace initialType={type} initialId={id} returnHref="/personal" focused/>;
 }

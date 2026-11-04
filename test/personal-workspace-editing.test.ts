@@ -25,13 +25,14 @@ function load(file:string):any {
 }
 const {LifeOSWorkspace}=load('src/ui-review/workspace.tsx');
 const {PersonalRecordForm}=load('src/personal-candidate/record-form.tsx');
+const {SourceSummary}=load('src/ui-review/source-summary.tsx');
 const task={id:'11111111-1111-4111-8111-111111111111',revision:3,title:'Synthetic reminder',notes:'',status:'open' as const,dueOn:null,area:null,project:null,inInbox:null,sourceLabel:'Apple 提醒事项',sourceCapturedAt:'2026-10-25T03:00:00Z'};
 function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
  const props:LifeOSWorkspaceProps={state:{status:'ready',data:{tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']},initialPage:'tasks',initialView:'list',onOpenTask:()=>{},onCreateTask:()=>{},...overrides};
  return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
 }
 test('writable task view exposes editing and real category routes without inventing empty category options',()=>{
- const html=workspace({initialPage:'settings'});assert.match(html,/分类管理/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
+ const html=workspace();assert.match(html,/分类管理/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
  for(const type of ['domain','project','topic'])assert.match(html,new RegExp('href="/personal/edit\\?type='+type+'"'));
  assert.doesNotMatch(html,/<option[^>]*>[^<]*(?:示例|默认项目|默认领域)/);
 });
@@ -40,12 +41,12 @@ test('read-only and unverified workspace never expose category creation and labe
   const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="编辑待办：/);
  }
 });
-test('source summary uses full snapshot totals and original Apple interval separately from website read',()=>{
- const html=workspace({initialPage:'settings'});assert.match(html,/全部待办[\s\S]*3/);assert.match(html,/Apple 提醒事项[\s\S]*2/);assert.match(html,/手工录入[\s\S]*1/);assert.match(html,/2026-10-25T03:00:00Z/);assert.match(html,/2026-10-26T04:00:00Z/);assert.match(html,/2026-10-27T09:00:00Z/);assert.match(html,/非实时|不是实时/);assert.match(html,/不会.*(?:写回|反写).*Apple/);
-});
-test('partial snapshot and missing capture metadata never imply full totals or zero source coverage',()=>{
- const html=workspace({initialPage:'settings',state:{status:'ready',data:{tasks:[{...task,sourceCapturedAt:null}],areas:[],projects:[],coverage:'partial',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}}});
- assert.match(html,/全部待办[\s\S]*未知/);assert.match(html,/Apple.*读取时间.*未提供|Apple.*读取.*未知/);
+test('source summary keeps total and original Apple timing semantics when rendered',()=>{
+ const data={tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'};
+ const html=renderToStaticMarkup(React.createElement(SourceSummary,{data}));
+ assert.match(html,/全部待办[\s\S]*3/);assert.match(html,/Apple 提醒事项[\s\S]*2/);assert.match(html,/手工录入[\s\S]*1/);assert.match(html,/2026-10-25T03:00:00Z/);assert.match(html,/2026-10-26T04:00:00Z/);assert.match(html,/2026-10-27T09:00:00Z/);assert.match(html,/非实时|不是实时/);assert.match(html,/不会.*(?:写回|反写).*Apple/);
+ const partial=renderToStaticMarkup(React.createElement(SourceSummary,{data:{...data,tasks:[{...task,sourceCapturedAt:null}],coverage:'partial'}}));
+ assert.match(partial,/全部待办[\s\S]*未知/);assert.match(partial,/Apple.*读取时间.*未提供|Apple.*读取.*未知/);
 });
 test('empty relationship form retains four statuses and only real writable category creation',()=>{
  const props={type:'todo',fields:{title:'Synthetic',text:'',date:'',status:'open'},setFields:()=>{},confirmed:false,setConfirmed:()=>{},options:{domain:[],project:[],topic:[]},allowedTypes:['todo','journal','project','domain','topic'],disabled:false,onSubmit:()=>{},onCancel:()=>{}};
@@ -61,7 +62,7 @@ test('writable workspace hides category creation for restricted or unknown type 
   const html=workspace({access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes}});
   assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);
  }
- const html=workspace({initialPage:'settings',access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','domain']}});
+ const html=workspace({access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','domain']}});
  assert.match(html,/href="\/personal\/edit\?type=domain"/);assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:project|topic)"/);
 });
 test('enabled form does not offer category creation without verified type capabilities',()=>{
@@ -72,10 +73,12 @@ test('enabled form does not offer category creation without verified type capabi
  }
 });
 
-test('task view keeps data details and categories in settings, with real journal calendar and export links',()=>{
- const html=workspace();assert.doesNotMatch(html,/非实时|不是实时|lo-edit-hint|lo-category-entries/);
- assert.match(html,/href="\/personal\/edit\?type=journal"/);assert.match(html,/href="\/personal\/schedule"/);
- const settings=workspace({initialPage:'settings'});assert.match(settings,/数据与权限/);assert.match(settings,/href="\/personal\/settings\/data"/);
+test('settings centers the page heading and keeps only account actions',()=>{
+ const settings=workspace({initialPage:'settings',onLogout:()=>{},settingsContent:React.createElement('a',{href:'/account/api-keys'},'API 密钥')});
+ assert.match(settings,/lo-content-settings/);
+ assert.match(settings,/API 密钥/);assert.match(settings,/退出登录/);
+ assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|刷新数据/);
+ assert.match(workspace(),/分类管理/);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
  const html=workspace({initialPage:'overview'});
@@ -84,23 +87,22 @@ test('overview metrics are actionable and unknown metrics are disabled',()=>{
  assert.equal((unknown.match(/<button[^>]*aria-label="(?:待办|今日到期|已逾期|项目)：未知"[^>]*disabled/g)||[]).length,4);
 });
 
-test('private Header exposes all appearance modes before opening settings',()=>{
+test('private Header exposes a single appearance action before opening settings',()=>{
  for(const initialPage of ['overview','tasks','settings'] as const){
   const html=workspace({initialPage}),header=html.match(/<header\b[\s\S]*?<\/header>/)?.[0]??'';
-  for(const value of ['light','dark','system'])assert.match(header,new RegExp('type="radio"[^>]*value="'+value+'"|value="'+value+'"[^>]*type="radio"'));
-  assert.match(header,/外观模式/);
+  assert.equal((header.match(/data-slot="theme-toggle"/g)??[]).length,1);
+  assert.match(header,/aria-label="切换到深色模式"/);
  }
 });
 
-test('personal business navigation uses canonical diary/schedule/data and exposes more business on desktop and mobile',()=>{
- const html=workspace({initialPage:'settings'});
- assert.match(html,/href="\/personal\/edit\?type=journal"/);
- assert.match(html,/href="\/personal\/schedule"/);
- assert.match(html,/href="\/personal\/settings\/data"/);
- assert.match(html,/更多业务/);
- assert.doesNotMatch(html,/href="\/review\/admin/);
+test('personal navigation hides unfinished business and record management',()=>{
+ for(const initialPage of ['overview','tasks','settings'] as const){
+  const html=workspace({initialPage});
+  assert.doesNotMatch(html,/href="\/personal\/(?:schedule|settings\/data|edit\?type=journal)"|更多业务|href="\/review\/admin/);
+  assert.match(html,/aria-label="待办"/);
+  assert.match(html,/aria-label="帮助"/);
+ }
 });
-
 function rawComponent(file:string,snapshot:Record<number,unknown>={}){
  let at=0;const hooks={...React,useEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(initial:unknown)=>{const i=at++;return [i in snapshot?snapshot[i]:typeof initial==='function'?(initial as Function)():initial,()=>{}];}};
  const m={exports:{} as any};new Function('require','module','exports',ts.transpileModule(readFileSync(file,'utf8'),{fileName:file,compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)((name:string)=>{

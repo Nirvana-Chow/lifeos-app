@@ -6,9 +6,9 @@ LifeOS has two workspace shells with inconsistent controls, typography and appea
 
 ## What Changes
 
-- Apply the existing neutral visual language and indigo action accent across current business pages, forms, dialogs and honest empty, error and unavailable states.
-- Keep light, dark and system appearance directly available in both Headers, synchronized by one root lifecycle and the existing pre-paint preference protocol.
-- Use canonical journal editing and exact owner/MFA-gated private business destinations while preserving editor navigation guards.
+- Use the VS Code Modern light and dark color hierarchy as the palette baseline for business pages, forms, tables and dialogs.
+- Use one labeled sun/moon button in the shared header. The first visit follows the system, and a click switches between light and dark.
+- Focus the primary workspace on Overview and Todo. Allow direct inline editing from Overview and a separate detail action. Move categories into Todo and keep only account actions in centered Settings. Hide unfinished links and the old generic record-management entry. Existing journal bookmarks still lead to a focused editor.
 - Use the fixed-source free ReUI Data Grid for current editable and read-only tables, retain the authoritative record/save adapter, and remove VTable runtime and type dependencies. The previous renderer remains a fixed comparison baseline, not a second active implementation.
 - Preserve the original five-task execution mapping. Shared theme and navigation implementations carry inherited completion status; equivalent renderer measurements, rendered integration and final delivery remain open until their full evidence exists.
 
