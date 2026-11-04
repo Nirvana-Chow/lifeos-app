@@ -47,6 +47,18 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      organization-postgres:
+        # Independent organization service; never resets the legacy/recovery fixtures.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55440:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - name: Check out the exact source head, without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -82,6 +94,40 @@ jobs:
         env:
           LIFEOS_PLATFORM_CANDIDATE: '0'
         run: node scripts/check-built-platform.mjs
+      - name: Qualify native MFA same-key scopes through mounted Next PATCH and real issuer socket
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+          RUN_ORGANIZATION_NETWORK_TESTS: '1'
+        run: |
+          set -euo pipefail
+          test ! -e /run/lifeos-agent-issuer
+          sudo mkdir -m 0700 /run/lifeos-agent-issuer
+          sudo chown "$(id -u):$(id -g)" /run/lifeos-agent-issuer
+          trap 'rmdir /run/lifeos-agent-issuer' EXIT
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-network.xml" test/organization-key-network.integration.test.ts
+          python3 - <<'PY_ORGANIZATION_HTTP'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'organization-network.xml')).getroot().iter('testcase'))
+          assert len(cases) == 1, f'Expected one native MFA/Next/socket lifecycle, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Native scope HTTP skip or failure is not acceptance'
+          print('PASS: 1 native TOTP + mounted Next PATCH + real issuer socket lifecycle; zero skips. Synthetic HTTP backend only, no new TLS/browser/production acceptance.')
+          PY_ORGANIZATION_HTTP
+      - name: Qualify organization SQL scope CAS producer fences ordered locks and ACL readiness
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-pg.xml" test/organization-agent-postgres.integration.test.ts
+          python3 - <<'PY_ORGANIZATION_PG'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'organization-pg.xml')).getroot().iter('testcase'))
+          assert len(cases) == 19, f'Expected 19 organization PG leaf cases, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Organization PG skip or failure is not acceptance'
+          print('PASS: 19 organization PG leaf cases; zero skips, source/run-bound independent service.')
+          PY_ORGANIZATION_PG
       - name: Prepare the empty runner-local synthetic PostgreSQL fixture
         run: |
           node --input-type=module <<'JS'

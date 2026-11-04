@@ -67,6 +67,8 @@ test('OPT-IN isolated PostgreSQL Agent grants, revocation and todo write/readbac
 
   try {
     await verifyRestrictedPool(runtime as SqlPool);
+    assert.equal((await runtime.query("SELECT to_regprocedure('lifeos_agent.assert_business_grant(text,text,text,text[])') AS business")).rows[0].business,null,
+      'Legacy todo qualification must really run before 0011, with organization disabled');
     await checkKeyRole(issuer, roles.issuer, true);
     await checkKeyRole(verifier, roles.verifier, false);
     const {rows: [runtimeGrants]} = await runtime.query(
