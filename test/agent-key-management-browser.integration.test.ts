@@ -339,12 +339,18 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await newKey.click();
     await page.locator('[name="name"]').fill('Synthetic uncertain');
     unknownResponse=true;failReadback=true;
+    const automaticReadback=page.waitForResponse(response=>{
+      const url=new URL(response.url());
+      return url.origin===origin && url.pathname===keyEndpoint && !url.search && response.request().method()==='GET';
+    });
     await page.getByRole('button',{name:'创建密钥',exact:true}).click();
     await expect(createDialog.getByRole('status')).toContainText('创建结果未确认');
     await page.keyboard.press('Escape');
     await expect(createDialog).toBeVisible();
     await expect(createDialog.getByRole('button',{name:'创建密钥',exact:true})).toBeDisabled();
     assert.equal(posts.length,3,'unknown issuance waits for list readback before retry');
+    assert.equal((await automaticReadback).status(),503);
+    await expect(createDialog.getByRole('button',{name:'重新读取密钥列表',exact:true})).toBeEnabled();
     failReadback=false;
     await createDialog.getByRole('button',{name:'重新读取密钥列表',exact:true}).click();
     await expect(createDialog.getByRole('button',{name:'创建密钥',exact:true})).toBeEnabled();
