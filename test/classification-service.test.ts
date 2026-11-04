@@ -157,3 +157,14 @@ test('memory plan receipt DAO filters both owner and space and review committed 
  for(const [owner,space] of [['foreign-owner',config.spaceId],[config.ownerId,'foreign-space']])await f.port.classificationTransaction(owner,space,'scoped-read',async tx=>assert.equal(await tx.classificationPlanReceipt(p.planId),null));
  const original=f.port.classificationTransaction.bind(f.port);f.port.classificationTransaction=(o,s,k,fn)=>original(o,s,k,tx=>fn({...tx,classificationPlanCommitted:async()=>false}));const review=await f.service.review(f.owner,p.planId);assert.equal(review.committed,true);assert.deepEqual(review.receipt,result);
 });
+
+for(const staleReason of ['expired-plan','changed-policy'] as const)for(const waitAt of ['plan','records'] as const)for(const producerExpires of [true,false])test(`historical review ${staleReason} after ${waitAt} wait ${producerExpires?'rejects expired producer':'allows live producer with changed revision'}`,async()=>{
+ const f=await fixture(),p=await f.service.preview(f.agent,{changes:f.changes});await f.service.approve(f.owner,body(p));const result=await f.service.commit(f.owner,body(p),'historical-expiry-review');
+ if(staleReason==='expired-plan')f.setNow(Date.parse(p.expiresAt)+1);else f.setPolicy('changed-policy');
+ const before={rows:structuredClone(f.port.rows),history:structuredClone(f.port.historyRows),receipts:structuredClone(f.port.classificationReceipts)};
+ const original=f.port.classificationTransaction.bind(f.port);
+ // The transaction's producer fence has already succeeded. Only the trusted live lookup changes at the wait boundary.
+ const afterWait=()=>{if(producerExpires)f.setActive(false);else f.setRevision('b'.repeat(64));};
+ f.port.classificationTransaction=(owner,space,key,fn)=>original(owner,space,key,tx=>fn({...tx,...(waitAt==='plan'?{lockClassificationPlan:async(id:string)=>{await tx.lockClassificationPlan(id);afterWait();}}:{get:async(kind:Parameters<typeof tx.get>[0],id:string)=>{const row=await tx.get(kind,id);afterWait();return row;}})}));
+ try{if(producerExpires)await assert.rejects(f.service.review(f.owner,p.planId),status(403));else{const review=await f.service.review(f.owner,p.planId);assert.equal(review.stale,true);assert.equal(review.committed,true);assert.deepEqual(review.receipt,result);}assert.deepEqual({rows:f.port.rows,history:f.port.historyRows,receipts:f.port.classificationReceipts},before);}finally{f.port.classificationTransaction=original;}
+});

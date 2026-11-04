@@ -89,7 +89,8 @@ export class ClassificationService {
    for(const row of records.values()){if(!row||row.ownerId!==this.config.ownerId)continue;const type=personalEntryType(row,this.config.spaceId);if(type==='todo')todos.push({id:row.id,sourceId:row.source.id,revision:row.revision,title:(row.draft as TodoDraft).title});else if(type==='project'||type==='domain'||type==='topic')organization.push({type,id:row.id,sourceId:row.source.id,revision:row.revision,title:'title'in row.draft?row.draft.title:''});}
    // Historical receipts remain readable even when current records or policy make the plan stale.
    const rawReceipt=await tx.classificationPlanReceipt(id),receipt=rawReceipt?decodeReceipt(rawReceipt):null;if(receipt)assertReceiptMatchesPlan(receipt,plan);
-   await this.authorize(actor,'reviewTodoClassification',false,false);return{preview:plan.preview,approval,committed:receipt!==null,stale,receipt:receipt?structuredClone(receipt.result):null,labels:{todos,organization}};
+   // SHARE preserves the producer's read scopes, but not its lifetime; stale plans may skip current()'s producer lookup.
+   await this.producer(plan.grantId);await this.authorize(actor,'reviewTodoClassification',false,false);return{preview:plan.preview,approval,committed:receipt!==null,stale,receipt:receipt?structuredClone(receipt.result):null,labels:{todos,organization}};
   });
  }
  async previewSelection(actor:TrustedActor,basePlanId:string,input:unknown):Promise<ClassificationPreview>{

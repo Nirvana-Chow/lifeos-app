@@ -287,6 +287,21 @@ test('classification native atomic service, authority and deterministic concurre
    const review=await reader.review(f.owner,f.plan.planId);assert.deepEqual(review.receipt,result);assert.equal(review.committed,true);assert.equal(review.stale,true);assert.equal(review.labels.todos.find(row=>row.id===f.todos[0].id)?.revision,3);assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),before);
    await admin.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[f.grant]);await assert.rejects(reader.review(f.owner,f.plan.planId),{status:403});assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),before);
   });
+  await t.test('historical receipt review rejects producer natural expiry after a successful fence while awaiting the plan lock',async()=>{
+   const f=await make();await f.svc.commit(f.owner,confirmation(f.plan),randomUUID());
+   const pool=fixturePool('runtime',1),control=await admin.connect(),entered=barrier();let pid=0,work:ReturnType<typeof outcome>|undefined;
+   const before=await counts(f.todos.map(x=>x.id),f.plan.planId);
+   const reader=service(f.authority,new PostgresPlatformRepository(observedPool(pool,async(_sql,_v,p)=>{pid=p;entered.release();},true),true,true,{organization:true,classification:true}),()=>Date.parse(f.plan.expiresAt)+1);
+   try{
+    await control.query('BEGIN');await control.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([fixture.ownerId,'classification-plan-v1',fixture.spaceId,f.plan.planId])]);const cp=(await control.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+    // Set the deadline before review takes SHARE; do not mutate the grant while it is held.
+    await admin.query('UPDATE lifeos_agent.apikey SET "expiresAt"=clock_timestamp()+interval \'1 second\' WHERE id=$1',[f.grant]);
+    work=outcome(reader.review(f.owner,f.plan.planId));await signal(entered.promise);await blocked(admin,pid,cp);
+    assert.ok(await readCurrentAgentGrant(verifier,f.grant),'Producer must be live after the successful fence and before the lock wait expires');
+    const deadline=Date.now()+4000;while(await readCurrentAgentGrant(verifier,f.grant)){assert.ok(Date.now()<deadline,'Synthetic producer did not naturally expire');await new Promise<void>(resolve=>setTimeout(resolve,20));}
+    await control.query('COMMIT');assert.equal((await work).error?.status,403);assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),before);
+   }finally{await control.query('ROLLBACK');await Promise.allSettled([work]);control.release();await pool.end();}
+  });
   for(const action of ['approve','commit'] as const)await t.test('historical before-only target update wins physical lock against '+action,async()=>{
    const f=await make();await f.svc.commit(f.owner,confirmation(f.plan),randomUUID());
    const fields={title:'Synthetic project revision 2',text:'',occurredOn:null,personal:(f.project.draft as import('../src/platform/domain.ts').InboxDraft).personal};
