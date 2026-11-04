@@ -22,8 +22,16 @@ def check(profile, report):
     expected = profiles[profile]
     data = Path(report).read_bytes()
     require(0 < len(data) <= 2_000_000, 'empty or oversized report')
-    require(b'<!DOCTYPE' not in data and b'<!ENTITY' not in data, 'unsupported XML declarations')
-    root = ET.fromstring(data)
+    # Decode before scanning/parsing: ElementTree otherwise auto-detects UTF-16
+    # and can expand declarations that an ASCII byte scan never observes.
+    text = data.decode('utf-8')
+    require('\x00' not in text, 'NUL is not allowed in UTF-8 XML')
+    declaration = re.match(r'\ufeff?<\?xml\s.*?\?>', text, re.DOTALL)
+    if declaration:
+        encoding = re.search(r"""\bencoding\s*=\s*(['"])(.*?)\1""", declaration.group())
+        require(encoding is None or encoding.group(2).lower() == 'utf-8', 'UTF-8 XML encoding required')
+    require('<!DOCTYPE' not in text and '<!ENTITY' not in text, 'unsupported XML declarations')
+    root = ET.fromstring(text)
     require(root.tag == 'testsuites', 'expected Node testsuites root')
     # A skipped top-level test may be a direct testcase rather than a suite.
     require(not any(node.tag in ('skipped', 'failure', 'error') for node in root.iter()),

@@ -9,7 +9,7 @@ const passed = readFileSync(new URL('./fixtures/classification-junit/postgres-pa
 const browserPassed = readFileSync(new URL('./fixtures/classification-junit/browser-passed.xml', import.meta.url), 'utf8');
 const skipped = readFileSync(new URL('./fixtures/classification-junit/browser-skipped.xml', import.meta.url), 'utf8');
 const checker = new URL('../scripts/check-classification-junit.py', import.meta.url).pathname;
-function check(xml: string, profile = 'postgres') {
+function check(xml: string | Buffer, profile = 'postgres') {
  const directory = mkdtempSync(join(tmpdir(), 'lifeos-junit-gate-'));
  try {
   const report = join(directory, 'result.xml'); writeFileSync(report, xml);
@@ -25,6 +25,26 @@ test('actual enabled Chrome JUnit requires both enabled direct browser cases', (
  const result = check(browserPassed, 'browser');
  assert.equal(result.status, 0, result.stderr);
  assert.match(result.stdout, /0 suites, 2 leaf cases/);
+});
+const entityReport = browserPassed.replace('encoding="utf-8"', 'encoding="utf-16"')
+ .replace('<testsuites>', '<!DOCTYPE testsuites [<!ENTITY prefix "classification">]><testsuites>')
+ .replaceAll('name="classification ', 'name="&prefix; ');
+const utf16leEntity = Buffer.from(entityReport, 'utf16le');
+const utf16beEntity = Buffer.from(utf16leEntity).swap16();
+const byteReports: [string, Buffer][] = [
+ ['UTF-16LE entity report with BOM', Buffer.concat([Buffer.from([0xff, 0xfe]), utf16leEntity])],
+ ['UTF-16LE entity report without BOM', utf16leEntity],
+ ['UTF-16BE entity report with BOM', Buffer.concat([Buffer.from([0xfe, 0xff]), utf16beEntity])],
+ ['UTF-16BE entity report without BOM', utf16beEntity],
+ ['non-UTF-8 encoding declaration over UTF-8 bytes', Buffer.from(browserPassed.replace('encoding="utf-8"', 'encoding="iso-8859-1"'), 'utf8')],
+ ['single-quoted non-UTF-8 encoding declaration', Buffer.from(browserPassed.replace('encoding="utf-8"', "encoding = 'ISO-8859-1'"), 'utf8')],
+ ['NUL in UTF-8 report', Buffer.from(browserPassed + '\0', 'utf8')],
+ ['invalid UTF-8 byte', Buffer.concat([Buffer.from(browserPassed, 'utf8'), Buffer.from([0xff])])],
+];
+for (const [name, bytes] of byteReports) test(`classification JUnit gate rejects raw ${name}`, () => {
+ const result = check(bytes, 'browser');
+ assert.notEqual(result.status, 0, result.stdout);
+ assert.match(result.stderr, /CLASSIFICATION_JUNIT_DENIED/);
 });
 const browserLeaves = browserPassed.match(/<testcase[^>]+\/>/g)!;
 const browserMutations: [string, (xml: string) => string][] = [
