@@ -33,7 +33,7 @@ export class AuthorityService {
   async assertCurrentAuthority(actor: TrustedActor, operationId: string, sourceRefs: readonly AuthoritySourceRef[] = []): Promise<void> {
     const check = this.issued.get(actor);
     // Server-owned policy only; private owner review/approval never enters Agent discovery.
-    const operation = actor.kind === 'owner-session' && ['reviewTodoClassification','approveTodoClassification'].includes(operationId)
+    const operation = actor.kind === 'owner-session' && ['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)
       ? {requiredScopes:[] as readonly AgentScope[]} : agentOperations.find(entry => entry.id === operationId);
     if (!check || !operation || sourceRefs.length) throw Error('Authority unavailable');
     const current = await check();

@@ -52,3 +52,10 @@ test('synthetic classification transaction rolls back a new plan and legacy rece
  assert.equal(port.plans.size,0);assert.equal(port.receipts.size,0);assert.equal(port.historyRows.length,0);
  await port.classificationTransaction(p.ownerId,p.spaceId,'classify-2',async tx=>tx.saveClassificationPlan(p));assert.equal(port.plans.size,1);
 });
+
+test('stored observations are optional only for legacy plans and bind the whole plan digest',()=>{
+ const observed={...plan(),referenceObservationDigest:'e'.repeat(64)};observed.preview.digest=classificationPlanDigest(observed);
+ assert.deepEqual(decodePlan(observed),observed);assert.equal(decodePlan(plan()).referenceObservationDigest,undefined);
+ for(const value of [null,undefined,42,'bad','E'.repeat(64),'a'.repeat(63)]){const bad={...observed,referenceObservationDigest:value};bad.preview={...bad.preview,digest:classificationPlanDigest(bad as never)};assert.throws(()=>decodePlan(bad));}
+ assert.throws(()=>decodePlan({...observed,referenceObservationDigest:'f'.repeat(64)}));
+});

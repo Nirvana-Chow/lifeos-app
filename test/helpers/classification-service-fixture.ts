@@ -16,5 +16,5 @@ export async function fixture(write=false){
  const todos=await Promise.all(['First','Last'].map(async(title,i)=>(await personal.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title,notes:'Keep',status:'open',dueOn:'2026-11-06'}},'seed-todo-'+i)).entry));
  const changes=todos.map(todo=>({todo:{id:todo.id,sourceId:todo.source.id,expectedRevision:todo.revision},before:null,after:{project:{id:project.id,sourceId:project.source.id,revision:project.revision},domain:null,topics:[]}}));
  const owner=(await authority.resolveOwnerActor(new Headers()))!,agent=(await authority.resolveAgentActor('fixture'))!;
- return{port,service,authority,owner,agent,changes,todos,project,setActive:(v:boolean)=>{active=v;},setScopes:(v:readonly AgentScope[])=>{scopes=v;},setWritable:(v:boolean)=>{writable=v;},setSession:(v:boolean)=>{session=v;},setRevision:(v:string)=>{revision=v;},setPolicy:(v:string)=>{policy=v;},setNow:(v:number)=>{now=v;}};
+ return{port,service,personal,authority,owner,agent,changes,todos,project,setActive:(v:boolean)=>{active=v;},setScopes:(v:readonly AgentScope[])=>{scopes=v;},setWritable:(v:boolean)=>{writable=v;},setSession:(v:boolean)=>{session=v;},setRevision:(v:string)=>{revision=v;},setPolicy:(v:string)=>{policy=v;},setNow:(v:number)=>{now=v;}};
 }

@@ -45,6 +45,7 @@ export interface ClassificationTransaction extends Transaction {
  saveClassificationApproval(approval:import('../personal-candidate/classification-contracts.ts').ClassificationApproval):Promise<void>;
  classificationReceipt():Promise<import('../personal-candidate/classification-contracts.ts').ClassificationReceipt|null>;
  classificationPlanCommitted(planId:string):Promise<boolean>;
+ classificationPlanReceipt(planId:string):Promise<import('../personal-candidate/classification-contracts.ts').ClassificationReceipt|null>;
  saveClassificationReceipt(receipt:import('../personal-candidate/classification-contracts.ts').ClassificationReceipt):Promise<void>;
 }
 export interface ClassificationRepository extends PlatformRepository {

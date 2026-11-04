@@ -4,7 +4,7 @@ import {randomUUID,createHmac} from 'node:crypto';
 import {prepareClassificationFixture,fixturePool,fixture} from './helpers/classification-stage-pg.ts';
 import {PostgresPlatformRepository,verifyRestrictedPool} from '../src/platform/postgres.ts';
 import {verifyClassificationPool,verifyClassificationClient,classificationQueries} from '../src/personal-candidate/classification-postgres.ts';
-import {classificationPlanDigest,classificationBindingsDigest,type ClassificationPlan} from '../src/personal-candidate/classification-contracts.ts';
+import {classificationPlanDigest,classificationBindingsDigest,type ClassificationPlan,type ClassificationChange} from '../src/personal-candidate/classification-contracts.ts';
 const enabled=process.env.RUN_CLASSIFICATION_POSTGRES_TESTS==='1';
 function makePlan():ClassificationPlan{const p:ClassificationPlan={schemaVersion:1,proposalRevision:1,ownerId:fixture.ownerId,spaceId:fixture.spaceId,grantId:null,producerAuthorizationRevision:null,policyRevision:'policy-v1',createdAt:'2026-11-05T00:00:00.000Z',preview:{planId:randomUUID(),digest:'a'.repeat(64),expiresAt:'2026-11-05T00:30:00.000Z',changes:[{todo:{id:randomUUID(),sourceId:randomUUID(),expectedRevision:1},before:null,after:{project:null,domain:null,topics:[]}}],unchangedIds:[]}};const preview={...p.preview,unchangedIds:[p.preview.changes[0].todo.id]};const result={...p,preview};return{...result,preview:{...preview,digest:classificationPlanDigest(result)}};}
 test('classification PostgreSQL immutable storage qualification (explicit isolated fixture)',{skip:!enabled},async t=>{
@@ -86,13 +86,21 @@ test('classification PostgreSQL immutable storage qualification (explicit isolat
     const a={planId:p.preview.planId,proposalRevision:1 as const,digest:p.preview.digest,operationIds:['commitTodoClassification'] as const,bindingsDigest:classificationBindingsDigest(p),producerAuthorizationRevision:null,policyRevision:p.policyRevision,approvedAt:'2026-11-05T00:01:00.000Z',expiresAt:p.preview.expiresAt};
     await tx.saveClassificationApproval(a);assert.deepEqual(await tx.classificationApproval(p.preview.planId),a);
     const receipt={requestDigest:'b'.repeat(64),planId:p.preview.planId,result:{planId:p.preview.planId,digest:p.preview.digest,duplicate:false,entries:p.preview.changes.map(c=>({id:c.todo.id,sourceId:c.todo.sourceId,revision:1,personal:null})),unchangedIds:p.preview.unchangedIds}};
-    await tx.saveClassificationReceipt(receipt);assert.deepEqual(await tx.classificationReceipt(),receipt);assert.equal(await tx.classificationPlanCommitted(p.preview.planId),true);assert.equal(await tx.receipt(),null);
+    await tx.saveClassificationReceipt(receipt);assert.deepEqual(await tx.classificationReceipt(),receipt);assert.deepEqual(await tx.classificationPlanReceipt(p.preview.planId),receipt);assert.equal(await tx.classificationPlanCommitted(p.preview.planId),true);assert.equal(await tx.receipt(),null);
    });
   });
   await t.test('owner and space isolation deny reads and inserts outside both boundaries',async()=>{
-   await repo.classificationTransaction('other-fixture-owner',fixture.spaceId,key,async tx=>assert.equal(await tx.getClassificationPlan(p.preview.planId),null));
-   await repo.classificationTransaction(fixture.ownerId,'other-fixture-space',key,async tx=>assert.equal(await tx.getClassificationPlan(p.preview.planId),null));
+   await repo.classificationTransaction('other-fixture-owner',fixture.spaceId,key,async tx=>{assert.equal(await tx.getClassificationPlan(p.preview.planId),null);assert.equal(await tx.classificationPlanReceipt(p.preview.planId),null);});
+   await repo.classificationTransaction(fixture.ownerId,'other-fixture-space',key,async tx=>{assert.equal(await tx.getClassificationPlan(p.preview.planId),null);assert.equal(await tx.classificationPlanReceipt(p.preview.planId),null);});
    const client=await runtime.connect();try{await client.query('BEGIN');await client.query("SELECT set_config('lifeos.owner_id','other-fixture-owner',true),set_config('lifeos.classification_space_id',$1,true)",[fixture.spaceId]);await assert.rejects(client.query('INSERT INTO lifeos_platform.platform_classification_plan(owner_id,space_id,plan_id,digest,proposal_revision,grant_id,plan) VALUES($1,$2,$3,$4,1,NULL,$5)',[p.ownerId,p.spaceId,randomUUID(),p.preview.digest,JSON.stringify(p)]),/row-level security/);}finally{await client.query('ROLLBACK');client.release();}
+  });
+  await t.test('plan receipt DAO reads historical result without its command key',async()=>{
+   await repo.classificationTransaction(fixture.ownerId,fixture.spaceId,'unknown-'+randomUUID(),async tx=>{assert.equal(await tx.classificationReceipt(),null);const receipt=await tx.classificationPlanReceipt(p.preview.planId);assert.equal(receipt?.result.planId,p.preview.planId);assert.equal(receipt?.result.duplicate,false);});
+  });
+  await t.test('native validator accepts legacy and observation plans but rejects malformed or unbound observations',async()=>{
+   for(const observed of [false,true]){const value={...makePlan(),...(observed?{referenceObservationDigest:'e'.repeat(64)}:{})};value.preview={...value.preview,digest:classificationPlanDigest(value)};assert.equal((await admin.query("SELECT lifeos_platform.classification_valid($1::jsonb,'plan') AS valid",[JSON.stringify(value)])).rows[0].valid,true);await repo.classificationTransaction(fixture.ownerId,fixture.spaceId,randomUUID(),tx=>tx.saveClassificationPlan(value));}
+   for(const observation of [null,42,'bad','A'.repeat(64),'a'.repeat(63)]){const value={...makePlan(),referenceObservationDigest:observation};value.preview={...value.preview,digest:classificationPlanDigest(value as never)};assert.equal((await admin.query("SELECT lifeos_platform.classification_valid($1::jsonb,'plan') AS valid",[JSON.stringify(value)])).rows[0].valid,false);}
+   const tampered={...makePlan(),referenceObservationDigest:'e'.repeat(64)};assert.equal((await admin.query("SELECT lifeos_platform.classification_valid($1::jsonb,'plan') AS valid",[JSON.stringify(tampered)])).rows[0].valid,false);
   });
   await t.test('runtime cannot update delete truncate; manager and verifier have no business-table privileges',async()=>{
    for(const name of ['plan','approval','command']){
@@ -271,6 +279,45 @@ test('classification native atomic service, authority and deterministic concurre
     const svc=service(f.authority,new PostgresPlatformRepository(observedPool(pool,async(_s,_v,p)=>{pid=p;entered.release();},true),true,true,{organization:true,classification:true}));
     work=outcome(svc.commit(f.owner,confirmation(f.plan),randomUUID()));await signal(entered.promise);await blocked(admin,pid,cp);await control.query('COMMIT');assert.equal((await work).error.status,403);assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),{revisions:2,histories:2,receipts:0});
    }finally{await control.query('ROLLBACK');await Promise.allSettled([work]);control.release();await pool.end();}
+  });
+  await t.test('native review restores historical receipt with write guard closed after subsequent edits expiry and policy change',async()=>{
+   const f=await make(),result=await f.svc.commit(f.owner,confirmation(f.plan),randomUUID());
+   await personal.mutate(fixture.ownerId,'todo',f.todos[0].id,{spaceId:fixture.spaceId,confirmed:true,expectedRevision:2,fields:{...f.todos[0].draft,title:'Synthetic after receipt',personal:f.changes[0].after}},randomUUID());
+   const reader=new ClassificationService(repo,nativeConfig,{authority:f.authority,assertReady:async()=>{},assertWritable:async()=>{throw Error('Read invoked business writer');},policyRevision:()=> 'changed-policy',now:()=>Date.parse(f.plan.expiresAt)+1}),before=await counts(f.todos.map(x=>x.id),f.plan.planId);
+   const review=await reader.review(f.owner,f.plan.planId);assert.deepEqual(review.receipt,result);assert.equal(review.committed,true);assert.equal(review.stale,true);assert.equal(review.labels.todos.find(row=>row.id===f.todos[0].id)?.revision,3);assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),before);
+   await admin.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[f.grant]);await assert.rejects(reader.review(f.owner,f.plan.planId),{status:403});assert.deepEqual(await counts(f.todos.map(x=>x.id),f.plan.planId),before);
+  });
+  for(const action of ['approve','commit'] as const)await t.test('historical before-only target update wins physical lock against '+action,async()=>{
+   const f=await make();await f.svc.commit(f.owner,confirmation(f.plan),randomUUID());
+   const fields={title:'Synthetic project revision 2',text:'',occurredOn:null,personal:(f.project.draft as import('../src/platform/domain.ts').InboxDraft).personal};
+   await personal.mutate(fixture.ownerId,'project',f.project.id,{spaceId:fixture.spaceId,confirmed:true,expectedRevision:1,fields},randomUUID());
+   const changes:ClassificationChange[]=f.changes.map(c=>({...c,todo:{...c.todo,expectedRevision:2},before:c.after,after:{project:null,domain:null,topics:[]}}));
+   const p=await f.svc.preview(f.agent,{changes});if(action==='commit')await f.svc.approve(f.owner,confirmation(p));
+   const left=fixturePool('runtime',1),right=fixturePool('runtime',1),paused=barrier(),resume=barrier(),entered=barrier();let lp=0,rp=0,one:ReturnType<typeof outcome>|undefined,two:ReturnType<typeof outcome>|undefined,held=false;
+   const editor=new PersonalService(new PostgresPlatformRepository(observedPool(left,async(sql,_v,pid)=>{lp=pid;if(sql.includes('FOR UPDATE OF r')&&!held){held=true;paused.release();await resume.promise;}}),true,true,{organization:true,classification:true}),nativeConfig);
+   const reviewer=service(f.authority,new PostgresPlatformRepository(observedPool(right,async(_s,_v,pid)=>{rp=pid;entered.release();},true),true,true,{organization:true,classification:true}));
+   try{one=outcome(editor.mutate(fixture.ownerId,'project',f.project.id,{spaceId:fixture.spaceId,confirmed:true,expectedRevision:2,fields:{...fields,title:'Synthetic project revision 3'}},randomUUID()));await signal(paused.promise);two=outcome<unknown>(action==='approve'?reviewer.approve(f.owner,confirmation(p)):reviewer.commit(f.owner,confirmation(p),randomUUID()));await signal(entered.promise);await blocked(admin,rp,lp);resume.release();assert.equal((await one).error,null);assert.equal((await two).error.status,409);assert.deepEqual(await counts(f.todos.map(x=>x.id),p.planId),{revisions:4,histories:4,receipts:0});assert.equal((await f.svc.review(f.owner,p.planId)).stale,true);}finally{resume.release();await Promise.allSettled([one,two]);await Promise.all([left.end(),right.end()]);}
+  });
+  for(const approvalFirst of [true,false])await t.test('selection and approval serialize on base plan; '+(approvalFirst?'approval wins':'selection wins without revoking base'),async()=>{
+   const f=await make(),base=await f.svc.preview(f.agent,{changes:f.changes}),left=fixturePool('runtime',1),right=fixturePool('runtime',1),paused=barrier(),resume=barrier(),entered=barrier();let lp=0,rp=0,locks=0,one:ReturnType<typeof outcome>|undefined,two:ReturnType<typeof outcome>|undefined;
+   const leading=service(f.authority,new PostgresPlatformRepository(observedPool(left,async(sql,_v,pid)=>{lp=pid;if(sql.includes('pg_advisory_xact_lock(')&&++locks===2){paused.release();await resume.promise;}}),true,true,{organization:true,classification:true}));
+   const following=service(f.authority,new PostgresPlatformRepository(observedPool(right,async(_s,_v,pid)=>{rp=pid;entered.release();},true),true,true,{organization:true,classification:true}));
+   const selection=(svc:ClassificationService)=>svc.previewSelection(f.owner,base.planId,{selectedTodoIds:[f.todos[1].id]});
+   try{one=outcome<unknown>(approvalFirst?leading.approve(f.owner,confirmation(base)):selection(leading));await signal(paused.promise);two=outcome<unknown>(approvalFirst?selection(following):following.approve(f.owner,confirmation(base)));await signal(entered.promise);await blocked(admin,rp,lp);resume.release();const a=await one,b=await two;assert.equal(a.error,null);if(approvalFirst)assert.equal(b.error.status,409);else{assert.equal(b.error,null);const derived=a.value as {planId:string;expiresAt:string;changes:unknown[]};assert.equal(derived.expiresAt,base.expiresAt);assert.equal(derived.changes.length,1);assert.equal((await f.svc.review(f.owner,derived.planId)).approval,null);assert.ok((await f.svc.review(f.owner,base.planId)).approval);}assert.deepEqual(await counts(f.todos.map(x=>x.id),base.planId),{revisions:2,histories:2,receipts:0});}finally{resume.release();await Promise.allSettled([one,two]);await Promise.all([left.end(),right.end()]);}
+  });
+  for(const operation of ['review','selection'] as const)await t.test(operation+' awaiting native plan lock rejects revoked MFA without returning receipt or storing a plan',async()=>{
+   const {createPlatformAuth}=await import('../src/platform/auth.ts'),{createOwnerAuthority}=await import('../src/agent-authority/owner-adapter.ts');
+   const f=await make(),base=await f.svc.preview(f.agent,{changes:f.changes});if(operation==='review'){await f.svc.approve(f.owner,confirmation(base));await f.svc.commit(f.owner,confirmation(base),randomUUID());}
+   const token='review-mfa-'+randomUUID();await admin.query('INSERT INTO lifeos_platform.platform_session(id,token,"userId","expiresAt","mfaVerified") VALUES($1,$2,$3,clock_timestamp()+interval \'1 hour\',true)',[randomUUID(),token,fixture.ownerId]);
+   const pool=fixturePool('runtime',1),readPool=fixturePool('runtime',2),control=await admin.connect(),entered=barrier();let pid=0,work:ReturnType<typeof outcome>|undefined;
+   const platform={baseURL:fixture.origin,ownerId:fixture.ownerId,ownerEmail:fixture.email,secret:fixture.sessionSecret,databaseURL:'synthetic-unused',sessionSeconds:1800};
+   const nativeAuth=createPlatformAuth(platform,readPool,{requireMfa:true,forceSecureCookies:true,disableSessionRefresh:true,readOnlySessions:true}),authority=createOwnerAuthority(nativeAuth,platform,nativeConfig,id=>readCurrentAgentGrant(verifier,id)),context=await nativeAuth.$context;
+   const cookie=context.authCookies.sessionToken.name+'='+encodeURIComponent(token+'.'+createHmac('sha256',fixture.sessionSecret).update(token).digest('base64')),owner=(await authority.resolveOwnerActor(new Headers({cookie})))!;assert.ok(owner);
+   const svc=service(authority,new PostgresPlatformRepository(observedPool(pool,async(_s,_v,p)=>{pid=p;entered.release();},true),true,true,{organization:true,classification:true}));
+   const before=await counts(f.todos.map(x=>x.id),base.planId),plans=(await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_classification_plan')).rows[0].n;
+   try{await control.query('BEGIN');await control.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([fixture.ownerId,'classification-plan-v1',fixture.spaceId,base.planId])]);const cp=(await control.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+    work=outcome<unknown>(operation==='review'?svc.review(owner,base.planId):svc.previewSelection(owner,base.planId,{selectedTodoIds:[f.todos[0].id]}));await signal(entered.promise);await blocked(admin,pid,cp);await admin.query('UPDATE lifeos_platform.platform_session SET "mfaVerified"=false WHERE token=$1',[token]);await control.query('COMMIT');assert.equal((await work).error.status,403);assert.deepEqual(await counts(f.todos.map(x=>x.id),base.planId),before);assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_classification_plan')).rows[0].n,plans);
+   }finally{await control.query('ROLLBACK');await Promise.allSettled([work]);control.release();await Promise.all([pool.end(),readPool.end()]);}
   });
  }finally{await Promise.all([business.end(),admin.end(),verifier.end(),manager.end()]);}
 });

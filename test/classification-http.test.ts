@@ -14,7 +14,7 @@ test('Agent catalog and actual handlers agree: preview read scopes, commit write
  const grant={grantId:f.agent.grantId,ownerId:f.agent.ownerId,spaceId:f.agent.spaceId,scopes:f.agent.scopes,authorizationRevision:'a'.repeat(64)};let verifies=0,ready=true,writes=0;
  const handler=createAgentHandler({enabled:true,modules:{organization:true,classification:true},fenceWrites:true,config,repository:f.port,verify:async()=>{verifies++;return grant;},readCurrentGrant:async()=>grant,operationAvailable:()=>ready,assertWritable:async()=>{writes++;},classification:authority=>new ClassificationService(f.port,config,{authority,assertReady:async()=>{if(!ready)throw Error('unready');},assertWritable:async()=>{writes++;},policyRevision:()=> 'policy-v1',now:()=>Date.parse('2026-11-05T00:00:00.000Z')})});
  const send=(path:string,method='GET',body?:unknown)=>handler(new Request(origin+path,{method,headers:{host:'fixture.example.invalid',authorization:'Bearer synthetic','content-type':'application/json','idempotency-key':'agent-http-command'},...(body===undefined?{}:{body:JSON.stringify(body)})}));
- const catalog=await (await send('/v2/capabilities')).json();assert.ok(catalog.operations.some((o:{id:string})=>o.id==='previewTodoClassification'));assert.ok(!catalog.operations.some((o:{id:string})=>['commitTodoClassification','approveTodoClassification','reviewTodoClassification'].includes(o.id)));
+ const catalog=await (await send('/v2/capabilities')).json();assert.ok(catalog.operations.some((o:{id:string})=>o.id==='previewTodoClassification'));assert.ok(!catalog.operations.some((o:{id:string})=>['commitTodoClassification','approveTodoClassification','reviewTodoClassification','previewSelectionTodoClassification'].includes(o.id)));
  const before=verifies;const preview=await send('/v1/todo-classifications/preview','POST',{changes:f.changes});assert.equal(preview.status,200);assert.equal(verifies-before,1);assert.equal(writes,0);
  const p=await preview.json();await f.service.approve(f.owner,{planId:p.planId,digest:p.digest,confirmed:true});assert.equal((await send('/v1/todo-classifications/commit','POST',{planId:p.planId,digest:p.digest,confirmed:true})).status,403);
  assert.equal((await send('/v1/todo-classifications/approve','POST',{planId:p.planId,digest:p.digest,confirmed:true})).status,404);
@@ -22,4 +22,15 @@ test('Agent catalog and actual handlers agree: preview read scopes, commit write
  assert.equal((await send('/v1/todo-classifications/preview','POST',{changes:f.changes,padding:'x'.repeat(131072)})).status,413);
  assert.equal((await send('/v1/todo-classifications/preview?owner=forged','POST',{changes:f.changes})).status,404);
  ready=false;assert.equal((await send('/v1/todo-classifications/preview','POST',{changes:f.changes})).status,503);assert.ok(!(await (await send('/v2/capabilities')).json()).operations.some((o:{module:string})=>o.module==='classification'));
+});
+
+test('owner selection endpoint is exact, read-only and never accepts caller provenance',async()=>{
+ const f=await fixture(),p=await f.service.preview(f.agent,{changes:f.changes}),readOnly={...guards,assertWritable:async()=>{throw Error('unexpected write guard');}};
+ assert.equal((await handleOwnerClassificationRequest(request(p.planId+'/preview','POST',{selectedTodoIds:[f.todos[0].id],padding:'x'.repeat(131072)}),f.owner,f.service,readOnly))?.status,413);
+ const r=await handleOwnerClassificationRequest(request(p.planId+'/preview','POST',{selectedTodoIds:[f.todos[1].id]}),f.owner,f.service,readOnly);assert.equal(r?.status,200);assert.deepEqual((await r!.json()).changes,[p.changes[1]]);
+ for(const value of [{selectedTodoIds:[f.todos[0].id],digest:p.digest},{selectedTodoIds:[f.todos[0].id],actor:'owner'},{selectedTodoIds:[f.todos[0].id],grantId:'other'},{selectedTodoIds:[f.todos[0].id],referenceObservationDigest:'a'.repeat(64)}])assert.equal((await handleOwnerClassificationRequest(request(p.planId+'/preview','POST',value),f.owner,f.service,guards))?.status,400);
+ assert.equal((await handleOwnerClassificationRequest(request(p.planId+'/preview','POST',{selectedTodoIds:[f.todos[0].id]}),f.agent,f.service,guards))?.status,403);
+ assert.equal((await handleOwnerClassificationRequest(request(p.planId+'/preview'),f.owner,f.service,guards))?.status,404);
+ const confirm={planId:p.planId,digest:p.digest,confirmed:true};await f.service.approve(f.owner,confirm);const result=await f.service.commit(f.owner,confirm,'get-only-receipt');f.setWritable(false);
+ const get=await handleOwnerClassificationRequest(request(p.planId),f.owner,f.service,readOnly);assert.equal(get?.status,200);assert.deepEqual((await get!.json()).receipt,result);
 });
