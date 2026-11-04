@@ -38,7 +38,7 @@ test('writable task view exposes editing and real category routes without invent
 });
 test('read-only and unverified workspace never expose category creation and label detail access honestly',()=>{
  for(const access of [{authenticated:true,writable:false,loginAllowed:true},{authenticated:null,writable:null,loginAllowed:null}]){
-  const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="编辑待办：/);
+  const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="(?:编辑待办|编辑标题)：/);
  }
 });
 test('source summary keeps total and original Apple timing semantics when rendered',()=>{
@@ -77,7 +77,7 @@ test('settings centers the page heading and keeps only account actions',()=>{
  const settings=workspace({initialPage:'settings',onLogout:()=>{},settingsContent:React.createElement('a',{href:'/account/api-keys'},'API 密钥')});
  assert.match(settings,/lo-content-settings/);
  assert.match(settings,/API 密钥/);assert.match(settings,/退出登录/);
- assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|刷新数据/);
+ assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|管理项目与领域|刷新数据/);
  assert.match(workspace(),/管理项目与领域/);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{

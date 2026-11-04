@@ -315,7 +315,7 @@ async function privateLocalInteractions(page:Page,key:string){
   await expect(page.getByRole('link',{name:/管理|导出/})).toHaveCount(0);
  }else if(key==='private-settings'){
   await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
-  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理/)).toHaveCount(0);
+  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
   const settings=page.locator('.lo-settings'),bounds=await settings.boundingBox(),main=await page.locator('.lo-main').boundingBox();
   assert.ok(bounds&&main&&Math.abs((bounds.x+bounds.width/2)-(main.x+main.width/2))<=1,'settings are centered in their workspace');
  }
