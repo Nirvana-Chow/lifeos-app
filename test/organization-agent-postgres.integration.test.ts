@@ -10,6 +10,9 @@ import {PostgresPlatformRepository,verifyRestrictedPool,type SqlPool} from '../s
 import {assertAgentGrant} from '../src/agent-api/grant-fence.ts';
 import * as runtime from '../src/agent-api/runtime.ts';
 import {ownerMaintenanceKey} from '../src/deployment-candidate/owner-maintenance-key.ts';
+import {createAgentHandler} from '../src/agent-api/http.ts';
+import {PersonalService} from '../src/personal-candidate/service.ts';
+import type {StoredEntry} from '../src/platform/contracts.ts';
 import type {AgentScope} from '../src/agent-api/scopes.ts';
 
 const all=['todo:read','todo:write','organization:read','organization:write'] as const;
@@ -25,6 +28,12 @@ async function waitBlocked(admin:Pool,pid:number,blocker:number){
   await delay(10);
  }
  assert.fail('Expected deterministic database lock barrier was not observed');
+}
+
+async function waitSignal(signal:Promise<void>){
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{await Promise.race([signal,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('Expected transaction barrier was not reached')),4000);})]);}
+ finally{clearTimeout(timer);}
 }
 
 test('OPT-IN isolated business grant qualification',{
@@ -46,6 +55,137 @@ test('OPT-IN isolated business grant qualification',{
  const repo=new PostgresPlatformRepository(business as SqlPool,true,true,{organization:true,classification:false});
  try{
   await admin.query('INSERT INTO lifeos_platform.platform_session(id,token,"userId","expiresAt","mfaVerified") VALUES($1,$2,$3,clock_timestamp()+interval \'1 hour\',true)',[randomUUID(),session,fixture.ownerId]);
+  for(const leader of ['project','todo'] as const)await t.test(`native project Z and todo requests serialize on domain A: ${leader} wins without deadlock or partial writes`,async()=>{
+   const personal={ownerId:fixture.ownerId,ownerEmail:fixture.email,spaceId:fixture.spaceId,databaseName:fixture.database,baseURL:fixture.origin,approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic']} as const;
+   const service=new PersonalService(repo,personal),id=await seed();
+   const suffix=randomUUID().slice(-12);
+   const A='00000000-0000-4000-8000-'+suffix,Z='ffffffff-ffff-4fff-bfff-'+suffix,T='77777777-7777-4777-8777-'+suffix;
+   const f=(type:'domain'|'project')=>({title:'Synthetic lock '+type,text:'',occurredOn:null,personal:type==='project'?{type,stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}:{type}});
+   const put=async(type:'todo'|'domain'|'project',recordId:string)=>{
+    const now=new Date().toISOString(),fields=type==='todo'?{title:'Synthetic lock todo',notes:'',status:'open',dueOn:null}:f(type);
+    const raw={spaceId:fixture.spaceId,confirmed:true,fields};
+    const entry={id:recordId,ownerId:fixture.ownerId,kind:type==='todo'?'todo':'inbox',draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:fixture.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null} as StoredEntry;
+    await repo.transaction(fixture.ownerId,randomUUID(),tx=>tx.write(entry,raw,true));return entry;
+   };
+   const domain=await put('domain',A),project=await put('project',Z);await put('todo',T);
+   const ref=(entry:StoredEntry)=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision});
+   const pFields={...f('project'),personal:{...f('project').personal,domain:ref(domain)}};
+   const tFields={title:'Synthetic locked todo update',personal:{project:ref(project),domain:ref(domain),topics:[]}};
+   const body=(fields:unknown)=>({spaceId:fixture.spaceId,confirmed:true,expectedRevision:1,fields});
+   const projectCommand=randomUUID(),todoCommand=randomUUID();
+   let releaseProject!:()=>void,signalProject!:()=>void,signalTodo!:()=>void;
+   const paused=new Promise<void>(resolve=>{signalProject=resolve;});
+   const release=new Promise<void>(resolve=>{releaseProject=resolve;});
+   const todoConnected=new Promise<void>(resolve=>{signalTodo=resolve;});
+   const pPool=fixturePool('runtime',1),tPool=fixturePool('runtime',1);
+   let pPid=0,tPid=0,held=false;
+   const observed:{project:string[];todo:string[]}={project:[],todo:[]};
+   const instrument=(pool:Pool,label:'project'|'todo'):SqlPool=>({connect:async()=>{
+    const client=await pool.connect(),pid=(await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+    if(label==='project')pPid=pid;else tPid=pid;
+    if(label!==leader)signalTodo();
+    return {release:()=>client.release(),query:async(sql,values)=>{
+     const result=await client.query(sql,values);
+     if(sql.includes('FOR UPDATE OF r')){
+      observed[label].push(JSON.stringify([values![1],values![2]]));
+      if(label===leader&&values![1]==='inbox'&&!held){held=true;signalProject();await release;}
+     }
+     return result;
+    }};
+   }});
+   const pService=new PersonalService(new PostgresPlatformRepository(instrument(pPool,'project'),true,true,{organization:true,classification:false}),personal);
+   const tService=new PersonalService(new PostgresPlatformRepository(instrument(tPool,'todo'),true,true,{organization:true,classification:false}),personal);
+   const fence=(tx:import('../src/platform/contracts.ts').Transaction)=>assertAgentGrant(tx,binding(id),all);
+   const outcome=<R>(promise:Promise<R>)=>promise.then(value=>({value,error:null}),error=>({value:null,error}));
+   let pWork:ReturnType<typeof outcome>|undefined,tWork:ReturnType<typeof outcome>|undefined;
+   try{
+    const runProject=()=>outcome(pService.mutate(fixture.ownerId,'project',Z,body(pFields),projectCommand,async()=>{},fence));
+    const runTodo=()=>outcome(tService.mutate(fixture.ownerId,'todo',T,body(tFields),todoCommand,async()=>{},fence));
+    if(leader==='project')pWork=runProject();else tWork=runTodo();
+    await waitSignal(paused);
+    if(leader==='project')tWork=runTodo();else pWork=runProject();
+    await waitSignal(todoConnected);await waitBlocked(admin,leader==='project'?tPid:pPid,leader==='project'?pPid:tPid);
+    releaseProject();
+    const [pResult,tResult]=await Promise.all([pWork!,tWork!]);
+    assert.equal(pResult.error,null,'Project completes without a deadlock');
+    if(leader==='project')assert.equal(tResult.error?.code,'REFERENCE_CONFLICT','Waiting todo sees changed project revision and rolls back');
+    else assert.equal(tResult.error,null,'Leading todo commits before the project update');
+    assert.deepEqual(observed.project,[JSON.stringify(['inbox',A]),JSON.stringify(['inbox',Z])]);
+    assert.deepEqual(observed.todo,[JSON.stringify(['todo',T]),JSON.stringify(['inbox',A]),JSON.stringify(['inbox',Z])]);
+    const counts=(await admin.query(`SELECT
+      (SELECT revision FROM lifeos_platform.platform_record WHERE id=$1) AS project_revision,
+      (SELECT revision FROM lifeos_platform.platform_record WHERE id=$2) AS todo_revision,
+      (SELECT count(*)::int FROM lifeos_platform.platform_history WHERE record_id=$1) AS project_history,
+      (SELECT count(*)::int FROM lifeos_platform.platform_history WHERE record_id=$2) AS todo_history,
+      (SELECT count(*)::int FROM lifeos_platform.platform_command WHERE command_key=$3) AS project_receipts,
+      (SELECT count(*)::int FROM lifeos_platform.platform_command WHERE command_key=$4) AS todo_receipts`,[Z,T,projectCommand,todoCommand])).rows[0];
+    assert.deepEqual(counts,{project_revision:2,todo_revision:leader==='project'?1:2,project_history:2,todo_history:leader==='project'?1:2,project_receipts:1,todo_receipts:leader==='project'?0:1});
+    const current=await service.get(fixture.ownerId,'project',Z);
+    const corrected={...tFields,personal:{...tFields.personal,project:{id:Z,sourceId:current.source.id,revision:2}}};
+    const retry=randomUUID();
+    if(leader==='project'){
+     assert.equal((await service.mutate(fixture.ownerId,'todo',T,body(corrected),retry,async()=>{},fence)).entry.revision,2);
+     assert.equal((await service.mutate(fixture.ownerId,'todo',T,body(corrected),retry,async()=>{},fence)).duplicate,true);
+    }
+    const state=async()=>(await admin.query(`SELECT
+      (SELECT count(*)::int FROM lifeos_platform.platform_source WHERE owner_id=$1) AS sources,
+      (SELECT count(*)::int FROM lifeos_platform.platform_record WHERE owner_id=$1) AS records,
+      (SELECT count(*)::int FROM lifeos_platform.platform_history WHERE owner_id=$1) AS history,
+      (SELECT count(*)::int FROM lifeos_platform.platform_command WHERE owner_id=$1) AS commands`,[fixture.ownerId])).rows[0];
+    const beforeInvalid=await state();
+    for(const wrong of [{...ref(domain),revision:2},{...ref(domain),sourceId:randomUUID()},{id:Z,sourceId:current.source.id,revision:2}]){
+     const command=randomUUID();
+     await assert.rejects(service.mutate(fixture.ownerId,'project',null,{spaceId:fixture.spaceId,confirmed:true,fields:{...pFields,personal:{...pFields.personal,domain:wrong}}},command,async()=>{},fence),{code:'REFERENCE_CONFLICT'});
+     assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_command WHERE command_key=$1',[command])).rows[0].n,0);
+    }
+    assert.deepEqual(await state(),beforeInvalid);
+    assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_history WHERE record_id=$1',[T])).rows[0].n,2);
+    assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_command WHERE command_key=$1',[leader==='project'?retry:todoCommand])).rows[0].n,1);
+   }finally{releaseProject();await Promise.allSettled([pWork,tWork]);await Promise.all([pPool.end(),tPool.end()]);}
+  });
+  await t.test('organization HTTP uses native PostgreSQL writer and generic fence; reads remain pure and grant loss rolls back',async()=>{
+   const personal={ownerId:fixture.ownerId,ownerEmail:fixture.email,spaceId:fixture.spaceId,databaseName:fixture.database,baseURL:fixture.origin,approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],businessWriteMode:'owner-managed'} as const;
+   const id=await seed({organization:['read','write']});
+   const grant={...binding(id),scopes:['organization:read','organization:write'] as const};
+   let revokeAtGuard=false,verifications=0;
+   const handler=createAgentHandler({enabled:true,modules:{organization:true,classification:false},fenceWrites:true,config:personal,repository:repo,
+    verify:async()=>{verifications++;return grant;},readCurrentGrant:grantId=>runtime.readCurrentAgentGrant(verifier,grantId),
+    operationAvailable:op=>runtime.agentOperationAvailable(op,personal,true,{organization:true,classification:false}),
+    assertWritable:async()=>{if(revokeAtGuard){revokeAtGuard=false;await admin.query('UPDATE lifeos_agent.apikey SET permissions=$2 WHERE id=$1',[id,JSON.stringify({organization:['read']})]);}}
+   });
+   const send=async(path:string,method='GET',body?:unknown,command=randomUUID())=>{
+    const response=await handler(new Request(fixture.origin+path,{method,headers:{host:'organization.example.test',authorization:'Bearer synthetic-organization-fixture','idempotency-key':command,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}));
+    return {status:response.status,body:await response.json()};
+   };
+   const f=(type:string)=>({title:'Synthetic HTTP organization',text:'Synthetic complete fields',occurredOn:null,personal:type==='project'?{type,stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}:{type}});
+   const created=[];
+   for(const type of ['domain','topic','project']){
+    const command=randomUUID();
+    const first=await send('/v1/organization/'+type,'POST',{fields:f(type)},command);assert.equal(first.status,201);created.push(first.body.entry);
+    assert.equal((await send('/v1/organization/'+type,'POST',{fields:f(type)},command)).body.duplicate,true);
+    assert.equal((await send('/v1/organization/'+type+'/'+first.body.entry.id,'PATCH',{expectedRevision:1,fields:{...f(type),title:'Synthetic updated'}})).status,200);
+    assert.equal((await send('/v1/organization/'+type+'/'+first.body.entry.id)).body.revision,2);
+    assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_command WHERE command_key=$1',[command])).rows[0].n,1);
+   }
+   const state=async()=>(await admin.query(`SELECT
+    (SELECT count(*)::int FROM lifeos_platform.platform_source WHERE owner_id=$1) AS sources,
+    (SELECT count(*)::int FROM lifeos_platform.platform_record WHERE owner_id=$1) AS records,
+    (SELECT count(*)::int FROM lifeos_platform.platform_history WHERE owner_id=$1) AS history,
+    (SELECT count(*)::int FROM lifeos_platform.platform_command WHERE owner_id=$1) AS commands,
+    (SELECT "requestCount" FROM lifeos_agent.apikey WHERE id=$2) AS usage`,[fixture.ownerId,id])).rows[0];
+   const before=await state(),calls=verifications;
+   assert.equal((await send('/v2/capabilities')).body.operations.filter((op:{module:string})=>op.module==='organization').length,4);
+   const snapshot=await send('/v1/organization/snapshot');assert.equal(snapshot.status,200);
+   for(const entry of created)assert.ok(snapshot.body.items.some((item:{id:string;sourceId:string;revision:number})=>item.id===entry.id&&item.sourceId===entry.sourceId&&item.revision===2));
+   assert.ok(!JSON.stringify(snapshot.body).includes('ownerId')&&!JSON.stringify(snapshot.body).includes('original'));
+   assert.deepEqual(await state(),before);assert.equal(verifications-calls,2);
+   revokeAtGuard=true;
+   const denied=randomUUID();
+   const response=await send('/v1/organization/domain','POST',{fields:f('domain')},denied);
+   assert.equal(response.status,403);assert.equal(response.body.error,'WRITE_GRANT_REVOKED');
+   assert.deepEqual(await state(),before);
+   assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.platform_command WHERE command_key=$1',[denied])).rows[0].n,0);
+  });
   await t.test('same-key scope CAS preserves identity expiry and secret; usage does not alter grant digest; audit is secret-free',async()=>{
    const id=await seed({todo:['read']});const before=await digest(id);
    assert.match(before,/^[a-f0-9]{64}$/);

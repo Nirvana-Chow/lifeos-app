@@ -3,13 +3,18 @@ import {object, PlatformError, todoKeys} from '../platform/domain.ts';
 import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {PersonalService, personalEntryType} from '../personal-candidate/service.ts';
-import {assertAgentTodoWriteGrant} from './grant-fence.ts';
+import {assertAgentGrant,assertAgentTodoWriteGrant} from './grant-fence.ts';
 import {agentApiVersion, agentOperations, type AgentScope} from './capabilities.ts';
 import {AuthorityService} from '../agent-authority/service.ts';
+
+import type {AgentModules} from './config.ts';
+import type {OrganizationType} from '../personal-candidate/business.ts';
+import {organizationDetail,organizationSnapshot,completeOrganizationFields} from './organization.ts';
 
 type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[]}>;
 type Options = {
   enabled?: boolean;
+  modules?: AgentModules;
   mountPath?: '/api/platform/agent';
   fenceWrites?: boolean;
   config: PersonalConfig;
@@ -45,10 +50,12 @@ function updateFields(value: unknown) {
 /** A host must supply verified grants and a write guard. Mounted writes require a PostgreSQL fence. */
 export function createAgentHandler(options: Options) {
   const config = Object.freeze(structuredClone(options.config));
+  const modules=Object.freeze({...options.modules});
   const service = new PersonalService(options.repository, config);
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentOperations.find(entry => entry.id === id);
+    if (operation?.module === 'organization' && (!modules.organization || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
     if (!operation || options.mountPath && operation.method !== 'GET' && options.fenceWrites !== true) return false;
     try {return await options.operationAvailable?.(id) === true;} catch {return false;}
   };
@@ -57,9 +64,12 @@ export function createAgentHandler(options: Options) {
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
-    const operation = agentOperations.find(entry =>
-      entry.method === request.method && entry.path === (recordId ? '/v1/todos/{id}' : route));
-    if (options.enabled !== true || !config.allowedTypes.includes('todo') || !operation || path.search) return respond(404, {error: 'NOT_FOUND'});
+    const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
+    const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
+    const organizationId=organizationRoute?.[2];
+    const template=organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const operation = agentOperations.find(entry => entry.method === request.method && entry.path === template);
+    if (options.enabled !== true || !operation || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
       const token = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization') ?? '')?.[1];
@@ -79,9 +89,26 @@ export function createAgentHandler(options: Options) {
       }
       if (operation.id === 'discover') {
         return respond(200, {apiVersion: agentApiVersion,
-          operations: agentOperations.filter(entry => entry.id !== 'discoverV2' && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
+          operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if (operation.module === 'organization') {
+        if (operation.id === 'snapshotOrganization') return respond(200,await organizationSnapshot(service,actor.ownerId));
+        if (!organizationType) return respond(404,{error:'NOT_FOUND'});
+        if (operation.id === 'getOrganization') {
+          if (!organizationId) return respond(404,{error:'NOT_FOUND'});
+          return respond(200,organizationDetail(await service.get(actor.ownerId,organizationType,organizationId),actor.spaceId));
+        }
+        const updating=operation.id === 'updateOrganization';
+        const input=object(await readJSONBody(request),updating?['fields','expectedRevision']:['fields']);
+        const result=await service.mutate(actor.ownerId,organizationType,organizationId??null,
+          {...input,...(updating?{fields:completeOrganizationFields(input.fields)}:{}),spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',
+          async()=>{
+            if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
+            await options.assertWritable(grant);
+          },tx=>assertAgentGrant(tx,actor,operation.requiredScopes));
+        return respond(!updating&&!result.duplicate?201:200,{entry:organizationDetail(result.entry,actor.spaceId),duplicate:result.duplicate});
+      }
       if (operation.id === 'listTodos') {
         const page = await service.list(grant.ownerId, 'todo');
         return respond(200, {items: page.items.map(entry => {

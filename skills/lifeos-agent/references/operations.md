@@ -13,3 +13,7 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 | `getTodo` | `GET` | `/v1/todos/{id}` | `todo:read` | Read a todo and its current revision. |
 | `createTodo` | `POST` | `/v1/todos` | `todo:write` | Create one todo with an idempotency key. |
 | `updateTodo` | `PATCH` | `/v1/todos/{id}` | `todo:write` | Update one todo with its expected revision and an idempotency key. |
+| `snapshotOrganization` | `GET` | `/v1/organization/snapshot` | `organization:read` | Read the complete current project, domain and topic snapshot with source IDs and revisions, or fail without returning a partial inventory. |
+| `getOrganization` | `GET` | `/v1/organization/{type}/{id}` | `organization:read` | Read one project, domain or topic with complete fields and its current revision. |
+| `createOrganization` | `POST` | `/v1/organization/{type}` | `organization:read, organization:write` | Create one project, domain or topic with fields and an idempotency key; identical names remain independent records. |
+| `updateOrganization` | `PATCH` | `/v1/organization/{type}/{id}` | `organization:read, organization:write` | Update one project, domain or topic with expectedRevision, all four fields (title, text, occurredOn, personal) and an idempotency key. |

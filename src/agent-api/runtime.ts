@@ -4,9 +4,10 @@ import {readPlatformConfig, type PlatformConfig} from '../platform/config.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {PostgresPlatformRepository, verifyRestrictedPool, type SqlPool} from '../platform/postgres.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
-import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules} from './config.ts';
+import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules,type AgentModules} from './config.ts';
 import {decodeAgentPermissions} from './scopes.ts';
 import {createAgentHandler} from './http.ts';
+import {organizationTypes} from './organization.ts';
 import {agentOperations} from './capabilities.ts';
 
 type AgentConfig = NonNullable<ReturnType<typeof readAgentRuntimeConfig>>;
@@ -39,9 +40,11 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
 }
 
 /** Read-only readiness uses the same live business permit as the write guard. */
-export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean):boolean {
+export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean, modules:AgentModules={organization:false,classification:false}):boolean {
   const operation = agentOperations.find(entry => entry.id === id);
-  if (!operation || operation.module !== 'todo' || !personal.allowedTypes.includes('todo')) return false;
+  if (!operation || operation.module === 'catalog') return false;
+  if (operation.module === 'todo' && !personal.allowedTypes.includes('todo')) return false;
+  if (operation.module === 'organization' && (!modules.organization || !fenceReady || !organizationTypes.every(type=>personal.allowedTypes.includes(type)))) return false;
   if (operation.method === 'GET') return true;
   if (!fenceReady) return false;
   try {requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''); return true;} catch {return false;}
@@ -148,6 +151,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
 
     const handler=createAgentHandler({
       enabled: true,
+      modules,
       fenceWrites: true,
       mountPath: '/api/platform/agent',
       config: personal,
@@ -163,7 +167,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
       },
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
-      operationAvailable: id => agentOperationAvailable(id, personal, fenceReady),
+      operationAvailable: id => agentOperationAvailable(id, personal, fenceReady,modules),
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
     return modules.organization?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler;

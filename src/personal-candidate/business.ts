@@ -3,6 +3,7 @@ export const personalTypes=['todo','journal','project','domain','topic'] as cons
 export type PersonalReference={id:string;sourceId:string;revision:number};
 export type PersonalRelations={project:PersonalReference|null;domain:PersonalReference|null;topics:PersonalReference[]};
 export type PersonalObject={type:'project';stage:'idea'|'planned'|'active'|'paused'|'closed';purpose:'maintain'|'advance'|'explore'|null;nextStep:string;domain:PersonalReference|null;topics:PersonalReference[]}|{type:'domain'|'topic'};
+export type OrganizationType=Extract<PersonalObject['type'],'project'|'domain'|'topic'>;
 const invalid=():never=>{throw new PlatformError(400,'INVALID_PERSONAL_FIELDS','请核对用途、阶段与关联字段。');};
 function ref(v:unknown):PersonalReference|null{if(v===undefined||v===null)return null;const r=object(v,['id','sourceId','revision']);return{id:validateId(r.id),sourceId:validateId(r.sourceId),revision:validateRevision(r.revision)};}
 function topics(v:unknown):PersonalReference[]{if(v===undefined)return[];if(!Array.isArray(v)||v.length>20)return invalid();const result=v.map(x=>{const r=ref(x);if(!r)return invalid();return r;});if(new Set(result.map(r=>r.id)).size!==result.length)return invalid();return result;}

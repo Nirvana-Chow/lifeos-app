@@ -104,3 +104,18 @@ test('runtime operation readiness follows current business write policy and fenc
   assert.equal(available('createTodo',{...base,businessWriteMode:'owner-managed'},true),true);
   assert.equal(available('unimplemented',{...base,businessWriteMode:'owner-managed'},true),false);
 });
+
+test('organization operations require the module, full native types, actual fence readiness and write policy',async()=>{
+ const {agentOperationAvailable}=await import('../src/agent-api/runtime.ts');
+ const personal={ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal','project','domain','topic'] as const,approval:'personal-manual-v1' as const,baseURL:origin,businessWriteMode:'owner-managed' as const};
+ const modules={organization:true,classification:false};
+ for(const id of ['snapshotOrganization','getOrganization','createOrganization','updateOrganization']){
+  assert.equal(agentOperationAvailable(id,personal,true),false);
+  assert.equal(agentOperationAvailable(id,personal,false,modules),false);
+  assert.equal(agentOperationAvailable(id,{...personal,allowedTypes:['todo','journal']},true,modules),false);
+  assert.equal(agentOperationAvailable(id,personal,true,modules),true);
+ }
+ assert.equal(agentOperationAvailable('snapshotOrganization',{...personal,businessWriteMode:'disabled'},true,modules),true);
+ assert.equal(agentOperationAvailable('updateOrganization',{...personal,businessWriteMode:'disabled'},true,modules),false);
+ assert.equal(agentOperationAvailable('classifyTodos',personal,true,{...modules,classification:true}),false);
+});
