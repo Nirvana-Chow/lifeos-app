@@ -51,3 +51,13 @@ test('embedded account forms delegate dismissal to the settings modal',()=>{
  assert.doesNotMatch(keys,/<main\b|<h1\b|<nav\b|href="\/account\/password"/);
  assert.match(keys,/<section\b/);
 });
+
+test('legacy password SSR has one permanently disabled fallback form with native POST target',()=>{
+ const html=render('src/personal-candidate/legacy-password-entry.tsx','LegacyPasswordEntry',{enabled:true});
+ assert.match(html,/<h1>修改密码<\/h1>/);
+ assert.match(html,/<fieldset[^>]*disabled[^>]*data-legacy-password-entry/);
+ assert.equal((html.match(/<form\b/g)??[]).length,1);
+ assert.match(html,/<form[^>]*method="post"/i);assert.match(html,/<form[^>]*action="\/account\/password"/i);
+ for(const name of ['username','currentPassword','newPassword','confirmation'])assert.match(html,new RegExp('name="'+name+'"'));
+ assert.doesNotMatch(html,/<input[^>]*type="password"[^>]*value="[^" ]+/i);
+});
