@@ -2,6 +2,9 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import type {ClassificationReview as Review} from './classification-contracts';
 import type {PersonalRelations} from './business';
+import type {PublicEntry} from '../platform/contracts';
+import {validateId, validateRevision, validateTodo} from '../platform/domain';
+import {editorFromEntry} from './editor';
 import {Dialog, DialogContent, DialogTitle} from '../ui-review/ui/dialog';
 import {Button} from '../ui-review/ui/button';
 import s from './classification-review.module.css';
@@ -20,6 +23,28 @@ function canonical(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
   return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
     .map(([key, item]) => JSON.stringify(key) + ':' + canonical(item)).join(',') + '}';
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Validate a real public todo projection before normalizing its optional relation field. */
+function readbackTodo(value: unknown, expectedId: string) {
+  if (!isObject(value) || !isObject(value.entry)) throw Error('INVALID_READBACK');
+  const entry = value.entry;
+  if (!isObject(entry.source) || !isObject(entry.source.original) || !isObject(entry.draft) ||
+      'ownerId' in entry || entry.kind !== 'todo' || entry.syncState !== 'draft' || entry.externalStatus !== null ||
+      entry.source.system !== 'website' || entry.source.version !== 1 || entry.source.externalId !== entry.id ||
+      typeof entry.source.asOf !== 'string' || !Number.isFinite(Date.parse(entry.source.asOf)) ||
+      typeof entry.createdAt !== 'string' || !Number.isFinite(Date.parse(entry.createdAt)) ||
+      typeof entry.updatedAt !== 'string' || !Number.isFinite(Date.parse(entry.updatedAt)) ||
+      typeof entry.source.original.spaceId !== 'string' || !entry.source.original.spaceId) throw Error('INVALID_READBACK');
+  if (validateId(entry.id) !== expectedId) throw Error('INVALID_READBACK');
+  const sourceId = validateId(entry.source.id);
+  const revision = validateRevision(entry.revision);
+  const draft = validateTodo(entry.draft);
+  if (editorFromEntry(entry as unknown as PublicEntry, entry.source.original.spaceId).type !== 'todo') throw Error('INVALID_READBACK');
+  return {sourceId, revision, personal: draft.personal ?? null};
 }
 
 async function commandKey(planId: string, digest: string) {
@@ -119,10 +144,18 @@ export function ClassificationReview({planId, onClose, onPlanChange, container, 
             const result = await fetch('/api/platform/personal/todo/' + expected.id, {
               cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
             });
+            if ((result.status === 401 || result.status === 403) && isCurrent(token)) {
+              beginOperation();
+              setReview(null);
+              setReadback({});
+              updatePhase('auth');
+              setMessage('请重新登录后继续核对。');
+              return [expected.id, '无法读取'] as const;
+            }
             if (!result.ok) throw Error();
-            const {entry} = await result.json();
-            const matches = entry?.source?.id === expected.sourceId && entry?.revision === expected.revision &&
-              canonical(entry?.draft?.personal) === canonical(expected.personal);
+            const entry = readbackTodo(await result.json(), expected.id);
+            const matches = entry.sourceId === expected.sourceId && entry.revision === expected.revision &&
+              canonical(entry.personal) === canonical(expected.personal);
             return [expected.id, matches ? '已核对' : '提交后有变化'] as const;
           } catch {
             return [expected.id, '无法读取'] as const;

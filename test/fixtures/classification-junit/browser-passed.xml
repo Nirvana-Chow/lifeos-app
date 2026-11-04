@@ -4,9 +4,11 @@
 	<testcase name="classification guards and readback preserve the workspace under uncertain outcomes" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
 	<testcase name="classification serializes reads and fences stale responses from commands and auth" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
 	<testcase name="classification details distinguish same-named and historical reference versions" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
-	<!-- tests 4 -->
+	<testcase name="classification receipt verifies missing personal no-op without trusting malformed reads" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
+	<testcase name="classification receipt conceals diff on item authentication failure and recovers explicitly" time="0" classname="test" file="test/classification-review-browser.integration.test.ts"/>
+	<!-- tests 6 -->
 	<!-- suites 0 -->
-	<!-- pass 4 -->
+	<!-- pass 6 -->
 	<!-- fail 0 -->
 	<!-- cancelled 0 -->
 	<!-- skipped 0 -->

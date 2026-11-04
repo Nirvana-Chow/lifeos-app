@@ -80,7 +80,9 @@
       "classification dialog preserves context and recovers explicit commands",
       "classification guards and readback preserve the workspace under uncertain outcomes",
       "classification serializes reads and fences stale responses from commands and auth",
-      "classification details distinguish same-named and historical reference versions"
+      "classification details distinguish same-named and historical reference versions",
+      "classification receipt verifies missing personal no-op without trusting malformed reads",
+      "classification receipt conceals diff on item authentication failure and recovers explicitly"
     ]
   }
 }
