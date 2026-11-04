@@ -116,7 +116,7 @@ declare class ClassificationService {
 
 approve 和 commit 均在运行时再次判别 actor，类型约束不是鉴权。run 对 approve/commit 一律403，包括 receipt replay；read/preview 必须经过当前 RunAuthorityProof，run 子片未启用时不接受该 actor。owner 的 Agent-origin plan 审核/commit 以 `assertAgentGrant(tx,producer,['todo:read','organization:read'])` 保持 producer 锁与原 read 授权，不要求其 write；owner 当前写权单独重验。API commit 要当前 actor 等于 producer grant，要求 todo read/write+organization read，并有同plan固定owner approval；因此只读 Agent 能建议而不能自行提交。owner-origin plan 的 grantId=null，但不能让 Agent 使用。run-origin plan 保留 provenance 并通过 authority 重验原 producer/授权/policy；run 不被 cast 成 grant 或 owner。
 
-### 2.1 [A2.1]: strict plan/approval/receipt 与最小事务组合
+### Task 1: [A2.1] strict plan/approval/receipt 与最小事务组合
 
 **Files:** Create classification-contracts.ts/postgres.ts、0012 SQL、contracts test、memory helper；Modify `src/platform/{contracts,postgres}.ts`、`test/platform-postgres.test.ts`。
 
@@ -137,7 +137,7 @@ approve 和 commit 均在运行时再次判别 actor，类型约束不是鉴权�
 - [ ] **Step 4: 运行 GREEN 和隔离 SQL 负向。** 同 Step2；PG 资格先证无批准/错target/运行角色执行迁移拒绝，runtime 跨owner读空/写拒、UPDATE/DELETE/TRUNCATE拒，manager/verifier无表权，bad stored JSON读出也拒绝。不为 plan 行锁增加 UPDATE 权，`lockClassificationPlan` 用 xact advisory。原单条写/receipt/history 完全通过；feature关时不查询新表。
 - [ ] **Step 5: 独立存储/安全 review 后提交。** `git commit -m 'feat: add immutable classification plans approvals and receipts'`；proposed SQL 不执行到真实目标，新的 schema 不因代码合并自动启用。
 
-### 2.2 [A2.2]: 共享原子 service、owner 审批与 API commit
+### Task 2: [A2.2] 共享原子 service、owner 审批与 API commit
 
 **Files:** Create classification-service.ts/http.ts、service/http tests、PG integration test；Modify Agent registry/http/runtime、personal runtime-http、platform runtime 的窄连接；与母 authority service 共用，不复制 actor resolver。
 
@@ -154,7 +154,7 @@ approve 和 commit 均在运行时再次判别 actor，类型约束不是鉴权�
 - [ ] **Step 4: GREEN 与真实 PG 并发/恢复资格。** 跑 Step2，及 `RUN_CLASSIFICATION_POSTGRES_TESTS=1 LIFEOS_FIXTURE_FRESH=approved-isolated-fixture node --test --test-isolation=none --test-concurrency=1 test/classification-postgres.integration.test.ts`。fixture 在 A1 已隔离服务上显式 apply0012，不读真实配置。read-only grant preview→owner批准/commit成功且grant字节/scopes/expiry未变；该grant的APIcommit403；撤销/失去producer read scope先赢时ownercommit403零写，preview read fence先赢可先完成。另验证API提交者丢write拒绝，但owner不因producer本来无write被拒。固定 A/Z barrier 覆盖交叉 batch、project PATCH、todo PATCH；不同 key 同 plan 全no-op一200一409；同 key同body一提交一duplicate、改body409；最后一条冲突零写；maintenance排他等待；commit先持grant SHARE则可先完成而撤销等待。producer撤销/丢read后新commit及receipt恢复拒绝，不能声称中断已授权锁事务。断连后同payload/key恢复、后续编辑/过期后历史receipt恢复、当前仍具所需权限的API与owner网页同key恢复，都没有第二次record/history写入。enabled零skip。
 - [ ] **Step 5: 独立代码/安全 review 后提交。** `git commit -m 'feat: atomically commit owner-reviewed todo relations'`。原 single writer、授权边界及 publicCI 只读保持；module/readiness不合格不宣告preview/commit。普通实现继续到网页，不停在只有API的候选。
 
-### 2.3 [A2.3]: 可见 diff 审核、unknown 恢复和同片交付
+### Task 3: [A2.3] 可见 diff 审核、unknown 恢复和同片交付
 
 **Files:** Create classification-review.tsx/.module.css 与 browser test；Modify 原 workspace 的 finite plan 入口、generic Skill、reference/artifact generator、CI和既有 requirements/Issue映射。
 

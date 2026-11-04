@@ -59,7 +59,7 @@ type SetScopesInput = Readonly<{
 }>;
 ```
 
-### 1.1 [A1.1]: 明列 scope、可信 actor 接线和精确 catalog 兼容
+### Task 1: [A1.1] 明列 scope、可信 actor 接线和精确 catalog 兼容
 
 **Files:** Create `src/agent-api/scopes.ts`、`test/agent-scopes.test.ts`；按母计划共享 `src/agent-authority/contracts.ts`、`service.ts`，不另建 authority；Modify `src/agent-api/{capabilities,config,http,runtime}.ts`、`test/{agent-api,agent-runtime-config}.test.ts`。
 
@@ -86,7 +86,7 @@ type SetScopesInput = Readonly<{
 - [ ] **Step 4: 运行 GREEN。** 同 Step2 加 `npm run typecheck`，零失败；检查匿名 v2=401、错 owner/space=403、无 flag 的组织路由404且新 SQL/pool 调用为0。旧 todo 不依赖新数据库迁移。
 - [ ] **Step 5: 独立 review 后提交。** 精确添加本任务文件，`git commit -m 'feat: define scoped Agent catalog compatibility'`。此处没有真实扩权或运行启用。
 
-### 1.2 [A1.2]: narrow scope 修改、SQL fence 与授权串行
+### Task 2: [A1.2] narrow scope 修改、SQL fence 与授权串行
 
 **Files:** Create `db/0011_business_agent_grants.proposed.sql`、`test/organization-agent-postgres.integration.test.ts`、`test/helpers/organization-stage-pg.ts`；Modify `src/agent-api/{key-issuer,key-issuer-server,key-web,grant-fence,runtime}.ts`、`src/platform/{contracts,postgres}.ts`、原 issuer/web/PostgreSQL tests。
 
@@ -102,7 +102,7 @@ type SetScopesInput = Readonly<{
 
 PG fixture 复用现 CI 的 isolated recovery/Agent management 服务；helper 只接受预先声明的 loopback disposable target、synthetic 角色和 fresh marker，核版本/数据库/binding后再 apply proposed SQL。保留原 recovery/MFA/key 用例、数据和断言，不重置它们的数据库，不读取运行配置。fixture 代码可以使用明确 synthetic 值，但日志不能输出 key、cookie、session 或 credential URL。
 
-### 1.3 [A1.3]: 组织 CRUD、完整目录和受影响记录锁序
+### Task 3: [A1.3] 组织 CRUD、完整目录和受影响记录锁序
 
 **Files:** Create `src/agent-api/organization.ts`、`src/personal-candidate/personal-record-locks.ts`、`test/{organization-agent,personal-record-locks}.test.ts`；Modify `src/personal-candidate/{business,service}.ts`、Agent registry/http/runtime；扩展 A1.2 PG test。
 
@@ -116,7 +116,7 @@ PG fixture 复用现 CI 的 isolated recovery/Agent management 服务；helper �
 - [ ] **Step 4: GREEN 与锁环证明。** 同 Step2；扩展真实 PG 的确定 barrier，证明 todo/project 交叉请求没有 deadlock 或部分写，错误/过期引用拒绝。保持 legacy todo sourceId 合同、单条 receipt、现网页组织 writer；不把性能和本人体验从 unit 推导为通过。
 - [ ] **Step 5: 独立 review 后提交。** `git commit -m 'feat: expose scoped organization operations with ordered locks'`，仅精确本任务文件。
 
-### 1.4 [A1.4]: 显式权限网页、Skill 与默认关闭候选交付
+### Task 4: [A1.4] 显式权限网页、Skill 与默认关闭候选交付
 
 **Files:** Modify `src/personal-candidate/account-api-keys.tsx` 与有限 CSS、现 category-grid/组织入口必要适配、`scripts/agent-skill-reference.ts`、`skills/lifeos-agent/{SKILL.md,references/operations.md,references/credential-runtime.md}`、generated artifact、现 Agent Skill/key/browser tests、`.github/workflows/ci.yml`；原追踪只补本片证据，不改旧任务状态。
 
