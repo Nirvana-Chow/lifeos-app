@@ -29,6 +29,7 @@ function fixture(enabled = true) {
         scopes: key === 'org' ? ['organization:read'] : key === 'writer' ? ['todo:read', 'todo:write'] : ['todo:read'],
       };
     },
+    operationAvailable: () => true,
     readCurrentGrant: async id => ({grantId:id,ownerId:id === 'synthetic-foreign' ? 'synthetic-owner-b' : ownerId,spaceId:id === 'synthetic-wrong-space' ? 'other-space' : spaceId,scopes:id === 'synthetic-org' ? ['organization:read'] : id === 'synthetic-writer' ? ['todo:read','todo:write'] : ['todo:read']}),
     assertWritable: async () => { if (!permit) throw Error('synthetic permit denied'); },
   });
@@ -184,4 +185,42 @@ test('initial verifier rate-limit response remains 429', async () => {
     verify:async()=>{throw new PlatformError(429,'RATE_LIMITED','fixture');},
     readCurrentGrant:async()=>null,assertWritable:async()=>{}} as Parameters<typeof createAgentHandler>[0]);
   assert.equal((await handler(new Request(baseURL+'/v1/capabilities',{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}))).status,429);
+});
+
+test('v2 discovery and execution share current availability without invoking write guard', async () => {
+  const grant={grantId:'fixture-grant',ownerId,spaceId,scopes:['todo:read','todo:write'] as const};
+  let ready=false, guardCalls=0;
+  const handler=createAgentHandler({config:{...config,businessWriteMode:'disabled'},repository:new MemoryPort(),enabled:true,
+    verify:async()=>grant,readCurrentGrant:async()=>grant,
+    operationAvailable:async (id:string)=> id !== 'createTodo' && id !== 'updateTodo' || ready,
+    assertWritable:async()=>{guardCalls++;}} as Parameters<typeof createAgentHandler>[0]);
+  const request=(path:string,method='GET',body?:unknown)=>handler(new Request(baseURL+path,{method,headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture',...(body?{'content-type':'application/json','idempotency-key':'fixture-ready-test-0001'}:{})},...(body?{body:JSON.stringify(body)}:{})}));
+  const ids=async(path:string)=>(await (await request(path)).json()).operations.map((item:{id:string})=>item.id);
+  assert.deepEqual(await ids('/v2/capabilities'),['discoverV2','discover','listTodos','snapshotTodos','getTodo']);
+  assert.equal(guardCalls,0);
+  assert.equal((await request('/v1/todos','POST',{fields})).status,503);
+  assert.equal(guardCalls,0);
+  assert.equal((await ids('/v1/capabilities')).length,6);
+  ready=true;
+  assert.deepEqual(await ids('/v2/capabilities'),['discoverV2','discover','listTodos','snapshotTodos','getTodo','createTodo','updateTodo']);
+  assert.equal((await request('/v1/todos','POST',{fields})).status,201);
+  assert.ok(guardCalls > 0);
+});
+
+test('missing availability provider fails closed for business operations', async () => {
+  const grant={grantId:'fixture-grant',ownerId,spaceId,scopes:['todo:read','todo:write'] as const};
+  const handler=createAgentHandler({config,repository:new MemoryPort(),enabled:true,verify:async()=>grant,readCurrentGrant:async()=>grant,assertWritable:async()=>{}});
+  const request=(path:string)=>handler(new Request(baseURL+path,{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}));
+  const body=await (await request('/v2/capabilities')).json();
+  assert.deepEqual(body.operations.map((op:{id:string})=>op.id),['discoverV2','discover']);
+  assert.equal((await request('/v1/todos')).status,503);
+});
+
+test('mounted handler never advertises writes without its transaction fence', async () => {
+  const grant={grantId:'fixture-grant',ownerId,spaceId,scopes:['todo:read','todo:write'] as const};
+  const handler=createAgentHandler({config,repository:new MemoryPort(),enabled:true,mountPath:'/api/platform/agent',
+    verify:async()=>grant,readCurrentGrant:async()=>grant,operationAvailable:()=>true,assertWritable:async()=>{}});
+  const response=await handler(new Request(baseURL+'/api/platform/agent/v2/capabilities',{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}));
+  const body=await response.json();
+  assert.equal(body.operations.some((item:{id:string})=>item.id==='createTodo'),false);
 });

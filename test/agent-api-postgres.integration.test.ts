@@ -115,6 +115,7 @@ test('OPT-IN isolated PostgreSQL Agent grants, revocation and todo write/readbac
         if (key.permissions?.todo?.includes('write')) scopes.push('todo:write');
         return {grantId: key.id, ownerId: key.referenceId, spaceId: key.metadata.spaceId, scopes};
       },
+      operationAvailable:()=>true,
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
       assertWritable: async grant => {
         if (grant.grantId === keyForRevocation.id && ++revocationChecks === 2) await revoke(grant.grantId);

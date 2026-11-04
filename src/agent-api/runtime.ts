@@ -7,6 +7,7 @@ import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules} from './config.ts';
 import {decodeAgentPermissions} from './scopes.ts';
 import {createAgentHandler} from './http.ts';
+import {agentOperations} from './capabilities.ts';
 
 type AgentConfig = NonNullable<ReturnType<typeof readAgentRuntimeConfig>>;
 type Handler = ReturnType<typeof createAgentHandler>;
@@ -37,6 +38,15 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
   } catch {return null;}
 }
 
+/** Read-only readiness uses the same live business permit as the write guard. */
+export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean):boolean {
+  const operation = agentOperations.find(entry => entry.id === id);
+  if (!operation || operation.module !== 'todo' || !personal.allowedTypes.includes('todo')) return false;
+  if (operation.method === 'GET') return true;
+  if (!fenceReady) return false;
+  try {requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''); return true;} catch {return false;}
+}
+
 async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<Handler> {
   const [{Pool}, {betterAuth}, {apiKey}] = await Promise.all([
     import('pg'), import('better-auth'), import('@better-auth/api-key'),
@@ -58,8 +68,8 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       has_function_privilege(current_user,to_regprocedure('lifeos_agent.assert_todo_write_grant(text,text,text)'),'EXECUTE') AS can_fence,
       NOT has_table_privilege(current_user,'lifeos_agent.apikey','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS no_key_access,
       NOT has_any_column_privilege(current_user,'lifeos_agent.apikey','SELECT,INSERT,UPDATE,REFERENCES') AS no_key_column_access`);
-    if (fences.length !== 1 || Object.values(fences[0]).some(value => value !== true))
-      throw Error('Restricted Agent write fence required');
+    const fenceReady = fences.length === 1 && Object.values(fences[0]).every(value => value === true);
+    if (!fenceReady) throw Error('Restricted Agent write fence required');
     const {rows} = await verifier.query(`SELECT current_user AS role, current_database() AS database,
       NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolbypassrls OR r.rolinherit OR r.rolreplication) AS restricted,
       NOT EXISTS (SELECT 1 FROM pg_auth_members WHERE member=r.oid) AS no_memberships,
@@ -109,6 +119,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
       },
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
+      operationAvailable: id => agentOperationAvailable(id, personal, fenceReady),
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
   } catch (error) {

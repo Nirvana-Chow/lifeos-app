@@ -93,3 +93,14 @@ test('current grant lookup rejects disabled, expired, malformed and changed gran
     const original=row; row={...row,...update}; assert.equal(await read(pool,'grant'),null); row=original;
   }
 });
+
+test('runtime operation readiness follows current business write policy and fence', async () => {
+  const runtime=await import('../src/agent-api/runtime.ts');
+  const available=(runtime as typeof runtime & {agentOperationAvailable:(id:string,personal:import('../src/personal-candidate/config.ts').PersonalConfig,fence:boolean)=>boolean}).agentOperationAvailable;
+  const base={ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal'] as const,approval:'personal-manual-v1' as const,baseURL:origin};
+  assert.equal(available('listTodos',{...base,businessWriteMode:'disabled'},true),true);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'disabled'},true),false);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'owner-managed'},false),false);
+  assert.equal(available('createTodo',{...base,businessWriteMode:'owner-managed'},true),true);
+  assert.equal(available('unimplemented',{...base,businessWriteMode:'owner-managed'},true),false);
+});

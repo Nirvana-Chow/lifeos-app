@@ -16,6 +16,7 @@ type Options = {
   repository: PlatformRepository;
   verify: (key: string) => Promise<Grant | null>;
   readCurrentGrant?: (grantId: string) => Promise<Grant | null>;
+  operationAvailable?: (operationId: string) => boolean | Promise<boolean>;
   assertWritable: (grant: Grant) => Promise<void>;
 };
 
@@ -45,6 +46,12 @@ function updateFields(value: unknown) {
 export function createAgentHandler(options: Options) {
   const config = Object.freeze(structuredClone(options.config));
   const service = new PersonalService(options.repository, config);
+  const available = async (id:string) => {
+    if (id === 'discover' || id === 'discoverV2') return true;
+    const operation = agentOperations.find(entry => entry.id === id);
+    if (!operation || options.mountPath && operation.method !== 'GET' && options.fenceWrites !== true) return false;
+    try {return await options.operationAvailable?.(id) === true;} catch {return false;}
+  };
   return async (request: Request): Promise<Response> => {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
@@ -66,12 +73,15 @@ export function createAgentHandler(options: Options) {
       if (!actor) return respond(403, {error:'ACCESS_DENIED'});
       try {await authority.assertCurrentAuthority(actor, operation.id);} catch {return respond(403, {error:'ACCESS_DENIED'});}
       if (operation.id === 'discoverV2') {
-        return respond(200, {apiVersion:'2', operations:agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)))});
+        const permitted = agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)));
+        const readiness = await Promise.all(permitted.map(entry => available(entry.id)));
+        return respond(200, {apiVersion:'2', operations:permitted.filter((_, index) => readiness[index])});
       }
       if (operation.id === 'discover') {
         return respond(200, {apiVersion: agentApiVersion,
           operations: agentOperations.filter(entry => entry.id !== 'discoverV2' && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
+      if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
       if (operation.id === 'listTodos') {
         const page = await service.list(grant.ownerId, 'todo');
         return respond(200, {items: page.items.map(entry => {
