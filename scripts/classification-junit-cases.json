@@ -77,7 +77,8 @@
     "file": "test/classification-review-browser.integration.test.ts",
     "suites": {},
     "cases": [
-      "classification dialog preserves context and recovers explicit commands"
+      "classification dialog preserves context and recovers explicit commands",
+      "classification guards and readback preserve the workspace under uncertain outcomes"
     ]
   }
 }

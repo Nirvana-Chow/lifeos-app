@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const passed = readFileSync(new URL('./fixtures/classification-junit/postgres-passed.xml', import.meta.url), 'utf8');
+const browserPassed = readFileSync(new URL('./fixtures/classification-junit/browser-passed.xml', import.meta.url), 'utf8');
 const skipped = readFileSync(new URL('./fixtures/classification-junit/browser-skipped.xml', import.meta.url), 'utf8');
 const checker = new URL('../scripts/check-classification-junit.py', import.meta.url).pathname;
 function check(xml: string, profile = 'postgres') {
@@ -19,6 +20,26 @@ test('actual native PG JUnit requires both enabled suites and all 64 leaf cases'
  const result = check(passed);
  assert.equal(result.status, 0, result.stderr);
  assert.match(result.stdout, /64 leaf cases/);
+});
+test('actual enabled Chrome JUnit requires both enabled direct browser cases', () => {
+ const result = check(browserPassed, 'browser');
+ assert.equal(result.status, 0, result.stderr);
+ assert.match(result.stdout, /0 suites, 2 leaf cases/);
+});
+const browserLeaves = browserPassed.match(/<testcase[^>]+\/>/g)!;
+const browserMutations: [string, (xml: string) => string][] = [
+ ['missing second case', xml => xml.replace(browserLeaves[1], '')],
+ ['duplicate case with unchanged total', xml => xml.replace(browserLeaves[1], browserLeaves[0])],
+ ['substituted case with unchanged total', xml => xml.replace('classification guards and readback preserve the workspace under uncertain outcomes', 'unqualified replacement')],
+ ['skipped direct case', xml => xml.replace(browserLeaves[1], browserLeaves[1].replace('/>', '><skipped/></testcase>'))],
+ ['failed direct case', xml => xml.replace(browserLeaves[1], browserLeaves[1].replace('/>', '><failure/></testcase>'))],
+ ['errored direct case', xml => xml.replace(browserLeaves[1], browserLeaves[1].replace('/>', '><error/></testcase>'))],
+ ['wrong direct source', xml => xml.replaceAll('test/classification-review-browser.integration.test.ts', 'test/unqualified.integration.test.ts')],
+];
+for (const [name, mutate] of browserMutations) test(`classification browser JUnit gate rejects ${name}`, () => {
+ const result = check(mutate(browserPassed), 'browser');
+ assert.notEqual(result.status, 0, result.stdout);
+ assert.match(result.stderr, /CLASSIFICATION_JUNIT_DENIED/);
 });
 test('default-closed browser testcase is rejected despite its successful Node process', () => {
  const result = check(skipped, 'browser');
