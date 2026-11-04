@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {lstat, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
 import test from 'node:test';
 import {betterAuth} from 'better-auth';
 import {createAuthEndpoint} from 'better-auth/api';
 import {apiKey} from '@better-auth/api-key';
 import {Pool} from 'pg';
 import {createPostgresKeyIssuer, readKeyIssuerConfig, type KeySummary} from '../src/agent-api/key-issuer.ts';
+import {callKeyIssuer,createKeyManagementHandler} from '../src/agent-api/key-web.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import type {AgentScope} from '../src/agent-api/capabilities.ts';
 import {PostgresPlatformRepository, type SqlPool} from '../src/platform/postgres.ts';
@@ -82,7 +88,7 @@ test('OPT-IN native-cookie owner MFA manages real PostgreSQL grants and uses the
     issuer=await createPostgresKeyIssuer(config);
     const handle=issuer.handle;
     const good=await cookie(ready);
-    const create={name:'Synthetic managed todo key',scopes:['todo:read','todo:write'],expiresInDays:365};
+    const create={name:'Synthetic 40-character managed todo key!',scopes:['todo:read','todo:write'],expiresInDays:365};
     for (const token of [incomplete,expired,foreign]) assert.equal((await handle('create',await cookie(token),create)).status,401);
     assert.equal((await handle('create',good.replace(ready,foreign),create)).status,401);
     assert.equal((await handle('create',good,{...create,expiresInDays:366})).status,400);
@@ -92,16 +98,64 @@ test('OPT-IN native-cookie owner MFA manages real PostgreSQL grants and uses the
     assert.equal(created.status,201);
     const {grant,key}=created.body as {grant:KeySummary;key:string};
     assert.equal(grant.status,'active');
+    assert.equal(grant.name,create.name);
     assert.deepEqual(grant.scopes,create.scopes);
-    assert.ok(Date.parse(grant.expiresAt)-Date.now()<=365*86400*1000);
+    assert.ok(Date.parse(grant.expiresAt ?? "")-Date.now()<=365*86400*1000);
     assert.deepEqual((await handle('list',good,{})).body,{keys:[grant]});
-    const otherId=randomUUID();
-    await admin.query(`INSERT INTO lifeos_agent.apikey
-      (id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions)
-      VALUES ($1,'default',$2,$1,true,now(),now(),now()+interval '1 day',$3,'{"todo":["read"]}')`,
-    [otherId,foreignId,JSON.stringify({spaceId})]);
+    const socketDirectory=await mkdtemp('/tmp/lifeos-key-issuer-ci-');
+    const socketPath=join(socketDirectory,'issuer.sock');
+    const configPath=join(socketDirectory,'issuer.json');
+    let child: ReturnType<typeof spawn>|undefined;
+    try {
+      await writeFile(configPath,JSON.stringify({socketPath,baseURL:origin,databaseURL:managerURL,
+        ownerId,ownerEmail,spaceId,sessionSecret,agentSecret}),{mode:0o600});
+      child=spawn(process.execPath,['src/agent-api/key-issuer-server.ts',configPath],{
+        env:{PATH:process.env.PATH,NODE_ENV:'test'},stdio:'ignore',
+      });
+      let ready=false;
+      for (let i=0;i<100;i++) {
+        const stat=await lstat(socketPath).catch(()=>null);
+        if (stat) {assert.ok(stat.isSocket());assert.equal(stat.mode&0o777,0o660);ready=true;break;}
+        if (child.exitCode!==null) break;
+        await delay(50);
+      }
+      assert.ok(ready,'Private issuer socket did not start');
+      const bridge=createKeyManagementHandler(origin,(operation,session,body)=>callKeyIssuer(socketPath,operation,session,body));
+      const result=await bridge(new Request(origin+'/api/platform/account/api-keys',{
+        headers:{host:new URL(origin).host,cookie:good},
+      }));
+      assert.equal(result.status,200);
+      assert.deepEqual(await result.json(),{keys:[grant]});
+    } finally {
+      if (child && child.exitCode===null && child.signalCode===null) {
+        const closed=once(child,'exit');
+        child.kill('SIGTERM');
+        await closed;
+      }
+      await rm(socketDirectory,{recursive:true,force:true});
+    }
+
+    const otherSpace='synthetic-other-management-space';
+    for (const [grantOwner,grantSpace] of [[foreignId,spaceId],[ownerId,otherSpace]]) {
+      const otherId=randomUUID();
+      await admin.query(`INSERT INTO lifeos_agent.apikey
+        (id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions)
+        VALUES ($1,'default',$2,$1,true,now(),now(),now()-interval '1 second',$3,'{"todo":["read"]}')`,
+      [otherId,grantOwner,JSON.stringify({spaceId:grantSpace})]);
+      assert.equal((await manager.query('SELECT id FROM lifeos_agent.apikey WHERE id=$1',[otherId])).rowCount,0);
+      assert.equal((await manager.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[otherId])).rowCount,0);
+      assert.equal((await manager.query('DELETE FROM lifeos_agent.apikey WHERE id=$1',[otherId])).rowCount,0);
+      assert.equal((await handle('revoke',good,{id:otherId})).status,404);
+      await assert.rejects(manager.query(`INSERT INTO lifeos_agent.apikey
+        (id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions,
+         "rateLimitEnabled","rateLimitTimeWindow","rateLimitMax")
+        VALUES ($1,'default',$2,$1,true,now(),now(),now()+interval '1 day',$3,'{"todo":["read"]}',true,60000,20)`,
+      [randomUUID(),grantOwner,JSON.stringify({spaceId:grantSpace})]),{code:'42501'});
+    }
     assert.deepEqual((await handle('list',good,{})).body,{keys:[grant]});
-    assert.equal((await handle('revoke',good,{id:otherId})).status,404);
+    await assert.rejects(manager.query('SELECT owner_id FROM lifeos_agent.key_management_binding'),{code:'42501'});
+    assert.equal((await manager.query('SELECT lifeos_agent.verify_management_session($1,$2,$3) AS allowed',
+      [foreign,foreignId,foreignId+'@example.test'])).rows[0].allowed,false);
     assert.equal((await manager.query('DELETE FROM lifeos_agent.apikey WHERE id=$1',[grant.id])).rowCount,0);
     await assert.rejects(manager.query('UPDATE lifeos_agent.apikey SET "expiresAt"=now() WHERE id=$1',[grant.id]),{code:'42501'});
     let revokeBeforeFence=false;
@@ -127,6 +181,17 @@ test('OPT-IN native-cookie owner MFA manages real PostgreSQL grants and uses the
     assert.equal((await write()).status,403);
     assert.equal((await write()).status,401);
     assert.deepEqual((await handle('list',good,{})).body,{keys:[{...grant,status:'revoked'}]});
+
+    await admin.query(`INSERT INTO lifeos_agent.apikey
+      (id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions)
+      SELECT 'synthetic-page-'||n,'default',$1,'synthetic-page-digest-'||n,false,
+        now()+interval '1 minute',now(),now()+interval '1 day',$2,'{"todo":["read"]}'
+      FROM generate_series(1,100) n`,[ownerId,JSON.stringify({spaceId})]);
+    const firstPage=(await handle('list',good,{})).body as {keys:KeySummary[];nextCursor:string};
+    assert.equal(firstPage.keys.length,100);
+    assert.ok(firstPage.nextCursor);
+    assert.ok(!firstPage.keys.some(row=>row.id===grant.id));
+    assert.deepEqual((await handle('list',good,{cursor:firstPage.nextCursor})).body,{keys:[{...grant,status:'revoked'}]});
     await admin.query('UPDATE lifeos_platform.platform_two_factor SET verified=false WHERE "userId"=$1',[ownerId]);
     assert.equal((await handle('list',good,{})).status,401);
   } finally {

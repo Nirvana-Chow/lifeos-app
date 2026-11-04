@@ -19,8 +19,15 @@ type Grant = {
   expiresAt: string | null;
   status: keyof typeof statuses;
 };
-type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]};
+type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string};
 const requestOptions = {cache: 'no-store', credentials: 'same-origin'} as const;
+async function readGrantPage(response: Response) {
+  const data: {keys: Grant[]; nextCursor?: string} = await response.json();
+  if (!Array.isArray(data.keys) ||
+      (data.nextCursor !== undefined && (typeof data.nextCursor !== 'string' || !data.nextCursor))) throw Error();
+  return {grants: data.keys, nextCursor: data.nextCursor};
+}
+
 const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', {
   dateStyle: 'medium', timeStyle: 'short',
 }).format(new Date(value));
@@ -28,6 +35,8 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 export function AccountApiKeys() {
   const [list, setList] = useState<List>({kind: 'loading'});
   const [loadVersion, setLoadVersion] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState(false);
   const [name, setName] = useState('');
   const [permission, setPermission] = useState('read');
   const [expiry, setExpiry] = useState('30');
@@ -42,6 +51,7 @@ export function AccountApiKeys() {
   const revoker = useRef<HTMLButtonElement | null>(null);
   const pageActive = useRef(true);
   const actionLock = useRef(false);
+  const moreRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,15 +62,14 @@ export function AccountApiKeys() {
         if (response.status === 404) return setList({kind: 'disabled'});
         if (response.status === 401 || response.status === 403) return setList({kind: 'denied'});
         if (!response.ok) return setList({kind: 'error'});
-        const data: {keys: Grant[]} = await response.json();
-        if (!Array.isArray(data.keys)) throw Error();
-        if (!controller.signal.aborted) setList({kind: 'ready', grants: data.keys});
+        const page = await readGrantPage(response);
+        if (!controller.signal.aborted) setList({kind: 'ready', ...page});
       } catch {
         if (!controller.signal.aborted) setList({kind: 'error'});
       }
     }
     void load();
-    return () => controller.abort();
+    return () => {controller.abort(); moreRequest.current?.abort();};
   }, [loadVersion]);
 
   useEffect(() => {
@@ -82,8 +91,42 @@ export function AccountApiKeys() {
   }, [reveal]);
 
   function reload() {
+    moreRequest.current?.abort();
+    moreRequest.current = null;
+    setLoadingMore(false);
+    setPageError(false);
     setList({kind: 'loading'});
     setLoadVersion(version => version + 1);
+  }
+
+  async function loadMore() {
+    if (list.kind !== 'ready' || !list.nextCursor || moreRequest.current) return;
+    const cursor = list.nextCursor;
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    setLoadingMore(true);
+    setPageError(false);
+    try {
+      const response = await fetch(endpoint + '?cursor=' + encodeURIComponent(cursor),
+        {...requestOptions, signal: controller.signal});
+      if (!response.ok) throw Error();
+      const page = await readGrantPage(response);
+      if (page.nextCursor === cursor) throw Error();
+      if (controller.signal.aborted) return;
+      setList(current => {
+        if (current.kind !== 'ready' || current.nextCursor !== cursor) return current;
+        const grants = new Map(current.grants.map(grant => [grant.id, grant]));
+        for (const grant of page.grants) grants.set(grant.id, grant);
+        return {kind: 'ready', grants: [...grants.values()], nextCursor: page.nextCursor};
+      });
+    } catch {
+      if (!controller.signal.aborted) setPageError(true);
+    } finally {
+      if (moreRequest.current === controller) {
+        moreRequest.current = null;
+        setLoadingMore(false);
+      }
+    }
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -235,6 +278,10 @@ export function AccountApiKeys() {
             </div>}
           </li>)}
         </ul>}
+        {pageError && <p role="status">暂时无法读取更多密钥，请重试。</p>}
+        {list.nextCursor && <Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>
+          {loadingMore ? '正在读取…' : '加载更多密钥'}
+        </Button>}
       </section>
     </>}
     <Dialog open={!!revoking} onOpenChange={open => {if (!open && !actionLock.current) setRevoking(null);}}>

@@ -21,7 +21,9 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
     const operation = url.pathname === basePath
       ? request.method === 'GET' ? 'list' : request.method === 'POST' ? 'create' : null
       : match && request.method === 'DELETE' ? 'revoke' : null;
-    if (!operation || url.search) return failure(404, 'NOT_FOUND');
+    const cursor = url.searchParams.get('cursor');
+    if (!operation || (url.search && (operation !== 'list' || url.searchParams.size !== 1 || !cursor || cursor.length > 128)))
+      return failure(404, 'NOT_FOUND');
     try {
       assertLocalRequest(request, baseURL);
       if (operation !== 'list' && request.headers.get('origin') !== new URL(baseURL).origin)
@@ -29,7 +31,7 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
       const cookie = request.headers.get('cookie');
       if (request.headers.has('authorization') || !cookie || cookie.length > 8192)
         return failure(401, 'AUTH_REQUIRED');
-      const body = operation === 'create' ? await readJSONBody(request) : operation === 'revoke' ? {id: match![1]} : {};
+      const body = operation === 'create' ? await readJSONBody(request) : operation === 'revoke' ? {id: match![1]} : cursor ? {cursor} : {};
       const response = await issuer(operation, cookie, body);
       if (response.status === 204 && operation === 'revoke') return new Response(null, {status: 204, headers});
       if ((response.status === 200 && operation === 'list') || (response.status === 201 && operation === 'create'))
@@ -47,12 +49,12 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
   };
 }
 
-function callIssuer(operation: Operation, cookie: string, body: unknown): Promise<Response> {
+export function callKeyIssuer(socketPath: string, operation: Operation, cookie: string, body: unknown): Promise<Response> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const deadline = AbortSignal.timeout(7000);
     const request = requestLocal({
-      socketPath: keyManagementSocket, path: '/v1/keys/' + operation, method: 'POST', signal: deadline,
+      socketPath, path: '/v1/keys/' + operation, method: 'POST', signal: deadline,
       headers: {Cookie: cookie, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload)},
     }, response => {
       const chunks: Buffer[] = [];
@@ -79,5 +81,5 @@ export async function handleKeyManagementRequest(request: Request): Promise<Resp
   if (process.env[keyManagementFlag] !== '1') return failure(404, 'NOT_FOUND');
   const platform = readPlatformConfig(process.env);
   if (!platform || new URL(platform.baseURL).protocol !== 'https:') return failure(503, 'KEY_MANAGEMENT_UNAVAILABLE');
-  return createKeyManagementHandler(platform.baseURL, callIssuer)(request);
+  return createKeyManagementHandler(platform.baseURL, (operation, cookie, body) => callKeyIssuer(keyManagementSocket, operation, cookie, body))(request);
 }

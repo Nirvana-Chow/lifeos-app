@@ -8,11 +8,12 @@ const limit = now + 365 * 86400 * 1000;
 const cookie = 'owner-session';
 const item = {id: 'fixture-grant', name: 'Smoke', scopes: ['todo:read'] as const,
   createdAt: new Date(now).toISOString(), expiresAt: new Date(limit).toISOString(), status: 'active' as const};
+const pageCursor = '2026-01-02T00:00:00.000000Z~fixture-grant';
 function harness() {
   const calls: unknown[] = [];
   const handle = createKeyIssuer({
     authenticate: async value => value === cookie,
-    list: async () => [{...item, key: 'never-in-list'}],
+    list: async cursor => cursor ? {keys: [{...item, key: 'never-in-list'}]} : {keys: [], nextCursor: pageCursor},
     issue: async input => {calls.push(input); return {grant: item, key: 'only-visible-on-issue'};},
     revoke: async id => {calls.push(id);return id === item.id;},
   }, () => now);
@@ -41,7 +42,9 @@ test('private issuer authenticates independently and strictly caps expiry', asyn
 
 test('private issuer projects safe metadata and revokes by opaque grant identifier', async () => {
   const {calls,handle}=harness();
-  assert.deepEqual(await handle('list',cookie,{}),{status:200,body:{keys:[item]}});
+  assert.deepEqual(await handle('list',cookie,{}),{status:200,body:{keys:[],nextCursor:pageCursor}});
+  assert.deepEqual(await handle('list',cookie,{cursor:pageCursor}),{status:200,body:{keys:[item]}});
+  assert.equal((await handle('list',cookie,{cursor:'invalid'})).status,400);
   assert.equal((await handle('revoke',cookie,{id:item.id,spaceId:'spoof'})).status,400);
   assert.equal((await handle('revoke',cookie,{id:'foreign-grant'})).status,404);
   assert.equal((await handle('revoke',cookie,{id:item.id})).status,204);

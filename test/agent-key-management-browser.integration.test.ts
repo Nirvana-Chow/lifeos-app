@@ -65,12 +65,22 @@ test('OPT-IN synthetic browser creates and revokes API keys, and never restores 
     const grants: {id: string; name: string; scopes: string[]; createdAt: string; expiresAt: string; status: string}[] = [];
     const posts: unknown[] = [];
     let deletes = 0;
+    let pageAttempts = 0;
+    const cursor = 'fixture/older+keys';
+    const olderGrant = {id: 'fixture-older-key', name: 'Synthetic older key', scopes: ['todo:read'],
+      status: 'active', createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString()};
     await page.route('**/*', async route => {
       const request = route.request();
       const url = new URL(request.url());
       if (url.origin !== origin) return route.abort();
       const path = url.pathname;
-      if (path === keyEndpoint && request.method() === 'GET') return route.fulfill({json: {keys: grants}});
+      if (path === keyEndpoint && request.method() === 'GET') {
+        if (!url.search) return route.fulfill({json: {keys: grants, nextCursor: grants.length ? cursor : undefined}});
+        if (url.searchParams.get('cursor') !== cursor) return route.fulfill({status: 400});
+        if (++pageAttempts === 1) return route.fulfill({status: 503});
+        return route.fulfill({json: {keys: [grants[0], olderGrant]}});
+      }
       if (path === keyEndpoint && request.method() === 'POST') {
         const data = request.postDataJSON();
         posts.push(data);
@@ -84,6 +94,10 @@ test('OPT-IN synthetic browser creates and revokes API keys, and never restores 
       if (path === keyEndpoint + '/fixture-grant-1' && request.method() === 'DELETE') {
         deletes += 1;
         grants[0].status = 'revoked';
+        return route.fulfill({status: 204});
+      }
+      if (path === keyEndpoint + '/' + olderGrant.id && request.method() === 'DELETE') {
+        olderGrant.status = 'revoked';
         return route.fulfill({status: 204});
       }
       if (path.startsWith(keyEndpoint)) return route.fulfill({status: 404});
@@ -143,6 +157,19 @@ test('OPT-IN synthetic browser creates and revokes API keys, and never restores 
     await expect(page.getByRole('button', {name: '撤销 Synthetic Skill'})).toHaveCount(0);
     assert.equal(deletes, 1);
     await expect(page.getByRole('button', {name: '撤销 Synthetic replacement'})).toBeVisible();
+    const loadMore = page.getByRole('button', {name: '加载更多密钥'});
+    await loadMore.click();
+    await expect(page.getByRole('status').filter({hasText: '暂时无法读取更多密钥'})).toBeVisible();
+    await expect(page.getByRole('button', {name: '撤销 Synthetic replacement'})).toBeVisible();
+    await loadMore.click();
+    await expect(page.getByRole('button', {name: '撤销 Synthetic older key'})).toBeVisible();
+    await expect(page.getByText('Synthetic Skill', {exact: true})).toHaveCount(1);
+    await expect(loadMore).toHaveCount(0);
+    await page.getByRole('button', {name: '撤销 Synthetic older key'}).click();
+    await dialog.getByRole('button', {name: '确认撤销'}).click();
+    await loadMore.click();
+    const olderRow = page.getByRole('listitem').filter({hasText: 'Synthetic older key'});
+    await expect(olderRow.getByText('已撤销', {exact: true})).toBeVisible();
     await page.close();
   }
 });

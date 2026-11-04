@@ -333,7 +333,7 @@ jobs:
             ]) {
               await pool.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`);
             }
-            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_key_management_approved = '1'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
+            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_key_management_approved = '1'; SET lifeos.agent_key_manager_owner = 'agent-management-owner'; SET lifeos.agent_key_manager_space = 'synthetic-agent-management-space'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
             for (const file of ['0006_agent_api.proposed.sql','0010_agent_key_management.proposed.sql']) {
               await pool.query(readFileSync('db/' + file, 'utf8'));
             }

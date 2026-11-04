@@ -11,14 +11,16 @@ export type KeySummary = Readonly<{
   name: string;
   scopes: readonly AgentScope[];
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
   status: 'active' | 'expired' | 'revoked';
 }>;
 type IssueInput = {name: string; scopes: AgentScope[]; expiresIn: number};
 type Issued = {grant: KeySummary; key: string};
+type KeyPage = {keys: KeySummary[]; nextCursor?: string};
+const cursorPattern = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)~([A-Za-z0-9_-]{1,80})$/;
 type Dependencies = {
   authenticate: (cookie: string) => Promise<boolean>;
-  list: () => Promise<KeySummary[]>;
+  list: (cursor?: string) => Promise<KeyPage>;
   issue: (input: IssueInput) => Promise<Issued>;
   revoke: (id: string) => Promise<boolean>;
 };
@@ -41,8 +43,12 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now) {
     try {
       if (!cookie || Buffer.byteLength(cookie) > 8192 || !await deps.authenticate(cookie)) return fail(401,'AUTH_REQUIRED');
       if (operation === 'list') {
-        if (!fields(body,[])) return fail(400,'INVALID_REQUEST');
-        return {status:200,body:{keys:(await deps.list()).map(safeSummary)}};
+        const input = fields(body, ['cursor']);
+        const cursor = input?.cursor;
+        if (!fields(body, []) && (typeof cursor !== 'string' || !cursorPattern.test(cursor) || !Number.isFinite(Date.parse(cursor.split('~')[0]))))
+          return fail(400, 'INVALID_REQUEST');
+        const page = await deps.list(typeof cursor === 'string' ? cursor : undefined);
+        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
       }
       if (operation === 'revoke') {
         const input = fields(body,['id']);
@@ -119,14 +125,14 @@ export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   return Object.freeze({...config,databaseName:database.pathname.slice(1)});
 }
 
-type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date;enabled:boolean;permissions:unknown};
+type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean;permissions:unknown;cursorTime?:string};
 function fromRow(row: GrantRow): KeySummary {
   const permissions=typeof row.permissions==='string'?JSON.parse(row.permissions):row.permissions;
   const todo=permissions?.todo;
-  if (!Array.isArray(todo)||!todo.includes('read')||!row.expiresAt) throw Error('Unexpected grant metadata');
+  if (!Array.isArray(todo)||!todo.includes('read')) throw Error('Unexpected grant metadata');
   return {id:row.id,name:row.name??'',scopes:todo.includes('write')?['todo:read','todo:write']:['todo:read'],
-    createdAt:new Date(row.createdAt).toISOString(),expiresAt:new Date(row.expiresAt).toISOString(),
-    status:!row.enabled?'revoked':Date.parse(row.expiresAt.toISOString())<=Date.now()?'expired':'active'};
+    createdAt:new Date(row.createdAt).toISOString(),expiresAt:row.expiresAt?.toISOString()??null,
+    status:!row.enabled?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
 }
 
 export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
@@ -141,6 +147,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       NOT has_database_privilege(current_user,current_database(),'CREATE') AS no_database_create,
       NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname !~ '^pg_temp_' AND nspname !~ '^pg_toast_temp_' AND has_schema_privilege(current_user,oid,'CREATE')) AS no_schema_create,
       has_function_privilege(current_user,'lifeos_agent.verify_management_session(text,text,text)','EXECUTE') AS can_check_session,
+      lifeos_agent.key_management_binding_matches($1,$2) AS matches_binding,
       has_table_privilege(current_user,'lifeos_agent.apikey','INSERT') AS can_issue,
       has_column_privilege(current_user,'lifeos_agent.apikey','enabled','UPDATE') AS can_revoke,
       NOT has_column_privilege(current_user,'lifeos_agent.apikey','permissions','UPDATE') AS cannot_escalate,
@@ -155,7 +162,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
         Object.entries(permissions).some(([key,value])=>key!=='role'&&key!=='database'&&value!==true)) throw Error('Restricted issuer role required');
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
       logger:{disabled:true},telemetry:{enabled:false},plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,
-        keyExpiration:{minExpiresIn:0,maxExpiresIn:365},startingCharactersConfig:{shouldStore:false}})]});
+        keyExpiration:{minExpiresIn:0,maxExpiresIn:365},maximumNameLength:80,startingCharactersConfig:{shouldStore:false}})]});
     await auth.$context;
     const bind=[config.ownerId,config.spaceId];
     const handle=createKeyIssuer({
@@ -165,11 +172,16 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
         const {rows:[row]}=await pool.query('SELECT lifeos_agent.verify_management_session($1,$2,$3) AS allowed',[token,config.ownerId,config.ownerEmail]);
         return row?.allowed===true;
       },
-      list:async()=>{
-        const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions
-          FROM lifeos_agent.apikey WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2 AND "expiresAt" IS NOT NULL
-          ORDER BY "createdAt" DESC,id LIMIT 100`,bind);
-        return rows.map(fromRow);
+      list:async cursor=>{
+        const [,time,id]=cursor ? cursorPattern.exec(cursor)! : [];
+        const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,
+          to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime"
+          FROM lifeos_agent.apikey WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2
+          AND ($3::timestamptz IS NULL OR ("createdAt",id)<($3::timestamptz,$4::text))
+          ORDER BY "createdAt" DESC,id DESC LIMIT 101`,[...bind,time??null,id??null]);
+        const keys=rows.slice(0,100);
+        const last=keys.at(-1);
+        return {keys:keys.map(fromRow),...(rows.length>100&&last ? {nextCursor:last.cursorTime+'~'+last.id} : {})};
       },
       issue:async input=>{
         const key=await auth.api.createApiKey({body:{userId:config.ownerId,name:input.name,expiresIn:input.expiresIn,
