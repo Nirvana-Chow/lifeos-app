@@ -24,6 +24,61 @@ test('classification PostgreSQL immutable storage qualification (explicit isolat
     ]){await client.query('BEGIN');await client.query(mutation);await client.query('SET LOCAL ROLE lifeos_platform_candidate_runtime');await assert.rejects(verifyClassificationClient(client),{status:503});await client.query('ROLLBACK');}
    }finally{await client.query('ROLLBACK');client.release();}
   });
+  const semanticDrifts=[
+   {name:'consumption UNIQUE with command key added',table:'command',kind:'u',definition:'UNIQUE(owner_id,space_id,command_key,plan_id)'},
+   {name:'command primary key with plan added',table:'command',kind:'p',definition:'PRIMARY KEY(owner_id,space_id,command_key,plan_id)'},
+   {name:'approval FK missing digest and proposal columns',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id)'},
+   {name:'command FK targets plan instead of approval',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_plan(owner_id,space_id,plan_id,digest,proposal_revision)'},
+   {name:'approval FK becomes deferred',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id,digest,proposal_revision) DEFERRABLE INITIALLY DEFERRED'},
+   {name:'approval FK allows cascading deletion',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id,digest,proposal_revision) ON DELETE CASCADE'},
+   {name:'approval FK allows cascading update',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id,digest,proposal_revision) ON UPDATE CASCADE'},
+   {name:'approval FK changes match mode',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id,digest,proposal_revision) MATCH FULL'},
+   {name:'approval FK is unvalidated',table:'command',kind:'f',reference:'platform_classification_approval',definition:'FOREIGN KEY(owner_id,space_id,plan_id,digest,proposal_revision) REFERENCES lifeos_platform.platform_classification_approval(owner_id,space_id,plan_id,digest,proposal_revision) NOT VALID'},
+   {name:'required plan JSON CHECK replaced with true',table:'plan',kind:'c',expression:'classification_valid',definition:'CHECK(true)'},
+   {name:'required plan JSON CHECK permits unknown shape',table:'plan',kind:'c',expression:'classification_valid',definition:"CHECK(lifeos_platform.classification_valid(plan,'plan') OR true)"},
+  ];
+  for(const drift of semanticDrifts)await t.test('readiness rejects same-name same-count '+drift.name,async()=>{
+   const client=await admin.connect();try{
+    await client.query('BEGIN');
+    const table='lifeos_platform.platform_classification_'+drift.table;
+    const constraints=(await client.query("SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid=$1::regclass AND contype=$2 AND ($3::text IS NULL OR confrelid=to_regclass('lifeos_platform.'||$3)) AND ($4::text IS NULL OR pg_get_constraintdef(oid) LIKE '%'||$4||'%')",[table,drift.kind,drift.reference??null,drift.expression??null])).rows;
+    assert.equal(constraints.length,1);const name=String(constraints[0].conname);assert.match(name,/^[a-z_]+$/);
+    await client.query(`ALTER TABLE ${table} DROP CONSTRAINT ${name}`);await client.query(`ALTER TABLE ${table} ADD CONSTRAINT ${name} ${drift.definition}`);
+    await client.query('SET LOCAL ROLE lifeos_platform_candidate_runtime');await assert.rejects(verifyClassificationClient(client),{status:503});
+   }finally{await client.query('ROLLBACK');client.release();}
+   await verifyClassificationPool(runtime);
+  });
+  for(const [name,clause] of [
+   ['wrong event','BEFORE UPDATE FOR EACH ROW'],['statement instead of row','BEFORE INSERT FOR EACH STATEMENT'],
+   ['after instead of before','AFTER INSERT FOR EACH ROW'],['conditional insertion','BEFORE INSERT FOR EACH ROW WHEN (NEW.grant_id IS NOT NULL)'],
+   ['column restricted update','BEFORE UPDATE OF plan FOR EACH ROW'],
+  ])await t.test('readiness rejects binding trigger with '+name,async()=>{
+   const client=await admin.connect();try{
+    await client.query('BEGIN');await client.query('DROP TRIGGER classification_binding ON lifeos_platform.platform_classification_plan');
+    const [timing,eventAndRow]=clause.split(/ (.*)/s);const event=eventAndRow.slice(0,eventAndRow.indexOf(' FOR EACH'));
+    const rowClause=eventAndRow.slice(eventAndRow.indexOf(' FOR EACH'));
+    await client.query(`CREATE TRIGGER classification_binding ${timing} ${event} ON lifeos_platform.platform_classification_plan${rowClause} EXECUTE FUNCTION lifeos_platform.classification_insert_binding()`);
+    await client.query('SET LOCAL ROLE lifeos_platform_candidate_runtime');await assert.rejects(verifyClassificationClient(client),{status:503});
+   }finally{await client.query('ROLLBACK');client.release();}
+   await verifyClassificationPool(runtime);
+  });
+  await t.test('readiness rejects nullable mandatory FK columns despite unchanged constraints',async()=>{
+   const client=await admin.connect();try{await client.query('BEGIN');await client.query('ALTER TABLE lifeos_platform.platform_classification_command ALTER COLUMN digest DROP NOT NULL');await client.query('SET LOCAL ROLE lifeos_platform_candidate_runtime');await assert.rejects(verifyClassificationClient(client),{status:503});}finally{await client.query('ROLLBACK');client.release();}
+   await verifyClassificationPool(runtime);
+  });
+  await t.test('readiness accepts equivalent CHECK formatting, key ordering and object names',async()=>{
+   const client=await admin.connect();try{
+    await client.query('BEGIN');const row=(await client.query("SELECT conname FROM pg_constraint WHERE conrelid='lifeos_platform.platform_classification_plan'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%classification_valid%'")).rows[0];
+    assert.match(row.conname,/^[a-z_]+$/);await client.query('ALTER TABLE lifeos_platform.platform_classification_plan DROP CONSTRAINT '+row.conname);
+    await client.query("ALTER TABLE lifeos_platform.platform_classification_plan ADD CONSTRAINT fixture_equivalent_check CHECK ( ( lifeos_platform.classification_valid ( plan , 'plan' :: text ) ) )");
+    const unique=(await client.query("SELECT conname FROM pg_constraint WHERE conrelid='lifeos_platform.platform_classification_command'::regclass AND contype='u'")).rows[0];
+    assert.match(unique.conname,/^[a-z_]+$/);await client.query('ALTER TABLE lifeos_platform.platform_classification_command DROP CONSTRAINT '+unique.conname);
+    await client.query('ALTER TABLE lifeos_platform.platform_classification_command ADD CONSTRAINT fixture_equivalent_unique UNIQUE(plan_id,space_id,owner_id)');
+    await client.query('ALTER TRIGGER classification_binding ON lifeos_platform.platform_classification_plan RENAME TO fixture_equivalent_binding');
+    await client.query('SET LOCAL ROLE lifeos_platform_candidate_runtime');await verifyClassificationClient(client);
+   }finally{await client.query('ROLLBACK');client.release();}
+   await verifyClassificationPool(runtime);
+  });
   const p=makePlan(),key='classification-'+randomUUID();
   await t.test('same transaction stores immutable plan approval and batch receipt separately from legacy commands',async()=>{
    await repo.classificationTransaction(fixture.ownerId,fixture.spaceId,key,async tx=>{
