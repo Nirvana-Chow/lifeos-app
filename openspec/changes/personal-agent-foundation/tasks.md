@@ -5,7 +5,7 @@ This is the sole execution checklist for the new PersonalAgent intent. The exist
 ## 1. Organization and explicit access — A1
 
 - [x] 1.1 [A1.1] Add the shared trusted owner/Agent authority seam, explicit four-scope codecs and distinct legacy-v1/multi-scope-v2 catalogs; verify malformed grants, organization-only discovery and unchanged legacy scope behavior with focused tests and current Skill references.
-- [ ] 1.2 [A1.2] Add proposed0011 narrow same-key CAS scope management, secret-free audit and generalized read/write transaction fence; verify owner MFA, expiry, direct-ACL denial, usage-stable digest, revocation races and old todo fallback on enabled isolated PostgreSQL with zero skips.
+- [x] 1.2 [A1.2] Add proposed0011 narrow same-key CAS scope management, secret-free audit and generalized read/write transaction fence; verify owner MFA, expiry, direct-ACL denial, usage-stable digest, revocation races and old todo fallback on enabled isolated PostgreSQL with zero skips.
 - [ ] 1.3 [A1.3] Add project/domain/topic API operations using PersonalService and the affected record-lock ordering fix; verify complete inventory, typed references, full-field CAS, replay and deterministic todo/project concurrency, with registry/discovery/Skill parity.
 - [ ] 1.4 [A1.4] Deliver usable organization and explicit permission website flows, including cancel/CAS/unknown recovery; verify actual mobile/desktop light/dark Chrome, independent review and exact-SHA source CI, preserving closed defaults and original UI gates.
 
