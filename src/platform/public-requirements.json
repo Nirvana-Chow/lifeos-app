@@ -1319,17 +1319,18 @@
     },
     {
       "id": "LO-GRAPH-001",
-      "version": 1,
+      "version": 2,
       "title": "可量化关系图谱",
       "description": "已入池并开始开源选型，未生成个人关系或图谱。",
       "status": "not_started",
       "delivery": "current",
       "sourceRefs": [
         "AGENTS.md",
-        "https://github.com/Nirvana-Chow/lifeos-app/issues/34"
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/34",
+        "docs/superpowers/specs/2026-11-04-relationship-graph-selection.md"
       ],
       "acceptanceCriteria": [
-        "比较ECharts、Cytoscape.js、Sigma/Graphology的版本、许可、交互和维护成本。",
+        "优先比较成熟图谱组件或完整探索应用的现成搜索、过滤、聚类、关系展开与交互，以及版本、许可和维护成本；不采用复用ECharts后自行拼图谱的方案。",
         "真实关联显示次数与时间范围，口径和筛选分母明确，布局距离不代表关系强弱。",
         "点连线回看构成计数的有权记录，修订、重复和缺失日期规则明确。",
         "支持时间/类型/项目/领域/主题过滤与列表替代，明确未关联及数据覆盖。",
@@ -1344,7 +1345,7 @@
         "priority": "P1",
         "implementation": "not_started",
         "summary": "已入池并开始开源选型，未生成个人关系或图谱。",
-        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "nextStep": "完成成熟组件与完整应用选型，再评审接入、许可和真实关联验收。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/34"
         ],

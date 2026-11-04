@@ -360,11 +360,13 @@ jobs:
           command -v google-chrome >/dev/null
           command -v certutil >/dev/null
           google-chrome --version
-      - name: Exercise Agent key settings in isolated desktop and mobile Chrome
+      - name: Exercise key dialogs, settings and requirements in isolated desktop and mobile Chrome
         env:
           RUN_AGENT_KEY_BROWSER_TESTS: '1'
+          RUN_SETTINGS_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_BROWSER_TESTS: '1'
           LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
-        run: node --test --test-concurrency=1 test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts
+        run: node --test --test-concurrency=1 test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts test/workspace-settings-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts
       - name: Build the exact public source image and read back its source proof
         run: |
           set -euo pipefail
