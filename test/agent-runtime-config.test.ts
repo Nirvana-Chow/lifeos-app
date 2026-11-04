@@ -67,3 +67,13 @@ test('the mounted Agent route closes without an explicit validated runtime bindi
     if(previous!==undefined)process.env.LIFEOS_AGENT_API_ENABLED=previous;
   }
 });
+
+test('business module flags are closed and reject invalid combinations', async () => {
+  const {readAgentBusinessModules} = await import('../src/agent-api/config.ts');
+  assert.deepEqual(readAgentBusinessModules({}, null), {organization:false,classification:false});
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'}, null));
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'yes'}, null));
+  assert.throws(() => readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'organization-v1'}, null));
+  const binding = {ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal'] as const,approval:'personal-manual-v1' as const,baseURL:origin};
+  assert.deepEqual(readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'}, binding), {organization:true,classification:true});
+});

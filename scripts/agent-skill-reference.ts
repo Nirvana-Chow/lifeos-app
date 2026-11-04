@@ -6,7 +6,8 @@ type DocumentedOperation = Readonly<{
   id: string;
   method: string;
   path: string;
-  scope: string;
+  scope?: string;
+  requiredScopes?: readonly string[];
   description: string;
 }>;
 
@@ -16,12 +17,12 @@ export function renderAgentOperations(operations: readonly DocumentedOperation[]
     '',
     '# LifeOS Agent API operations',
     '',
-    `API version \`${agentApiVersion}\`.`,
+    `Legacy catalog API version \`${agentApiVersion}\`; the v2 catalog uses API version \`2\` and requiredScopes arrays. Business paths retain their listed versions.`,
     '',
     '| ID | Method | Path | Scope | Purpose |',
     '| --- | --- | --- | --- | --- |',
-    ...operations.map(({ id, method, path, scope, description }) =>
-      `| \`${id}\` | \`${method}\` | \`${path}\` | \`${scope}\` | ${description.replaceAll('|', '\\|').replace(/\r?\n/g, ' ')} |`),
+    ...operations.map(({ id, method, path, scope, requiredScopes, description }) =>
+      `| \`${id}\` | \`${method}\` | \`${path}\` | \`${scope ?? (requiredScopes?.length ? requiredScopes.join(', ') : 'valid grant')}\` | ${description.replaceAll('|', '\\|').replace(/\r?\n/g, ' ')} |`),
     '',
   ];
   return lines.join('\n');

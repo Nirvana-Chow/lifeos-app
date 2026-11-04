@@ -5,6 +5,7 @@ import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {PersonalService, personalEntryType} from '../personal-candidate/service.ts';
 import {assertAgentTodoWriteGrant} from './grant-fence.ts';
 import {agentApiVersion, agentOperations, type AgentScope} from './capabilities.ts';
+import {AuthorityService} from '../agent-authority/service.ts';
 
 type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[]}>;
 type Options = {
@@ -57,11 +58,19 @@ export function createAgentHandler(options: Options) {
       if (!token) return respond(401, {error: 'AUTH_REQUIRED'});
       const grant = await options.verify(token);
       if (!grant) return respond(401, {error: 'AUTH_REQUIRED'});
-      if (grant.ownerId !== config.ownerId || grant.spaceId !== config.spaceId || !grant.scopes.includes(operation.scope))
-        return respond(403, {error: 'ACCESS_DENIED'});
+      if (grant.ownerId !== config.ownerId || grant.spaceId !== config.spaceId) return respond(403, {error: 'ACCESS_DENIED'});
+      let initial = true;
+      const authority = new AuthorityService({ownerId:config.ownerId, spaceId:config.spaceId, verifyOwner:async () => null,
+        verifyAgent:async key => { if (initial) {initial = false; return grant;} return options.verify(key); }});
+      const actor = await authority.resolveAgentActor(token);
+      if (!actor) return respond(403, {error:'ACCESS_DENIED'});
+      try {await authority.assertCurrentAuthority(actor, operation.id);} catch {return respond(403, {error:'ACCESS_DENIED'});}
+      if (operation.id === 'discoverV2') {
+        return respond(200, {apiVersion:'2', operations:agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)))});
+      }
       if (operation.id === 'discover') {
         return respond(200, {apiVersion: agentApiVersion,
-          operations: agentOperations.filter(entry => grant.scopes.includes(entry.scope))});
+          operations: agentOperations.filter(entry => entry.id !== 'discoverV2' && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (operation.id === 'listTodos') {
         const page = await service.list(grant.ownerId, 'todo');

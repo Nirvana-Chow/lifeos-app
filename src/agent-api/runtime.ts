@@ -4,9 +4,9 @@ import {readPlatformConfig, type PlatformConfig} from '../platform/config.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {PostgresPlatformRepository, verifyRestrictedPool, type SqlPool} from '../platform/postgres.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
-import {agentVerifierRole, readAgentRuntimeConfig} from './config.ts';
+import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules} from './config.ts';
+import {decodeAgentPermissions} from './scopes.ts';
 import {createAgentHandler} from './http.ts';
-import type {AgentScope} from './capabilities.ts';
 
 type AgentConfig = NonNullable<ReturnType<typeof readAgentRuntimeConfig>>;
 type Handler = ReturnType<typeof createAgentHandler>;
@@ -86,9 +86,8 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         const key = result.key;
         const spaceId = key?.metadata?.spaceId;
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
-        const scopes: AgentScope[] = [];
-        if (key.permissions?.todo?.includes('read')) scopes.push('todo:read');
-        if (key.permissions?.todo?.includes('write')) scopes.push('todo:write');
+        const scopes = decodeAgentPermissions(key.permissions);
+        if (!scopes) return null;
         return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
@@ -106,6 +105,7 @@ export async function handleAgentRequest(request: Request): Promise<Response> {
     const personal = platform ? readPersonalConfig(process.env, platform) : null;
     const config = platform ? readAgentRuntimeConfig(process.env, platform, personal) : null;
     if (!platform || !personal || !config) return failure(503, 'AGENT_API_UNAVAILABLE');
+    readAgentBusinessModules(process.env, personal);
 
     // Reject a mismatched host before opening either pool.
     assertLocalRequest(request, platform.baseURL);

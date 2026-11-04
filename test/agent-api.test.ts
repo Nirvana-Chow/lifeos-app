@@ -26,7 +26,7 @@ function fixture(enabled = true) {
         grantId: 'synthetic-' + key,
         ownerId: key === 'foreign' ? 'synthetic-owner-b' : ownerId,
         spaceId: key === 'wrong-space' ? 'other-space' : spaceId,
-        scopes: key === 'writer' ? ['todo:read', 'todo:write'] : ['todo:read'],
+        scopes: key === 'org' ? ['organization:read'] : key === 'writer' ? ['todo:read', 'todo:write'] : ['todo:read'],
       };
     },
     assertWritable: async () => { if (!permit) throw Error('synthetic permit denied'); },
@@ -62,7 +62,10 @@ test('versioned discovery exposes exactly the operations authorized by the grant
   assert.deepEqual(reader.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET', 'GET']);
   const writer = await send('/v1/capabilities', 'GET', 'writer');
   assert.deepEqual(writer.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET', 'GET', 'POST', 'PATCH']);
-  assert.equal((await send('/v2/capabilities')).status, 404);
+  const legacySix = [['discover','todo:read'],['listTodos','todo:read'],['snapshotTodos','todo:read'],['getTodo','todo:read'],['createTodo','todo:write'],['updateTodo','todo:write']];
+  assert.deepEqual(writer.body.operations.map((x: {id:string;scope:string}) => [x.id,x.scope]), legacySix);
+  assert.deepEqual(reader.body.operations.map((x: {id:string;scope:string}) => [x.id,x.scope]), legacySix.slice(0,4));
+  assert.equal((await send('/v2/capabilities')).body.apiVersion, '2');
 });
 
 test('full todo snapshot returns complete fields beyond the bounded list without disclosing other types or owners', async () => {
@@ -138,4 +141,16 @@ test('shared todo service handles write scope, field rejection, replay, version 
   denyWrite();
   assert.equal((await patch(2, 'synthetic-agent-denied-001')).status, 503);
   assert.equal(repository.rows.size, 1);
+});
+
+test('organization-only discovery uses v2 without legacy todo permission', async () => {
+  const {send,repository} = fixture();
+  assert.equal((await send('/v2/capabilities','GET','org')).status, 200);
+  assert.equal((await send('/v2/capabilities','GET','')).status, 401);
+  assert.equal((await send('/v2/capabilities','GET','foreign')).status, 403);
+  assert.equal((await send('/v2/capabilities','GET','wrong-space')).status, 403);
+  assert.equal((await send('/v1/capabilities','GET','org')).status, 403);
+  assert.equal((await send('/v1/todos','GET','org')).status, 403);
+  assert.equal((await send('/v1/organization/projects','GET','org')).status, 404);
+  assert.equal(repository.reads, 0);
 });

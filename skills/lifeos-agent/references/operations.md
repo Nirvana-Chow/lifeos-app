@@ -2,10 +2,11 @@
 
 # LifeOS Agent API operations
 
-API version `1`.
+Legacy catalog API version `1`; the v2 catalog uses API version `2` and requiredScopes arrays. Business paths retain their listed versions.
 
 | ID | Method | Path | Scope | Purpose |
 | --- | --- | --- | --- | --- |
+| `discoverV2` | `GET` | `/v2/capabilities` | `valid grant` | Discover operations permitted for the current grant. |
 | `discover` | `GET` | `/v1/capabilities` | `todo:read` | Discover operations permitted for the current grant. |
 | `listTodos` | `GET` | `/v1/todos` | `todo:read` | Read a bounded list of todo summaries. |
 | `snapshotTodos` | `GET` | `/v1/todos/snapshot` | `todo:read` | Read the complete current todo snapshot with fields and revisions, or fail if complete coverage cannot be verified. |
