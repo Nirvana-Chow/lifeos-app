@@ -25,7 +25,7 @@ else if(mode==='bootstrap'||mode==='bootstrap-foreign'){
  const loaded=readReviewConfig(runtime),selected=mode==='bootstrap'?loaded:{...loaded,LIFEOS_PLATFORM_OWNER_ID:'synthetic-foreign-user',LIFEOS_PLATFORM_OWNER_EMAIL:'foreign@example.test',LIFEOS_PERSONAL_OWNER_ID:'synthetic-foreign-user',LIFEOS_PERSONAL_OWNER_EMAIL:'foreign@example.test',LIFEOS_PERSONAL_SPACE_ID:'synthetic-foreign-space'};
  const result=await runPersonalSyntheticBootstrap(selected);if(result.status!=='created'||!result.readbackVerified)throw Error('Synthetic bootstrap failed');
 }else if(mode==='caddy'){
- const browser=process.env.OWNER_HTTPS_SCENARIO==='browser';
+ const browser=process.env.OWNER_HTTPS_SCENARIO==='browser'||process.env.OWNER_HTTPS_SCENARIO==='journal';
  if(browser&&(process.platform!=='linux'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUN_OWNER_RECOVERY_BROWSER_TESTS!=='1'))throw Error('BROWSER_FIXTURE_UNAVAILABLE');
  writeFileSync(process.env.RUNNER_TEMP+'/recovery-tls/Caddyfile',fixtureCaddyfile(readFileSync('test/fixtures/Caddyfile.synthetic','utf8'),'/fixture/server.crt','/fixture/server.key'),{mode:0o600,flag:'wx'});
 }
