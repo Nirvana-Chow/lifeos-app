@@ -442,15 +442,31 @@ export async function verifyPersonalWorkspace(page:Page){
   await readTodo(page,todo,[domain,project,todo]);
   assert.equal(cancelledWrites,0);
  }finally{page.off('request',trackCancelledWrite);}
- phase='overview-title-field';await page.getByRole('button',{name:'总览',exact:true}).click();
+ phase='overview-title-open';await page.getByRole('button',{name:'总览',exact:true}).click();
  const overviewTitle=()=>page.getByRole('button',{name:'编辑标题：'+synthetic.title,exact:true});
  await overviewTitle().dblclick();
  const overviewInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
  await expect(overviewInput).toBeFocused();await expect(page.getByRole('dialog')).toHaveCount(0);
  await expect(page.locator('form')).toHaveCount(0);
- await overviewInput.fill('合成未保存总览草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'设置',exact:true}).click();});
- await expect(overviewInput).toHaveValue('合成未保存总览草稿');
- await overviewInput.fill(synthetic.title+'（总览）');
+ phase='overview-title-draft';await overviewInput.fill('合成未保存总览草稿');
+ const overviewNode=await overviewInput.elementHandle();let overviewWrites=0,overviewNativeDialogs=0;
+ const trackOverviewWrite=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))overviewWrites++;};
+ const unexpectedOverviewDialog=(dialog:Dialog)=>{overviewNativeDialogs++;void dialog.dismiss();};
+ page.on('request',trackOverviewWrite);page.on('dialog',unexpectedOverviewDialog);
+ try{
+  phase='overview-settings-open';await page.getByRole('button',{name:'设置',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'设置',exact:true});
+  phase='overview-settings-visible';await expect(settings).toBeVisible();
+  assert.equal(overviewNativeDialogs,0,'Settings overlays the draft without native discard confirmation');assert.equal(overviewWrites,0);
+  phase='overview-settings-close';await settings.getByRole('button',{name:'关闭',exact:true}).click();
+  phase='overview-settings-draft-restored';await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
+  await expect(overviewInput).toHaveValue('合成未保存总览草稿');assert.equal(await overviewNode!.evaluate(node=>node.isConnected),true,'the overview editor remains mounted');
+  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeFocused();assert.equal(overviewNativeDialogs,0);assert.equal(overviewWrites,0);
+  page.off('dialog',unexpectedOverviewDialog);
+  phase='overview-matters-discard-refused';await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'事项',exact:true}).click();});
+  phase='overview-matters-draft-retained';await expect(page).toHaveURL(origin+'/personal');await expect(overviewInput).toHaveValue('合成未保存总览草稿');assert.equal(overviewWrites,0);
+ }finally{page.off('request',trackOverviewWrite);page.off('dialog',unexpectedOverviewDialog);}
+ phase='overview-title-save';await overviewInput.fill(synthetic.title+'（总览）');
  const overviewReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');
  await overviewInput.press('Enter');todo=(await(await overviewReceipt).json()).entry;
  assert.equal('notes'in todo.draft?todo.draft.notes:null,synthetic.editedNotes);

@@ -7,6 +7,7 @@ import {once} from 'node:events';
 import test from 'node:test';
 import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
+import {confirmDiscard} from './helpers/personal-workspace-browser-fixture.ts';
 
 const source=resolve(import.meta.dirname,'..');
 const ids=Array.from({length:7},(_,index)=>`${String(index+1).repeat(8)}-1111-4111-8111-${String(index+1).repeat(12)}`);
@@ -183,4 +184,30 @@ test('OPT-IN settings preserve drafts/history and bounded task viewport geometry
   });
  }
 
+});
+
+test('OPT-IN overview draft survives Settings overlay and rejected matters navigation',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-overview-settings-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Overview fixture startup timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('Overview fixture exited'));});});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});t.after(()=>page.close());
+ const writes=await installSyntheticReads(page,origin);
+ await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true}).dblclick();
+ const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await expect(input).toBeFocused();
+ await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('form')).toHaveCount(0);
+ await input.fill('合成未保存总览草稿');const originalInput=await input.elementHandle();
+ let nativeDialogs=0;const unexpected=(dialog:import('@playwright/test').Dialog)=>{nativeDialogs++;void dialog.dismiss();};page.on('dialog',unexpected);
+ try{
+  await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.getByRole('dialog',{name:'设置',exact:true});await expect(settings).toBeVisible();
+  assert.equal(nativeDialogs,0,'opening Settings is an overlay, not draft departure');assert.equal(writes(),0);
+  await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
+  await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(await originalInput!.evaluate(node=>node.isConnected),true,'preserve the same overview input');
+  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeFocused();assert.equal(nativeDialogs,0);assert.equal(writes(),0);
+ }finally{page.off('dialog',unexpected);}
+ await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'事项',exact:true}).click();});
+ await expect(page).toHaveURL(origin+'/personal');await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(writes(),0,'refused page departure does not submit or discard');
 });
