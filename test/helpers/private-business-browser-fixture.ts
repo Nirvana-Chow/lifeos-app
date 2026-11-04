@@ -228,6 +228,9 @@ async function verifyPrivateAppearanceAndDraftsBody(f:PrivateFixture,setPhase:(p
  const {page,context,entries}=f,transport=watchPrivateTransport(page);
  try{
   setPhase('initial-system');await observeFirstVisibleTheme(context);await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,'总览');await checkFirstVisibleTheme(page,'light','system','initial-system');
+  // Exercise both native keyboard activations on the actual Header control.
+  const toggle=page.locator(themeButtonSelector);await toggle.focus();await expect(toggle).toBeFocused();await page.keyboard.press('Enter');await themeState(page,'dark','dark');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
+  await toggle.focus();await expect(toggle).toBeFocused();await page.keyboard.press('Space');await themeState(page,'light','light');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'light');
   setPhase('dark-selection');await switchTheme(page,'dark');await themeState(page,'dark','dark');setPhase('dark-storage-readback');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
   setPhase('dark-reload');await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark','saved-dark-reload');await themeState(page,'dark','dark');
   // The retained Schedule bookmark tests first paint on a new document.
