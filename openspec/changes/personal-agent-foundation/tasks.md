@@ -12,7 +12,7 @@ This is the sole execution checklist for the new PersonalAgent intent. The exist
 ## 2. Fixed review and atomic classification — A2
 
 - [x] 2.1 [A2.1] Add immutable classification plan, exact owner approval and separate batch receipt contracts with proposed0012 storage; verify strict schemas, owner/space isolation, SELECT/INSERT-only ACLs and no secret-bearing state on isolated PostgreSQL.
-- [ ] 2.2 [A2.2] Implement shared classification preview/review/approve/commit with operation-narrowed trusted actors: read-only producers can preview, owner commits use owner write authority, API commits need write scope and all producer fences remain current; verify final-item rollback, all-no-op races, stale approval, revocation, same-command recovery and cross-entrypoint parity on enabled PostgreSQL.
+- [x] 2.2 [A2.2] Implement shared classification preview/review/approve/commit with operation-narrowed trusted actors: read-only producers can preview, owner commits use owner write authority, API commits need write scope and all producer fences remain current; verify final-item rollback, all-no-op races, stale approval, revocation, same-command recovery and cross-entrypoint parity on enabled PostgreSQL.
 - [ ] 2.3 [A2.3] Deliver fixed-diff owner review and receipt/readback in the website and portable Skill; verify readable360px/desktop themes, cancel/adjust/unknown/conflict, no business-field editing and real Chrome with independent review/exact-SHA CI. Prepare concrete activation and classification packages without applying unapproved writes.
 
 ## 3. Inspectable context and coverage — V2
