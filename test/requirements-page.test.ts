@@ -9,7 +9,7 @@ import ts from 'typescript';
 const native=createRequire(import.meta.url);
 
 // Execute real React and the real baseline; CSS is the only loader replacement.
-function renderPage(){
+function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',props:Record<string,unknown>={}){
  const cache=new Map<string,any>();
  function load(file:string):any{
   if(cache.has(file))return cache.get(file);
@@ -23,25 +23,28 @@ function renderPage(){
    if(!found)throw Error('Missing component dependency '+key);return load(found);
   },module,module.exports);return module.exports;
  }
- const Page=load(resolve('src/ui-review/requirements-page.tsx')).RequirementsPage;
- return renderToStaticMarkup(React.createElement(Page));
+ const Page=load(resolve('src/ui-review',file))[exportName];
+ return renderToStaticMarkup(React.createElement(Page,props));
 }
 
-test('requirement pool renders the ordered route, searchable status table and expandable evidence from the real baseline',()=>{
- assert.ok(existsSync('src/ui-review/requirements-page.tsx'),'The private workspace needs its requirement pool renderer');
+test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
  const html=renderPage();
- assert.match(html,/项目目标/);assert.match(html,/当前阶段/);assert.match(html,/下一步/);
- assert.match(html,/<ol[^>]*aria-label="开发路径"/);
+ assert.match(html,/当前阶段/);assert.match(html,/下一步/);
  assert.match(html,/<input[^>]*type="search"/);
- assert.match(html,/<label[^>]*for="requirements-implementation"/);
- assert.match(html,/<table[\s\S]*<caption[^>]*>需求清单/);
- assert.match(html,/<details[\s\S]*<summary[^>]*>验收与依据/);
+ for(const id of ['phase','priority','implementation','acceptance'])assert.match(html,new RegExp('<label[^>]*for="requirements-'+id+'"'));
+ assert.match(html,/data-requirements-grid="reui"/);
+ for(const label of ['表格','看板','甘特'])assert.match(html,new RegExp('aria-label="'+label+'视图"'));
  assert.match(html,/LO-TASK-001/);assert.match(html,/LO-PROJECT-001/);
- assert.match(html,/href="https:\/\/github.com\/Nirvana-Chow\/lifeos-app\/issues\/5"/);
- assert.match(html,/href="https:\/\/github.com\/Nirvana-Chow\/lifeos-app\/pull\/2"/);
- assert.match(html,/API.*capability discovery.*Skill/);
- assert.match(html,/当前 Agent API 仅支持待办/);
- assert.match(html,/本人验收/);assert.doesNotMatch(html,/>已验收</);
- assert.doesNotMatch(html,/<h1\b/,'The host already owns the page heading');
- assert.doesNotMatch(html,/\d+%|javascript:|<main\b/);
+ assert.doesNotMatch(html,/<details|验收条件|来源与源码依据/);
+ assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
+ assert.match(html,/本人验收/);
+});
+
+
+test('board retains legacy undated requirements without optional roadmap metadata',()=>{
+ const item={id:'LO-LEGACY-001',version:1,title:'保留旧基线需求',description:'原始描述',status:'not_started',delivery:'backlog',sourceRefs:['README.md'],acceptanceCriteria:['保留稳定 ID'],evidence:[],blockedBy:[]};
+ const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:[],onOpen:()=>{}});
+ assert.match(html,/未排阶段/);
+ assert.match(html,/data-requirement-id="LO-LEGACY-001"/);
+ assert.match(html,/查看需求 LO-LEGACY-001 保留旧基线需求/);
 });

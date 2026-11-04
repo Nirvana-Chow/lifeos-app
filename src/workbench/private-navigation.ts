@@ -1,8 +1,20 @@
 import {workbenchNavigation,type ModuleId,type WorkbenchModule} from './navigation.ts';
-import type {WorkspacePage} from '../ui-review/contract';
+import type {WorkspacePage, WorkspaceLocation, SettingsPanel} from '../ui-review/contract';
 
 /** Finite canonical controller pages; query input never becomes a route or dispatcher. */
-export function workspaceHref(page:WorkspacePage):string{return page==='overview'?'/personal':'/personal?page='+page;}
+export function workspaceHref(page:WorkspacePage):string{return page==='settings'?workspaceLocationHref({page:'overview',modal:'settings',panel:'general'}):page==='overview'?'/personal':'/personal?page='+page;}
+export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; panel?: unknown}): WorkspaceLocation {
+ const value=readWorkspacePage(query.page),page=value==='settings'?'overview':value;
+ if(query.modal!=='settings'&&value!=='settings')return {page};
+ const panel:SettingsPanel=query.panel==='topics'||query.panel==='security'||query.panel==='api-keys'?query.panel:'general';
+ return {page,modal:'settings',panel};
+}
+export function workspaceLocationHref(location:WorkspaceLocation):string {
+ const safe=readWorkspaceLocation(location),query=new URLSearchParams();
+ if(safe.page!=='overview')query.set('page',safe.page);
+ if(safe.modal){query.set('modal','settings');query.set('panel',safe.panel??'general');}
+ return '/personal'+(query.size?'?'+query.toString():'');
+}
 export function readWorkspacePage(value:unknown):WorkspacePage{
  return value==='tasks'||value==='inbox'||value==='areas'||value==='projects'||value==='settings'||value==='requirements'?value:'overview';
 }
@@ -14,7 +26,7 @@ export const privateHrefs:Readonly<Record<ModuleId,string>>=Object.freeze({
  chat:'/personal/chat',knowledge:'/personal/knowledge',rag:'/personal/rag',agents:'/personal/agents',workflows:'/personal/workflows',
  executions:'/personal/executions',approvals:'/personal/approvals',tools:'/personal/tools','ai-settings':'/personal/settings/ai',database:'/personal/settings/data',
 });
-export const privateNavigation:readonly WorkbenchModule[]=Object.freeze(workbenchNavigation.map(module=>Object.freeze({...module,href:privateHrefs[module.id]})));
+export const privateNavigation:readonly WorkbenchModule[]=Object.freeze(workbenchNavigation.map(module=>Object.freeze({...module,title:module.id==='todos'?'事项':module.title,href:privateHrefs[module.id]})));
 /** Match complete decoded segments only. Never normalize, decode again or accept extra segments. */
 export function resolvePrivateModule(section:readonly string[]):WorkbenchModule|null{
  if(!section.length||section.some(part=>!part||part.includes('/')||part.includes('%')||part.includes('?')))return null;

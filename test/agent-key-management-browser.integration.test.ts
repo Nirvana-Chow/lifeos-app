@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {cp, mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {once} from 'node:events';
+import {gunzipSync} from 'node:zlib';
 import test from 'node:test';
 import {chromium, expect} from '@playwright/test';
 
@@ -16,6 +17,7 @@ async function startFixture(root: string) {
   await mkdir(join(root, 'app/account/password'), {recursive:true});
   await mkdir(join(root, 'app/personal'), {recursive:true});
   await mkdir(join(root, 'app/login'), {recursive:true});
+  await mkdir(join(root, 'app/api/platform'), {recursive:true});
   await Promise.all([
     cp(join(source, 'app/layout.tsx'), join(root, 'app/layout.tsx')),
     cp(join(source, 'app/globals.css'), join(root, 'app/globals.css')),
@@ -26,16 +28,18 @@ async function startFixture(root: string) {
     symlink(join(source, 'components'), join(root, 'components')),
     cp(join(source, 'app/account/api-keys/page.tsx'), join(root, 'app/account/api-keys/page.tsx')),
     cp(join(source, 'app/account/password/page.tsx'), join(root, 'app/account/password/page.tsx')),
+    cp(join(source, 'app/api/platform'), join(root, 'app/api/platform'), {recursive:true}),
     writeFile(join(root, 'app/personal/page.tsx'), `import {LivePersonalWorkspace} from '../../src/personal-candidate/live-workspace';
-import {readWorkspacePage} from '../../src/workbench/private-navigation';
-export default async function Page({searchParams}:{searchParams:Promise<{page?:string}>}){const q=await searchParams;return <LivePersonalWorkspace initialPage={readWorkspacePage(q.page)} showApiKeys/>;}\n`),
+import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
+export default async function Page({searchParams}:{searchParams:Promise<{page?:string;modal?:string;panel?:string}>}){const location=readWorkspaceLocation(await searchParams);return <LivePersonalWorkspace initialPage={location.page} initialModal={location.modal} initialSettingsPanel={location.panel} showApiKeys/>;}\n`),
     writeFile(join(root, 'app/login/page.tsx'), `export default function Page(){return <main><h1>合成登录</h1></main>;}\n`),
   ]);
   // Actual account route modules keep their server gates. The disposable
   // runtime supplies a fixed synthetic owner to those checks.
   await writeFile(join(root,'src/platform/runtime.ts'), `export const readPlatformPagePrincipal=async()=>({id:'synthetic-account-owner'});
 export const readPlatformPasswordCapability=async()=>true;
-export const readPlatformMfaState=async()=>({kind:'ready'});\n`);
+export const readPlatformMfaState=async()=>({kind:'ready'});
+export const handlePlatformRequest=async()=>Response.json({error:{code:'PLATFORM_UNAVAILABLE'}},{status:503});\n`);
   return spawn(process.execPath, [join(source, 'node_modules/next/dist/bin/next'), 'dev', '--webpack',
     '--hostname', '127.0.0.1', '--port', '0'], {
     cwd: root,
@@ -44,7 +48,7 @@ export const readPlatformMfaState=async()=>({kind:'ready'});\n`);
   });
 }
 
-test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle and password return path', {
+test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain results and pagination', {
   skip: process.env.RUN_AGENT_KEY_BROWSER_TESTS !== '1' && 'Requires local Chromium and a synthetic Next.js fixture',
   timeout: 150_000,
 }, async t => {
@@ -73,14 +77,40 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
   const browser = await chromium.launch({executablePath: process.env.LIFEOS_TEST_CHROMIUM_PATH});
   t.after(() => browser.close());
 
-  for (const width of [360, 1365]) {
-    const page = await browser.newPage({viewport: {width, height: 900}, timezoneId: 'Asia/Shanghai'});
+  // Exercise real Next routing alongside the actual optional catch-all module.
+  // A missing exact route would return the catch-all's closed 503 response;
+  // unsupported methods must stop at the exact route with 405 instead.
+  const transport = await browser.newContext();
+  for (const method of ['GET','HEAD']) {
+    const response=await transport.request.fetch(origin+'/api/platform/agent-skill',{method});
+    assert.equal(response.status(),200,method+' exact artifact must precede private catch-all');
+    assert.equal(response.headers()['content-type'],'application/gzip');
+    assert.equal(response.headers()['set-cookie'],undefined);
+    if (method==='HEAD') assert.equal((await response.body()).length,0);
+    else assert.ok(gunzipSync(await response.body()).includes(Buffer.from('lifeos-agent/SKILL.md')));
+  }
+  const unsupported=await transport.request.post(origin+'/api/platform/agent-skill',{data:{}});
+  assert.equal(unsupported.status(),405,'POST must not fall through to the private catch-all');
+  for (const path of ['/api/platform/agent-skill/unknown','/api/platform/status']) {
+    const response=await transport.request.get(origin+path);
+    assert.equal(response.status(),503,'only the exact public artifact bypasses the closed private runtime');
+    assert.equal((await response.json()).error.code,'PLATFORM_UNAVAILABLE');
+  }
+  assert.equal((await transport.request.get(origin+'/api/agent-skill')).status(),404,'removed alias is not exposed');
+  await transport.close();
+
+  for (const theme of ['light','dark'] as const) for (const width of [360, 1365]) {
+    const page = await browser.newPage({viewport: {width, height: 900}, timezoneId: 'Asia/Shanghai',colorScheme:theme});
+    await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(value:string)=>{(window as unknown as {copied:string}).copied=value;}}}));
     const grants: {id: string; name: string; scopes: string[]; createdAt: string; expiresAt: string; status: string}[] = [];
     const posts: unknown[] = [];
     let deletes = 0;
     let pageAttempts = 0;
     let personalReads = 0;
-    let passwordWrites = 0;
+    let failReadback = false;
+    let unknownResponse = false;
+    let releasePost: (()=>void) | undefined;
+    let holdPost = false;
     const cursor = 'fixture/older+keys';
     const olderGrant = {id: 'fixture-older-key', name: 'Synthetic older key', scopes: ['todo:read'],
       status: 'active', createdAt: new Date(Date.now() - 86_400_000).toISOString(),
@@ -91,11 +121,6 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
       if (url.origin !== origin) return route.abort();
       const path = url.pathname;
       if(path==='/api/platform/status')return route.fulfill({json:{authenticated:true}});
-      if(path==='/api/platform/personal/password'&&request.method()==='POST'){
-        passwordWrites++;
-        assert.deepEqual(request.postDataJSON(),{mode:'change',currentPassword:'Synthetic-current-password-0001',newPassword:'Synthetic-next-password-0002'});
-        return route.fulfill({json:{ok:true}});
-      }
       if(path.startsWith('/api/platform/personal/')){
         personalReads++;
         if(path==='/api/platform/personal/status')return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-account-owner',spaceId:'synthetic-account-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}});
@@ -104,6 +129,7 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
         throw Error('Unexpected synthetic account request');
       }
       if (path === keyEndpoint && request.method() === 'GET') {
+        if (failReadback) return route.fulfill({status:503});
         if (!url.search) return route.fulfill({json: {keys: grants, nextCursor: grants.length ? cursor : undefined}});
         if (url.searchParams.get('cursor') !== cursor) return route.fulfill({status: 400});
         if (++pageAttempts === 1) return route.fulfill({status: 503});
@@ -112,6 +138,8 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
       if (path === keyEndpoint && request.method() === 'POST') {
         const data = request.postDataJSON();
         posts.push(data);
+        if (holdPost) await new Promise<void>(resolve=>{releasePost=resolve;});
+        if (unknownResponse) return route.fulfill({status:201,body:'invalid-json'});
         const now = Date.now();
         const grant = {id: 'fixture-grant-' + (grants.length + 1), name: data.name, scopes: data.scopes, status: 'active',
           createdAt: new Date(now).toISOString(),
@@ -132,26 +160,29 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
       return route.continue();
     });
 
-    const settingsURL=origin+'/personal?page=settings',keysURL=origin+'/account/api-keys';
-    const openSettings=async()=>{
-      if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
-      await page.getByRole('button',{name:'设置',exact:true}).click();
-      await expect(page).toHaveURL(settingsURL);
-      await expect(page.getByRole('heading',{level:1,name:'设置',exact:true})).toBeVisible();
-    };
-    await page.goto(settingsURL, {waitUntil: 'domcontentloaded', timeout: 55_000});
-    await page.getByRole('link',{name:'API 密钥',exact:true}).click();
-    await expect(page).toHaveURL(keysURL);
-    await expect(page.getByRole('heading', {level:1,name: 'API 密钥',exact:true})).toBeVisible();
+    const keysURL=origin+'/personal?modal=settings&panel=api-keys';
+    await page.goto(origin+'/account/api-keys', {waitUntil: 'domcontentloaded', timeout: 55_000});
+    await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();
+    await expect(page.getByRole('heading', {level:2,name: 'API 密钥',exact:true})).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme',theme);
     await expect(page.locator('main')).toHaveCount(1);
     await expect(page.locator('.lo-shell')).toHaveCount(1);
     await expect(page.locator('header [data-slot="theme-toggle"]')).toHaveCount(1);
     await expect(page.getByRole('link',{name:'修改密码',exact:true})).toHaveCount(0);
-    const beforeAccountRead=personalReads;
     await page.reload({waitUntil:'domcontentloaded'});
     await expect(page.getByText('还没有签发密钥。')).toBeVisible();
-    assert.equal(personalReads,beforeAccountRead,'the account shell must not load Todo records');
+    const beforeAccountRead=personalReads;
     await expect(page.getByText('还没有签发密钥。')).toBeVisible();
+    await expect(page.locator('[name="name"]')).toHaveCount(0);
+    const newKey=page.getByRole('button',{name:'新建密钥',exact:true});
+    await newKey.click();
+    const createDialog=page.getByRole('dialog',{name:'新建密钥',exact:true});
+    await expect(createDialog).toBeVisible();
+    await expect(createDialog.locator('[name="name"]')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(createDialog).toHaveCount(0);
+    await expect(newKey).toBeFocused();
+    await newKey.click();
     await page.locator('[name="name"]').fill('Synthetic Skill');
     await page.locator('[name="permission"]').selectOption('write');
     await page.locator('[name="expiry"]').selectOption('custom');
@@ -161,19 +192,20 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
       return {name: element.getAttribute('name'), height: box.height, width: box.width};
     }));
     await mkdir(join(source, '.review-results'), {recursive: true});
-    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-${width}.png`), fullPage: true});
+    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-${theme}-${width}.png`), fullPage: true});
     assert.ok(controls.every(control => Math.abs(control.height - 44) <= 1), JSON.stringify(controls));
     const formWidth = await page.locator('fieldset').evaluate(element => element.getBoundingClientRect().width);
     assert.ok(Math.abs(controls[3].width - formWidth) <= 1, 'custom date uses the full form row');
     await page.locator('[name="expiry"]').selectOption('30');
     await expect(page.getByText(/预计到期：.*Asia\/Shanghai/)).toBeVisible();
     await expect(page.getByText('实际到期时间以签发后服务端返回为准。')).toBeVisible();
-    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-preset-${width}.png`), fullPage: true});
+    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-preset-${theme}-${width}.png`), fullPage: true});
     await page.locator('[name="expiry"]').selectOption('custom');
     await customExpiry.fill('2099-01-01T09:30');
     await page.getByRole('button', {name: '创建密钥'}).click();
     await expect(page.getByRole('status').filter({hasText: '365 天'})).toBeVisible();
     assert.equal(posts.length, 0);
+    assert.equal(personalReads,beforeAccountRead,'opening key dialogs does not refetch background records');
 
     const date = await page.evaluate(() => {
       const local = new Date(Date.now() + 86_400_000);
@@ -181,13 +213,34 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
       return local.toISOString().slice(0, 16);
     });
     await customExpiry.fill(date);
+    holdPost=true;
     await page.getByRole('button', {name: '创建密钥'}).click();
+    await expect.poll(()=>posts.length).toBe(1);
+    await page.keyboard.press('Escape');
+    await page.mouse.click(1,1);
+    await expect(createDialog).toBeVisible();
+    await expect(createDialog.getByRole('button',{name:'取消',exact:true})).toBeDisabled();
+    assert.equal(posts.length,1,'pending cannot repeat issuance or lose its response');
+    releasePost!();
+    holdPost=false;
     const reveal = page.locator('code[aria-label="新密钥"]');
     await expect(reveal).toHaveText(syntheticKey);
+    const revealDialog=page.getByRole('dialog',{name:'复制新密钥',exact:true});
+    await expect(revealDialog).toBeVisible();
+    await expect(revealDialog.getByRole('heading',{name:'复制新密钥'})).toBeFocused();
+    await page.screenshot({path:join(source,`.review-results/api-key-reveal-${theme}-${width}.png`),fullPage:true});
     assert.deepEqual(posts, [{name: 'Synthetic Skill', scopes: ['todo:read', 'todo:write'],
       expiresAt: new Date(date + ':00+08:00').toISOString()}]);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('blocked');}}}));
+    await page.getByRole('button',{name:'复制密钥',exact:true}).click();
+    await expect(revealDialog.getByRole('status')).toContainText('手动选中');
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(value:string)=>{(window as unknown as {copied:string}).copied=value;}}}));
+    await page.getByRole('button',{name:'复制密钥',exact:true}).click();
+    await expect(revealDialog.getByText('已复制',{exact:true})).toBeVisible();
+    assert.equal(await page.evaluate(()=>(window as unknown as {copied:string}).copied),syntheticKey);
     await page.getByRole('button', {name: '关闭密钥'}).click();
+    await expect(newKey).toBeFocused();
     await expect(reveal).toHaveCount(0);
     await page.reload({waitUntil: 'domcontentloaded'});
     await expect(page.getByText('Synthetic Skill', {exact: true})).toBeVisible();
@@ -203,10 +256,17 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
     assert.equal(posts.length, 2);
     assert.deepEqual(posts[1], {name: 'Synthetic replacement', scopes: ['todo:read', 'todo:write'], expiresInDays: 365});
     assert.equal(deletes, 0, 'replacement creation preserves the original grant');
-    await openSettings();
+    await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide')));
+    await expect(reveal).toHaveCount(0);
+    await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow')));
+    await expect(page.getByRole('button',{name:'替换 Synthetic Skill'})).toBeFocused();
+    await page.goto(origin+'/login');
     await page.goBack({waitUntil:'domcontentloaded'});
     await expect(page).toHaveURL(keysURL);
     await expect(page.getByText(syntheticKey,{exact:true})).toHaveCount(0);
+    await page.goForward({waitUntil:'domcontentloaded'});
+    await page.goBack({waitUntil:'domcontentloaded'});
+    await expect(reveal).toHaveCount(0);
     await page.getByRole('button', {name: '撤销 Synthetic Skill'}).click();
     const dialog = page.getByRole('dialog', {name: '撤销密钥'});
     await expect(dialog).toBeVisible();
@@ -232,25 +292,33 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
     await loadMore.click();
     const olderRow = page.getByRole('listitem').filter({hasText: 'Synthetic older key'});
     await expect(olderRow.getByText('已撤销', {exact: true})).toBeVisible();
-    await openSettings();
-    await page.getByRole('link',{name:'修改密码',exact:true}).click();
-    await expect(page).toHaveURL(origin+'/account/password');
-    await expect(page.getByRole('heading',{level:1,name:'修改密码',exact:true})).toBeVisible();
-    await expect(page.locator('main')).toHaveCount(1);
-    await expect(page.locator('.lo-shell')).toHaveCount(1);
-    const current=page.getByLabel('原密码',{exact:true});
-    await current.fill('Synthetic-discarded-password-0001');
-    await page.getByRole('link',{name:'取消',exact:true}).click();
-    await expect(page).toHaveURL(settingsURL);
-    await page.getByRole('link',{name:'修改密码',exact:true}).click();
-    await expect(current).toHaveValue('');
-    assert.equal(passwordWrites,0);
-    await current.fill('Synthetic-current-password-0001');
-    await page.getByLabel('新密码',{exact:true}).fill('Synthetic-next-password-0002');
-    await page.getByLabel('确认新密码',{exact:true}).fill('Synthetic-next-password-0002');
-    await page.getByRole('button',{name:'保存密码',exact:true}).click();
-    await expect(page).toHaveURL(origin+'/login');
-    assert.equal(passwordWrites,1);
+    await newKey.click();
+    await page.locator('[name="name"]').fill('Synthetic uncertain');
+    unknownResponse=true;failReadback=true;
+    await page.getByRole('button',{name:'创建密钥',exact:true}).click();
+    await expect(createDialog.getByRole('status')).toContainText('创建结果未确认');
+    await page.keyboard.press('Escape');
+    await expect(createDialog).toBeVisible();
+    await expect(createDialog.getByRole('button',{name:'创建密钥',exact:true})).toBeDisabled();
+    assert.equal(posts.length,3,'unknown issuance waits for list readback before retry');
+    failReadback=false;
+    await createDialog.getByRole('button',{name:'重新读取密钥列表',exact:true}).click();
+    await expect(createDialog.getByRole('button',{name:'创建密钥',exact:true})).toBeEnabled();
+    await createDialog.getByRole('button',{name:'取消',exact:true}).click();
+    await expect(newKey).toBeFocused();
+    await page.getByRole('button',{name:'复制安装说明',exact:true}).click();
+    const instructions=await page.evaluate(()=>(window as unknown as {copied:string}).copied);
+    assert.ok(instructions.includes(origin+'/api/platform/agent-skill'));
+    assert.ok(!instructions.includes(syntheticKey));
+    await expect(page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true})).toHaveAttribute('href','/api/platform/agent-skill');
+    const downloading=page.waitForEvent('download');
+    await page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true}).click();
+    const download=await downloading;
+    assert.equal(download.suggestedFilename(),'lifeos-agent.tar.gz');
+    const archive=gunzipSync(await readFile((await download.path())!)).toString();
+    assert.ok(archive.includes('lifeos-agent/SKILL.md'));
+    assert.ok(archive.includes('references/operations.md'));
+    assert.ok(!archive.includes(syntheticKey));
     await page.close();
   }
 });

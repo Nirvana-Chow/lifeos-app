@@ -166,3 +166,34 @@ Each newly supported input feature SHALL ship its implemented scoped Agent opera
 #### Scenario: A business input feature is not yet supported by Agent API
 - **WHEN** its implementation or grant is unavailable
 - **THEN** the roadmap marks the missing capability and existing todo credentials remain described by their actual scopes
+
+### Requirement: Settings preserve the workspace
+The system SHALL open the entire Settings interface as a controlled modal over the current workspace, preserving its page, filters, scroll and drafts, and SHALL provide protected compatible direct entrances with finite history state.
+
+#### Scenario: Open settings while working
+- **WHEN** the owner opens and dismisses Settings or traverses its browser history
+- **THEN** the original workspace stays mounted and is restored without discarding drafts or unconfirmed requests
+- **AND** new key creation and one-time reveal/copy/close occur in a nested controlled dialog with no key in history or persistent browser storage
+
+### Requirement: Compact multidimensional roadmap
+The system SHALL provide table, board and Gantt projections of one full-personal-data requirements baseline and SHALL open long criteria and evidence in an expandable detail dialog.
+
+#### Scenario: Inspect requirements without planning dates
+- **WHEN** the owner switches the same filtered requirements to Gantt
+- **THEN** every undated item remains available in 未排期 and opens the same detail
+- **AND** the system does not invent intervals from stage order or a todo deadline
+
+### Requirement: Bounded workspace scrolling
+The system SHALL keep workspace toolbars and table or board headings reachable while the bounded content area scrolls.
+
+#### Scenario: Browse a long board
+- **WHEN** a board column contains more cards than fit in the viewport
+- **THEN** its cards scroll within the content region while the workspace toolbar and column heading stay visible
+
+### Requirement: Portable Agent Skill
+The system SHALL provide a credential-free downloadable Skill and copyable installation instructions with implemented operations and own-credential requirements.
+
+#### Scenario: Share the integration
+- **WHEN** a user downloads or copies the Skill instructions
+- **THEN** they receive reviewed generic instructions without any account key or private record
+- **AND** discovery and the Skill describe the same actual scoped operations

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {gunzipSync} from 'node:zlib';
 
 if (process.env.LIFEOS_PLATFORM_CANDIDATE !== '0') {
   throw new Error('Run only with LIFEOS_PLATFORM_CANDIDATE=0; this check never enables storage.');
@@ -40,6 +41,18 @@ for (const [artifact,requests] of [
     checks.push({method,path:'/api/platform/'+path,status:503});
   }
 }
+// This reviewed generic package is the sole anonymous static artifact under the
+// platform prefix. Checking it separately must not relax the closed handlers.
+const artifactPath='app/api/platform/agent-skill/route.js';
+const {routeModule:skillRoute}=require(resolve(root,buildDirectory,'server',artifactPath));
+assert.equal(typeof skillRoute?.userland?.GET,'function',`Built Next route missing: ${artifactPath}`);
+const skillResponse=await skillRoute.userland.GET();
+assert.equal(skillResponse.status,200,'Public Skill artifact stays available without private runtime');
+assert.equal(skillResponse.headers.get('content-type'),'application/gzip');
+assert.equal(skillResponse.headers.get('content-disposition'),'attachment; filename="lifeos-agent.tar.gz"');
+assert.equal(skillResponse.headers.get('set-cookie'),null,'Generic download must not establish a session');
+assert.ok(gunzipSync(Buffer.from(await skillResponse.arrayBuffer())).includes(Buffer.from('lifeos-agent/SKILL.md')));
+checks.push({method:'GET',path:'/api/platform/agent-skill',status:200});
 console.log(JSON.stringify({
   buildId,passed:true,checks,scope:'compiled Next userland handlers called in-process; no HTTP listener or browser',
   httpTransportTested:false,browserTested:false,databaseTested:false,externalModelCalls:0,

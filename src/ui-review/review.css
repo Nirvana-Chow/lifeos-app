@@ -1298,3 +1298,46 @@
   .lo-sidebar { padding-block: 8px; gap: 8px; }
   .lo-sidebar-bottom { padding-top: 8px; }
 }
+
+/* Bounded business views: only rows/cards/virtual viewport scroll. Long prose keeps main scrolling. */
+.lo-shell .lo-main-bounded { overflow:hidden; }
+.lo-main-bounded > .lo-content { height:100%; min-height:0; display:flex; flex-direction:column; }
+.lo-main-bounded > .lo-content > :not(.lo-workspace-view):not([data-category-grid]):not([data-requirements-page]) { flex-shrink:0; }
+.lo-workspace-view { flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+.lo-workspace-view .lo-task-list { display:flex; flex-direction:column; height:100%; min-height:0; }
+.lo-list-columns { flex-shrink:0; }
+.lo-list-rows { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.lo-workspace-view .lo-board { height:100%; min-height:0; align-items:stretch; overflow-y:hidden; }
+.lo-workspace-view .lo-board-column { height:100%; min-height:0; display:flex; flex-direction:column; }
+.lo-board-column > h2 { flex-shrink:0; }
+.lo-board-cards { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:12px; }
+.lo-board-cards > * { flex-shrink:0; }
+.lo-settings-dialog[data-slot="dialog-content"] { display:flex; flex-direction:column; gap:20px; width:min(960px,calc(100vw - 32px)); max-width:960px; height:min(84dvh,900px); max-height:calc(100dvh - var(--lo-filing-footer-space,0px) - 32px); padding:24px; overflow:hidden; }
+.lo-settings-dialog > [data-slot="dialog-title"] { flex:none; padding-right:44px; font-size:22px; line-height:1.4; }
+.lo-settings-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:24px; flex:1; min-height:0; }
+.lo-settings-panels { display:flex; flex-direction:column; gap:8px; overflow:auto; }
+.lo-settings-panels button { justify-content:flex-start; min-height:44px; }
+.lo-settings-panels button[aria-pressed="true"] { background:var(--accent); color:var(--accent-foreground); }
+.lo-settings-panel { min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 4px 16px; }
+.lo-settings-panel h2 { font-size:18px; margin:0 0 16px; }
+@media(max-width:640px) {
+ .lo-settings-dialog[data-slot="dialog-content"] { width:100%; max-width:100%; height:calc(100dvh - var(--lo-filing-footer-space,0px)); max-height:calc(100dvh - var(--lo-filing-footer-space,0px)); top:0; left:0; transform:none; translate:none; border-radius:0; padding:20px 16px max(20px,env(safe-area-inset-bottom)); }
+ .lo-settings-layout { display:flex; flex-direction:column; gap:16px; }
+ .lo-settings-panels { flex:none; flex-direction:row; }
+ .lo-settings-panel { flex:1; }
+}
+
+/* Match the allocated workspace, including header/footer reserve, rather than the
+   device height. Short frames scroll the tools and a usable content viewport. */
+.lo-main-matters { container:lo-matters / size; }
+@container lo-matters (max-height:600px) {
+ .lo-main-matters > .lo-content { overflow-y:auto; overscroll-behavior:contain; }
+ .lo-main-matters .lo-workspace-view { flex:none; height:320px; min-height:320px; }
+ .lo-main-matters [data-category-grid] { flex:none; height:520px; min-height:520px; }
+}
+/* Mobile filters can consume the frame even on a tall phone. Keep the complete
+   filter form and the results in the same reachable vertical flow. */
+@media(max-width:850px) {
+ .lo-main-matters > .lo-content[data-matters-filters-expanded] { overflow-y:auto; overscroll-behavior:contain; }
+ .lo-main-matters > .lo-content[data-matters-filters-expanded] .lo-workspace-view { flex:none; height:320px; min-height:320px; }
+}

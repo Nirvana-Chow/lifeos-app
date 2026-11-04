@@ -61,3 +61,37 @@ test('roadmap rejects duplicate phase order and unsupported priorities instead o
  ];
  for(const edit of cases){const b=structuredClone(original);edit(b);assert.throws(()=>model.validateRequirementBaseline(b),/roadmap/i);}
 });
+
+
+test('shared requirement filters intersect phase, priority and acceptance while preserving source data',()=>{
+ const b=model.requirements(), before=JSON.stringify(b);
+ const selected=b.requirements.find(r=>r.id==='LO-TASK-001')!;
+ const filters={phase:selected.roadmap!.phaseId,priority:selected.roadmap!.priority,acceptance:selected.status};
+ const rows=model.selectRequirements(b,filters);
+ assert.ok(rows.length>0&&rows.length<b.requirements.length);
+ assert.ok(rows.every(r=>r.roadmap?.phaseId===filters.phase&&r.roadmap?.priority===filters.priority&&r.status===filters.acceptance));
+ assert.equal(model.selectRequirements(b,{...filters,query:'LO-TASK-001'}).length,1);
+ assert.deepEqual(model.selectRequirements(b,{...filters,acceptance:'accepted'}),[]);
+ assert.equal(model.selectRequirements(b,{phase:'missing'}).length,0);
+ assert.equal(model.selectRequirements(b,{phase:'all',priority:'all',acceptance:'all'}).length,b.requirements.length);
+ assert.equal(JSON.stringify(b),before);
+});
+
+test('project goal covers the connected personal data system',()=>{
+ const goal=model.requirements().roadmap!.goal;
+ for(const area of ['训练','睡眠','健康','财务','日程','日记','人生阶段'])assert.ok(goal.includes(area),area);
+});
+
+test('intake retains all 31 inherited stable IDs and records people, links, graph and portable Agent delivery',()=>{
+ const baseline=model.requirements();
+ const inherited=['VERSION','UI','REQ','AUTH','TASK','FIN','SOURCE','CAPTURE','OVERVIEW','TIMELINE','TIME','HEALTH','PROJECT','ARTICLE','SCHEDULE','PEOPLE','FILES','REPORT','AI','DATA','OUTPUT','SEARCH','PRIVACY','OPS','BACKUP','EXPERIMENT','LEARNING','LEGAL','JOURNAL','SEC'].map(key=>'LO-'+key+'-001').concat('LO-AUTH-002');
+ const ids=new Set(baseline.requirements.map(r=>r.id));
+ assert.equal(inherited.length,31);
+ for(const id of [...inherited,'LO-LINK-001','LO-GRAPH-001','LO-AGENT-001'])assert.ok(ids.has(id),id);
+ for(const id of ['LO-PEOPLE-001','LO-LINK-001','LO-GRAPH-001','LO-AGENT-001']){
+  const item=baseline.requirements.find(r=>r.id===id)!;
+  assert.ok(item.sourceRefs.length&&item.acceptanceCriteria.length&&item.roadmap?.issueRefs.length);
+  assert.notEqual(item.status,'accepted');
+ }
+ assert.match(baseline.requirements.find(r=>r.id==='LO-REQ-001')!.acceptanceCriteria.join('\n'),/先.*需求池|入池/);
+});

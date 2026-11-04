@@ -59,12 +59,12 @@ export async function withPrivateBrowserFixture<T>(handoff:PrivateBrowserHandoff
 
 // Independent literals, calibrated against Task4. Do not derive expected routes from the map under test.
 export const privateDestinations=[
- ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','运动健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日历与日程'],['time','/personal/time','时间分配'],['people','/personal/people','人际与纪念日'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
+ ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','运动健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日历与日程'],['time','/personal/time','时间分配'],['people','/personal/people','人际与纪念日'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?modal=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
 ] as const;
 const families=[
- ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','运动健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
+ ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','运动健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?modal=settings&panel=general','总览'],['private-outputs-dialog','/personal/outputs','输出中心'],
 ] as const;
-export const privateCaptureCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'?1:0})))));
+export const privateCaptureCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'||key==='private-settings'?1:0})))));
 export function assertPrivateCaptureScope(f:{name:string;url:string;width:number;theme:string;heading:string;dialog:number}):void{
  const row=privateCaptureCases.find(row=>row.name===f.name);if(!row||f.url!==privateOrigin+row.path||row.width!==f.width||row.theme!==f.theme||row.heading!==f.heading||row.dialog!==f.dialog)throw Error('PRIVATE_CAPTURE_DENIED');
 }
@@ -170,9 +170,9 @@ function watchPrivateTransport(page:Page,{legacy=false}:{legacy?:boolean}={}){
  return {async close(){page.off('request',request);page.off('response',response);await Promise.all(pending);if(forbidden||mutations)console.error('PRIVATE_TRANSPORT_FAILURE '+JSON.stringify({forbidden:Math.min(forbidden,1000000),mutations:Math.min(mutations,1000000)}));assert.equal(forbidden,0,'private transport boundary');assert.equal(mutations,0,'UI group must not mutate business data');},facts:()=>({privateResponses,rsc})};
 }
 export async function readyHeading(page:Page,heading:string){
+ if(heading==='设置'){await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();return;}
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
- if(heading==='设置')await expect(page.getByRole('link',{name:'修改密码',exact:true})).toBeVisible();
- else if(heading==='日历与日程'||heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ if(heading==='日历与日程'||heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
  else if(heading==='项目'||heading==='领域'){
   const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:'新建'+heading,exact:true});
   await expect(create).toBeVisible();
@@ -185,8 +185,9 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
  await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});await readyHeading(page,heading);
  await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,heading);
  if(['overview','todos','settings'].includes(id)){
-  const name=id==='overview'?'总览':id==='todos'?'待办':'设置';
+  const name=id==='todos'?'事项':'总览';
   await expect(page.locator('aside [aria-current="page"][aria-label="'+name+'"]')).toHaveCount(1);
+  if(id==='settings')await expect(page.locator('aside button[aria-label="设置"]')).toHaveAttribute('aria-expanded','true');
  }
  if(id==='journal'){
   await expect(page.getByLabel('标题',{exact:true})).toBeEnabled();
@@ -201,9 +202,9 @@ export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
    await readyHeading(page,'总览');
    if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
    const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
-   await expect(navigation.getByRole('button')).toHaveText(['总览','待办','需求池']);
+   await expect(navigation.getByRole('button')).toHaveText(['总览','事项','需求池']);
    await expect(navigation.locator('a,summary')).toHaveCount(0);
-   await navigation.getByRole('button',{name:'待办',exact:true}).click();await readyHeading(page,'待办');
+   await navigation.getByRole('button',{name:'事项',exact:true}).click();await readyHeading(page,'待办');
    for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading);routes++;}
   }
   for(const path of ['/personal/no-such-module','/personal/finance/extra','/personal/login','/personal/reference','/personal/data','/personal/capture','/personal/financ','/personal/%2Ffinance']){const r=await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});assert.equal([400,404].includes(r?.status()??0),true);assert.equal(new URL(page.url()).origin,privateOrigin);await expect(page.getByRole('heading',{level:1,name:'财务',exact:true})).toHaveCount(0);}
@@ -290,7 +291,7 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
    return result;
   };
   // Transparent native choices have no text ink; retain their labels, hit targets and keyboard checks.
-  return {overflow:root.scrollWidth>root.clientWidth,header:{height:h.height,display:headerStyle.display,wrap:headerStyle.flexWrap,gap:parseFloat(headerStyle.rowGap),contained:children.every(r=>r.x>=h.x-1&&r.y>=h.y-1&&r.right<=h.right+1&&r.bottom<=h.bottom+1),childHeights:children.map(r=>r.height)},theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,heading:parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),fonts:nodes.map(n=>({size:parseFloat(getComputedStyle(n).fontSize),form:n.matches('input,textarea,select')})),targets:controls.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})),contrasts:nodes.filter(n=>(n.textContent?.trim()||n.matches('input,textarea,select'))&&!(n.matches('input[type="radio"],input[type="checkbox"]')&&getComputedStyle(n).opacity==='0')).map(n=>({foreground:getComputedStyle(n).color,layers:layers(n)})),dialog:dialog?{width:scope.getBoundingClientRect().width,height:scope.getBoundingClientRect().height,scroll:scope.scrollHeight>=scope.clientHeight}:null};
+  return {settings:scope.matches('.lo-settings-dialog'),overflow:root.scrollWidth>root.clientWidth,header:{height:h.height,display:headerStyle.display,wrap:headerStyle.flexWrap,gap:parseFloat(headerStyle.rowGap),contained:children.every(r=>r.x>=h.x-1&&r.y>=h.y-1&&r.right<=h.right+1&&r.bottom<=h.bottom+1),childHeights:children.map(r=>r.height)},theme:root.dataset.lifeosTheme,scheme:getComputedStyle(root).colorScheme,heading:parseFloat(getComputedStyle(document.querySelector('h1')!).fontSize),fonts:nodes.map(n=>({size:parseFloat(getComputedStyle(n).fontSize),form:n.matches('input,textarea,select')})),targets:controls.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})),contrasts:nodes.filter(n=>(n.textContent?.trim()||n.matches('input,textarea,select'))&&!(n.matches('input[type="radio"],input[type="checkbox"]')&&getComputedStyle(n).opacity==='0')).map(n=>({foreground:getComputedStyle(n).color,layers:layers(n)})),dialog:dialog?{width:scope.getBoundingClientRect().width,height:scope.getBoundingClientRect().height,scroll:scope.scrollHeight>=scope.clientHeight}:null};
  },{dialog,selectors,chevronImage});
  mark('overflow');assert.equal(facts.overflow,false,'private horizontal overflow');mark('palette');assert.equal(facts.theme,theme);assert.equal(facts.scheme,theme);mark('header',[facts.header.height,facts.header.gap,facts.header.childHeights.length,...facts.header.childHeights.slice(0,3),Number(facts.header.contained),Number(facts.header.display==='flex'),Number(facts.header.wrap==='wrap')]);assertPrivateHeaderGeometry(surface,width,facts.header);mark('title',[facts.heading]);assert.equal(facts.heading>= (width===1365?28:24),true,'private title typography');mark('typography',[facts.fonts.filter(n=>!(n.size>=(n.form?16:14))).length]);assert.equal(facts.fonts.every(n=>n.size>= (n.form?16:14)),true,'private readable typography');mark('hit-targets',[facts.targets.length,...facts.targets.slice(0,3).flatMap(n=>[n.width,n.height])]);assert.equal(facts.targets.length,1);assert.equal(facts.targets.every(n=>n.width>=44&&n.height>=44),true,'Header theme button hit target');
  for(const [index,c] of facts.contrasts.entries()){mark('contrast',[index,Number(c.layers.some(l=>Number(l.opacity??'1')!==1)),Number(c.layers.some(l=>(l.backgroundImage??'none')!=='none')),Number(c.layers.some(l=>(l.filter??'none')!=='none'||(l.backdropFilter??'none')!=='none')),Number(c.layers.some(l=>(l.mixBlendMode??'normal')!=='normal'||(l.backgroundBlendMode??'normal')!=='normal'))]);const contrast=renderedContrast(c.foreground,c.layers);mark('contrast',[index,contrast.contrast]);assert.equal(contrast.contrast>=4.5,true,'private rendered text contrast');}
@@ -301,11 +302,11 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
    const {left,right,top,bottom}=dialog.getBoundingClientRect();
    return {left,rightGap:innerWidth-right,top,bottomGap:innerHeight-bottom};
   });
-  assert.ok(bounds.left>=15&&bounds.rightGap>=15&&bounds.top>=0&&bounds.bottomGap>=0,'dialog stays inside viewport margins');
-  assert.ok(Math.abs(bounds.left-bounds.rightGap)<=2&&Math.abs(bounds.top-bounds.bottomGap)<=2,'dialog centers in viewport');
-  await expect(page.getByRole('button',{name:'返回页面',exact:true})).toBeVisible();
+  assert.ok(bounds.left>=(facts.settings&&width<640?0:15)&&bounds.rightGap>=(facts.settings&&width<640?0:15)&&bounds.top>=0&&bounds.bottomGap>=0,'dialog stays inside viewport margins');
+  assert.ok(Math.abs(bounds.left-bounds.rightGap)<=2&&(facts.settings&&width<640||Math.abs(bounds.top-bounds.bottomGap)<=2),'dialog centers in viewport');
+  await expect(page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true})).toBeVisible();
  }
- if(dialog){const button=page.getByRole('button',{name:'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
+ if(dialog){const button=page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
  mark('keyboard');const focus=page.locator(themeButtonSelector);await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>document.activeElement===n&&n.matches(':focus-visible')&&getComputedStyle(n).outlineStyle!=='none'),true,'private keyboard focus');
 }
 async function privateLocalInteractions(page:Page,key:string){
@@ -322,8 +323,8 @@ async function privateLocalInteractions(page:Page,key:string){
  }else if(key==='private-settings'){
   await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
   await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
-  const settings=page.locator('.lo-settings'),bounds=await settings.boundingBox(),main=await page.locator('.lo-main').boundingBox();
-  assert.ok(bounds&&main&&Math.abs((bounds.x+bounds.width/2)-(main.x+main.width/2))<=1,'settings are centered in their workspace');
+  const settings=page.getByRole('dialog',{name:'设置',exact:true}),bounds=await settings.boundingBox();
+  assert.ok(bounds&&Math.abs(bounds.x+bounds.width/2-(await page.evaluate(()=>innerWidth))/2)<=1,'settings are centered in the viewport');
  }
  if(key==='private-finance'||key==='private-health'){
   const notice=page.getByText('本模块来源尚未连接，当前没有查询结果。',{exact:true});
@@ -418,7 +419,7 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
      finally{footer.style.pointerEvents=previous;}
     });
     assert.equal(settingsAboveFooter,true,'mobile settings paint above the filing footer');
-    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');
+    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=tasks&modal=settings&panel=general');await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await page.keyboard.press('Escape');
    }
    await page.getByRole('button',{name:'帮助',exact:true}).click();
    await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toBeVisible();
@@ -452,11 +453,11 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
    await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});
    if(row.key==='private-settings')await openPrivateSettings(page,row.path,entries);
    else await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});
-   mark('heading');await readyHeading(page,row.heading);mark('theme');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
+   mark('heading');await readyHeading(page,row.key==='private-settings'?'设置':row.heading);mark('theme');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
    if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.locator('[data-category-grid="reui"]').getByText('title'in entry.draft?entry.draft.title:'',{exact:true})).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
    await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark);cells++;
-   mark('close-dialog');if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
+   mark('close-dialog');if(row.key==='private-settings'){await page.getByRole('dialog',{name:'设置',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();}else if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
    mark('mobile-navigation');if(row.width<800&&row.key==='private-finance'){const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();const drawer=page.getByRole('dialog',{name:'手机导航',exact:true});await expect(drawer).toBeVisible();await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();}
   }
   // Credential-node pages receive geometry/DOM checks, never capture permission.

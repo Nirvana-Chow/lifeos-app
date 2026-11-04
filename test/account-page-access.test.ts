@@ -14,6 +14,7 @@ function page(path:string,runtime:Runtime) {
   if(name==='next/navigation')return {redirect:(url:string)=>{throw Error('redirect '+url);}};
   if(name.endsWith('/platform/runtime'))return runtime;
   if(name.endsWith('/personal-page'))return {PersonalPage:'personal-shell'};
+  if(name.endsWith('/legacy-password-entry'))return {LegacyPasswordEntry:'legacy-password-entry'};
   if(name.endsWith('/password-page'))return {PasswordPage:'password-form'};
   if(name.endsWith('/account-api-keys'))return {AccountApiKeys:'key-form'};
   throw Error('Unexpected route dependency '+name);
@@ -21,7 +22,7 @@ function page(path:string,runtime:Runtime) {
  return module.exports.default;
 }
 
-test('password account shell renders only after the server owner check',async()=>{
+test('legacy password entrance builds disabled progressive fallback only after the server owner check',async()=>{
  let capabilities=0;
  for(const identity of [null,new Error('synthetic identity unavailable'),{id:'synthetic-owner'}]){
   const render=page('app/account/password/page.tsx',{
@@ -29,26 +30,15 @@ test('password account shell renders only after the server owner check',async()=
    readPlatformPasswordCapability:async()=>{capabilities++;return true;},
   });
   if(!identity||identity instanceof Error)await assert.rejects(render(),{message:'redirect /login'});
-  else {
-   const tree=await render();
-   assert.equal(tree.type,'personal-shell');
-   assert.equal(tree.props.children.type,'password-form');
-   assert.equal(tree.props.children.props.embedded,true);
-   assert.equal(tree.props.children.props.enabled,true);
-  }
+  else{const tree=await render();assert.equal(tree.type,'legacy-password-entry');assert.equal(tree.props.enabled,true);}
  }
- assert.equal(capabilities,1,'unauthorized requests must not initialize account content');
+ assert.equal(capabilities,1,'unauthorized requests must not initialize fallback capability');
 });
 
 test('API key account shell preserves anonymous and incomplete MFA redirects',async()=>{
- for(const [kind,destination] of [['anonymous','/login'],['setup','/account/mfa'],['challenge','/account/mfa'],['ready',null]] as const){
+ for(const [kind,destination] of [['anonymous','/login'],['setup','/account/mfa'],['challenge','/account/mfa'],['ready','/personal?modal=settings&panel=api-keys']] as const){
   const render=page('app/account/api-keys/page.tsx',{readPlatformMfaState:async()=>({kind})});
   if(destination)await assert.rejects(render(),{message:'redirect '+destination});
-  else {
-   const tree=await render();
-   assert.equal(tree.type,'personal-shell');
-   assert.equal(tree.props.children.type,'key-form');
-   assert.equal(tree.props.children.props.embedded,true);
-  }
+
  }
 });

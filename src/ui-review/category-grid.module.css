@@ -4,6 +4,7 @@
 .field input, .field select { min-width: 0; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); font: inherit; font-size: 16px; }
 .create { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--primary); color: var(--primary-foreground); text-decoration: none; white-space: nowrap; }
 .root .table { min-width: 100%; font-family: inherit; font-size: 16px; }
+.stickyHeader { background: var(--background); }
 .header { height: 44px; background: var(--muted); color: var(--muted-foreground); }
 .header th { height: 44px; padding: 0 12px; text-align: left; }
 .row { height: 56px; }
@@ -19,3 +20,7 @@
 .root :is(input, select, a, button):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior: contain; }
 @media (max-width: 600px) { .toolbar { gap: 12px; padding: 12px; } .field { min-width: calc(50% - 12px); } .field:first-child { flex-basis: 100%; } .create { width: 100%; } }
+
+.root { display:flex; flex-direction:column; min-height:0; flex:1; height:100%; }
+.root > :global([data-slot="data-grid"]) { flex:1; min-height:0; }
+.root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior:contain; scroll-padding-top:48px; }

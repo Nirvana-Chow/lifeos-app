@@ -41,13 +41,23 @@ test('enabled recovery server render uses the auth surface and keeps credentials
  const html=render('src/personal-candidate/owner-recovery-finish-panel.tsx','OwnerRecoveryFinishPanel',{enabled:true,ownerAlias:'owner'});
  assert.match(html,/<main[^>]*data-lifeos-surface="auth"/);assert.match(html,/<form[^>]*method="post"/i);assert.match(html,/<form[^>]*action="\/api\/platform\/personal\/recover-password"/i);assert.match(html,/<fieldset[^>]*disabled[^>]*>[\s\S]*name="otp"[\s\S]*name="newPassword"[\s\S]*name="confirmation"/i);
 });
-test('embedded account forms share the outer main and return password cancellation to settings',()=>{
+test('embedded account forms delegate dismissal to the settings modal',()=>{
  const password=render('src/personal-candidate/password-page.tsx','PasswordPage',{enabled:true,changeOnly:true,embedded:true});
  assert.doesNotMatch(password,/<main\b|<h1\b/);
  assert.match(password,/<section\b/);
- assert.match(password,/<a[^>]*href="\/personal\?page=settings"[^>]*>取消<\/a>/);
+ assert.doesNotMatch(password,/<a[^>]*>取消<\/a>/);
  assert.match(password,/<fieldset[^>]*disabled/);
  const keys=render('src/personal-candidate/account-api-keys.tsx','AccountApiKeys',{embedded:true});
  assert.doesNotMatch(keys,/<main\b|<h1\b|<nav\b|href="\/account\/password"/);
  assert.match(keys,/<section\b/);
+});
+
+test('legacy password SSR has one permanently disabled fallback form with native POST target',()=>{
+ const html=render('src/personal-candidate/legacy-password-entry.tsx','LegacyPasswordEntry',{enabled:true});
+ assert.match(html,/<h1>修改密码<\/h1>/);
+ assert.match(html,/<fieldset[^>]*disabled[^>]*data-legacy-password-entry/);
+ assert.equal((html.match(/<form\b/g)??[]).length,1);
+ assert.match(html,/<form[^>]*method="post"/i);assert.match(html,/<form[^>]*action="\/account\/password"/i);
+ for(const name of ['username','currentPassword','newPassword','confirmation'])assert.match(html,new RegExp('name="'+name+'"'));
+ assert.doesNotMatch(html,/<input[^>]*type="password"[^>]*value="[^" ]+/i);
 });

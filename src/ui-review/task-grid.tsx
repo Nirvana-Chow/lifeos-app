@@ -291,9 +291,9 @@ export function TaskGrid(props: TaskGridProps) {
             if (editableFields.includes(request.columnId as TaskCellField)) open(request.rowId, request.columnId as TaskCellField, request.initialText);
           }}
           i18n={{ labels: { empty: '没有符合条件的待办', loading: '正在加载表格…', allRowsLoaded: '已显示全部待办' } }}
-          tableLayout={{ width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
+          tableLayout={{ headerSticky: true, width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
           tableClassNames={{ base: styles.table, headerRow: styles.header, bodyRow: styles.row }}>
-          <DataGridTableVirtual height={460} estimateSize={52} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
+          <DataGridTableVirtual height="100%" estimateSize={52} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
           <DataGridCellSelection apiRef={focusApi} clipboard={false} />
         </DataGrid>
       </DataGridContainer>
