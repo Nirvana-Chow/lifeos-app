@@ -6,6 +6,8 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 
 | ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
+| `previewTodoClassification` | `POST` | `/v1/todo-classifications/preview` | `todo:read, organization:read` | Preview one immutable classification of 1 to 100 todos without business writes; owner review is required. |
+| `commitTodoClassification` | `POST` | `/v1/todo-classifications/commit` | `todo:read, todo:write, organization:read` | Atomically commit an owner-approved plan with its digest and an idempotency key; preserve the same key and body for unknown-result recovery. |
 | `discoverV2` | `GET` | `/v2/capabilities` | `valid grant` | Discover operations permitted for the current grant. |
 | `discover` | `GET` | `/v1/capabilities` | `todo:read` | Discover operations permitted for the current grant. |
 | `listTodos` | `GET` | `/v1/todos` | `todo:read` | Read a bounded list of todo summaries. |

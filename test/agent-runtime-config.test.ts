@@ -86,9 +86,9 @@ test('current grant lookup rejects disabled, expired, malformed and changed gran
     assert.match(sql,/SELECT\s+id\s*,\s*"referenceId"\s*,\s*metadata\s*,\s*permissions\s*,\s*enabled\s*,\s*"expiresAt"/i);
     assert.deepEqual(values,['grant']); return {rows:row ? [row] : []};
   }};
-  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  assert.deepEqual(Object.fromEntries(Object.entries(await read(pool,'grant') as object).filter(([key])=>key!=='authorizationRevision')), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
   row = {...row,enabled:null};
-  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  assert.deepEqual(Object.fromEntries(Object.entries(await read(pool,'grant') as object).filter(([key])=>key!=='authorizationRevision')), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
   for(const update of [{enabled:false},{expiresAt:new Date(0)},{metadata:'{}'},{permissions:'{"todo":["write"]}'},{id:'different'}]) {
     const original=row; row={...row,...update}; assert.equal(await read(pool,'grant'),null); row=original;
   }
@@ -118,4 +118,21 @@ test('organization operations require the module, full native types, actual fenc
  assert.equal(agentOperationAvailable('snapshotOrganization',{...personal,businessWriteMode:'disabled'},true,modules),true);
  assert.equal(agentOperationAvailable('updateOrganization',{...personal,businessWriteMode:'disabled'},true,modules),false);
  assert.equal(agentOperationAvailable('classifyTodos',personal,true,{...modules,classification:true}),false);
+});
+
+test('classification preview readiness does not require business writes but commit does',async()=>{
+ const {agentOperationAvailable}=await import('../src/agent-api/runtime.ts');
+ const personal={ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal','project','domain','topic'] as const,approval:'personal-manual-v1' as const,baseURL:origin,businessWriteMode:'disabled' as const};
+ assert.equal(agentOperationAvailable('previewTodoClassification',personal,true,{organization:true,classification:true}),true);
+ assert.equal(agentOperationAvailable('commitTodoClassification',personal,true,{organization:true,classification:true}),false);
+ assert.equal(agentOperationAvailable('previewTodoClassification',personal,true,{organization:true,classification:false}),false);
+});
+test('producer revision changes with permissions or expiry but excludes quota bookkeeping',async()=>{
+ const {readCurrentAgentGrant,getAgentGrantReader}=await import('../src/agent-api/runtime.ts');
+ let row={id:'grant',referenceId:'owner',metadata:{spaceId:'space'},permissions:{todo:['read']},enabled:true,expiresAt:null as string|null,requestCount:1,updatedAt:'one'};
+ const pool={query:async()=>({rows:[row]})};const first=await readCurrentAgentGrant(pool,'grant');assert.match(first!.authorizationRevision,/^[a-f0-9]{64}$/);
+ row={...row,requestCount:2,updatedAt:'two'};assert.equal((await readCurrentAgentGrant(pool,'grant'))!.authorizationRevision,first!.authorizationRevision);
+ row={...row,permissions:{todo:['read','write']}};assert.notEqual((await readCurrentAgentGrant(pool,'grant'))!.authorizationRevision,first!.authorizationRevision);
+ row={...row,permissions:{todo:['read']},expiresAt:'2099-01-01T00:00:00.000Z'};assert.notEqual((await readCurrentAgentGrant(pool,'grant'))!.authorizationRevision,first!.authorizationRevision);
+ const flag=process.env.LIFEOS_AGENT_CLASSIFICATION;delete process.env.LIFEOS_AGENT_CLASSIFICATION;try{assert.equal(await getAgentGrantReader(),null);}finally{if(flag!==undefined)process.env.LIFEOS_AGENT_CLASSIFICATION=flag;}
 });

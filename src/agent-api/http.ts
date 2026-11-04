@@ -1,3 +1,4 @@
+import {ClassificationService,createClassificationAdapter} from '../personal-candidate/classification-service.ts';
 import type {PlatformRepository, PublicEntry} from '../platform/contracts.ts';
 import {object, PlatformError, todoKeys} from '../platform/domain.ts';
 import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts';
@@ -23,6 +24,7 @@ type Options = {
   readCurrentGrant?: (grantId: string) => Promise<Grant | null>;
   operationAvailable?: (operationId: string) => boolean | Promise<boolean>;
   assertWritable: (grant: Grant) => Promise<void>;
+  classification?: (authority:AuthorityService)=>ClassificationService;
 };
 
 function respond(status: number, body: unknown) {
@@ -55,6 +57,7 @@ export function createAgentHandler(options: Options) {
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentOperations.find(entry => entry.id === id);
+    if (operation?.module === 'classification' && (!modules.classification || !modules.organization || !options.classification || options.fenceWrites !== true)) return false;
     if (operation?.module === 'organization' && (!modules.organization || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
     if (!operation || options.mountPath && operation.method !== 'GET' && options.fenceWrites !== true) return false;
     try {return await options.operationAvailable?.(id) === true;} catch {return false;}
@@ -92,6 +95,12 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if (operation.module === 'classification') {
+        if(!options.classification)return respond(503,{error:'AGENT_OPERATION_UNAVAILABLE'});
+        const adapter=createClassificationAdapter(options.classification(authority)),input=await readJSONBody(request);
+        if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
+        return respond(200,operation.id==='previewTodoClassification'?await adapter.preview(actor,input):await adapter.commit(actor,input,request.headers.get('idempotency-key')??''));
+      }
       if (operation.module === 'organization') {
         if (operation.id === 'snapshotOrganization') return respond(200,await organizationSnapshot(service,actor.ownerId));
         if (!organizationType) return respond(404,{error:'NOT_FOUND'});

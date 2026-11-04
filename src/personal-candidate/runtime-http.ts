@@ -1,3 +1,6 @@
+import type {AuthorityService} from '../agent-authority/service.ts';
+import type {ClassificationService} from './classification-service.ts';
+import {handleOwnerClassificationRequest} from './classification-http.ts';
 import {createHash} from 'node:crypto';
 import type {PlatformRepository,SessionReader,Principal} from '../platform/contracts.ts';
 import {PlatformError} from '../platform/domain.ts';
@@ -23,7 +26,7 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const service=new PersonalService(options.repository,options.config);
  return async request=>{
   try{
@@ -47,6 +50,13 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
+   if(url.pathname==='/api/platform/personal/todo-classifications'||url.pathname.startsWith('/api/platform/personal/todo-classifications/')){
+    if(!options.classification)return respond({error:{code:'NOT_FOUND',message:'分类尚未开放。'}},404);
+    if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','仅限本人会话。');
+    const actor=await options.classification.authority.resolveOwnerActor(request.headers);
+    if(!actor)throw new PlatformError(403,'OWNER_ONLY','需要当前本人 MFA 会话。');
+    return (await handleOwnerClassificationRequest(request,actor,options.classification.service,{baseURL:options.config.baseURL,assertOwner,assertWritable:options.assertWritable}))!;
+   }
    const response=await handlePersonalRequest(request,options.config.ownerId,options.config.baseURL,service,{assertOwner,assertWritable:options.assertWritable});
    return response??respond({error:{code:'NOT_FOUND',message:'此本人空间接口未开放。'}},404);
   }catch(error){return error instanceof PlatformError?respond({error:{code:error.code,message:error.message}},error.status):respond({error:{code:'PERSONAL_UNAVAILABLE',message:'本人空间暂不可用，保存结果未确认。'}},503);}
