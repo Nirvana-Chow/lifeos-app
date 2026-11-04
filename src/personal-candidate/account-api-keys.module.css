@@ -68,3 +68,5 @@
 @media (max-width: 620px) {
   .fields { grid-template-columns: 1fr; }
 }
+
+.page.embedded { min-height:0; margin-inline:auto; padding:0; }

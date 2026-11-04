@@ -38,12 +38,30 @@ The system SHALL group domain and project actions with Todo, limit Journal to jo
 - **AND** journal pages contain journal records and their actions, while Todo contains domain and project actions
 - **AND** settings content is centered and adapts to the available width
 
-#### Scenario: Edit a task from Overview
+#### Scenario: Edit a single field or expanded detail
 
-- **WHEN** the owner double-clicks a writable task title, activates its keyboard shortcut or uses its edit button
-- **THEN** the editor opens inline and focuses the title without an intermediate detail dialog
-- **AND** a separate expand button opens detail
-- **AND** existing write, revision, receipt, dirty-draft and unknown-outcome safeguards apply
+- **WHEN** the owner double-clicks a writable card/list/Overview title or activates Enter/F2
+- **THEN** only its title enters field editing through the authoritative save adapter
+- **AND** expanding the task opens directly editable details without another edit-mode action, while readonly access retains static detail
+- **AND** table fields retain native editing and resizable columns without an extra persistence writer
+- **AND** completion/reopen actions use the same status writer in list, table and board
+- **AND** existing revision, receipt, dirty-draft and unknown-outcome safeguards apply
+
+#### Scenario: Scroll and navigate within the workspace
+
+- **WHEN** the owner scrolls long content, uses account pages or changes workspace destination
+- **THEN** Header, sidebar and bottom sidebar actions remain reachable without an extra document-height footer row
+- **AND** a separately installed filing footer overlays only the content area with enough reserved scroll padding
+- **AND** password and API-key management retain the shared shell and return to Settings
+- **AND** canonical URLs support refresh and guarded back/forward without losing an unconfirmed draft
+
+#### Scenario: Understand the Overview
+
+- **WHEN** the complete workspace snapshot is available
+- **THEN** Overview shows pending, due-today and overdue counts with links to their full views
+- **AND** any shortened task preview identifies its limit and offers the full task view
+- **AND** the project preview and count include only projects whose stage is active
+- **AND** partial or unknown coverage does not claim complete totals
 
 ### Requirement: Header appearance control
 The system SHALL expose one keyboard-operable and touch-accessible icon button in the shared Header that switches between light and dark. It SHALL reflect the effective appearance and identify its next action. The initial preference SHALL follow the operating system.

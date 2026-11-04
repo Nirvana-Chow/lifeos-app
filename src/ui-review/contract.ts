@@ -76,17 +76,15 @@ export type LifeOSWorkspaceProps = {
   onRefresh?: () => void;
   onLogin?: () => void;
   onLogout?: () => void;
-  onCreateTask?: () => void;
+  onCreateTask?: () => boolean | void;
   /** Keep the existing revision/idempotency/recovery writer in the host. No optimistic local mutation. */
   onSetTaskStatus?: (
     task: Pick<TaskRow, "id" | "revision">,
     nextStatus: TaskStatus,
   ) => void;
-  onOpenTask?: (task: Pick<TaskRow, "id" | "revision">) => void;
-  onEditTaskInline?: (task: Pick<TaskRow, "id" | "revision">, trigger?: HTMLElement) => void;
-  inlineTask?: { id: string; content: ReactNode } | null;
-  /** Close the inline editor only after its existing draft and in-flight guards agree. */
-  onLeaveTaskInline?: () => boolean;
+  onOpenTask?: (task: Pick<TaskRow, "id" | "revision">, trigger?: HTMLElement) => boolean | void;
+  /** The host owns all modal, cell-draft and in-flight navigation guards. */
+  onBeforeNavigate?: () => boolean;
   onSaveTask?: (task: Pick<TaskRow,"id"|"revision">|null, fields: PersonalEditorFields) => Promise<PublicEntry|null>;
   getTaskFields?: (task: Pick<TaskRow,"id"|"revision">) => PersonalEditorFields|null;
   taskCellDraftMemory?: TaskCellDraftMemory;
@@ -97,6 +95,9 @@ export type LifeOSWorkspaceProps = {
   pendingTaskIds?: readonly string[];
   mutationError?: string | null;
   settingsContent?: ReactNode;
+  contentPage?: {title: string; content: ReactNode};
+  onNavigatePage?: (page: WorkspacePage) => void;
+  syncUrl?: boolean;
   unavailablePage?: {title: string; message: string};
   /** QA-only banner, never a replacement for real data in the default route. */
   testLabel?: string;
@@ -110,5 +111,6 @@ export type TaskGridProps = {
   writable?: boolean;
   blocked?: boolean;
   onSave?: (task: Pick<TaskRow, 'id' | 'revision'>, fields: PersonalEditorFields) => Promise<PublicEntry | null>;
+  onSetTaskStatus?: LifeOSWorkspaceProps['onSetTaskStatus'];
   getTaskFields?: (task: Pick<TaskRow, 'id' | 'revision'>) => PersonalEditorFields | null;
 };

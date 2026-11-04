@@ -32,7 +32,7 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', {
   dateStyle: 'medium', timeStyle: 'short',
 }).format(new Date(value));
 
-export function AccountApiKeys() {
+export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
   const [list, setList] = useState<List>({kind: 'loading'});
   const [loadVersion, setLoadVersion] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -211,15 +211,14 @@ export function AccountApiKeys() {
     nameInput.current?.focus();
   }
 
-  return <main data-lifeos-surface="auth"><div className={styles.page}>
-    <nav className={styles.nav} aria-label="账户设置">
+  const Surface=embedded?'section':'main';
+  return <Surface data-lifeos-surface={embedded?undefined:'auth'} aria-label={embedded?'API 密钥':undefined}>
+   <div className={`${styles.page}${embedded?' '+styles.embedded:''}`}>
+    {!embedded&&<nav className={styles.nav} aria-label="账户设置">
       <a href="/personal?page=settings">返回设置</a>
-      <a href="/account/password">修改密码</a>
-    </nav>
-    <header>
-      <h1>API 密钥</h1>
-      <p>为 LifeOS Skill 授予待办权限。每把密钥都有到期时间，也可以单独撤销。</p>
-    </header>
+    </nav>}
+    {!embedded&&<h1>API 密钥</h1>}
+    <p>为 LifeOS Skill 授予待办权限。每把密钥都有到期时间，也可以单独撤销。</p>
     {message && <p role="status">{message}</p>}
     {reveal && <section className={styles.reveal} aria-labelledby="key-reveal-title">
       <h2 id="key-reveal-title" ref={revealHeading} tabIndex={-1}>复制新密钥</h2>
@@ -297,5 +296,5 @@ export function AccountApiKeys() {
         </div>
       </DialogContent>
     </Dialog>
-  </div></main>;
+  </div></Surface>;
 }

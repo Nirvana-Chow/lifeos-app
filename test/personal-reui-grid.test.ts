@@ -113,3 +113,29 @@ test('typing to resume a retained title preserves its existing scoped text inste
   const cell = h.options().columns[0].cell({ row: { id: 'a', original: task('a', 4) }, column: { id: 'title' }, getValue: () => 'a' });
   assert.equal(cell.props.edit.value, '未提交新'); assert.equal(memory.read()?.value, '未提交新'); assert.equal(memory.read()?.task.revision, 2);
 });
+
+test('native column handles can resize below their starting widths without changing records', () => {
+ const h=harness();
+ const tree=h.render({tasks:[task('a',4)],writable:true,onOpen(){},onSave:async()=>null,getTaskFields:()=>fields});
+ const grid=h.find(tree,n=>n.type==='grid');
+ assert.equal(grid.props.tableLayout.columnsResizable,true);
+ assert.equal(grid.props.tableLayout.columnsResizeMode,'onEnd');
+ for(const column of h.options().columns.filter((c:any)=>c.id!=='complete')){
+  assert.ok(column.minSize<column.size);
+ }
+ assert.deepEqual(h.options().data,[task('a',4)]);
+});
+
+test('table completion sends the original identity and remains disabled without write permission', () => {
+ const h=harness(),calls:unknown[]=[];
+ const props={tasks:[task('a',4)],writable:true,onOpen(){},onSetTaskStatus:(...args:unknown[])=>calls.push(args)};
+ h.render(props);
+ const column=h.options().columns.find((c:any)=>c.id==='complete');
+ assert.ok(column,'A visible completion action must be present');
+ const cell=column.cell({row:{id:'a',original:task('a',4)},column:{id:'complete'}});
+ assert.equal(cell.props.disabled,false);
+ cell.props.onClick();
+ assert.deepEqual(calls,[[{id:'a',revision:4},'done']]);
+ h.render({...props,writable:false});
+ assert.equal(column.cell({row:{id:'a',original:task('a',4)},column:{id:'complete'}}).props.disabled,true);
+});

@@ -23,7 +23,6 @@ type TaskEditorProps={
  onRetry:()=>Promise<PublicEntry|null>;
  onStopWaiting:()=>void;
  concealed?:boolean;
- inline?:boolean;
  closeGuard?:CloseGuard;
 };
 function confirmClose(busy:boolean,dirty:boolean){
@@ -31,39 +30,52 @@ function confirmClose(busy:boolean,dirty:boolean){
 }
 export function TaskEditor({
  target,entry,spaceId,relations,writable,saving,uncertain,error,onSave,onClose,onRetry,onStopWaiting,
- concealed=false,inline=false,closeGuard,
+ concealed=false,closeGuard,
 }:TaskEditorProps){
  const [openingEdit]=useState(()=>{
-  if(!inline||concealed||target.mode!=='edit'||!entry||!spaceId||
+  if(concealed||target.mode!=='edit'||!entry||!spaceId||
    entry.id!==target.task.id||entry.revision!==target.task.revision)return null;
   return {task:target.task,fields:editorFromEntry(entry,spaceId).fields};
  });
  const initial=useRef<PersonalEditorFields>(openingEdit?.fields??empty);
  const submitted=useRef<PersonalEditorFields|null>(null);
+ const approvedDocumentLeave=useRef(false);
  const[editTask,setEditTask]=useState<TaskIdentity|null>(openingEdit?.task??null);
  const[fields,setFields]=useState(()=>structuredClone(initial.current)),[localError,setLocalError]=useState<string|null>(null),[submitting,setSubmitting]=useState(false);
  const busy=saving||uncertain||submitting,dirty=JSON.stringify(fields)!==JSON.stringify(initial.current);
- const viewing=!inline&&target.mode==='edit'&&!editTask;
+ const viewing=target.mode==='edit'&&!writable&&!dirty;
  const detailFields=viewing&&!concealed&&entry&&spaceId?editorFromEntry(entry,spaceId).fields:null;
- const missing=target.mode==='missing'||viewing&&!detailFields||inline&&!editTask;
+ const missing=target.mode==='missing'||target.mode==='edit'&&(!editTask||!entry&&!dirty);
  const blocked=busy||!writable||missing;
  const close=()=>{if(confirmClose(busy,dirty))onClose();};
  useEffect(()=>{
   if(!closeGuard)return;
-  closeGuard.current=()=>confirmClose(busy,dirty);
+  closeGuard.current=()=>{
+   const accepted=confirmClose(busy,dirty);
+   if(accepted)approvedDocumentLeave.current=true;
+   return accepted;
+  };
   return()=>{closeGuard.current=null;};
  },[busy,dirty,closeGuard]);
- useEffect(()=>{const prevent=(event:BeforeUnloadEvent)=>{if(dirty||busy){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',prevent);return()=>window.removeEventListener('beforeunload',prevent);},[dirty,busy]);
+ useEffect(()=>{
+  const prevent=(event:BeforeUnloadEvent)=>{
+   if(approvedDocumentLeave.current){approvedDocumentLeave.current=false;return;}
+   if(dirty||busy){event.preventDefault();event.returnValue='';}
+  };
+  window.addEventListener('beforeunload',prevent);
+  return()=>window.removeEventListener('beforeunload',prevent);
+ },[dirty,busy]);
+ useEffect(()=>{
+  if(concealed||busy||dirty||target.mode!=='edit'||!entry||!spaceId||entry.id!==target.task.id||entry.revision===editTask?.revision)return;
+  const next=editorFromEntry(entry,spaceId).fields;
+  initial.current=next;
+  setFields(next);
+  setEditTask({id:entry.id,revision:entry.revision});
+ },[concealed,busy,dirty,target,entry,spaceId,editTask?.revision]);
  // Keep component memory through concealment; do not render private DOM until the host re-verifies its binding.
  if(concealed)return null;
  const shown=detailFields??fields;
  const relation=shown.personal&&!('type'in shown.personal)?shown.personal:{domain:null,project:null,topics:[]};
- const startEditing=()=>{
-  if(blocked||!entry||!detailFields)return;
-  initial.current=detailFields;
-  setFields(detailFields);
-  setEditTask({id:entry.id,revision:entry.revision});
- };
  const reference=(entry:PublicEntry):PersonalReference=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision});
  const setRelation=(patch:Partial<PersonalRelations>)=>setFields({...fields,personal:{...relation,...patch}});
  const relationName=(type:'domain'|'project'|'topic',pin:PersonalReference|null)=>{
@@ -72,7 +84,7 @@ export function TaskEditor({
   if(!match||!('title'in match.draft))return '原关联（待核对）';
   return match.revision===pin.revision?match.draft.title:match.draft.title+'（版本已变化）';
  };
- const heading=target.mode==='create'?'新建待办':missing?'待办不可用':viewing?'待办详情':'编辑待办';
+ const heading=target.mode==='create'?'新建待办':missing?'待办不可用':'待办详情';
  const content=missing?<p role="alert">无法读取这条待办，未创建新记录。</p>:viewing?<div className={styles.form}>
    <div className={`${styles.body} ${styles.detail}`}>
     <h3>{shown.title}</h3>
@@ -85,7 +97,6 @@ export function TaskEditor({
      <div><dt>主题</dt><dd>{relation.topics.length?relation.topics.map(topic=>relationName('topic',topic)).join('、'):'未设置'}</dd></div>
     </dl>
    </div>
-   {writable&&<footer className={styles.footer}><button className={styles.primaryAction} type="button" disabled={busy} onClick={startEditing}>编辑待办</button></footer>}
   </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=structuredClone(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
     <label>标题<input autoFocus required maxLength={240} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
@@ -98,23 +109,8 @@ export function TaskEditor({
    {(localError||error)&&<p role="alert">{localError||error}</p>}{uncertain&&<p role="alert">结果尚未确认，请保留输入并重试原请求。</p>}
    <footer className={styles.footer}>{uncertain&&<button type="button" disabled={saving} onClick={async()=>{const saved=await onRetry();if(saved&&taskReceiptMatchesSubmission(editTask?{mode:'edit',task:editTask}:target,submitted.current,saved,spaceId))onClose();}}>重试同一请求</button>}{saving&&<button type="button" onClick={onStopWaiting}>停止等待并保留请求</button>}<button type="button" disabled={busy} onClick={close}>{dirty?'取消':'关闭'}</button><button type="submit" disabled={blocked}>{saving||submitting?'正在保存…':'保存待办'}</button></footer>
   </form>;
- if(inline)return (
-  <section className={`${styles.editor} ${styles.inline}`} aria-label={heading} onKeyDown={event=>{
-   if(event.key==='Escape'&&!event.defaultPrevented&&!event.nativeEvent.isComposing&&event.nativeEvent.keyCode!==229){
-    event.stopPropagation();
-    close();
-   }
-  }}>
-   <header className={styles.header}>
-    <h3>{heading}</h3>
-    {!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}
-   </header>
-   {content}
-   {missing&&<button type="button" onClick={close}>关闭</button>}
-  </section>
- );
  return <div data-lifeos-surface="personal"><Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className={styles.editor} data-lifeos-surface="personal" onCloseAutoFocus={event=>event.preventDefault()} showCloseButton={false} onEscapeKeyDown={event=>{if(busy)event.preventDefault();}} onPointerDownOutside={event=>{event.preventDefault();close();}}>
-  <header className={styles.header}><div><DialogTitle>{heading}</DialogTitle><DialogDescription className={styles.accessibleDescription}>{missing?'无法读取所选待办。':!writable?'当前为只读，可查看内容。':viewing?'查看待办内容及分类。':'待办内容'}</DialogDescription>{!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}</div><button type="button" aria-label={viewing?'关闭待办详情':'关闭待办编辑'} disabled={busy} onClick={close}>关闭</button></header>
+  <header className={styles.header}><div><DialogTitle>{heading}</DialogTitle><DialogDescription className={styles.accessibleDescription}>{missing?'无法读取所选待办。':!writable?'当前为只读，可查看内容。':viewing?'查看待办内容及分类。':'待办内容'}</DialogDescription>{!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}</div><button type="button" aria-label={target.mode==='create'?'关闭待办编辑':'关闭待办详情'} disabled={busy} onClick={close}>关闭</button></header>
   {content}
  </DialogContent></Dialog></div>;
 }
