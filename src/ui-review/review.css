@@ -16,7 +16,7 @@
 }
 .lo-shell h1 {
   font-size: var(--lo-font-title);
-  line-height: 1.5;
+  line-height: 1.35;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -203,7 +203,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .lo-heading-title {
   display: flex;
@@ -292,18 +292,21 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: 7px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   background: var(--card);
 }
-.lo-metrics > .lo-metric {
+.lo-shell .lo-metrics > .lo-metric {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 22px 24px;
-  border-right: 1px solid var(--border);
-}
-.lo-metrics > .lo-metric:last-child {
+  align-items: flex-start;
+  gap: 5px;
+  padding: 14px 18px;
   border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+.lo-shell .lo-metrics > .lo-metric:not(:last-child) {
+  border-right: 1px solid var(--border);
 }
 .lo-metrics span {
   font-size: 16px;
@@ -318,8 +321,8 @@
 .lo-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(260px, 1fr);
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: 18px;
+  margin-bottom: 18px;
 }
 .lo-panel {
   border: 1px solid var(--border);
@@ -332,9 +335,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 20px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--border);
-  min-height: 62px;
+  min-height: 56px;
 }
 .lo-panel-heading > span {
   font-size: 16px;
@@ -353,7 +356,7 @@
   align-items: center;
   justify-content: space-around;
   border-top: 1px solid var(--border);
-  padding: 17px 14px;
+  padding: 12px 14px;
   gap: 12px;
   font-size: 16px;
   color: var(--muted-foreground);
@@ -973,26 +976,22 @@
   }
   .lo-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    margin-bottom: 22px;
+    margin-bottom: 16px;
   }
-  .lo-metrics > .lo-metric {
-    padding: 18px 20px;
-    gap: 10px;
+  .lo-shell .lo-metrics > .lo-metric {
+    padding: 12px 14px;
   }
-  .lo-metrics > .lo-metric:nth-child(2) {
+  .lo-shell .lo-metrics > .lo-metric:nth-child(2) {
     border-right: 0;
   }
-  .lo-metrics > .lo-metric:nth-child(-n + 2) {
+  .lo-shell .lo-metrics > .lo-metric:nth-child(-n + 2) {
     border-bottom: 1px solid var(--border);
   }
   .lo-metrics strong {
     font-size: 28px;
   }
   .lo-overview-grid {
-    gap: 22px;
-  }
-  .lo-panel-heading {
-    padding: 10px 16px;
+    gap: 16px;
   }
   .lo-overview-grid .lo-task-row,
   .lo-task-row {
@@ -1228,7 +1227,6 @@
 /* Navigation links and metric cards share the workspace's actual action targets. */
 .lo-nav a{display:flex;align-items:center;gap:12px;min-height:44px;padding:10px 12px;border-radius:8px;text-decoration:none;color:var(--muted-foreground)}
 .lo-nav a:hover{background:var(--accent);color:var(--foreground)}
-.lo-shell .lo-metric{display:flex;flex-direction:column;align-items:flex-start;border-radius:0;text-align:left;padding:22px 24px}
 .lo-shell .lo-metric:disabled{opacity:1;cursor:default}
 .lo-metric:focus-visible{position:relative;z-index:1}
 .lo-shell .lo-inline-error{background:var(--danger-background);border-color:var(--danger-border);color:var(--danger)}
@@ -1259,6 +1257,8 @@
 .lo-overview-task.lo-task-row {
   grid-template-columns: 44px minmax(0, 1fr) auto auto;
   column-gap: 4px;
+  min-height: 58px;
+  padding-block: 6px;
 }
 .lo-overview-grid .lo-overview-task .lo-task-status { display: none; }
 .lo-overview-task-actions { display: flex; grid-column: 4; }

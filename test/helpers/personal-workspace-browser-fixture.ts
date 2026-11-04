@@ -157,7 +157,9 @@ async function save(page:Page,type:'domain'|'project'|'todo',previous?:PublicEnt
  if(previous){assert.equal(entry.id,previous.id);assert.equal(entry.source.id,previous.source.id);assert.deepEqual(entry.source.original,previous.source.original);}
  await expect(page.getByRole('status').filter({hasText:'已收到服务器保存回执。'})).toBeVisible();
  await readyEditor(page,'title'in entry.draft?entry.draft.title:'');
- await expect(page.getByText('版本 '+entry.revision+' · ID '+entry.id,{exact:true})).toBeVisible();
+ const history=page.locator('section').filter({has:page.getByRole('heading',{name:'原文与更正历史',exact:true})});
+ await expect(history.locator('p').filter({hasText:new RegExp('^版本 '+entry.revision+'$')})).toBeVisible();
+ await expect(history.getByText(entry.id)).toHaveCount(0);
  assert.deepEqual((await json(page,previous?path:path+'/'+entry.id)).entry,entry);
  return entry;
 }
