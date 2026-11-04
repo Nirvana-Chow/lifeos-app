@@ -36,3 +36,30 @@ test('project link discovery peeks on the same transaction connection without lo
  assert.deepEqual(reads.map(call=>call.values),[['fixture-owner','inbox',id],['fixture-owner','inbox',id]]);
  assert.doesNotMatch(reads[0].sql,/FOR UPDATE/);assert.match(reads[1].sql,/FOR UPDATE OF r/);assert.equal(d.released(),1);
 });
+
+test('business fence accepts read-only producer scopes and rejects malformed requirements without a legacy fallback',async()=>{
+ const fences=await import('../src/agent-api/grant-fence.ts');
+ assert.equal(typeof fences.assertAgentGrant,'function');
+ const binding={grantId:'fixture-grant',ownerId:'fixture-owner',spaceId:'fixture-space'};
+ const calls:{sql:string;values:unknown[]}[]=[];
+ const client:SqlClient={query:async(sql,values=[])=>{calls.push({sql,values});return {rows:[{allowed:true}],rowCount:1};},release(){}};
+ const repo=new PostgresPlatformRepository({connect:async()=>client},true,true,{organization:true,classification:false});
+ await repo.transaction(binding.ownerId,'preview',async tx=>{
+   await fences.assertAgentGrant(tx,binding,['todo:read','organization:read']);
+   for(const scopes of [[],['unknown:read'],['organization:write']])
+     await assert.rejects(fences.assertAgentGrant(tx,binding,scopes as never),{status:403});
+   await assert.rejects(fences.assertAgentGrant(tx,{...binding,ownerId:'spoof'},['organization:read']),{status:403});
+ });
+ const query=calls.find(call=>call.sql.includes('assert_business_grant'));
+ assert.deepEqual(query?.values,[binding.grantId,binding.ownerId,binding.spaceId,['todo:read','organization:read']]);
+ assert.match(calls[2].sql,/pg_advisory_xact_lock_shared/);assert.match(calls[3].sql,/pg_advisory_xact_lock/);
+ await assert.rejects(fences.assertAgentGrant({lockAgentTodoWriteGrant:async()=>true} as never,binding,['organization:read']),{status:503});
+});
+
+test('legacy todo fence still works without the business migration',async()=>{
+ const {assertAgentTodoWriteGrant}=await import('../src/agent-api/grant-fence.ts');
+ const d=driver();let called=false;
+ await d.repo.transaction('fixture-owner','legacy',async tx=>assertAgentTodoWriteGrant({...tx,lockAgentTodoWriteGrant:async()=>{called=true;return true;}},
+   {grantId:'fixture',ownerId:'fixture-owner',spaceId:'fixture-space'}));
+ assert.equal(called,true);
+});

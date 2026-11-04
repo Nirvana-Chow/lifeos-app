@@ -7,7 +7,7 @@ import {keyManagementFlag, keyManagementSocket} from './key-management-config.ts
 
 const basePath = '/api/platform/account/api-keys';
 const headers = {'Cache-Control': 'private, no-store', Vary: 'Cookie', 'X-Content-Type-Options': 'nosniff'};
-type Operation = 'list' | 'create' | 'revoke';
+import type {KeyOperation as Operation} from './key-issuer.ts';
 type Issuer = (operation: Operation, cookie: string, body: unknown) => Promise<Response>;
 
 function failure(status: number, error: string) {
@@ -18,9 +18,10 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const match = /^\/api\/platform\/account\/api-keys\/([A-Za-z0-9_-]{1,128})$/.exec(url.pathname);
+    const scopeMatch = /^\/api\/platform\/account\/api-keys\/([A-Za-z0-9_-]{1,80})\/scopes$/.exec(url.pathname);
     const operation = url.pathname === basePath
       ? request.method === 'GET' ? 'list' : request.method === 'POST' ? 'create' : null
-      : match && request.method === 'DELETE' ? 'revoke' : null;
+      : match && request.method === 'DELETE' ? 'revoke' : scopeMatch && request.method === 'PATCH' ? 'setScopes' : null;
     const cursor = url.searchParams.get('cursor');
     if (!operation || (url.search && (operation !== 'list' || url.searchParams.size !== 1 || !cursor || cursor.length > 128)))
       return failure(404, 'NOT_FOUND');
@@ -31,10 +32,15 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
       const cookie = request.headers.get('cookie');
       if (request.headers.has('authorization') || !cookie || cookie.length > 8192)
         return failure(401, 'AUTH_REQUIRED');
-      const body = operation === 'create' ? await readJSONBody(request) : operation === 'revoke' ? {id: match![1]} : cursor ? {cursor} : {};
+      let body = operation === 'create' || operation === 'setScopes' ? await readJSONBody(request) : operation === 'revoke' ? {id: match![1]} : cursor ? {cursor} : {};
+      if(operation==='setScopes'){
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==2||
+          !Object.hasOwn(body,'expectedGrantDigest')||!Object.hasOwn(body,'scopes'))return failure(400,'INVALID_KEY_REQUEST');
+        body={...body,id:scopeMatch![1]};
+      }
       const response = await issuer(operation, cookie, body);
       if (response.status === 204 && operation === 'revoke') return new Response(null, {status: 204, headers});
-      if ((response.status === 200 && operation === 'list') || (response.status === 201 && operation === 'create'))
+      if ((response.status === 200 && (operation === 'list' || operation === 'setScopes')) || (response.status === 201 && operation === 'create'))
         return Response.json(await response.json(), {status: response.status, headers});
       const safeErrors: Record<number, string> = {
         400: 'INVALID_KEY_REQUEST', 401: 'AUTH_REQUIRED', 403: 'ACCESS_DENIED',

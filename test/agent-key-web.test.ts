@@ -55,3 +55,20 @@ test('same-origin requests use fixed private operations and responses stay uncac
     {operation: 'revoke', cookie: 'fixture=test', input: {id: 'fixture'}},
   ]);
 });
+
+test('scope PATCH binds the path grant and rejects extra body fields, bearer and bad Origin',async()=>{
+  const received:unknown[]=[];
+  const handle=createKeyManagementHandler(origin,async(operation,cookie,input)=>{
+    received.push({operation,cookie,input});return Response.json({grant:{id:'fixture'}});
+  });
+  const headers={Cookie:'fixture=test',Origin:origin};
+  const input={expectedGrantDigest:'a'.repeat(64),scopes:['todo:read','organization:read']};
+  const response=await handle(call('PATCH',headers,'/fixture/scopes',input));
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),{grant:{id:'fixture'}});
+  assert.deepEqual(received,[{operation:'setScopes',cookie:'fixture=test',input:{id:'fixture',...input}}]);
+  for(const field of ['id','ownerId','spaceId','key'])
+    assert.equal((await handle(call('PATCH',headers,'/fixture/scopes',{...input,[field]:'spoof'}))).status,400);
+  assert.equal((await handle(call('PATCH',{...headers,Authorization:'Bearer fixture'},'/fixture/scopes',input))).status,401);
+  assert.equal((await handle(call('PATCH',{...headers,Origin:'https://foreign.example.test'},'/fixture/scopes',input))).status,403);
+  assert.equal(received.length,1);
+});

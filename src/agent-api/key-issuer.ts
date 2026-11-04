@@ -1,12 +1,15 @@
+import {verifyAgentBusinessReadiness} from './runtime.ts';
 import {createHmac, timingSafeEqual} from 'node:crypto';
 import {isHTTPSOrigin} from '../platform/config.ts';
-import type {AgentScope} from './capabilities.ts';
+import {PlatformError} from '../platform/domain.ts';
+import {agentScopes, normalizeAgentScopes, encodeAgentPermissions, decodeAgentPermissions, type AgentScope} from './scopes.ts';
 
 const role = 'lifeos_agent_key_manager';
 const maxExpirySeconds = 365 * 86400;
 const ownerSessionCookie = '__Secure-lifeos-platform-candidate.session_token';
 
 export type KeySummary = Readonly<{
+  grantDigest?: string;
   id: string;
   name: string;
   scopes: readonly AgentScope[];
@@ -14,6 +17,8 @@ export type KeySummary = Readonly<{
   expiresAt: string | null;
   status: 'active' | 'expired' | 'revoked';
 }>;
+export type KeyOperation = 'list'|'create'|'revoke'|'setScopes';
+export type SetScopesInput = {id:string;expectedGrantDigest:string;scopes:readonly AgentScope[]};
 type IssueInput = {name: string; scopes: AgentScope[]; expiresIn: number};
 type Issued = {grant: KeySummary; key: string};
 type KeyPage = {keys: KeySummary[]; nextCursor?: string};
@@ -23,6 +28,7 @@ type Dependencies = {
   list: (cursor?: string) => Promise<KeyPage>;
   issue: (input: IssueInput) => Promise<Issued>;
   revoke: (id: string) => Promise<boolean>;
+  setScopes?: (input:SetScopesInput,cookie:string) => Promise<KeySummary>;
 };
 type Result = {status: number; body?: unknown};
 
@@ -33,12 +39,12 @@ function fields(body: unknown, expected: readonly string[]): Record<string, unkn
 }
 
 function safeSummary(value: KeySummary): KeySummary {
-  const {id,name,scopes,createdAt,expiresAt,status} = value;
-  return {id,name,scopes,createdAt,expiresAt,status};
+  const {id,name,scopes,createdAt,expiresAt,status,grantDigest} = value;
+  return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{})};
 }
 
-export function createKeyIssuer(deps: Dependencies, clock = Date.now) {
-  return async (operation: 'list'|'create'|'revoke', cookie: string, body: unknown): Promise<Result> => {
+export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessScopes?:'organization-v1') {
+  return async (operation: KeyOperation, cookie: string, body: unknown): Promise<Result> => {
     const fail = (status:number,error:string): Result => ({status,body:{error}});
     try {
       if (!cookie || Buffer.byteLength(cookie) > 8192 || !await deps.authenticate(cookie)) return fail(401,'AUTH_REQUIRED');
@@ -48,19 +54,29 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now) {
         if (!fields(body, []) && (typeof cursor !== 'string' || !cursorPattern.test(cursor) || !Number.isFinite(Date.parse(cursor.split('~')[0]))))
           return fail(400, 'INVALID_REQUEST');
         const page = await deps.list(typeof cursor === 'string' ? cursor : undefined);
-        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
+        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(businessScopes?{availableScopes:agentScopes}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
       }
       if (operation === 'revoke') {
         const input = fields(body,['id']);
         if (typeof input?.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(input.id)) return fail(400,'INVALID_REQUEST');
         return await deps.revoke(input.id) ? {status:204} : fail(404,'NOT_FOUND');
       }
+      if (operation === 'setScopes') {
+        if (!businessScopes || !deps.setScopes) return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
+        const input=fields(body,['id','expectedGrantDigest','scopes']);
+        if (typeof input?.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)||
+            typeof input.expectedGrantDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedGrantDigest)) return fail(400,'INVALID_REQUEST');
+        let scopes:readonly AgentScope[];
+        try {scopes=normalizeAgentScopes(input.scopes);} catch {return fail(400,'INVALID_REQUEST');}
+        const grant=await deps.setScopes({id:input.id,expectedGrantDigest:input.expectedGrantDigest,scopes},cookie);
+        return {status:200,body:{grant:safeSummary(grant)}};
+      }
       const input = fields(body,['name','scopes','expiresAt']) ?? fields(body,['name','scopes','expiresInDays']);
       const name = typeof input?.name === 'string' ? input.name.trim() : '';
-      const scopes = input?.scopes;
-      if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/u.test(name) || !Array.isArray(scopes) ||
-          (scopes.length !== 1 && scopes.length !== 2) || scopes[0] !== 'todo:read' ||
-          (scopes.length === 2 && scopes[1] !== 'todo:write')) return fail(400,'INVALID_REQUEST');
+      let scopes:readonly AgentScope[];
+      try {scopes=normalizeAgentScopes(input?.scopes);} catch {return fail(400,'INVALID_REQUEST');}
+      if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/u.test(name) ||
+          (!businessScopes && scopes.some(scope=>scope.startsWith('organization:')))) return fail(400,'INVALID_REQUEST');
       let expiresIn: number;
       if (input && Object.hasOwn(input,'expiresInDays')) {
         const days=input.expiresInDays;
@@ -78,7 +94,8 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now) {
       }
       const issued=await deps.issue({name,scopes:scopes as AgentScope[],expiresIn});
       return {status:201,body:{grant:safeSummary(issued.grant),key:issued.key}};
-    } catch {
+    } catch (error) {
+      if(error instanceof PlatformError)return fail(error.status,error.code);
       return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
     }
   };
@@ -102,13 +119,15 @@ export function readSignedOwnerSession(header: string, secret: string): string |
 }
 
 export type KeyIssuerConfig = Readonly<{
+  businessScopes?:'organization-v1';
   socketPath:string; baseURL:string; databaseURL:string; databaseName:string;
   ownerId:string; ownerEmail:string; spaceId:string; sessionSecret:string; agentSecret:string;
 }>;
 
 export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   const keys=['socketPath','baseURL','databaseURL','ownerId','ownerEmail','spaceId','sessionSecret','agentSecret'] as const;
-  const values=fields(raw,keys);
+  const values=fields(raw,keys)??fields(raw,[...keys,'businessScopes']);
+  if(values&&Object.hasOwn(values,'businessScopes')&&values.businessScopes!=='organization-v1')throw Error('Invalid issuer configuration');
   if (!values || keys.some(key=>typeof values[key]!=='string')) throw Error('Invalid issuer configuration');
   const config=values as Omit<KeyIssuerConfig,'databaseName'>;
   const origin=new URL(config.baseURL);
@@ -125,12 +144,12 @@ export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   return Object.freeze({...config,databaseName:database.pathname.slice(1)});
 }
 
-type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string};
+type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string;grantDigest?:string};
 function fromRow(row: GrantRow): KeySummary {
   const permissions=typeof row.permissions==='string'?JSON.parse(row.permissions):row.permissions;
-  const todo=permissions?.todo;
-  if (!Array.isArray(todo)||!todo.includes('read')) throw Error('Unexpected grant metadata');
-  return {id:row.id,name:row.name??'',scopes:todo.includes('write')?['todo:read','todo:write']:['todo:read'],
+  const scopes=decodeAgentPermissions(permissions);
+  if (!scopes) throw Error('Unexpected grant metadata');
+  return {id:row.id,name:row.name??'',scopes,...(row.grantDigest?{grantDigest:row.grantDigest}:{}),
     createdAt:new Date(row.createdAt).toISOString(),expiresAt:row.expiresAt?.toISOString()??null,
     status:row.enabled===false?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
 }
@@ -160,6 +179,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       FROM pg_roles r JOIN pg_class c ON c.oid='lifeos_agent.apikey'::regclass WHERE r.rolname=current_user`,[config.ownerId,config.spaceId]);
     if (!permissions||permissions.role!==role||permissions.database!==config.databaseName||
         Object.entries(permissions).some(([key,value])=>key!=='role'&&key!=='database'&&value!==true)) throw Error('Restricted issuer role required');
+    if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
       logger:{disabled:true},telemetry:{enabled:false},plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,
         keyExpiration:{minExpiresIn:0,maxExpiresIn:365},maximumNameLength:80,startingCharactersConfig:{shouldStore:false}})]});
@@ -167,6 +187,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
     const bind=[config.ownerId,config.spaceId];
     const handle=createKeyIssuer({
       authenticate:async header=>{
+        if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
         const token=readSignedOwnerSession(header,config.sessionSecret);
         if (!token) return false;
         const {rows:[row]}=await pool.query('SELECT lifeos_agent.verify_management_session($1,$2,$3) AS allowed',[token,config.ownerId,config.ownerEmail]);
@@ -175,6 +196,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       list:async cursor=>{
         const [,time,id]=cursor ? cursorPattern.exec(cursor)! : [];
         const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,
+          ${config.businessScopes?'lifeos_agent.managed_grant_digest(id) AS "grantDigest",':''}
           to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime"
           FROM lifeos_agent.apikey WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2
           AND ($3::timestamptz IS NULL OR ("createdAt",id)<($3::timestamptz,$4::text))
@@ -185,17 +207,38 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       },
       issue:async input=>{
         const key=await auth.api.createApiKey({body:{userId:config.ownerId,name:input.name,expiresIn:input.expiresIn,
-          metadata:{spaceId:config.spaceId},permissions:{todo:input.scopes.map(scope=>scope.slice(5))},
+          metadata:{spaceId:config.spaceId},permissions:Object.fromEntries(Object.entries(encodeAgentPermissions(input.scopes)).map(([domain,actions])=>[domain,[...actions]])),
           rateLimitEnabled:true,rateLimitTimeWindow:60000,rateLimitMax:20}});
         if (!key.expiresAt || typeof key.key!=='string') throw Error('Unconfirmed issuer result');
-        return {grant:fromRow({...key,expiresAt:key.expiresAt}),key:key.key};
+        const digest=config.businessScopes?(await pool.query('SELECT lifeos_agent.managed_grant_digest($1) AS digest',[key.id])).rows[0]?.digest:undefined;
+        return {grant:fromRow({...key,expiresAt:key.expiresAt,grantDigest:digest}),key:key.key};
+      },
+      setScopes:async(input,cookie)=>{
+        const token=readSignedOwnerSession(cookie,config.sessionSecret);
+        if(!token)throw new PlatformError(401,'AUTH_REQUIRED','Owner session required');
+        const client=await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query('SELECT lifeos_agent.set_managed_grant_scopes($1,$2,$3,$4::jsonb)',[token,input.id,input.expectedGrantDigest,JSON.stringify(encodeAgentPermissions(input.scopes))]);
+          const {rows}=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,lifeos_agent.managed_grant_digest(id) AS "grantDigest" FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
+          if(rows.length!==1)throw Error('Unconfirmed grant');
+          const result=fromRow(rows[0]);await client.query('COMMIT');return result;
+        }catch(error){
+          await client.query('ROLLBACK').catch(()=>undefined);
+          const code=(error as {code?:string}).code;
+          if(code==='LG401')throw new PlatformError(401,'AUTH_REQUIRED','Owner MFA required');
+          if(code==='LG403')throw new PlatformError(403,'ACCESS_DENIED','Grant unavailable');
+          if(code==='LG409')throw new PlatformError(409,'KEY_CONFLICT','Grant changed');
+          if(code==='LG400')throw new PlatformError(400,'INVALID_REQUEST','Invalid scopes');
+          throw error;
+        }finally{client.release();}
       },
       revoke:async id=>{
         const {rowCount}=await pool.query(`UPDATE lifeos_agent.apikey SET enabled=false,"updatedAt"=clock_timestamp()
           WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2 AND id=$3`,[...bind,id]);
         return rowCount===1;
       },
-    });
+    },Date.now,config.businessScopes);
     return {handle,close:()=>pool.end()};
   } catch (error) {
     await pool.end();

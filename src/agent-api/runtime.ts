@@ -47,6 +47,48 @@ export function agentOperationAvailable(id:string, personal:PersonalConfig, fenc
   try {requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''); return true;} catch {return false;}
 }
 
+/** Reject unsafe function ownership/search paths/ACLs before enabling the optional business seam. */
+export async function verifyAgentBusinessReadiness(pool:{query:(sql:string)=>Promise<{rows:Record<string,unknown>[]} >}):Promise<void>{
+  const {rows}=await pool.query(`WITH expected(signature,definer,grantee) AS (VALUES
+    ('lifeos_agent.valid_business_permissions(jsonb)',false,'lifeos_agent_key_manager'),
+    ('lifeos_agent.managed_grant_digest(text)',true,'lifeos_agent_key_manager'),
+    ('lifeos_agent.set_managed_grant_scopes(text,text,text,jsonb)',true,'lifeos_agent_key_manager'),
+    ('lifeos_agent.assert_business_grant(text,text,text,text[])',true,'lifeos_platform_candidate_runtime'),
+    ('lifeos_agent.assert_todo_write_grant(text,text,text)',true,'lifeos_platform_candidate_runtime')),
+    functions AS (SELECT p.*,e.definer,e.grantee FROM expected e LEFT JOIN pg_proc p ON p.oid=to_regprocedure(e.signature)),
+    owner AS (SELECT c.relowner FROM pg_class c WHERE c.oid='lifeos_agent.apikey'::regclass)
+    SELECT (SELECT count(*)=5 AND bool_and(f.oid IS NOT NULL AND f.proowner=o.relowner AND f.prosecdef=f.definer
+      AND f.proconfig=ARRAY['search_path=pg_catalog, pg_temp']::text[]
+      AND has_function_privilege(f.grantee,f.oid,'EXECUTE')
+      AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(f.proacl,acldefault('f',f.proowner))) a
+       WHERE a.privilege_type='EXECUTE' AND (a.is_grantable AND a.grantee<>f.proowner OR a.grantee NOT IN (f.proowner,(SELECT oid FROM pg_roles WHERE rolname=f.grantee))))) FROM functions f CROSS JOIN owner o) AS functions_safe,
+    (SELECT relowner=(SELECT relowner FROM owner) FROM pg_class WHERE oid='lifeos_agent.key_management_binding'::regclass) AS binding_owner,
+    (SELECT relowner=(SELECT relowner FROM owner) FROM pg_class WHERE oid='lifeos_agent.grant_scope_audit'::regclass) AS audit_owner,
+    (SELECT count(*)=3 AND bool_and(NOT(r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolinherit OR r.rolbypassrls OR r.rolreplication)
+      AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid)
+      AND r.oid<>(SELECT relowner FROM owner)
+      AND NOT has_database_privilege(r.oid,current_database(),'CREATE')
+      AND NOT EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_temp_' AND n.nspname !~ '^pg_toast_temp_' AND has_schema_privilege(r.oid,n.oid,'CREATE')))
+      FROM pg_roles r WHERE rolname IN ('lifeos_agent_key_manager','lifeos_agent_verifier','lifeos_platform_candidate_runtime')) AS roles_safe,
+    NOT has_schema_privilege('lifeos_agent_key_manager','lifeos_platform','USAGE') AND NOT has_schema_privilege('lifeos_agent_verifier','lifeos_platform','USAGE') AS separation,
+    NOT EXISTS(SELECT 1 FROM (VALUES ('permissions'),('metadata'),('key'),('expiresAt'),('referenceId')) col(name)
+      CROSS JOIN (VALUES ('lifeos_agent_key_manager'),('lifeos_agent_verifier')) role(name)
+      WHERE has_column_privilege(role.name,'lifeos_agent.apikey',col.name,'UPDATE')) AS narrow_updates,
+    NOT has_column_privilege('lifeos_agent_verifier','lifeos_agent.apikey','enabled','UPDATE')
+      AND NOT has_table_privilege('lifeos_agent_verifier','lifeos_agent.apikey','INSERT,TRUNCATE,REFERENCES,TRIGGER') AS verifier_not_manager,
+    NOT has_table_privilege('lifeos_platform_candidate_runtime','lifeos_agent.apikey','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+      AND NOT has_any_column_privilege('lifeos_platform_candidate_runtime','lifeos_agent.apikey','SELECT,INSERT,UPDATE,REFERENCES') AS runtime_isolation,
+    NOT EXISTS(SELECT 1 FROM (VALUES ('lifeos_agent_key_manager'),('lifeos_agent_verifier'),('lifeos_platform_candidate_runtime')) role(name)
+      WHERE has_table_privilege(role.name,'lifeos_agent.grant_scope_audit','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+        OR has_any_column_privilege(role.name,'lifeos_agent.grant_scope_audit','SELECT,INSERT,UPDATE,REFERENCES')
+        OR has_table_privilege(role.name,'lifeos_agent.key_management_binding','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+        OR has_any_column_privilege(role.name,'lifeos_agent.key_management_binding','SELECT,INSERT,UPDATE,REFERENCES')) AS private_tables,
+    (SELECT relrowsecurity AND relowner NOT IN (SELECT oid FROM pg_roles WHERE rolname IN ('lifeos_agent_key_manager','lifeos_agent_verifier','lifeos_platform_candidate_runtime'))
+      FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass) AS key_rls`);
+  if(rows.length!==1||Object.values(rows[0]).some(value=>value!==true))
+    throw new PlatformError(503,'AGENT_API_UNAVAILABLE','业务授权检查暂不可用。');
+}
+
 async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<Handler> {
   const [{Pool}, {betterAuth}, {apiKey}] = await Promise.all([
     import('pg'), import('better-auth'), import('@better-auth/api-key'),
@@ -64,6 +106,8 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
 
   try {
     await verifyRestrictedPool(business as SqlPool);
+    const modules=readAgentBusinessModules(process.env,personal);
+    if(modules.organization)await verifyAgentBusinessReadiness(business);
     const {rows: fences} = await business.query(`SELECT
       has_function_privilege(current_user,to_regprocedure('lifeos_agent.assert_todo_write_grant(text,text,text)'),'EXECUTE') AS can_fence,
       NOT has_table_privilege(current_user,'lifeos_agent.apikey','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS no_key_access,
@@ -102,12 +146,12 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
     });
     await auth.$context;
 
-    return createAgentHandler({
+    const handler=createAgentHandler({
       enabled: true,
       fenceWrites: true,
       mountPath: '/api/platform/agent',
       config: personal,
-      repository: new PostgresPlatformRepository(business as SqlPool, true, true),
+      repository: new PostgresPlatformRepository(business as SqlPool, true, true, modules),
       verify: async token => {
         const result = await auth.api.verifyApiKey({body: {key: token}});
         if (result.error?.code === 'RATE_LIMITED') throw new PlatformError(429, 'RATE_LIMITED', '请求过于频繁。');
@@ -122,6 +166,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       operationAvailable: id => agentOperationAvailable(id, personal, fenceReady),
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
+    return modules.organization?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler;
   } catch (error) {
     await Promise.allSettled([business.end(), verifier.end()]);
     throw error;
