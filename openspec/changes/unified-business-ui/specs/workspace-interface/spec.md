@@ -126,3 +126,43 @@ The system SHALL use one selected table foundation for current editable and read
 #### Scenario: Inspect the application dependency boundary
 - **WHEN** the current application source and dependency lock are checked
 - **THEN** the removed renderer and its editors are neither imported nor installed as runtime, type-only or transitive dependencies
+
+
+### Requirement: Visible development requirements
+The system SHALL expose a canonical owner-gated requirements destination using the existing generic baseline, with stable identifiers, development goals, ordered milestones, priority, implementation state, acceptance state, blockers, next actions and traceable public references.
+
+#### Scenario: Inspect the next development step
+- **WHEN** the owner opens the requirements page and filters its rows
+- **THEN** milestone order, remaining work and acceptance criteria are visible from the same baseline
+- **AND** source completion, automated evidence, deployment and owner acceptance remain distinct, with no invented calendar dates or personal data
+- **AND** the informational page does not expose task creation and anonymous access remains denied
+
+### Requirement: Browse categories before creating them
+The system SHALL group Todo, Projects and Areas in the task workspace and provide shared sortable, resizable ReUI category tables with explicit search/filter and separate view-tasks, edit and create actions.
+
+#### Scenario: Open a saved project or domain
+- **WHEN** the owner opens Projects or Areas
+- **THEN** saved category rows are shown before a creation form and row actions retain stable identities
+- **AND** partial snapshots do not claim full task counts, changed references remain visible and edits use the existing revision-aware editor
+
+### Requirement: Lightweight topic settings
+The system SHALL make saved business topics reachable from Settings in a dialog which dismisses on outside click or Escape and restores focus.
+
+#### Scenario: Browse or edit a topic
+- **WHEN** the owner opens topic settings
+- **THEN** only verified saved topic titles and revisions are listed, with explicit permitted create/edit links
+- **AND** unknown or failed snapshots remain explicit and navigation preserves active draft guards
+
+### Requirement: Understand API-key expiry
+The system SHALL use equal-height API-key form controls and a usable native custom date input and SHALL distinguish estimated expiry in an explicit timezone from the authoritative issued expiry.
+
+#### Scenario: Choose a key duration
+- **WHEN** the owner chooses an allowed duration or a custom date
+- **THEN** the form shows its duration and estimated expiry, accepts no more than 365 days and preserves the existing scope and one-time-reveal lifecycle
+
+### Requirement: Keep input features and Agent capabilities aligned
+Each newly supported input feature SHALL ship its implemented scoped Agent operation, capability discovery and Skill reference together without advertising unsupported operations or silently widening existing grants.
+
+#### Scenario: A business input feature is not yet supported by Agent API
+- **WHEN** its implementation or grant is unavailable
+- **THEN** the roadmap marks the missing capability and existing todo credentials remain described by their actual scopes

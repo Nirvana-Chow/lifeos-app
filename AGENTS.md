@@ -11,3 +11,6 @@
 - Run appropriate checks and obtain independent review for material changes. Report executed, failed, skipped and unavailable verification accurately.
 - Retain upstream copyright, LICENSE and NOTICE material, including the fixed ReUI source/provenance and full MIT license under `third-party/reui/`.
 - Preserve existing work and scope. Do not overwrite another writer, migrate real data or change production trust as a side effect of source work.
+
+- A newly supported input feature must include its scoped Agent operation, capability discovery and Skill reference in the same delivery. Advertise only implemented capabilities; do not silently widen existing grants or treat a todo credential as whole-system access.
+- Synthetic fixtures are internal verification only. Present the actual deployed site and verified records for owner review; report missing real-data access instead of substituting a synthetic preview as delivery.

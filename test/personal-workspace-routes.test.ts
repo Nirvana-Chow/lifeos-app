@@ -51,3 +51,11 @@ test('legacy todo navigation redirects to the single shell while synthetic revie
 });
 
 test('canonical finite page queries reach the existing controller without arbitrary routes',async()=>{const route=page('app/personal/page.tsx');for(const name of ['inbox','areas','projects','settings'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),new RegExp('data-page="'+name+'"'));for(const name of ['constructor','unknown','settings/data'])assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:name})})),/data-page="overview"/);});
+
+test('requirements has a canonical owner-gated destination and does not enable create from another query',async()=>{
+ const route=page('app/personal/page.tsx');
+ assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:'requirements'})})),/data-page="requirements"/);
+ assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({page:'requirements',create:'todo'})})),/data-create="false"/);
+ for(const name of ['requirements/extra','requirements&create=todo','Requirements'])assert.equal(readWorkspacePage(name),'overview');
+ await assert.rejects(page('app/personal/page.tsx',false)({searchParams:Promise.resolve({page:'requirements'})}),/REDIRECT \/login/);
+});

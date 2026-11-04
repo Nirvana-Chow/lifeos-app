@@ -4,7 +4,7 @@ import type {WorkspacePage} from '../ui-review/contract';
 /** Finite canonical controller pages; query input never becomes a route or dispatcher. */
 export function workspaceHref(page:WorkspacePage):string{return page==='overview'?'/personal':'/personal?page='+page;}
 export function readWorkspacePage(value:unknown):WorkspacePage{
- return value==='tasks'||value==='inbox'||value==='areas'||value==='projects'||value==='settings'?value:'overview';
+ return value==='tasks'||value==='inbox'||value==='areas'||value==='projects'||value==='settings'||value==='requirements'?value:'overview';
 }
 export const privateHrefs:Readonly<Record<ModuleId,string>>=Object.freeze({
  overview:workspaceHref('overview'),todos:workspaceHref('tasks'),inbox:workspaceHref('inbox'),settings:workspaceHref('settings'),

@@ -131,7 +131,7 @@ export function projectPrivateAppearanceFailure(phase:unknown,error:unknown){
 // The text source set is finite and reviewed. AST literals/JSX text are admitted
 // exactly, never source prefixes, arbitrary file paths or body-derived expected data.
 export const privateCaptureSources=[
- 'src/ui-review/workspace.tsx','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
+ 'src/ui-review/workspace.tsx','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/category-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
  'src/workbench/shell.tsx','src/workbench/navigation.ts','src/workbench/draft-workspace.tsx','src/workbench/draft-contract.ts','src/workbench/domain.tsx','src/workbench/empty-state.tsx','src/workbench/entry-preview.tsx','src/workbench/entry-fields.ts','src/workbench/workflow.tsx','src/workbench/settings.tsx','src/workbench/theme-switch.tsx',
  'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/connected-workspace.tsx',
  'src/personal-candidate/privacy.tsx','src/personal-candidate/live-workspace.tsx','app/layout.tsx','app/personal/[...section]/page.tsx',
@@ -169,10 +169,16 @@ function watchPrivateTransport(page:Page,{legacy=false}:{legacy?:boolean}={}){
  page.on('request',request);page.on('response',response);
  return {async close(){page.off('request',request);page.off('response',response);await Promise.all(pending);if(forbidden||mutations)console.error('PRIVATE_TRANSPORT_FAILURE '+JSON.stringify({forbidden:Math.min(forbidden,1000000),mutations:Math.min(mutations,1000000)}));assert.equal(forbidden,0,'private transport boundary');assert.equal(mutations,0,'UI group must not mutate business data');},facts:()=>({privateResponses,rsc})};
 }
-async function readyHeading(page:Page,heading:string){
+export async function readyHeading(page:Page,heading:string){
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
  if(heading==='设置')await expect(page.getByRole('link',{name:'修改密码',exact:true})).toBeVisible();
  else if(heading==='日历与日程'||heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(heading==='项目'||heading==='领域'){
+  const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:'新建'+heading,exact:true});
+  await expect(create).toBeVisible();
+  await expect(create).toHaveAttribute('href','/personal/edit?type='+(heading==='项目'?'project':'domain'));
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+ }
  else if(await page.locator('.lo-shell').count())await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();
 }
 async function navigateDestination(page:Page,id:string,path:string,heading:string){
@@ -195,7 +201,7 @@ export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
    await readyHeading(page,'总览');
    if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
    const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
-   await expect(navigation.getByRole('button')).toHaveCount(2);
+   await expect(navigation.getByRole('button')).toHaveText(['总览','待办','需求池']);
    await expect(navigation.locator('a,summary')).toHaveCount(0);
    await navigation.getByRole('button',{name:'待办',exact:true}).click();await readyHeading(page,'待办');
    for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading);routes++;}
@@ -447,7 +453,7 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
    if(row.key==='private-settings')await openPrivateSettings(page,row.path,entries);
    else await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});
    mark('heading');await readyHeading(page,row.heading);mark('theme');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
-   if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.getByRole('button').filter({hasText:'title'in entry.draft?entry.draft.title:''}).first()).toBeVisible();}
+   if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.locator('[data-category-grid="reui"]').getByText('title'in entry.draft?entry.draft.title:'',{exact:true})).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
    await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark);cells++;
    mark('close-dialog');if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}

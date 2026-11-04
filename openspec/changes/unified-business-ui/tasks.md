@@ -42,3 +42,22 @@ These are source qualification attempts, not production or owner acceptance. Fai
 ## Owner requests awaiting their independent implementation phase
 
 The 2026-11-04 feedback also requests draggable Kanban, newline batch entry, public Issue/Milestone roadmap, Codex/Roo Skill setup, reversible task deletion, calendar/Gantt and real task-to-project review through the API, plus bounded release retention and a smaller image. These requirements remain recorded; they are not implemented or accepted by the shell/editing correction. New capability/data/permission choices require their own approved plan and acceptance. Calendar/Gantt must retain truthful unavailable states until supported; cancelled status is not deletion. Real records require authorized owner API access and independent readback. Private deployment retention must preserve all controller-referenced recovery paths and keep database backups separate.
+
+
+## Approved refinement mapping (2026-11-04)
+
+The owner approved the requirements/workspace proposal and requested API feature parity. [Implementation plan](../../../docs/superpowers/plans/2026-11-04-requirements-workspace.md). This maps into the original 1.2/2.1/3.1/3.2 and does not change their five IDs or inherited 2/5 completion.
+
+- Requirements: expose the existing baseline as a searchable development roadmap with ordered milestones, goal, implementation/acceptance, blockers, next step and public traceability. Generic code status is never deployment or owner acceptance.
+- Todo: show Todo/Projects/Areas sections and ReUI category grids with search, project filters, native sorting/resizing and separate view-tasks/edit/new actions. Keep finite deep links and draft guards.
+- Settings: move business topics out of Todo into a saved-topic dialog that dismisses on outside click/Escape. New/edit links keep the existing authoritative record editor.
+- API-key form: equal computed input/select height, a full-width custom datetime row, duration and estimated local expiry; issued server expiry remains authoritative. Preserve todo-only scopes and 365-day maximum.
+- API parity: every new input feature ships its operation, discovery and Skill together. Broad future grants, calendar Gantt and real-task organization remain explicit dependent stages; no production credential or real record was created by source work.
+
+Source tests, synthetic browser checks, independent review and fixed-SHA CI evidence for this refinement must be recorded before delivery. Original renderer benchmarks, full runtime qualification and owner experience acceptance remain open.
+
+
+Local refinement evidence (2026-11-04): the integrated source passed 1,080 default tests with zero failures and 19 explicitly opt-in skips. The separately enabled account browser lifecycle passed on 360/1365px; the separately enabled workspace browser passed all eight 360/390/430/1365px light/dark conditions with zero business writes. These cover requirement search/detail, project filters and task navigation, topic Escape/outside dismissal and focus restoration. Independent review found and closed requirements-history unintended creation and narrow mobile row/caption geometry; geometry and typography have real-browser regression assertions. Type checking, default-closed webpack plus checks against that same output, strict OpenSpec and dependency audit are required against the final source before its PR. Public Issue #30 tracks this refinement. Fixed-SHA CI, production/runtime delivery, original benchmarks and owner experience acceptance remain open; no real key or record was created.
+
+
+Refinement CI `41834970595` / source `0b9e124` passed the full core job, PostgreSQL recovery, native MFA, Agent key management, both explicit Chrome tests and the source image build. The private-route browser group then stopped on its obsolete two-item primary-navigation oracle; appearance and presentation had no handoff. Real Chrome reproduced three exact current navigation labels. A bounded follow-up also reproduced the old project/area ready-heading assumption and finite-source capture omission. Fixture alignment retains exact navigation, category ReUI/link targets, unknown-body rejection, all access/receipt/capture gates and original time limits; the original TLS/browser CI must pass on the updated fixed source before merge or delivery. Owner review uses the actual deployed site; internal fixtures are not a substitute.

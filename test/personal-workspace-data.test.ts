@@ -19,3 +19,12 @@ test('Apple projection preserves source and identity while exposing only the ori
 test('invalid Apple capture metadata fails closed instead of substituting website read time',()=>{
  for(const bad of ['not-a-date','2026-10-25'])assert.throws(()=>workspaceData(snapshot([appleEntry(bad)]),'fixture-space','2026-10-27'));
 });
+
+test('settings topic projection retains saved identity and revision without adding it to tasks or areas',()=>{
+ const base=entry(),topicId='99999999-9999-4999-8999-999999999999';
+ const topic={...base,id:topicId,kind:'inbox',source:{...base.source,externalId:topicId,original:{...base.source.original,type:'topic'}},draft:{title:'Synthetic saved topic',text:'',occurredOn:null,disposition:'reference',personal:{type:'topic'}}};
+ const input=snapshot([base,topic]),before=structuredClone(input),data=workspaceData(input,'fixture-space','2026-10-27').data;
+ assert.deepEqual(data.topics,[{id:topicId,title:'Synthetic saved topic',revision:3}]);
+ assert.equal(data.tasks.length,1);assert.equal(data.areas.length,0);assert.deepEqual(input,before);
+ assert.deepEqual(workspaceData(snapshot([]),'fixture-space','2026-10-27').data.topics,[]);
+});

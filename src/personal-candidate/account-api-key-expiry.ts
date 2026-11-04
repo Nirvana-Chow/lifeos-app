@@ -14,3 +14,15 @@ export function resolveApiKeyExpiry(choice: string, localTime: string, now = new
       +expiry <= +now || +expiry > +now + 365 * day) return null;
   return {expiresAt: expiry.toISOString()};
 }
+
+/** Preview only: the issuer measures preset durations when it creates the key. */
+export function estimateApiKeyExpiry(choice: string, now = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string | null {
+  const duration = resolveApiKeyExpiry(choice, '', now);
+  if (!duration || !('expiresInDays' in duration)) return null;
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(+now + duration.expiresInDays * day));
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value;
+  return `${value('year')}/${value('month')}/${value('day')} ${value('hour')}:${value('minute')}（${timeZone}）`;
+}

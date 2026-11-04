@@ -22,7 +22,9 @@
   border: 0;
 }
 .fields label { display: grid; min-width: 0; align-content: start; gap: 6px; }
-.fields select {
+.fields input, .fields select {
+  box-sizing: border-box;
+  height: 44px;
   min-height: 44px;
   width: 100%;
   padding: 6px 10px;
@@ -33,7 +35,8 @@
   font: inherit;
 }
 .fields .actions, .custom { grid-column: 1 / -1; }
-.custom { max-width: 21rem; }
+.custom { width: 100%; }
+.expiryHint { grid-column: 1 / -1; margin: 0; }
 .list { margin: 0; padding: 0; list-style: none; }
 .grant {
   display: flex;

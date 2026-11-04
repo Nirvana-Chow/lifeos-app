@@ -88,11 +88,11 @@ test('legacy journal manager sends todo to the canonical shell after dirty and r
 
 test('collapsed personal navigation keeps available tooltips and hides journal and schedule',()=>{
  const states:any[]=[];let cursor=0;const hooks={...react,useState:(initial:any)=>{const at=cursor++;if(!(at in states))states[at]=typeof initial==='function'?initial():initial;return[states[at],(value:any)=>{states[at]=value;}];}};
- const nativeRequire=createRequire(import.meta.url),workspace=load('../src/ui-review/workspace.tsx',{'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),'./ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},'./ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},'./selectors':workspaceSelectors,'./task-table':{},'./task-grid':{TaskTitleField:'title-field'},'./overview-chart':{},'./review.css':{},'../workbench/private-navigation':privateNavigation,'../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{},'./source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}}});
+ const nativeRequire=createRequire(import.meta.url),workspace=load('../src/ui-review/workspace.tsx',{'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),'./ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},'./ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},'./selectors':workspaceSelectors,'./task-table':{},'./task-grid':{TaskTitleField:'title-field'},'./overview-chart':{},'./review.css':{},'../workbench/private-navigation':privateNavigation,'../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'./category-grid':{CategoryGrid:'category-grid'},'./requirements-page':{RequirementsPage:'requirements-page'},'./source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}}});
  const render=()=>{cursor=0;return workspace.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null}});};
  let tree=render();
  find(tree,n=>n.props['aria-label']==='收起侧栏')!.props.onClick();tree=render();
- for(const label of ['待办','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
+ for(const label of ['待办','总览','需求池','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
  for(const path of ['schedule','journal'] as const)assert.equal(find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path]),undefined);
 });
 
@@ -175,7 +175,7 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
   './ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},
   './selectors':workspaceSelectors,'./task-table':{TaskTable:'task-table'},'./task-grid':{TaskTitleField:'title-field'},
   './overview-chart':{OverviewChart:'chart'},'./review.css':{},'../workbench/private-navigation':privateNavigation,
-  '../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{CategoryEntries:'categories'},
+  '../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'./category-grid':{CategoryGrid:'category-grid'},'./requirements-page':{RequirementsPage:'requirements-page'},
   './source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}},
  },browser);
  render();
@@ -210,5 +210,10 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
  assert.deepEqual({id:(opened[0] as any).id,revision:(opened[0] as any).revision},{id,revision:9});
  assert.deepEqual(replaced,[],'A newly committed task must not fall through to missing-record document navigation');
  flush(false);
+ let created=0;
+ churn=()=>{props={...props,onCreateTask:()=>{created++;return true;}};render(false);};
+ traverse('/personal?page=requirements&create=todo',3);
+ assert.equal(created,0,'an informational requirements history entry must not open a task editor');
+ assert.equal(find(render(),node=>node.type==='h1')?.props.children,'需求池');
  for(const item of effects.values())item.cleanup?.();
 });

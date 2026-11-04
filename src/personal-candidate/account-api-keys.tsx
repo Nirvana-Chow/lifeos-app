@@ -6,7 +6,7 @@ import {Badge} from '../ui-review/ui/badge';
 import {Button} from '../ui-review/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../ui-review/ui/dialog';
 import {Input} from '../ui-review/ui/input';
-import {resolveApiKeyExpiry} from './account-api-key-expiry';
+import {estimateApiKeyExpiry, resolveApiKeyExpiry} from './account-api-key-expiry';
 import styles from './account-api-keys.module.css';
 
 const endpoint = '/api/platform/account/api-keys';
@@ -40,6 +40,13 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
   const [name, setName] = useState('');
   const [permission, setPermission] = useState('read');
   const [expiry, setExpiry] = useState('30');
+  const [estimatedExpiry, setEstimatedExpiry] = useState<string | null>(null);
+  useEffect(() => {
+    const update = () => setEstimatedExpiry(estimateApiKeyExpiry(expiry));
+    update();
+    const timer = setInterval(update, 60_000);
+    return () => clearInterval(timer);
+  }, [expiry]);
   const [replacement, setReplacement] = useState<Grant | null>(null);
   const [revoking, setRevoking] = useState<Grant | null>(null);
   const [reveal, setReveal] = useState<{key: string; grant: Grant} | null>(null);
@@ -244,9 +251,13 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
             <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
               <option value="read">仅读取待办</option><option value="write">读取和写入待办</option>
             </select></label>
-            <label>到期时间<select name="expiry" value={expiry} onChange={event => setExpiry(event.target.value)}>
-              <option value="7">7 天后</option><option value="30">30 天后</option><option value="90">90 天后</option><option value="365">365 天后（一年）</option><option value="custom">自定义</option>
+            <label>有效期限<select aria-describedby="key-expiry-hint" name="expiry" value={expiry} onChange={event => setExpiry(event.target.value)}>
+              <option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option><option value="365">365 天</option><option value="custom">选择到期日期</option>
             </select></label>
+            <div id="key-expiry-hint" className={styles.expiryHint}>
+              {estimatedExpiry && <small>预计到期：{estimatedExpiry}。 </small>}
+              <small>实际到期时间以签发后服务端返回为准。</small>
+            </div>
             {expiry === 'custom' && <label className={styles.custom}>自定义到期时间
               <Input type="datetime-local" name="custom-expiry" aria-describedby="key-timezone" required/>
               <small id="key-timezone">时区 {Intl.DateTimeFormat().resolvedOptions().timeZone}，最长 365 天。</small>
