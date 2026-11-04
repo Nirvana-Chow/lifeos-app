@@ -105,7 +105,16 @@ jobs:
           test ! -e /run/lifeos-agent-issuer
           sudo mkdir -m 0700 /run/lifeos-agent-issuer
           sudo chown "$(id -u):$(id -g)" /run/lifeos-agent-issuer
-          trap 'rmdir /run/lifeos-agent-issuer' EXIT
+          cleanup_issuer_fixture() {
+            local original_status=$? cleanup_status=0
+            sudo rmdir /run/lifeos-agent-issuer || cleanup_status=$?
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo '::error::Exact issuer fixture directory cleanup failed' >&2
+            fi
+            if [ "$original_status" -ne 0 ]; then exit "$original_status"; fi
+            exit "$cleanup_status"
+          }
+          trap cleanup_issuer_fixture EXIT
           node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-network.xml" test/organization-key-network.integration.test.ts
           python3 - <<'PY_ORGANIZATION_HTTP'
           import os, xml.etree.ElementTree as ET
