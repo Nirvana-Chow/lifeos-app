@@ -104,7 +104,7 @@ test('personal navigation hides unfinished business and record management',()=>{
  }
 });
 function rawComponent(file:string,snapshot:Record<number,unknown>={}){
- let at=0;const hooks={...React,useEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(initial:unknown)=>{const i=at++;return [i in snapshot?snapshot[i]:typeof initial==='function'?(initial as Function)():initial,()=>{}];}};
+ let at=0;const hooks={...React,useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(initial:unknown)=>{const i=at++;return [i in snapshot?snapshot[i]:typeof initial==='function'?(initial as Function)():initial,()=>{}];}};
  const m={exports:{} as any};new Function('require','module','exports',ts.transpileModule(readFileSync(file,'utf8'),{fileName:file,compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)((name:string)=>{
   if(name==='react')return hooks;if(name.endsWith('.css'))return {__esModule:true,default:{}};if(!name.startsWith('.'))return nativeRequire(name);const base=resolve(dirname(resolve(file)),name),target=extname(base)?base:[base+'.tsx',base+'.ts',base].find(existsSync);return load(target!);
  },m,m.exports);return m.exports;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   CheckSquare2,
@@ -161,6 +161,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const currentHistoryState = useRef<unknown>(null);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
+  // A router commit can occur inside popstate dispatch. Keep the native
+  // subscription intact and expose only the latest committed handlers to it.
+  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate});
+  useLayoutEffect(() => {
+    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate};
+  });
   const metrics = useMemo(() => taskMetrics(state), [state]);
   const rows = useMemo(
     () => filterTasks(tasks, { ...filter, inboxOnly: page === "inbox" || filter.inboxOnly }, data?.today),
@@ -213,6 +219,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         restoringHistory.current = false;
         return;
       }
+      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate} = historyHandlers.current;
       const entry = workspaceHistoryEntry(event.state);
       const url = new URL(window.location.href);
       const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
@@ -220,9 +227,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
       const wantsCreate = isTaskLink ? !url.searchParams.has("id") : url.searchParams.get("create") === "todo";
       let allowed;
-      if (task && props.onOpenTask) allowed = props.onOpenTask(task);
-      else if (wantsCreate && props.onCreateTask) allowed = props.onCreateTask();
-      else allowed = props.onBeforeNavigate?.();
+      if (task && onOpenTask) allowed = onOpenTask(task);
+      else if (wantsCreate && onCreateTask) allowed = onCreateTask();
+      else allowed = onBeforeNavigate?.();
       if (allowed === false) {
         const active = currentHistory.current;
         const nativeIndex = browserHistoryIndex();
@@ -259,7 +266,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [props.syncUrl, props.onBeforeNavigate, props.onOpenTask, props.onCreateTask, tasks]);
+  }, [props.syncUrl]);
   function navigate(
     next: WorkspacePage,
     areaId: string | null = null,
