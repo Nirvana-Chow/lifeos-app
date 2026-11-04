@@ -12,9 +12,18 @@
 .nav { margin-bottom: 20px; }
 .nav a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
 .section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
+.sectionHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.sectionHeading h2 { margin:0; }
+.keyDialog { max-height:calc(100dvh - 32px); overflow-y:auto; overscroll-behavior:contain; }
+.keyDialog p { margin:0; color:var(--muted-foreground); line-height:1.55; }
+.keyDialog form > button { margin-top:12px; }
+.download { display:inline-flex; align-items:center; min-height:44px; padding:8px 12px; border:1px solid var(--border); border-radius:var(--lo-radius-control); font-weight:500; text-decoration:underline; text-underline-offset:3px; }
+.page .skillHint { font-size:.875rem; }
+.instructions { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; font-size:.875rem; line-height:1.6; }
+.page summary { cursor:pointer; min-height:44px; align-content:center; }
 .fields {
   display: grid;
-  grid-template-columns: minmax(12rem, 2fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
   margin: 12px 0 0;
@@ -22,6 +31,7 @@
   border: 0;
 }
 .fields label { display: grid; min-width: 0; align-content: start; gap: 6px; }
+.fields > label:first-child { grid-column:1 / -1; }
 .fields input, .fields select {
   box-sizing: border-box;
   height: 44px;
@@ -52,13 +62,6 @@
 .details { margin: 0; font-size: .875rem; }
 .details dt { color: var(--muted-foreground); }
 .details dd { margin: 0; }
-.reveal {
-  margin-top: 20px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--lo-radius-surface);
-  background: var(--card);
-}
 .secret {
   display: block;
   margin: 12px 0;

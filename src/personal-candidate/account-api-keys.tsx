@@ -32,10 +32,11 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', {
   dateStyle: 'medium', timeStyle: 'short',
 }).format(new Date(value));
 
-export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
+export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean; closeGuard?:{current:(()=>boolean)|null}}) {
   const [list, setList] = useState<List>({kind: 'loading'});
   const [loadVersion, setLoadVersion] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState(false);
   const [name, setName] = useState('');
   const [permission, setPermission] = useState('read');
@@ -50,7 +51,15 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
   const [replacement, setReplacement] = useState<Grant | null>(null);
   const [revoking, setRevoking] = useState<Grant | null>(null);
   const [reveal, setReveal] = useState<{key: string; grant: Grant} | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [skillMessage, setSkillMessage] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const creator = useRef<HTMLButtonElement | null>(null);
+  const creatorGrant = useRef<string | null>(null);
+  const newKeyButton = useRef<HTMLButtonElement>(null);
+  const replacementButtons = useRef(new Map<string,HTMLButtonElement>());
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
@@ -70,9 +79,14 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
         if (response.status === 401 || response.status === 403) return setList({kind: 'denied'});
         if (!response.ok) return setList({kind: 'error'});
         const page = await readGrantPage(response);
-        if (!controller.signal.aborted) setList({kind: 'ready', ...page});
+        if (!controller.signal.aborted) {
+          setList({kind: 'ready', ...page});
+          setUncertain(false);
+        }
       } catch {
         if (!controller.signal.aborted) setList({kind: 'error'});
+      } finally {
+        if (!controller.signal.aborted) setRefreshing(false);
       }
     }
     void load();
@@ -80,14 +94,16 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
   }, [loadVersion]);
 
   useEffect(() => {
+    pageActive.current = true;
     function hide() {
       pageActive.current = false;
-      flushSync(() => {setReveal(null); setCopied(false);});
+      flushSync(() => {setReveal(null); setCopied(false); setDialogOpen(false);});
     }
     function show() {pageActive.current = true;}
     window.addEventListener('pagehide', hide);
     window.addEventListener('pageshow', show);
     return () => {
+      pageActive.current = false;
       window.removeEventListener('pagehide', hide);
       window.removeEventListener('pageshow', show);
     };
@@ -97,12 +113,56 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
     if (reveal) revealHeading.current?.focus();
   }, [reveal]);
 
+  useEffect(() => {
+    if (!closeGuard) return;
+    // Radix's document Escape layer registration can lag autofocus. Keep the
+    // settings host intact while either child dialog is present.
+    closeGuard.current = () => !dialogOpen && !revoking && !actionLock.current && !uncertain;
+    return () => {closeGuard.current = null;};
+  }, [closeGuard, dialogOpen, revoking, uncertain]);
+
+  useEffect(() => {
+    const prevent = (event: BeforeUnloadEvent) => {
+      if (actionLock.current || uncertain) {event.preventDefault(); event.returnValue = '';}
+    };
+    window.addEventListener('beforeunload', prevent);
+    return () => window.removeEventListener('beforeunload', prevent);
+  }, [uncertain]);
+
+  function closeDialog() {
+    if (actionLock.current || uncertain) return;
+    setDialogOpen(false);
+    setReveal(null);
+    setCopied(false);
+    setMessage('');
+    setReplacement(null);
+    setName('');
+  }
+
+  function prepareCreate(trigger: HTMLButtonElement, grant: Grant | null = null) {
+    creator.current = trigger;
+    creatorGrant.current = grant?.id ?? null;
+    setReplacement(grant);
+    setName(grant?.name ?? '');
+    setPermission(grant?.scopes.includes('todo:write') ? 'write' : 'read');
+    setExpiry('30');
+    setMessage('');
+    setDialogOpen(true);
+  }
+
+  async function copyInstructions() {
+    const text = `请从 ${window.location.origin}/api/agent-skill 下载 LifeOS Agent Skill（lifeos-agent.tar.gz），解压后将完整 lifeos-agent 文件夹安装到当前 AI 工具支持的 Skills 目录，并保留 SKILL.md 与 references 的相对位置。如果工具不支持安装 Skill，请先让它读取 SKILL.md 和引用文件。\n\n在本站 API 密钥设置中新建自己的密钥，只授予需要的待办权限。通过当前工具批准的凭据存储单独配置密钥与本站 HTTPS 地址；不要把密钥写入 Skill、聊天、URL 或共享文件。压缩包不包含任何人的密钥。\n\n开始使用时，让 AI 读取 Skill 及随包的 references/operations.md，先执行能力发现，再按实际授权读取待办。写入前明确目标，写入后读回确认。当前支持待办查询、新建和修改；其他业务以能力发现和操作清单为准。`;
+    setInstructions(text);
+    try {await navigator.clipboard.writeText(text); setSkillMessage('安装说明已复制');}
+    catch {setSkillMessage('无法访问剪贴板，请选中下方说明手动复制。');}
+  }
+
   function reload() {
     moreRequest.current?.abort();
     moreRequest.current = null;
     setLoadingMore(false);
     setPageError(false);
-    setList({kind: 'loading'});
+    setRefreshing(true);
     setLoadVersion(version => version + 1);
   }
 
@@ -138,7 +198,7 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (actionLock.current || reveal || list.kind !== 'ready') return;
+    if (actionLock.current || uncertain || reveal || !dialogOpen || list.kind !== 'ready') return;
     const data = new FormData(event.currentTarget);
     const expiration = resolveApiKeyExpiry(expiry, String(data.get('custom-expiry') ?? ''));
     if (!name.trim() || !expiration) {
@@ -169,6 +229,7 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
       setReplacement(null);
       reload();
     } catch {
+      setUncertain(true);
       setMessage('创建结果未确认。请先检查密钥列表，再决定是否重新创建。');
       reload();
     } finally {
@@ -210,14 +271,6 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
     }
   }
 
-  function prepareReplacement(grant: Grant) {
-    setReplacement(grant);
-    setName(grant.name);
-    setPermission(grant.scopes.includes('todo:write') ? 'write' : 'read');
-    setExpiry('30');
-    nameInput.current?.focus();
-  }
-
   const Surface=embedded?'section':'main';
   return <Surface data-lifeos-surface={embedded?undefined:'auth'} aria-label={embedded?'API 密钥':undefined}>
    <div className={`${styles.page}${embedded?' '+styles.embedded:''}`}>
@@ -226,27 +279,76 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
     </nav>}
     {!embedded&&<h1>API 密钥</h1>}
     <p>为 LifeOS Skill 授予待办权限。每把密钥都有到期时间，也可以单独撤销。</p>
-    {message && <p role="status">{message}</p>}
-    {reveal && <section className={styles.reveal} aria-labelledby="key-reveal-title">
-      <h2 id="key-reveal-title" ref={revealHeading} tabIndex={-1}>复制新密钥</h2>
-      <p>完整密钥只显示这一次。请保存到密码管理器，并在 Skill 中配置。</p>
-      <code aria-label="新密钥" className={styles.secret}>{reveal.key}</code>
-      <div className={styles.actions}>
-        <Button type="button" onClick={copy}>复制密钥</Button>
-        <Button type="button" variant="outline" onClick={() => {setReveal(null); setCopied(false);}}>关闭密钥</Button>
-        {copied && <span role="status">已复制</span>}
-      </div>
-    </section>}
+    {message && !dialogOpen && <p role="status">{message}</p>}
     {list.kind === 'loading' && <p role="status">正在读取密钥…</p>}
     {list.kind === 'disabled' && <p role="status">当前站点尚未启用 API 密钥管理。</p>}
     {list.kind === 'denied' && <p>请<a href="/login">重新登录</a>并完成两步验证。</p>}
     {list.kind === 'error' && <p>暂时无法读取密钥。 <Button type="button" variant="outline" onClick={reload}>重新读取</Button></p>}
     {list.kind === 'ready' && <>
-      <section className={styles.section} aria-labelledby="key-create-title">
-        <h2 id="key-create-title">{replacement ? '创建替换密钥' : '新建密钥'}</h2>
-        {replacement && <p>正在为「{replacement.name}」创建新密钥。先在 Skill 中验证新密钥，再撤销原密钥。</p>}
+      <section className={styles.section} aria-labelledby="key-list-title">
+        <div className={styles.sectionHeading}><h2 id="key-list-title">已签发的密钥</h2>
+          <Button ref={newKeyButton} type="button" disabled={busy || uncertain} onClick={event=>prepareCreate(event.currentTarget)}>新建密钥</Button>
+        </div>
+        {list.grants.length === 0 ? <p>还没有签发密钥。</p> : <ul className={styles.list}>
+          {list.grants.map(grant => <li key={grant.id} className={styles.grant}>
+            <div>
+              <div className={styles.grantHeading}><strong>{grant.name}</strong><Badge variant={grant.status === 'active' ? 'default' : 'secondary'}>{statuses[grant.status]}</Badge></div>
+              <p>{grant.scopes.includes('todo:write') ? '读取和写入待办' : '仅读取待办'}</p>
+              <dl className={styles.details}>
+                <div><dt>授权编号</dt><dd><code>{grant.id}</code></dd></div>
+                <div><dt>创建</dt><dd><time dateTime={grant.createdAt}>{formatDate(grant.createdAt)}</time></dd></div>
+                <div><dt>到期</dt><dd>{grant.expiresAt ? <time dateTime={grant.expiresAt}>{formatDate(grant.expiresAt)}</time> : '未设置'}</dd></div>
+              </dl>
+            </div>
+            {grant.status === 'active' && <div className={styles.actions}>
+              <Button ref={node=>{if (node) replacementButtons.current.set(grant.id,node); else replacementButtons.current.delete(grant.id);}} type="button" variant="outline" disabled={busy || uncertain || !!reveal} aria-label={'替换 ' + grant.name} onClick={event => prepareCreate(event.currentTarget, grant)}>替换</Button>
+              <Button type="button" variant="ghost" disabled={busy || uncertain || !!reveal} aria-label={'撤销 ' + grant.name} onClick={event => {revoker.current = event.currentTarget; setRevoking(grant);}}>撤销</Button>
+            </div>}
+          </li>)}
+        </ul>}
+        {pageError && <p role="status">暂时无法读取更多密钥，请重试。</p>}
+        {list.nextCursor && <Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>
+          {loadingMore ? '正在读取…' : '加载更多密钥'}
+        </Button>}
+      </section>
+    </>}
+    <section className={styles.section} aria-labelledby="skill-title">
+      <h2 id="skill-title">连接你的 AI 工具</h2>
+      <p>下载 LifeOS Agent Skill，让 AI 按你的授权管理待办。每位用户使用自己的密钥，安装包不含凭据。</p>
+      <div className={styles.actions}>
+        <a className={styles.download} href="/api/agent-skill" download="lifeos-agent.tar.gz">下载 LifeOS Agent Skill</a>
+        <Button type="button" variant="outline" onClick={copyInstructions}>复制安装说明</Button>
+      </div>
+      <p className={styles.skillHint}>压缩包附带当前操作清单。解压后安装完整文件夹，再单独配置本站地址和自己的密钥。</p>
+      {skillMessage && <p role="status">{skillMessage}</p>}
+      {instructions && <details><summary>查看安装和使用说明</summary><pre className={styles.instructions}>{instructions}</pre></details>}
+    </section>
+    <Dialog open={dialogOpen} onOpenChange={open=>{if (!open) closeDialog();}}>
+      {/* Content-local Escape also covers the native layer-registration window. */}
+      <DialogContent className={styles.keyDialog} data-lifeos-surface="personal" showCloseButton={false}
+        onOpenAutoFocus={event=>{event.preventDefault(); nameInput.current?.focus();}}
+        onCloseAutoFocus={event=>{
+          event.preventDefault();
+          const fallback=creatorGrant.current ? replacementButtons.current.get(creatorGrant.current) : null;
+          (creator.current?.isConnected ? creator.current : fallback ?? newKeyButton.current)?.focus();
+        }}
+        onKeyDown={event=>{if (event.key==='Escape') {event.preventDefault(); event.stopPropagation(); closeDialog();}}}
+        onEscapeKeyDown={event=>{event.preventDefault(); event.stopImmediatePropagation(); closeDialog();}}
+        onPointerDownOutside={event=>{if (actionLock.current || uncertain) event.preventDefault();}}>
+        <DialogTitle ref={revealHeading} tabIndex={-1}>{reveal ? '复制新密钥' : replacement ? '创建替换密钥' : '新建密钥'}</DialogTitle>
+        <DialogDescription>{reveal ? '完整密钥只显示这一次。请保存到密码管理器，并在 Skill 中配置。' : replacement ? `正在为「${replacement.name}」创建新密钥。先在 Skill 中验证新密钥，再撤销原密钥。` : '选择本次授权的名称、待办权限和到期时间。'}</DialogDescription>
+        {message && <p role="status">{message}</p>}
+        {uncertain && <Button type="button" variant="outline" disabled={refreshing} onClick={reload}>重新读取密钥列表</Button>}
+        {reveal ? <>
+          <code aria-label="新密钥" className={styles.secret}>{reveal.key}</code>
+          <div className={styles.actions}>
+            <Button type="button" onClick={copy}>复制密钥</Button>
+            <Button type="button" variant="outline" onClick={closeDialog}>关闭密钥</Button>
+            {copied && <span role="status">已复制</span>}
+          </div>
+        </> : <>
         <form method="post" action="/account/api-keys" onSubmit={create}>
-          <fieldset className={styles.fields} disabled={busy || !!reveal}>
+          <fieldset className={styles.fields} disabled={busy || uncertain || list.kind !== 'ready'}>
             <label>名称<Input ref={nameInput} name="name" required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="例如：个人待办 Skill"/></label>
             <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
               <option value="read">仅读取待办</option><option value="write">读取和写入待办</option>
@@ -264,38 +366,15 @@ export function AccountApiKeys({embedded=false}: {embedded?:boolean}) {
             </label>}
             <div className={styles.actions}>
               <Button type="submit">{busy ? '正在处理…' : '创建密钥'}</Button>
-              {replacement && <Button type="button" variant="outline" onClick={() => {setReplacement(null); setName('');}}>取消替换</Button>}
             </div>
           </fieldset>
+          <Button type="button" variant="outline" disabled={busy || uncertain} onClick={closeDialog}>取消</Button>
         </form>
-      </section>
-      <section className={styles.section} aria-labelledby="key-list-title">
-        <h2 id="key-list-title">已签发的密钥</h2>
-        {list.grants.length === 0 ? <p>还没有签发密钥。</p> : <ul className={styles.list}>
-          {list.grants.map(grant => <li key={grant.id} className={styles.grant}>
-            <div>
-              <div className={styles.grantHeading}><strong>{grant.name}</strong><Badge variant={grant.status === 'active' ? 'default' : 'secondary'}>{statuses[grant.status]}</Badge></div>
-              <p>{grant.scopes.includes('todo:write') ? '读取和写入待办' : '仅读取待办'}</p>
-              <dl className={styles.details}>
-                <div><dt>授权编号</dt><dd><code>{grant.id}</code></dd></div>
-                <div><dt>创建</dt><dd><time dateTime={grant.createdAt}>{formatDate(grant.createdAt)}</time></dd></div>
-                <div><dt>到期</dt><dd>{grant.expiresAt ? <time dateTime={grant.expiresAt}>{formatDate(grant.expiresAt)}</time> : '未设置'}</dd></div>
-              </dl>
-            </div>
-            {grant.status === 'active' && <div className={styles.actions}>
-              <Button type="button" variant="outline" disabled={busy || !!reveal} aria-label={'替换 ' + grant.name} onClick={() => prepareReplacement(grant)}>替换</Button>
-              <Button type="button" variant="ghost" disabled={busy || !!reveal} aria-label={'撤销 ' + grant.name} onClick={event => {revoker.current = event.currentTarget; setRevoking(grant);}}>撤销</Button>
-            </div>}
-          </li>)}
-        </ul>}
-        {pageError && <p role="status">暂时无法读取更多密钥，请重试。</p>}
-        {list.nextCursor && <Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>
-          {loadingMore ? '正在读取…' : '加载更多密钥'}
-        </Button>}
-      </section>
-    </>}
+        </>}
+      </DialogContent>
+    </Dialog>
     <Dialog open={!!revoking} onOpenChange={open => {if (!open && !actionLock.current) setRevoking(null);}}>
-      <DialogContent showCloseButton={false} onCloseAutoFocus={event => {
+      <DialogContent className={styles.keyDialog} data-lifeos-surface="personal" showCloseButton={false} onCloseAutoFocus={event => {
         event.preventDefault();
         if (revoker.current?.isConnected) revoker.current.focus();
       }}>
