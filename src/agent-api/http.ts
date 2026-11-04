@@ -27,7 +27,7 @@ function respond(status: number, body: unknown) {
 
 function detail(entry: PublicEntry) {
   if (!('status' in entry.draft)) throw Error('Unexpected todo projection');
-  return {id: entry.id, revision: entry.revision,
+  return {id: entry.id, sourceId: entry.source.id, revision: entry.revision,
     fields: {...entry.draft, personal: entry.draft.personal ?? null}};
 }
 

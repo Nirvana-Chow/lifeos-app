@@ -86,6 +86,9 @@ test('full todo snapshot returns complete fields beyond the bounded list without
   assert.equal(new Set(snapshot.body.items.map((item: {id: string}) => item.id)).size, 55);
   assert.equal(snapshot.body.items[0].fields.notes, 'Retain me');
   assert.equal(snapshot.body.items[0].fields.personal, null);
+  const first = snapshot.body.items[0];
+  assert.equal(first.sourceId, repository.rows.get(first.id)!.source.id);
+  assert.equal((await send('/v1/todos/' + first.id)).body.sourceId, first.sourceId);
   assert.equal(typeof snapshot.body.observedAt, 'string');
   assert.equal(JSON.stringify(snapshot.body).includes('ownerId'), false);
   assert.equal(JSON.stringify(snapshot.body).includes('Private other type'), false);
