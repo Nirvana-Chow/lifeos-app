@@ -156,6 +156,20 @@ test('OPT-IN synthetic account routes preserve the shared shell, key lifecycle a
     await page.locator('[name="permission"]').selectOption('write');
     await page.locator('[name="expiry"]').selectOption('custom');
     const customExpiry = page.locator('[name="custom-expiry"]');
+    const controls = await page.locator('[name="name"], [name="permission"], [name="expiry"], [name="custom-expiry"]').evaluateAll(elements => elements.map(element => {
+      const box = element.getBoundingClientRect();
+      return {name: element.getAttribute('name'), height: box.height, width: box.width};
+    }));
+    await mkdir(join(source, '.review-results'), {recursive: true});
+    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-${width}.png`), fullPage: true});
+    assert.ok(controls.every(control => Math.abs(control.height - 44) <= 1), JSON.stringify(controls));
+    const formWidth = await page.locator('fieldset').evaluate(element => element.getBoundingClientRect().width);
+    assert.ok(Math.abs(controls[3].width - formWidth) <= 1, 'custom date uses the full form row');
+    await page.locator('[name="expiry"]').selectOption('30');
+    await expect(page.getByText(/预计到期：.*Asia\/Shanghai/)).toBeVisible();
+    await expect(page.getByText('实际到期时间以签发后服务端返回为准。')).toBeVisible();
+    await page.screenshot({path: join(source, `.review-results/api-key-${process.env.LIFEOS_KEY_SCREENSHOT_STAGE ?? 'current'}-preset-${width}.png`), fullPage: true});
+    await page.locator('[name="expiry"]').selectOption('custom');
     await customExpiry.fill('2099-01-01T09:30');
     await page.getByRole('button', {name: '创建密钥'}).click();
     await expect(page.getByRole('status').filter({hasText: '365 天'})).toBeVisible();

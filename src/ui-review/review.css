@@ -1260,6 +1260,16 @@
 .lo-shell .lo-mobile-sidebar{overflow-y:auto;overscroll-behavior:contain}
 
 .lo-settings-arrow { margin-inline-start: auto; color: var(--muted-foreground); }
+.lo-task-sections { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-block:0 20px; }
+.lo-task-sections [aria-pressed="true"] { color:var(--primary); background:var(--accent); box-shadow:inset 0 -2px var(--primary); border-radius:var(--lo-radius-control) var(--lo-radius-control) 0 0; }
+.lo-settings .lo-topic-settings { width:100%; justify-content:flex-start; border-radius:0; border-bottom:1px solid var(--border); padding:16px; }
+.lo-topics-dialog { width:calc(100% - 32px); max-width:620px; }
+.lo-topic-search { display:grid; gap:6px; }
+.lo-topic-list { padding:0; margin:0; list-style:none; }
+.lo-topic-list li { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; min-width:0; padding-block:12px; border-bottom:1px solid var(--border); }
+.lo-topic-list strong { flex:1; min-width:0; overflow-wrap:anywhere; }
+.lo-topic-list span { color:var(--muted-foreground); font-size:14px; }
+.lo-topic-list a,.lo-topic-create { display:inline-flex; align-items:center; gap:8px; min-height:44px; text-decoration:underline; }
 
 
 .lo-overview-task-list { display: flex; flex-direction: column; }

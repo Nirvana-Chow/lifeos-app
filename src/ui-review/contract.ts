@@ -34,6 +34,7 @@ export type WorkspaceData = {
   tasks: readonly TaskRow[];
   areas: readonly AreaRow[];
   projects: readonly ProjectRow[];
+  topics?: readonly (ReferenceLabel & {revision: number})[];
   today: string;
   asOf: string;
   /** complete only after the existing API's identity/scope/truncation checks succeed. */
@@ -58,7 +59,8 @@ export type WorkspacePage =
   | "inbox"
   | "areas"
   | "projects"
-  | "settings";
+  | "settings"
+  | "requirements";
 export type TaskView = "list" | "table" | "board";
 export type TaskFilter = {
   query: string;

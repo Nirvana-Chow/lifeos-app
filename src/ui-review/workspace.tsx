@@ -26,6 +26,7 @@ import {
   LogIn,
   LogOut,
   SlidersHorizontal,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -57,7 +58,8 @@ import type {
 } from "./contract";
 import "./review.css";
 import {ThemeSwitch} from "../workbench/theme-switch";
-import {CategoryEntries} from "../personal-candidate/category-entries";
+import {CategoryGrid} from "./category-grid";
+import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 
 import {readWorkspacePage,workspaceHref} from '../workbench/private-navigation';
@@ -65,6 +67,7 @@ import {readWorkspacePage,workspaceHref} from '../workbench/private-navigation';
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
   { id: "tasks", label: "待办", icon: CheckSquare2 },
+  { id: "requirements", label: "需求池", icon: ClipboardList },
 ] as const;
 const viewItems = [
   { id: "list", label: "列表", icon: List },
@@ -99,6 +102,7 @@ const pageTitles: Record<WorkspacePage, string> = {
   areas: "领域",
   projects: "项目",
   settings: "设置",
+  requirements: "需求池",
 };
 
 function DataState({
@@ -175,6 +179,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const pendingIds = new Set(props.pendingTaskIds ?? []);
   const canWrite = mayWrite(access) && !props.saving && !props.uncertain;
   const [undoNow,setUndoNow]=useState(0);
+  const [topicsOpen,setTopicsOpen]=useState(false),[topicQuery,setTopicQuery]=useState("");
+  const topicTrigger=useRef<HTMLButtonElement|null>(null);
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
   const overviewTasks = page === "overview" && state.status === "ready"
     ? filterTasks(tasks, defaultFilter).slice(0, 6)
@@ -224,8 +230,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const url = new URL(window.location.href);
       const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
       if (url.pathname !== "/personal" && !isTaskLink) return;
+      const historyPage = readWorkspacePage(url.searchParams.get("page"));
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
-      const wantsCreate = isTaskLink ? !url.searchParams.has("id") : url.searchParams.get("create") === "todo";
+      const wantsCreate = isTaskLink ? !url.searchParams.has("id") : historyPage !== "requirements" && url.searchParams.get("create") === "todo";
       let allowed;
       if (task && onOpenTask) allowed = onOpenTask(task);
       else if (wantsCreate && onCreateTask) allowed = onCreateTask();
@@ -253,7 +260,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         window.location.replace(url.pathname + url.search);
         return;
       }
-      setPage(isTaskLink ? "tasks" : readWorkspacePage(url.searchParams.get("page")));
+      setPage(isTaskLink ? "tasks" : historyPage);
       setFilter(defaultFilter);
       setMobileOpen(false);
       setFiltersOpen(false);
@@ -551,7 +558,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <aside className="lo-sidebar">{navigation}</aside>
         <main id="personal-main" className="lo-main">
           <div className={contentPage ? "lo-content lo-content-account" : page === "settings" ? "lo-content lo-content-settings" :
-            (page === "tasks" || page === "inbox") && view === "table" ? "lo-content lo-content-wide" : "lo-content"}>
+            (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
               <h1>{title}</h1>
@@ -567,7 +574,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
             <div className="lo-page-actions">
-              {page !== "settings" && !unavailablePage && !contentPage && onRefresh && (
+              {page !== "settings" && page !== "requirements" && !unavailablePage && !contentPage && onRefresh && (
                 <Button
                   variant="ghost"
                   className="lo-icon-button"
@@ -577,7 +584,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {page !== "settings" && !unavailablePage && !contentPage && (
+              {(page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage && (
                 <span
                   title={
                     !canWrite
@@ -619,6 +626,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               仅显示已读取内容，完整统计暂不可用。
             </div>
           )}
+          {(page === "tasks" || page === "inbox" || page === "projects" || page === "areas") &&
+            <nav className="lo-task-sections" aria-label="待办分类视图">
+              {([{id:"tasks",label:"待办"},{id:"projects",label:"项目"},{id:"areas",label:"领域"}] as const).map(item =>
+                <Button key={item.id} variant="ghost" aria-label={item.label+"分类视图"} aria-pressed={page === item.id || item.id === "tasks" && page === "inbox"}
+                  data-workspace-nav onClick={() => navigate(item.id)}>{item.label}</Button>)}
+            </nav>}
           {page === "overview" && (
             <>
               <section className="lo-metrics" aria-label="任务指标">
@@ -722,16 +735,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           )}
           {(page === "tasks" || page === "inbox") && (
             <>
-              {page === "tasks" && (
-                <details className="lo-task-categories">
-                  <summary>管理项目与领域</summary>
-                  <div className="lo-category-entries">
-                    <Button variant="outline" data-workspace-nav onClick={() => navigate("areas")}>管理领域</Button>
-                    <Button variant="outline" data-workspace-nav onClick={() => navigate("projects")}>管理项目</Button>
-                    <CategoryEntries allowedTypes={access.allowedTypes} writable={canWrite && pendingIds.size === 0 && !props.mutationError} className="lo-category-entries"/>
-                  </div>
-                </details>
-              )}
               <div className="lo-task-toolbar">
                 <label className="lo-search">
                   <Search size={17} />
@@ -879,68 +882,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {taskContent()}
             </>
           )}
-          {page === "areas" &&
-            (state.status !== "ready" ? (
-              <DataState state={state} onRefresh={onRefresh} />
-            ) : (
-              <div className="lo-entity-list">
-                {data?.areas.map((area) => (
-                  <Button
-                    variant="ghost"
-                    key={area.id}
-                    onClick={() => navigate("tasks", area.id)}
-                  >
-                    <Layers size={18} />
-                    <strong>{area.title}</strong>
-                    <span>
-                      {data.coverage === "complete"
-                        ? `${tasks.filter((task) => task.area?.id === area.id && (task.status === "open" || task.status === "in_progress")).length} 项待办`
-                        : "—"}
-                    </span>
-                    <ChevronRight size={17} />
-                  </Button>
-                ))}
-                {!data?.areas.length && (
-                  <div className="lo-empty-compact">暂无领域</div>
-                )}
-              </div>
-            ))}
-          {page === "projects" &&
-            (state.status !== "ready" ? (
-              <DataState state={state} onRefresh={onRefresh} />
-            ) : (
-              <div className="lo-project-table">
-                <div className="lo-project-head">
-                  <span>项目</span>
-                  <span>领域</span>
-                  <span>阶段</span>
-                  <span>下一步</span>
-                </div>
-                {data?.projects.map((project) => (
-                  <Button
-                    variant="ghost"
-                    key={project.id}
-                    onClick={() => navigate("tasks", null, project.id)}
-                  >
-                    <strong>
-                      {project.title}
-                      {project.referenceChanged && (
-                        <AlertTriangle size={15} aria-label="关联待核对" />
-                      )}
-                    </strong>
-                    <span>{project.area?.title ?? "—"}</span>
-                    <span>{project.stage ?? "—"}</span>
-                    <span>{project.nextStep ?? "—"}</span>
-                  </Button>
-                ))}
-                {!data?.projects.length && (
-                  <div className="lo-empty-compact">暂无项目</div>
-                )}
-              </div>
-            ))}
+          {(page === "projects" || page === "areas") &&
+            (state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> :
+              <CategoryGrid key={page} kind={page} areas={data!.areas} projects={data!.projects} tasks={tasks}
+                coverage={data!.coverage} writable={canWrite && access.allowedTypes?.includes(page === "projects" ? "project" : "domain") === true}
+                onViewTasks={(areaId,projectId) => navigate("tasks",areaId,projectId)}/>
+            )}
+          {page === "requirements" && <RequirementsPage/>}
           {page === "settings" && (
             <div className="lo-settings">
               {access.authenticated === true && props.settingsContent}
+              {access.authenticated === true && access.allowedTypes?.includes("topic") &&
+                <Button variant="ghost" className="lo-topic-settings" ref={topicTrigger} onClick={() => {
+                  if(props.onBeforeNavigate?.() === false)return;
+                  setTopicQuery("");setTopicsOpen(true);
+                }}><Layers size={18}/>管理主题<ChevronRight size={16} className="lo-settings-arrow"/></Button>}
+
               {access.authenticated === false &&
                 access.loginAllowed === true &&
                 props.onLogin && (
@@ -961,6 +918,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           </div>
         </main>
       </div>
+      <Dialog open={topicsOpen && access.authenticated === true} onOpenChange={setTopicsOpen}>
+        <DialogContent container={portalContainer} className="lo-topics-dialog" onCloseAutoFocus={event => {
+          event.preventDefault();if(topicTrigger.current?.isConnected)topicTrigger.current.focus();
+        }}>
+          <DialogTitle>管理主题</DialogTitle>
+          <DialogDescription>主题用于给待办和项目添加关联标签。</DialogDescription>
+          {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : <>
+            <label className="lo-topic-search">搜索主题<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按主题名称搜索"/></label>
+            {data?.topics === undefined ? <p role="status">主题列表暂不可用，请重新读取。</p> : <>
+              <ul className="lo-topic-list">{data.topics.filter(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())).map(topic =>
+                <li key={topic.id}><strong>{topic.title}</strong><span>版本 {topic.revision}</span>
+                  {canWrite && <a href={"/personal/edit?type=topic&id="+encodeURIComponent(topic.id)}>编辑主题</a>}
+                </li>)}</ul>
+              {!data.topics.some(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())) && <p>{topicQuery.trim()?"没有符合条件的主题。":"暂无主题。"}</p>}
+            </>}
+            {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建主题</a>}
+          </>}
+        </DialogContent>
+      </Dialog>
       <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
         <DialogContent
           container={portalContainer}

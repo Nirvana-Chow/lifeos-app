@@ -11,7 +11,7 @@ import type {LifeOSWorkspaceProps} from '../src/ui-review/contract.ts';
 // Compile local TSX like the recovery-panel tests; real components render without effects.
 const nativeRequire=createRequire(import.meta.url),cache=new Map<string,unknown>();
 function load(file:string):any {
- const path=resolve(file);if(cache.has(path))return cache.get(path);
+ const path=resolve(file);if(path.endsWith('.json'))return JSON.parse(readFileSync(path,'utf8'));if(cache.has(path))return cache.get(path);
  const m={exports:{}};cache.set(path,m.exports);
  const code=ts.transpileModule(readFileSync(path,'utf8'),{fileName:path,compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
  new Function('require','module','exports',code)((name:string)=>{
@@ -31,10 +31,12 @@ function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
  const props:LifeOSWorkspaceProps={state:{status:'ready',data:{tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']},initialPage:'tasks',initialView:'list',onOpenTask:()=>{},onCreateTask:()=>{},...overrides};
  return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
 }
-test('writable task view exposes editing and real category routes without inventing empty category options',()=>{
- const html=workspace();assert.match(html,/管理项目与领域/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
- for(const type of ['domain','project','topic'])assert.match(html,new RegExp('href="/personal/edit\\?type='+type+'"'));
+test('task workspace exposes browsing sections and reserves category creation for its explicit section',()=>{
+ const html=workspace();assert.match(html,/aria-label="待办分类视图"/);assert.match(html,/需求池/);
+ assert.doesNotMatch(html,/管理项目与领域|新建 \/ 管理主题|href="\/personal\/edit\?type=(?:domain|project|topic)"/);
  assert.doesNotMatch(html,/<option[^>]*>[^<]*(?:示例|默认项目|默认领域)/);
+ assert.match(workspace({initialPage:'areas'}),/href="\/personal\/edit\?type=domain"/);
+ assert.match(workspace({initialPage:'projects'}),/href="\/personal\/edit\?type=project"/);
 });
 test('read-only and unverified workspace never expose category creation and label detail access honestly',()=>{
  for(const access of [{authenticated:true,writable:false,loginAllowed:true},{authenticated:null,writable:null,loginAllowed:null}]){
@@ -62,7 +64,7 @@ test('writable workspace hides category creation for restricted or unknown type 
   const html=workspace({access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes}});
   assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);
  }
- const html=workspace({access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','domain']}});
+ const html=workspace({initialPage:'areas',access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','domain']}});
  assert.match(html,/href="\/personal\/edit\?type=domain"/);assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:project|topic)"/);
 });
 test('enabled form does not offer category creation without verified type capabilities',()=>{
@@ -73,12 +75,13 @@ test('enabled form does not offer category creation without verified type capabi
  }
 });
 
-test('settings centers the page heading and keeps only account actions',()=>{
+test('settings centers the heading and keeps topic management beside account actions',()=>{
  const settings=workspace({initialPage:'settings',onLogout:()=>{},settingsContent:React.createElement('a',{href:'/account/api-keys'},'API 密钥')});
  assert.match(settings,/lo-content-settings/);
  assert.match(settings,/API 密钥/);assert.match(settings,/退出登录/);
  assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|管理项目与领域|刷新数据/);
- assert.match(workspace(),/管理项目与领域/);
+ assert.match(settings,/管理主题/);
+ assert.doesNotMatch(workspace(),/管理项目与领域|管理主题/);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
  const html=workspace({initialPage:'overview'});

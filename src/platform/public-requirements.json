@@ -1,7 +1,7 @@
 {
   "baselineVersion": "lifeos-public-v1",
   "candidateVersion": "0.1.0-preview",
-  "scopeNote": "公开源码开发基线；以下为通用工程要求，不包含个人项目历史或实际验收结论。",
+  "scopeNote": "公开源码开发基线。源码实现、自动化验证、部署和本人体验验收分别记录；阶段排序不代表日程或完成比例。",
   "newIdeaPolicy": "backlog-requires-explicit-scope",
   "requirements": [
     {
@@ -12,13 +12,48 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "src/ui-review/workspace.tsx",
+        "src/ui-review/task-grid.tsx"
       ],
       "acceptanceCriteria": [
-        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+        "保留原五项 OpenSpec 任务及继承的 2/5 状态，不以新需求池取代原清单。",
+        "桌面与手机两种主题核验编辑、导航、焦点及未知保存恢复。",
+        "拖拽、批量录入、可恢复删除分别实现并验证；取消状态不等于删除。"
       ],
-      "evidence": [],
-      "blockedBy": []
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/ui-review/workspace.tsx"
+        },
+        {
+          "scope": "source",
+          "ref": "src/ui-review/task-grid.tsx"
+        }
+      ],
+      "blockedBy": [
+        "原任务 2.1 的对比性能测量、3.1 的完整渲染门禁未收口。"
+      ],
+      "roadmap": {
+        "phaseId": "workspace",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有统一 Header、Modern 主题、ReUI 待办表与详情编辑。甘特、看板拖拽、换行批量录入及可恢复删除仍待做。",
+        "nextStep": "先核验需求池和分类视图；其余交互沿原任务分阶段实现。",
+        "issueRefs": [],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/1",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/23",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/28",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/29"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.1",
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#2.1",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
     },
     {
       "id": "LO-AUTH-001",
@@ -28,13 +63,44 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "src/platform/runtime.ts",
+        "src/agent-api/http.ts",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
       ],
       "acceptanceCriteria": [
-        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+        "匿名及另一有效账号无法读取或修改对应私有记录。",
+        "账号密钥只声明实际支持的 scope，服务端期限及撤销有效。"
       ],
-      "evidence": [],
-      "blockedBy": []
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/runtime.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/http.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P0",
+        "implementation": "implemented",
+        "summary": "已有默认关闭、owner/MFA、跨账号隔离和受限待办 API 授权实现。",
+        "nextStep": "保留权限边界，随新入口补充同账号与跨账号回归；本人验收单列。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/21",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/27"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
     },
     {
       "id": "LO-PRIVACY-001",
@@ -44,13 +110,43 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "src/platform/request-boundary.ts",
+        "src/agent-api/http.ts",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
       ],
       "acceptanceCriteria": [
-        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+        "公开内容只含通用产品要求、公开链接和合成证据。",
+        "新入口保留身份检查和 private, no-store 响应。"
       ],
-      "evidence": [],
-      "blockedBy": []
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/request-boundary.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/http.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P0",
+        "implementation": "implemented",
+        "summary": "公开源码、合成夹具和默认私有接口已有边界。",
+        "nextStep": "新增公开基线和 UI 不携带个人记录、凭据或私有运行资料。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/1",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/21"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
     },
     {
       "id": "LO-VERSION-001",
@@ -60,13 +156,31 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "app/api/review-version/route.ts"
       ],
       "acceptanceCriteria": [
         "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
       ],
-      "evidence": [],
-      "blockedBy": []
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "app/api/review-version/route.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P1",
+        "implementation": "implemented",
+        "summary": "源码与构建版本入口已有实现；不据此推断当前运行版本。",
+        "nextStep": "交付时读回固定构建标识并与受测 SHA 核对。",
+        "issueRefs": [],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
     },
     {
       "id": "LO-OPS-001",
@@ -76,13 +190,40 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "package.json",
+        "openspec/changes/unified-business-ui/tasks.md"
       ],
       "acceptanceCriteria": [
         "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
       ],
-      "evidence": [],
-      "blockedBy": []
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "package.json"
+        },
+        {
+          "scope": "source",
+          "ref": "openspec/changes/unified-business-ui/tasks.md"
+        }
+      ],
+      "blockedBy": [
+        "未闭合的集成、渲染、性能和交付门禁不能用源码检查替代。"
+      ],
+      "roadmap": {
+        "phaseId": "qualification",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有自动化及隔离集成检查；完整浏览器、性能与交付门禁仍独立开放。",
+        "nextStep": "按原任务执行适用检查，明确失败、跳过和不可用项目。",
+        "issueRefs": [],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#2.1",
+          "openspec/changes/unified-business-ui/tasks.md#3.1",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
     },
     {
       "id": "LO-REQ-001",
@@ -92,13 +233,863 @@
       "status": "in_progress",
       "delivery": "current",
       "sourceRefs": [
-        "README.md"
+        "README.md",
+        "src/platform/requirements.ts",
+        "src/platform/public-requirements.json",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/30"
       ],
       "acceptanceCriteria": [
-        "按公开说明在隔离合成环境验证此项，并记录已测与未测边界。"
+        "项目目标、当前阶段、下一步、实现状态及验收依据从同一基线读取。",
+        "每个新增录入功能同步交付 Agent API、capability discovery 与 Skill，并以同一受测源码核验。",
+        "源码或 CI 不能自动设置本人已验收；新想法保留待排期，单独确认范围。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/requirements.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/platform/public-requirements.json"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "workspace",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有稳定需求 ID 与本人验收证据门禁；本阶段补充同一基线的路线图。",
+        "nextStep": "完成需求池和来源链接核验，再按优先级接续原任务。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/30"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-TASK-001",
+      "version": 1,
+      "title": "待办编辑与来源去重",
+      "description": "可靠保存、回读并连接待办与项目。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/5",
+        "src/ui-review/task-grid.tsx",
+        "src/personal-candidate/service.ts",
+        "src/agent-api/capabilities.ts",
+        "skills/lifeos-agent/SKILL.md"
+      ],
+      "acceptanceCriteria": [
+        "保存保留记录/来源 ID、修订和幂等回执；刷新后可回读。",
+        "当前 API 仅支持待办列表、详情、创建和更新；发现、scope 与 Skill 一致。",
+        "换行批量录入须先预检再提交；看板拖拽及可恢复删除单独验证。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/ui-review/task-grid.tsx"
+        },
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/agent-api/capabilities.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "skills/lifeos-agent/SKILL.md"
+        }
+      ],
+      "blockedBy": [
+        "真实待办分类须先展示建议并经确认，再按受支持 API 写入和读回。",
+        "Apple 双向同步仍依赖独立候选 PR #2 的剩余门禁。"
+      ],
+      "roadmap": {
+        "phaseId": "workspace",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有标题、状态、日期、详情编辑及待办 Agent API。尚无批量提交、拖拽和可恢复删除。",
+        "nextStep": "先验证筛选和分类入口；后续逐项补充批量预检/提交、拖拽与删除恢复。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/5"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/23",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/24",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/27",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/29",
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/2"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#2.1",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
+    },
+    {
+      "id": "LO-PROJECT-001",
+      "version": 1,
+      "title": "项目阶段与证据关联",
+      "description": "在待办入口管理项目、领域和关联证据。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/7",
+        "src/personal-candidate/business.ts",
+        "src/records-workbench/project-links-view.tsx"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/business.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/records-workbench/project-links-view.tsx"
+        }
+      ],
+      "blockedBy": [
+        "Agent API 尚无项目/领域的创建、更新与发现操作，不能将密钥描述为全系统权限。"
+      ],
+      "roadmap": {
+        "phaseId": "workspace",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有本人项目/领域关系、阶段和下一步字段，以及合成项目证据关联候选。",
+        "nextStep": "核验待办内项目/领域分区；真实分类先提供建议，项目和领域 API 尚待补齐。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/7"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/28"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
+    },
+    {
+      "id": "LO-SOURCE-001",
+      "version": 1,
+      "title": "跨模块来源与修订",
+      "description": "保留原文、来源 ID 和历史修订。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/4",
+        "src/search-candidate/service.ts",
+        "src/records-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/search-candidate/service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P1",
+        "implementation": "implemented",
+        "summary": "已有跨模块来源投影、原文和历史读取实现及公开合成验证记录。",
+        "nextStep": "新业务继续复用来源链；来源更正后检查旧引用失效。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/4"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/22"
+        ],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-JOURNAL-001",
+      "version": 1,
+      "title": "日记更正与保存恢复",
+      "description": "保留原文和冻结请求，可靠更正日记。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/6",
+        "src/journal-candidate/service.ts",
+        "src/journal-candidate/journal.tsx"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/journal-candidate/service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/journal-candidate/journal.tsx"
+        }
+      ],
+      "blockedBy": [
+        "当前 Agent API 不支持日记。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有独立日记编辑与恢复实现；不代表统一工作台及 Agent API 已接通。",
+        "nextStep": "明确开放范围，补齐工作台体验、日记 Agent API、发现和 Skill。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/6"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-TIMELINE-001",
+      "version": 1,
+      "title": "时间线与来源回看",
+      "description": "区分事件日期、录入和更正时间。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/8",
+        "src/timeline-candidate/service.ts",
+        "src/timeline-candidate/domain.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/timeline-candidate/service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/timeline-candidate/domain.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有有界时间线、日期角色及来源历史投影。",
+        "nextStep": "补充真实入口的筛选/回退和跨年、缺日期验证。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/8"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-SEARCH-001",
+      "version": 1,
+      "title": "跨年搜索与详情返回",
+      "description": "在有权访问的范围检索并返回原文。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/9",
+        "src/search-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/search-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [
+        "候选检索覆盖不等于全部业务类型或全部记录已开放。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有有界检索与来源详情；常规记录检索的完整范围仍由公开 Issue 跟踪。",
+        "nextStep": "补齐常规有权访问记录与详情导航，保留截断及账号隔离。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/9"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-DATA-001",
+      "version": 1,
+      "title": "导入预检与导出",
+      "description": "先核对字段、数量和去重，再决定数据交换。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/10",
+        "src/import-preview/preview.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/import-preview/preview.ts"
+        }
+      ],
+      "blockedBy": [
+        "现有预检仅接受明确标识的隔离合成导出；importAvailable 为 false。"
+      ],
+      "roadmap": {
+        "phaseId": "integration",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有只读合成导入预检；明确不执行导入，也不证明恢复成功。",
+        "nextStep": "设计受支持格式的映射与预检/提交边界；真实迁移需另行授权。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/10"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/2"
+        ],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-FIN-001",
+      "version": 1,
+      "title": "金额与转账语义",
+      "description": "准确表达收入、支出、退款、转账和还款。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/11",
+        "src/platform/domain.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/domain.ts"
+        }
+      ],
+      "blockedBy": [
+        "当前 Agent API 不支持财务。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有整数分金额和两端账户引用校验；不代表个人财务入口或外部账本已接入。",
+        "nextStep": "核验隔离保存及重启读回，再补齐录入 API、发现和 Skill。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/11"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-SCHEDULE-001",
+      "version": 1,
+      "title": "站内日程与日历路径",
+      "description": "区分站内计划、外部同步和真实活动。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/12",
+        "src/calendar-candidate/service.ts",
+        "src/calendar-candidate/domain.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/calendar-candidate/service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/calendar-candidate/domain.ts"
+        }
+      ],
+      "blockedBy": [
+        "甘特依赖真实开始/结束语义；现有待办只有截止日期。",
+        "Apple 同步 PR #2 仍开放；真实适配器和往返验证未完成。",
+        "当前 Agent API 不支持日程。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有站内日程候选和日期/时区语义；甘特图未实现，Apple 双向接线仍为独立候选。",
+        "nextStep": "先明确任务起止日期及区间语义，再设计日历/甘特；不得用截止日伪造起止区间。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/12"
+        ],
+        "prRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/pull/2"
+        ],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
+    },
+    {
+      "id": "LO-ARTICLE-001",
+      "version": 1,
+      "title": "文章与写作来源",
+      "description": "完整保存正文和作者/引用来源。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/13",
+        "src/records-candidate/domain.ts",
+        "src/records-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/domain.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [
+        "合成候选不等于常规文章录入；当前 Agent API 不支持文章。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有合成文章类型与来源校验；尚不代表常规写作工作流已交付。",
+        "nextStep": "设计本地草稿、自动保存、冲突和历史的完整验收，再与录入 API 同步实现。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/13"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-LEARNING-001",
+      "version": 1,
+      "title": "学习资料收藏",
+      "description": "可收藏、回读并关联学习资料。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/13",
+        "src/records-candidate/domain.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/domain.ts"
+        }
+      ],
+      "blockedBy": [
+        "候选记录要求 syntheticOnly；常规资料收藏及 Agent API 尚未开放。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有合成学习记录的主题、状态、下一步与资料链接字段。",
+        "nextStep": "单独核验收藏与回读，再补齐常规录入、API、发现及 Skill。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/13"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-OVERVIEW-001",
+      "version": 1,
+      "title": "总览与最近记录",
+      "description": "概览能返回原文，并明确空数据及失败状态。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/14",
+        "src/personal-candidate/home-overview.tsx",
+        "src/ui-review/workspace.tsx"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/home-overview.tsx"
+        },
+        {
+          "scope": "source",
+          "ref": "src/ui-review/workspace.tsx"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "workspace",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有待办预览和活动项目总览；全业务趋势与最近记录仍需逐项接入。",
+        "nextStep": "验证当前待办预览和项目范围，再按已开放业务增加来源入口。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/14"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.1"
+        ]
+      }
+    },
+    {
+      "id": "LO-HEALTH-001",
+      "version": 1,
+      "title": "训练计划与完成状态",
+      "description": "明确区分计划、完成和未知数据。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/15",
+        "src/records-candidate/domain.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/domain.ts"
+        }
+      ],
+      "blockedBy": [
+        "合成训练字段不等于真实健康集成；当前 Agent API 不支持训练。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有合成训练记录的动作、组次和单位校验；没有由此接入外部健康来源。",
+        "nextStep": "确定来源范围后，逐项设计计划/完成、录入 API、发现与 Skill。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/15"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-FILES-001",
+      "version": 1,
+      "title": "文件索引与项目回链",
+      "description": "索引能定位资料并返回关联项目。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/16",
+        "src/records-candidate/domain.ts",
+        "src/records-workbench/project-links.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/domain.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/records-workbench/project-links.ts"
+        }
+      ],
+      "blockedBy": [
+        "真实文件路径、附件和文件 API 尚未开放。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有合成资源 URL 元数据与项目引用；不是本地文件或附件管理。",
+        "nextStep": "明确路径核验和附件边界，再实现索引定位与项目回链。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/16"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-REPORT-001",
+      "version": 1,
+      "title": "项目回顾与失效检查",
+      "description": "回顾保留来源修订，来源变化后标为待更新。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/17",
+        "src/records-workbench/project-links-view.tsx",
+        "src/records-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/records-workbench/project-links-view.tsx"
+        },
+        {
+          "scope": "source",
+          "ref": "src/records-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有合成项目关联摘要及旧引用适用性检查。",
+        "nextStep": "验证来源更正与失效提示；回顾不生成新的业务事实。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/17"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-OUTPUT-001",
+      "version": 1,
+      "title": "回顾输出与发布确认",
+      "description": "过期回顾阻止输出，发布由本人确认。",
+      "status": "not_started",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/17"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
       ],
       "evidence": [],
-      "blockedBy": []
+      "blockedBy": [
+        "依赖可追溯回顾；外部发布渠道与权限需单独确认。"
+      ],
+      "roadmap": {
+        "phaseId": "integration",
+        "priority": "P1",
+        "implementation": "not_started",
+        "summary": "公开需求已记录；统一发布工作流尚未实现。",
+        "nextStep": "先确定输出目标、失效检查和明确确认门禁，用合成目标验收。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/17"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-CAPTURE-001",
+      "version": 1,
+      "title": "人工确认与输入恢复",
+      "description": "预填只有经人工确认才成为记录。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/18",
+        "src/platform/capture.ts",
+        "src/capture-runs-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/capture.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/capture-runs-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [
+        "候选能力不等于模型已启用；当前 Agent API 不支持通用录入。"
+      ],
+      "roadmap": {
+        "phaseId": "integration",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有预填和运行恢复候选；未配置时不执行外部调用。",
+        "nextStep": "用离线模拟核验取消、迟到结果和未知写入，再逐项交付录入 API 与 Skill。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/18"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-AI-001",
+      "version": 1,
+      "title": "AI 默认关闭与调用状态",
+      "description": "配置、连接测试与正式启用分别确认。",
+      "status": "in_progress",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/19",
+        "src/platform/ai-settings-service.ts",
+        "src/capture-runs-candidate/service.ts"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/platform/ai-settings-service.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/capture-runs-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [
+        "外部服务、秘密和费用不能由源码或界面推断已配置。"
+      ],
+      "roadmap": {
+        "phaseId": "integration",
+        "priority": "P1",
+        "implementation": "partial",
+        "summary": "已有 AI 配置与调用状态候选，默认关闭；不包含真实服务启用。",
+        "nextStep": "用离线模拟核验一次调用、取消和配置失效；真实调用需对应授权。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/19"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-BACKUP-001",
+      "version": 1,
+      "title": "独立备份恢复演练",
+      "description": "在独立实例核对数据、权限及可读性。",
+      "status": "not_started",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/20"
+      ],
+      "acceptanceCriteria": [
+        "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+      ],
+      "evidence": [],
+      "blockedBy": [
+        "导出或源文件存在不等于备份恢复已经验证。"
+      ],
+      "roadmap": {
+        "phaseId": "qualification",
+        "priority": "P0",
+        "implementation": "not_started",
+        "summary": "公开验收要求已记录；本基线没有独立恢复完成证据。",
+        "nextStep": "从合成数据制作备份，在隔离实例实际恢复并逐项核对。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/20"
+        ],
+        "prRefs": [],
+        "specTaskRefs": []
+      }
     }
-  ]
+  ],
+  "roadmap": {
+    "goal": "以待办为日常入口，把项目、领域与记录连接起来；每项能力可追溯、可恢复，并逐步开放给受限 Agent。",
+    "currentPhaseId": "workspace",
+    "nextStep": "先完成当前工作台的需求路径、分类视图与账户交互，再用合成数据验证。每个新增录入功能须同步交付 Agent API、capability discovery 和 Skill；当前 Agent API 仅支持待办。",
+    "phases": [
+      {
+        "id": "foundation",
+        "order": 1,
+        "title": "安全与来源基础",
+        "goal": "建立默认私有、身份隔离、来源修订和版本追溯。"
+      },
+      {
+        "id": "workspace",
+        "order": 2,
+        "title": "待办与项目工作台",
+        "goal": "围绕待办改善编辑、分类、需求跟踪及账户设置。"
+      },
+      {
+        "id": "business",
+        "order": 3,
+        "title": "业务记录与关联",
+        "goal": "逐项打通写作、日程、健康、财务及检索，不把候选界面当作已接入。"
+      },
+      {
+        "id": "integration",
+        "order": 4,
+        "title": "受控接入与数据交换",
+        "goal": "补齐 API 与 Skill 同步覆盖、外部同步、人工确认及可恢复的数据交换。"
+      },
+      {
+        "id": "qualification",
+        "order": 5,
+        "title": "验证与体验验收",
+        "goal": "完成渲染、性能、恢复与交付门禁，并单独记录本人验收。"
+      }
+    ]
+  }
 }
