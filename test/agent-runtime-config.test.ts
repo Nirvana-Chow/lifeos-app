@@ -77,3 +77,19 @@ test('business module flags are closed and reject invalid combinations', async (
   const binding = {ownerId:'owner',ownerEmail:'owner@example.test',spaceId:'space',databaseName:'fixture',allowedTypes:['todo','journal'] as const,approval:'personal-manual-v1' as const,baseURL:origin};
   assert.deepEqual(readAgentBusinessModules({LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'}, binding), {organization:true,classification:true});
 });
+
+test('current grant lookup rejects disabled, expired, malformed and changed grants without selecting secrets', async () => {
+  const runtime = await import('../src/agent-api/runtime.ts');
+  const read = (runtime as typeof runtime & {readCurrentAgentGrant:(pool:{query:(sql:string, values:unknown[])=>Promise<{rows:unknown[]}>},id:string)=>Promise<unknown>}).readCurrentAgentGrant;
+  let row: Record<string,unknown> = {id:'grant',referenceId:'owner',metadata:JSON.stringify({spaceId:'space'}),permissions:JSON.stringify({todo:['read']}),enabled:true,expiresAt:null};
+  const pool = {query:async (sql:string,values:unknown[]) => {
+    assert.match(sql,/SELECT\s+id\s*,\s*"referenceId"\s*,\s*metadata\s*,\s*permissions\s*,\s*enabled\s*,\s*"expiresAt"/i);
+    assert.deepEqual(values,['grant']); return {rows:row ? [row] : []};
+  }};
+  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  row = {...row,enabled:null};
+  assert.deepEqual(await read(pool,'grant'), {grantId:'grant',ownerId:'owner',spaceId:'space',scopes:['todo:read']});
+  for(const update of [{enabled:false},{expiresAt:new Date(0)},{metadata:'{}'},{permissions:'{"todo":["write"]}'},{id:'different'}]) {
+    const original=row; row={...row,...update}; assert.equal(await read(pool,'grant'),null); row=original;
+  }
+});

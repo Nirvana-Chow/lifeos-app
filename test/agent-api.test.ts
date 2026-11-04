@@ -29,6 +29,7 @@ function fixture(enabled = true) {
         scopes: key === 'org' ? ['organization:read'] : key === 'writer' ? ['todo:read', 'todo:write'] : ['todo:read'],
       };
     },
+    readCurrentGrant: async id => ({grantId:id,ownerId:id === 'synthetic-foreign' ? 'synthetic-owner-b' : ownerId,spaceId:id === 'synthetic-wrong-space' ? 'other-space' : spaceId,scopes:id === 'synthetic-org' ? ['organization:read'] : id === 'synthetic-writer' ? ['todo:read','todo:write'] : ['todo:read']}),
     assertWritable: async () => { if (!permit) throw Error('synthetic permit denied'); },
   });
   const send = async (path: string, method = 'GET', key = 'reader', body?: unknown, commandKey?: string) => {
@@ -153,4 +154,34 @@ test('organization-only discovery uses v2 without legacy todo permission', async
   assert.equal((await send('/v1/todos','GET','org')).status, 403);
   assert.equal((await send('/v1/organization/projects','GET','org')).status, 404);
   assert.equal(repository.reads, 0);
+});
+
+test('each request verifies its bearer once and rechecks the current grant by ID', async () => {
+  let calls = 0;
+  const grant: {grantId:string;ownerId:string;spaceId:string;scopes:readonly import('../src/agent-api/scopes.ts').AgentScope[]} = {grantId:'fixture-grant',ownerId,spaceId,scopes:['todo:read']};
+  let current: typeof grant | null = grant;
+  const handler = createAgentHandler({config,repository:new MemoryPort(),enabled:true,
+    verify:async () => {calls++; return grant;},
+    readCurrentGrant:async (id:string) => id === grant.grantId ? current : null,
+    assertWritable:async()=>{}} as Parameters<typeof createAgentHandler>[0]);
+  const send = () => handler(new Request(baseURL+'/v1/capabilities',{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}));
+  assert.equal((await send()).status,200);
+  assert.equal(calls,1);
+  current = null;
+  assert.equal((await send()).status,403);
+  current = {...grant,ownerId:'foreign'};
+  assert.equal((await send()).status,403);
+  current = {...grant,spaceId:'foreign'};
+  assert.equal((await send()).status,403);
+  current = {...grant,scopes:['organization:read']};
+  assert.equal((await send()).status,403);
+  assert.equal(calls,5);
+});
+
+test('initial verifier rate-limit response remains 429', async () => {
+  const {PlatformError} = await import('../src/platform/domain.ts');
+  const handler = createAgentHandler({config,repository:new MemoryPort(),enabled:true,
+    verify:async()=>{throw new PlatformError(429,'RATE_LIMITED','fixture');},
+    readCurrentGrant:async()=>null,assertWritable:async()=>{}} as Parameters<typeof createAgentHandler>[0]);
+  assert.equal((await handler(new Request(baseURL+'/v1/capabilities',{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}))).status,429);
 });

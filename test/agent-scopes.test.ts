@@ -15,7 +15,8 @@ test('authority rechecks verified identity, grant and binding and rejects forged
   let valid = true;
   const service = new AuthorityService({ownerId:'owner',spaceId:'space',
     verifyOwner: async () => valid ? {ownerId:'owner',spaceId:'space',sessionRef:'session'} : null,
-    verifyAgent: async () => valid ? {ownerId:'owner',spaceId:'space',grantId:'grant',scopes:['todo:read']} : null});
+    verifyAgent: async () => valid ? {ownerId:'owner',spaceId:'space',grantId:'grant',scopes:['todo:read']} : null,
+    readCurrentAgent: async () => valid ? {ownerId:'owner',spaceId:'space',grantId:'grant',scopes:['todo:read']} : null});
   const actor = await service.resolveAgentActor('key');
   assert.ok(actor);
   await service.assertCurrentAuthority(actor, 'listTodos');

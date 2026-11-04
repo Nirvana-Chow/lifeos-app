@@ -15,6 +15,7 @@ type Options = {
   config: PersonalConfig;
   repository: PlatformRepository;
   verify: (key: string) => Promise<Grant | null>;
+  readCurrentGrant?: (grantId: string) => Promise<Grant | null>;
   assertWritable: (grant: Grant) => Promise<void>;
 };
 
@@ -59,9 +60,8 @@ export function createAgentHandler(options: Options) {
       const grant = await options.verify(token);
       if (!grant) return respond(401, {error: 'AUTH_REQUIRED'});
       if (grant.ownerId !== config.ownerId || grant.spaceId !== config.spaceId) return respond(403, {error: 'ACCESS_DENIED'});
-      let initial = true;
       const authority = new AuthorityService({ownerId:config.ownerId, spaceId:config.spaceId, verifyOwner:async () => null,
-        verifyAgent:async key => { if (initial) {initial = false; return grant;} return options.verify(key); }});
+        verifyAgent:async () => grant, readCurrentAgent:options.readCurrentGrant});
       const actor = await authority.resolveAgentActor(token);
       if (!actor) return respond(403, {error:'ACCESS_DENIED'});
       try {await authority.assertCurrentAuthority(actor, operation.id);} catch {return respond(403, {error:'ACCESS_DENIED'});}

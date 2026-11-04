@@ -1,3 +1,4 @@
+import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
@@ -163,6 +164,7 @@ test('OPT-IN native-cookie owner MFA manages real PostgreSQL grants and uses the
       enabled:true,fenceWrites:true,config:{ownerId,ownerEmail,spaceId,databaseName,baseURL:origin,
         allowedTypes:['todo'],approval:'personal-manual-v1'},
       repository:new PostgresPlatformRepository(runtime as SqlPool,true,true),
+      readCurrentGrant:id=>readCurrentAgentGrant(verifier,id),
       assertWritable:async()=>{
         if (revokeBeforeFence) assert.equal((await handle('revoke',good,{id:grant.id})).status,204);
       },

@@ -19,6 +19,24 @@ function failure(status: 403 | 404 | 503, code: string): Response {
   }});
 }
 
+type GrantLookupPool = {query:(sql:string,values:string[])=>Promise<{rows:unknown[]}>};
+/** Read only current non-secret grant fields; never invoke the quota-counting verifier. */
+export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
+  const {rows} = await pool.query('SELECT id, "referenceId", metadata, permissions, enabled, "expiresAt" FROM lifeos_agent.apikey WHERE id = $1', [id]);
+  if (rows.length !== 1 || !rows[0] || typeof rows[0] !== 'object') return null;
+  const row = rows[0] as Record<string,unknown>;
+  try {
+    const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+    const permissions = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : row.permissions;
+    const scopes = decodeAgentPermissions(permissions);
+    const expires = row.expiresAt === null ? null : new Date(row.expiresAt as string|Date).valueOf();
+    if (row.id !== id || typeof row.referenceId !== 'string' || !row.referenceId || !metadata || typeof metadata !== 'object' ||
+        typeof metadata.spaceId !== 'string' || !metadata.spaceId || row.enabled !== true && row.enabled !== null ||
+        expires !== null && (!Number.isFinite(expires) || expires <= Date.now()) || !scopes) return null;
+    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes};
+  } catch {return null;}
+}
+
 async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<Handler> {
   const [{Pool}, {betterAuth}, {apiKey}] = await Promise.all([
     import('pg'), import('better-auth'), import('@better-auth/api-key'),
@@ -90,6 +108,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         if (!scopes) return null;
         return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
       },
+      readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
   } catch (error) {

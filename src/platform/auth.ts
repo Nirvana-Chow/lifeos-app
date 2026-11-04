@@ -20,7 +20,8 @@ export function createPlatformAuth(config:PlatformConfig,database:BetterAuthOpti
 export type PlatformAuth=ReturnType<typeof createPlatformAuth>;
 export type OwnerMfaState=
  |{kind:'anonymous'}|{kind:'enroll';step:'start'|'verify'}|{kind:'incomplete'}|{kind:'relogin'}|{kind:'ready';principal:Principal}|{kind:'unavailable'};
-export async function readOwnerMfaState(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<OwnerMfaState>{
+type InternalMfaState=Exclude<OwnerMfaState,{kind:'ready'}>|{kind:'ready';principal:Principal;sessionRef:string};
+async function inspectOwnerMfaState(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<InternalMfaState>{
  try{
   if(!auth.options?.plugins?.some(plugin=>plugin.id==='two-factor'))return{kind:'unavailable'};
   const value=await auth.api.getSession({headers});
@@ -32,8 +33,16 @@ export async function readOwnerMfaState(auth:PlatformAuth,config:PlatformConfig,
   if(!factor)return{kind:'unavailable'};
   if(factor.verified===false)return{kind:'incomplete'};
   if(factor.verified!==true)return{kind:'unavailable'};
-  return ('mfaVerified'in value.session&&value.session.mfaVerified===true)?{kind:'ready',principal:{userId:value.user.id,email:value.user.email}}:{kind:'relogin'};
+  return ('mfaVerified'in value.session&&value.session.mfaVerified===true&&typeof value.session.id==='string'&&value.session.id.length>0)?{kind:'ready',principal:{userId:value.user.id,email:value.user.email},sessionRef:value.session.id}:{kind:'relogin'};
  }catch{return{kind:'unavailable'};}
+}
+export async function readOwnerMfaState(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<OwnerMfaState>{
+ const state=await inspectOwnerMfaState(auth,config,headers);
+ return state.kind==='ready'?{kind:'ready',principal:state.principal}:state;
+}
+export async function readVerifiedOwnerSession(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<{principal:Principal;sessionRef:string}|null>{
+ const state=await inspectOwnerMfaState(auth,config,headers);
+ return state.kind==='ready'?{principal:state.principal,sessionRef:state.sessionRef}:null;
 }
 export async function readOwnerPrincipal(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<Principal|null>{
  if(auth.options?.plugins?.some(plugin=>plugin.id==='two-factor')){const state=await readOwnerMfaState(auth,config,headers);return state.kind==='ready'?state.principal:null;}
