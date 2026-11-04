@@ -144,11 +144,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     props.initialPage === "settings" ? "overview" : props.initialPage ?? "overview",
   );
   const [settingsOpen,setSettingsOpen]=useState(props.initialModal==='settings'||props.initialPage==='settings');
+  const [classificationPlanId,setClassificationPlanId]=useState<string|null>(props.initialModal==='classification'?props.initialClassificationPlanId??null:null);
   const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??'general');
   const settingsTrigger=useRef<HTMLButtonElement|null>(null);
   const settingsOpeners=useRef(new Map<number,{href:string;index:number;scope:string}>());
-  const locationState=useRef({page,settingsOpen,settingsPanel});
-  locationState.current={page,settingsOpen,settingsPanel};
+  const locationState=useRef({page,settingsOpen,settingsPanel,classificationPlanId});
+  locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
@@ -174,9 +175,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     tasks = data?.tasks ?? emptyTasks;
   // A router commit can occur inside popstate dispatch. Keep the native
   // subscription intact and expose only the latest committed handlers to it.
-  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, saving: props.saving, uncertain: props.uncertain});
+  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, classificationCloseGuard: props.classificationCloseGuard, saving: props.saving, uncertain: props.uncertain});
   useLayoutEffect(() => {
-    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, saving: props.saving, uncertain: props.uncertain};
+    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate, onBeforeSettingsChange: props.onBeforeSettingsChange, settingsCloseGuard: props.settingsCloseGuard, classificationCloseGuard: props.classificationCloseGuard, saving: props.saving, uncertain: props.uncertain};
   });
   const metrics = useMemo(() => taskMetrics(state), [state]);
   const rows = useMemo(
@@ -231,7 +232,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         restoringHistory.current = false;
         return;
       }
-      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate, onBeforeSettingsChange, settingsCloseGuard, saving, uncertain} = historyHandlers.current;
+      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate, onBeforeSettingsChange, settingsCloseGuard, classificationCloseGuard, saving, uncertain} = historyHandlers.current;
       const entry = workspaceHistoryEntry(event.state);
       const url = new URL(window.location.href);
       const approval=approvedSettingsClose.current;
@@ -242,11 +243,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const nextLocation = readWorkspaceLocation(Object.fromEntries(url.searchParams));
       const historyPage=nextLocation.page;
       const sameBackground=!isTaskLink&&historyPage===locationState.current.page;
-      const overlayChange=sameBackground&&(!!nextLocation.modal||locationState.current.settingsOpen);
+      const overlayChange=sameBackground&&(!!nextLocation.modal||locationState.current.settingsOpen||!!locationState.current.classificationPlanId);
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
       const wantsCreate = isTaskLink ? !url.searchParams.has("id") : historyPage !== "requirements" && url.searchParams.get("create") === "todo";
       let allowed;
-      if (overlayChange) allowed = saving||uncertain ? false :
+      if (locationState.current.classificationPlanId && classificationCloseGuard?.current?.()===false) allowed=false;
+      else if (overlayChange) allowed = saving||uncertain ? false :
         locationState.current.settingsOpen&&!closingApproved&&settingsCloseGuard?.current?.()===false ? false : onBeforeSettingsChange?.();
       else if (locationState.current.settingsOpen&&settingsCloseGuard?.current?.()===false) allowed=false;
       else if (task && onOpenTask) allowed = onOpenTask(task);
@@ -276,7 +278,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         return;
       }
       setPage(isTaskLink ? "tasks" : historyPage);
-      setSettingsOpen(!!nextLocation.modal);
+      setSettingsOpen(nextLocation.modal==='settings');
+      setClassificationPlanId(nextLocation.modal==='classification'?nextLocation.planId:null);
       setSettingsPanel(nextLocation.panel??'general');
       if(!overlayChange)setFilter(defaultFilter);
       setMobileOpen(false);
@@ -291,7 +294,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     return () => window.removeEventListener("popstate", onPopState);
   }, [props.syncUrl]);
   function settingsAllowed() {
-    return !restoringHistory.current&&!approvedSettingsClose.current&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
+    return !restoringHistory.current&&!approvedSettingsClose.current&&(!classificationPlanId||props.classificationCloseGuard?.current?.()!==false)&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
   }
   function openSettings(trigger?:HTMLButtonElement|null) {
     if(!settingsAllowed())return false;
@@ -306,7 +309,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       window.history.pushState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
       currentHistory.current=entry;currentHistoryState.current=window.history.state;currentHref.current=href;currentBrowserIndex.current=browserHistoryIndex();
     }
-    setSettingsPanel('general');setSettingsOpen(true);setMobileOpen(false);return true;
+    setClassificationPlanId(null);setSettingsPanel('general');setSettingsOpen(true);setMobileOpen(false);return true;
   }
   function selectSettingsPanel(panel:SettingsPanel) {
     if(panel===settingsPanel)return;
@@ -336,7 +339,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     projectId: string | null = null,
   ) {
     if(next==="settings")return openSettings();
-    if (restoringHistory.current || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
+    if (restoringHistory.current || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     if (props.onNavigatePage) {
       props.onNavigatePage(next);
       return true;
@@ -357,6 +360,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }
       currentHref.current = href;
     }
+    setClassificationPlanId(null);setSettingsOpen(false);
     setPage(next);
     setFilter({ ...defaultFilter, areaId, projectId });
     setMobileOpen(false);
@@ -566,8 +570,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
         const link = (event.target as Element).closest?.('a[href]');
         const href = link?.getAttribute("href");
-        if (link?.hasAttribute?.('download') || link?.getAttribute('target') === '_blank') return;
-        if (href && !href.startsWith("#") && (props.saving || props.uncertain || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
+        if (link?.hasAttribute?.('data-classification-reauth') || (!classificationPlanId && (link?.hasAttribute?.('download') || link?.getAttribute('target') === '_blank'))) return;
+        if (href && (props.saving || props.uncertain || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -621,7 +625,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
-              <h1>{title}</h1>
+              <h1 tabIndex={-1}>{title}</h1>
               {access.authenticated===true&&access.writable===false&&<Badge variant="outline" className="lo-mobile-read-only">只读</Badge>}
               {state.status === "ready" && page !== "settings" && (
                 <span className="lo-result-count">
@@ -953,6 +957,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           </div>
         </main>
       </div>
+      {classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
+        if (props.classificationCloseGuard?.current?.()===false) return;
+        const href=workspaceHref(page); window.history.replaceState(window.history.state,'',href); currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(null);
+      }, id => {
+        const href=workspaceLocationHref({page:page==='settings'?'overview':page,modal:'classification',planId:id});
+        window.history.replaceState(window.history.state,'',href);currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(id);
+      }, portalContainer)}
       <Dialog open={settingsOpen} onOpenChange={open=>{if(!open)closeSettings();}}>
         <DialogContent container={portalContainer} className="lo-settings-dialog" aria-labelledby="lo-settings-title" aria-describedby={undefined}
           onOpenAutoFocus={event=>{event.preventDefault();document.getElementById('lo-settings-title')?.focus();}}

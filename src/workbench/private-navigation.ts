@@ -3,8 +3,9 @@ import type {WorkspacePage, WorkspaceLocation, SettingsPanel} from '../ui-review
 
 /** Finite canonical controller pages; query input never becomes a route or dispatcher. */
 export function workspaceHref(page:WorkspacePage):string{return page==='settings'?workspaceLocationHref({page:'overview',modal:'settings',panel:'general'}):page==='overview'?'/personal':'/personal?page='+page;}
-export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; panel?: unknown}): WorkspaceLocation {
+export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; panel?: unknown; planId?: unknown}): WorkspaceLocation {
  const value=readWorkspacePage(query.page),page=value==='settings'?'overview':value;
+ if(query.modal==='classification' && typeof query.planId==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.planId))return {page,modal:'classification',planId:query.planId};
  if(query.modal!=='settings'&&value!=='settings')return {page};
  const panel:SettingsPanel=query.panel==='topics'||query.panel==='security'||query.panel==='api-keys'?query.panel:'general';
  return {page,modal:'settings',panel};
@@ -12,7 +13,8 @@ export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; p
 export function workspaceLocationHref(location:WorkspaceLocation):string {
  const safe=readWorkspaceLocation(location),query=new URLSearchParams();
  if(safe.page!=='overview')query.set('page',safe.page);
- if(safe.modal){query.set('modal','settings');query.set('panel',safe.panel??'general');}
+ if(safe.modal==='settings'){query.set('modal','settings');query.set('panel',safe.panel??'general');}
+ if(safe.modal==='classification'){query.set('modal','classification');query.set('planId',safe.planId);}
  return '/personal'+(query.size?'?'+query.toString():'');
 }
 export function readWorkspacePage(value:unknown):WorkspacePage{
