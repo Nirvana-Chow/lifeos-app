@@ -1,7 +1,73 @@
 'use client';
-import{useEffect,useState,type FormEvent}from'react';
+
+import {useEffect,useState,type FormEvent} from 'react';
+import Link from 'next/link';
+import {OwnerEmailResetPanel} from './owner-email-reset-panel';
+import {Button} from '../ui-review/ui/button';
 import s from './password-page.module.css';
-import{OwnerEmailResetPanel}from'./owner-email-reset-panel';
-export function PasswordPage({enabled=false,changeOnly=false}:{enabled?:boolean;changeOnly?:boolean}){const[mode,setMode]=useState<'reset'|'change'>(changeOnly?'change':'reset'),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false);useEffect(()=>{setHydrated(true);},[]);async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!enabled||!hydrated||busy)return;const form=e.currentTarget,data=new FormData(form);if(data.get('newPassword')!==data.get('confirmation')){setMessage('两次密码不一致。');return;}setBusy(true);try{const r=await fetch('/api/platform/personal/password',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({mode,newPassword:data.get('newPassword'),currentPassword:data.get('currentPassword')})});form.reset();if(r.ok){window.location.replace('/login');return;}setMessage('未能更新，请核对当前密码或稍后重试。');}catch{form.reset();setMessage('结果未确认，请重新核对。');}finally{setBusy(false);}}
-if(mode==='reset'&&!changeOnly)return <OwnerEmailResetPanel enabled={enabled} onChangeMode={()=>setMode('change')}/>;
-return <main data-lifeos-surface="auth" className={s.page}><section className={s.card}><h1>{changeOnly?'修改本人密码':'设置本人密码'}</h1><p>保留原账号及其所有记录，不需要重新注册。</p>{!enabled&&<p role="status">安全设置待启用。不会收集或发送密码。</p>}{!changeOnly&&<label>操作<select value={mode} onChange={e=>setMode(e.target.value as 'reset'|'change')}><option value="reset">首次设置或忘记密码</option><option value="change">已登录，修改密码</option></select></label>}<form method="post" action="/account/password" onSubmit={submit}><fieldset disabled={!enabled||!hydrated||busy}><label>本人账号<input name="username" type={changeOnly?'text':'email'} autoComplete="username" value={changeOnly?'owner':'owner@lifeos.local'} readOnly/></label><label>原密码<input name="currentPassword" type="password" autoComplete="current-password" required/></label><label>新密码<input name="newPassword" type="password" minLength={12} maxLength={128} autoComplete="new-password" required/></label><label>确认新密码<input name="confirmation" type="password" autoComplete="new-password" required/></label><button>{busy?'正在更新…':'保存密码'}</button></fieldset></form>{message&&<p role="status">{message}</p>}<p><a href="/login">返回登录</a></p></section></main>;}
+
+export function PasswordPage({enabled=false,changeOnly=false,embedded=false}: {
+ enabled?:boolean;changeOnly?:boolean;embedded?:boolean;
+}) {
+ const [mode,setMode]=useState<'reset'|'change'>(changeOnly?'change':'reset');
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const [hydrated,setHydrated]=useState(false);
+ useEffect(()=>{setHydrated(true);},[]);
+
+ async function submit(event:FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  if(!enabled||!hydrated||busy)return;
+  const form=event.currentTarget,data=new FormData(form);
+  if(data.get('newPassword')!==data.get('confirmation')) {
+   setMessage('两次密码不一致。');
+   return;
+  }
+  setBusy(true);
+  try {
+   const response=await fetch('/api/platform/personal/password',{
+    method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},
+    body:JSON.stringify({mode,newPassword:data.get('newPassword'),currentPassword:data.get('currentPassword')}),
+   });
+   form.reset();
+   if(response.ok) {
+    window.location.replace('/login');
+    return;
+   }
+   setMessage('未能更新，请核对当前密码或稍后重试。');
+  } catch {
+   form.reset();
+   setMessage('结果未确认，请重新核对。');
+  } finally {
+   setBusy(false);
+  }
+ }
+
+ if(mode==='reset'&&!changeOnly)return <OwnerEmailResetPanel enabled={enabled} onChangeMode={()=>setMode('change')}/>;
+ const Surface=embedded?'section':'main';
+ return <Surface
+  data-lifeos-surface={embedded?undefined:'auth'}
+  aria-label={embedded?'修改密码':undefined}
+  className={`${s.page}${embedded?' '+s.embedded:''}`}
+ >
+  <section className={s.card}>
+   {!embedded&&<h1>{changeOnly?'修改本人密码':'设置本人密码'}</h1>}
+   {!changeOnly&&<p>保留原账号及其所有记录，不需要重新注册。</p>}
+   {!enabled&&<p role="status">安全设置待启用。不会收集或发送密码。</p>}
+   {!changeOnly&&<label>操作<select value={mode} onChange={event=>setMode(event.target.value as 'reset'|'change')}>
+    <option value="reset">首次设置或忘记密码</option>
+    <option value="change">已登录，修改密码</option>
+   </select></label>}
+   <form method="post" action="/account/password" onSubmit={submit}>
+    <fieldset disabled={!enabled||!hydrated||busy}>
+     <label>本人账号<input name="username" type={changeOnly?'text':'email'} autoComplete="username" value={changeOnly?'owner':'owner@lifeos.local'} readOnly/></label>
+     <label>原密码<input name="currentPassword" type="password" autoComplete="current-password" required/></label>
+     <label>新密码<input name="newPassword" type="password" minLength={12} maxLength={128} autoComplete="new-password" required/></label>
+     <label>确认新密码<input name="confirmation" type="password" autoComplete="new-password" required/></label>
+     <Button type="submit">{busy?'正在更新…':'保存密码'}</Button>
+    </fieldset>
+   </form>
+   {message&&<p role="status">{message}</p>}
+   <p><Link href={changeOnly?'/personal?page=settings':'/login'}>{changeOnly?'取消':'返回登录'}</Link></p>
+  </section>
+ </Surface>;
+}

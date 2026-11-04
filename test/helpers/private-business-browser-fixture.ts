@@ -229,7 +229,7 @@ async function verifyPrivateAppearanceAndDraftsBody(f:PrivateFixture,setPhase:(p
   // Storage events reach the other window only. The source is still dark after removeItem.
   setPhase('cross-tab');const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await switchTheme(sibling,'light');await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}
   setPhase('todo-list');await page.goto(privateOrigin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});await readyHeading(page,'待办');await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();const todo=entries[2],savedTitle='title'in todo.draft?todo.draft.title:'';
-  setPhase('todo-dialog');await page.getByRole('button',{name:'查看待办：'+savedTitle,exact:true}).click();const detail=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(detail.getByRole('heading',{name:savedTitle,exact:true})).toBeVisible();await expect(detail.locator('form')).toHaveCount(0);await detail.getByRole('button',{name:'编辑待办',exact:true}).click();const title=page.getByRole('dialog').getByLabel('标题',{exact:true});await title.fill('合成主题切换草稿');await page.emulateMedia({colorScheme:'dark'});await themeState(page,'dark','system');await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();});
+  setPhase('todo-dialog');await page.getByRole('button',{name:'展开详情：'+savedTitle,exact:true}).click();const detail=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(detail.getByRole('heading',{name:'待办详情',exact:true})).toBeVisible();await expect(detail.locator('form')).toHaveCount(1);await expect(detail.getByRole('button',{name:'编辑待办',exact:true})).toHaveCount(0);const title=page.getByRole('dialog').getByLabel('标题',{exact:true});await title.fill('合成主题切换草稿');await page.emulateMedia({colorScheme:'dark'});await themeState(page,'dark','system');await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'关闭待办详情',exact:true}).click();});await expect(title).toHaveValue('合成主题切换草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'关闭待办详情',exact:true}).click();});
   // Keep the dirty input focused: using the header theme button would deliberately blur-save.
   setPhase('todo-grid');await themeState(page,'dark','system');await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'表格',exact:true}).click();await requireTaskGrid(page,savedTitle);await taskGridTitleCell(page,savedTitle).dblclick();const cell=taskGridInput(page);await expect(cell).toBeVisible();await cell.fill('合成主题原生草稿');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await page.evaluate(()=>{Reflect.deleteProperty(document,'visibilityState');document.dispatchEvent(new Event('visibilitychange'));});await expect(cell).toBeVisible();await expect(cell).toHaveValue('合成主题原生草稿');await cell.fill(savedTitle);await cell.press('Escape');
   setPhase('journal');await page.goto(privateOrigin+'/personal/edit?type=journal',{waitUntil:'domcontentloaded'});const journal=page.getByLabel('标题',{exact:true});await expect(journal).toBeEnabled();await journal.fill('合成未保存日记');await page.getByLabel(/^说明 \/ 正文/).fill('合成日记主题检查');await switchTheme(page,'dark');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,false,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await expect(journal).toHaveValue('合成未保存日记');await confirmDiscard(page,true,async()=>{await page.getByRole('link',{name:'返回总览',exact:true}).click();},5000,'beforeunload');await readyHeading(page,'总览');setPhase('receipt-readback');await assertPrivateReceipts(page,entries);
@@ -315,7 +315,7 @@ async function privateLocalInteractions(page:Page,key:string){
   await expect(page.getByRole('link',{name:/管理|导出/})).toHaveCount(0);
  }else if(key==='private-settings'){
   await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
-  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理/)).toHaveCount(0);
+  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
   const settings=page.locator('.lo-settings'),bounds=await settings.boundingBox(),main=await page.locator('.lo-main').boundingBox();
   assert.ok(bounds&&main&&Math.abs((bounds.x+bounds.width/2)-(main.x+main.width/2))<=1,'settings are centered in their workspace');
  }
@@ -362,6 +362,75 @@ async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture[
 type PresentationStage='personal'|'navigation'|'heading'|'theme'|'interaction'|'measure-ready'|'measure-dom'|'overflow'|'palette'|'header'|'title'|'typography'|'hit-targets'|'contrast'|'dialog'|'keyboard'|'capture-receipts'|'capture-dom'|'capture-scope'|'capture-content'|'capture-image'|'capture-manifest'|'close-dialog'|'mobile-navigation'|'settings'|'receipts';
 type PresentationMark=(stage:PresentationStage,metrics?:readonly number[])=>void;
 const presentationCodes=['PRIVATE_PRESENTATION_STRUCTURE','PRIVATE_HEADER_GEOMETRY','CONTRAST_UNSUPPORTED_COLOR','CONTRAST_UNSUPPORTED_EFFECT','CONTRAST_BACKGROUND_UNRESOLVED','PRIVATE_CAPTURE_DENIED','PRIVATE_CAPTURE_SOURCE_DENIED','PRIVATE_SNAPSHOT_DENIED','SYNTHETIC_CAPTURE_DENIED'] as const;
+// A same-shape synthetic filing footer exercises private overlay geometry without
+// copying filing identity or adding personal content to public screenshot artifacts.
+async function verifyWorkspaceViewport(f:PrivateFixture){
+ const {page,entries}=f;
+ for(const width of [1365,360,390,430])for(const theme of ['light','dark'] as const){
+  await page.setViewportSize({width,height:width===1365?900:844});
+  await page.emulateMedia({colorScheme:theme});
+  await page.goto(privateOrigin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+  await readyHeading(page,'待办');
+  await themeState(page,theme,'system');
+  await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
+  await page.evaluate(()=>{
+   if(document.querySelector('.lifeos-filing-footer'))throw Error('UNEXPECTED_FIXTURE_FOOTER');
+   const footer=document.createElement('footer');footer.className='lifeos-filing-footer';footer.dataset.syntheticFilingProbe='';
+   const link=document.createElement('a');link.href='#synthetic-filing';link.textContent='合成备案页脚';footer.append(link);document.body.append(footer);
+   const probe=document.createElement('div');probe.dataset.syntheticScrollProbe='';
+   const spacer=document.createElement('div');spacer.style.height='1600px';spacer.setAttribute('aria-hidden','true');
+   const end=document.createElement('button');end.type='button';end.textContent='合成末端操作';probe.append(spacer,end);document.querySelector('.lo-main')!.append(probe);
+   window.dispatchEvent(new Event('resize'));
+  });
+  const geometry=()=>page.evaluate(()=>{
+   const rect=(selector:string)=>document.querySelector(selector)!.getBoundingClientRect().toJSON();
+   const main=document.querySelector('.lo-main')!;
+   return {height:innerHeight,document:document.documentElement.scrollHeight,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth,scrollY,
+    mainClient:main.clientHeight,mainScroll:main.scrollHeight,footer:rect('.lifeos-filing-footer'),bottom:rect('.lo-sidebar-bottom'),sidebar:rect('.lo-sidebar')};
+  });
+  try{
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+   const start=await geometry();assert.equal(start.document,start.height);assert.equal(start.overflowX,false);assert.ok(start.mainScroll>start.mainClient);
+   await page.locator('.lo-main').evaluate(main=>{main.scrollTop=main.scrollHeight;window.scrollTo(0,999);});
+   const end=await geometry();assert.equal(end.scrollY,0);assert.equal(end.document,end.height);assert.ok(Math.abs(end.footer.bottom-end.height)<=1);
+   const last=await page.getByRole('button',{name:'合成末端操作',exact:true}).boundingBox();assert.ok(last&&last.y+last.height<=end.footer.top-8,'footer leaves content controls reachable');
+   if(width===1365){
+    assert.deepEqual(end.bottom,start.bottom,'content scroll does not move sidebar actions');assert.ok(end.bottom.bottom<=end.height);assert.ok(Math.abs(end.sidebar.right-end.footer.left)<=1);
+    await page.getByRole('button',{name:'收起侧栏',exact:true}).click();const collapsed=await geometry();assert.equal(collapsed.sidebar.width,72);assert.ok(Math.abs(collapsed.footer.left-collapsed.sidebar.right)<=1);
+    await page.getByRole('button',{name:'展开侧栏',exact:true}).click();
+    for(const height of [300,240]){await page.setViewportSize({width,height});const short=await geometry();assert.equal(short.document,height);assert.ok(short.bottom.bottom<=height,'short viewport retains settings and collapse');}
+   }else{
+    assert.equal(end.footer.left,0);await page.getByRole('button',{name:'打开导航',exact:true}).click();const drawer=page.locator('.lo-mobile-sidebar');await expect(drawer).toBeVisible();await expect(drawer).toHaveCSS('pointer-events','auto');
+    const settings=drawer.getByRole('button',{name:'设置',exact:true});
+    const settingsAboveFooter=await settings.evaluate(button=>{
+     const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!;
+     const previous=footer.style.pointerEvents;
+     // Radix disables body pointer events. Temporarily let the footer receive
+     // hit tests so a visually covering but click-through footer cannot pass.
+     footer.style.pointerEvents='auto';
+     try{const rect=button.getBoundingClientRect();return button.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));}
+     finally{footer.style.pointerEvents=previous;}
+    });
+    assert.equal(settingsAboveFooter,true,'mobile settings paint above the filing footer');
+    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');
+   }
+   await page.getByRole('button',{name:'帮助',exact:true}).click();
+   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toBeVisible();
+   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCSS('pointer-events','auto');
+   const overlayAboveFooter=await page.evaluate(()=>{
+    const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!,previous=footer.style.pointerEvents;
+    footer.style.pointerEvents='auto';
+    try{const rect=footer.getBoundingClientRect();return document.elementFromPoint(innerWidth-8,rect.y+rect.height/2)?.matches('[data-slot="dialog-overlay"]')??false;}
+    finally{footer.style.pointerEvents=previous;}
+   });
+   assert.equal(overlayAboveFooter,true,'help backdrop paints above the filing footer');
+   await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCount(0);await expect(page.locator('body')).toHaveCSS('pointer-events','auto');
+  }finally{
+   await page.evaluate(()=>{document.querySelector('[data-synthetic-filing-probe]')?.remove();document.querySelector('[data-synthetic-scroll-probe]')?.remove();window.dispatchEvent(new Event('resize'));});
+  }
+ }
+ await page.setViewportSize({width:1365,height:900});await assertPrivateReceipts(page,entries);
+}
 export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  const {page,entries}=f;
  let row:typeof privateCaptureCases[number]|undefined,stage:PresentationStage='personal';
@@ -369,6 +438,7 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  const mark:PresentationMark=(value,numbers)=>{stage=value;metrics=numbers;};
  try{
  await verifyPersonalPresentations(page,entries);
+ await verifyWorkspaceViewport(f);
  const transport=watchPrivateTransport(page);let cells=0;
  try{
   for(const item of privateCaptureCases){

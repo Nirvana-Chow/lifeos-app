@@ -32,13 +32,13 @@ function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
  return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
 }
 test('writable task view exposes editing and real category routes without inventing empty category options',()=>{
- const html=workspace();assert.match(html,/分类管理/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
+ const html=workspace();assert.match(html,/管理项目与领域/);assert.doesNotMatch(html,/点击标题|完整编辑表单/);
  for(const type of ['domain','project','topic'])assert.match(html,new RegExp('href="/personal/edit\\?type='+type+'"'));
  assert.doesNotMatch(html,/<option[^>]*>[^<]*(?:示例|默认项目|默认领域)/);
 });
 test('read-only and unverified workspace never expose category creation and label detail access honestly',()=>{
  for(const access of [{authenticated:true,writable:false,loginAllowed:true},{authenticated:null,writable:null,loginAllowed:null}]){
-  const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="编辑待办：/);
+  const html=workspace({access});assert.doesNotMatch(html,/href="\/personal\/edit\?type=(?:domain|project|topic)"/);assert.doesNotMatch(html,/aria-label="(?:编辑待办|编辑标题)：/);
  }
 });
 test('source summary keeps total and original Apple timing semantics when rendered',()=>{
@@ -77,14 +77,14 @@ test('settings centers the page heading and keeps only account actions',()=>{
  const settings=workspace({initialPage:'settings',onLogout:()=>{},settingsContent:React.createElement('a',{href:'/account/api-keys'},'API 密钥')});
  assert.match(settings,/lo-content-settings/);
  assert.match(settings,/API 密钥/);assert.match(settings,/退出登录/);
- assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|刷新数据/);
- assert.match(workspace(),/分类管理/);
+ assert.doesNotMatch(settings,/登录状态|数据权限|数据与权限|数据管理与导出|分类管理|管理项目与领域|刷新数据/);
+ assert.match(workspace(),/管理项目与领域/);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
  const html=workspace({initialPage:'overview'});
- for(const label of ['待办','今日到期','已逾期','项目'])assert.match(html,new RegExp('<button[^>]*aria-label="'+label+'：[^" ]+"'));
+ for(const label of ['待办','今日到期','已逾期','推进中项目'])assert.match(html,new RegExp('<button[^>]*aria-label="'+label+'：[^" ]+"'));
  const unknown=workspace({initialPage:'overview',state:{status:'unknown'}});
- assert.equal((unknown.match(/<button[^>]*aria-label="(?:待办|今日到期|已逾期|项目)：未知"[^>]*disabled/g)||[]).length,4);
+ assert.equal((unknown.match(/<button[^>]*aria-label="(?:待办|今日到期|已逾期|推进中项目)：未知"[^>]*disabled/g)||[]).length,4);
 });
 
 test('private Header exposes a single appearance action before opening settings',()=>{
@@ -104,7 +104,7 @@ test('personal navigation hides unfinished business and record management',()=>{
  }
 });
 function rawComponent(file:string,snapshot:Record<number,unknown>={}){
- let at=0;const hooks={...React,useEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(initial:unknown)=>{const i=at++;return [i in snapshot?snapshot[i]:typeof initial==='function'?(initial as Function)():initial,()=>{}];}};
+ let at=0;const hooks={...React,useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(initial:unknown)=>{const i=at++;return [i in snapshot?snapshot[i]:typeof initial==='function'?(initial as Function)():initial,()=>{}];}};
  const m={exports:{} as any};new Function('require','module','exports',ts.transpileModule(readFileSync(file,'utf8'),{fileName:file,compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText)((name:string)=>{
   if(name==='react')return hooks;if(name.endsWith('.css'))return {__esModule:true,default:{}};if(!name.startsWith('.'))return nativeRequire(name);const base=resolve(dirname(resolve(file)),name),target=extname(base)?base:[base+'.tsx',base+'.ts',base].find(existsSync);return load(target!);
  },m,m.exports);return m.exports;

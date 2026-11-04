@@ -96,6 +96,13 @@ export function mountTaskGridEditor(
       options.onClose();
       if (advance) options.onAdvance?.(advance);
     },
+    discard() {
+      if (!active || closed) return;
+      editor.discard();
+      closed = true;
+      editor.onEnd();
+      options.onClose();
+    },
     refreshAccess() { editor.setDisabled(!options.canSave()); },
     dispose() {
       if (!active) return;

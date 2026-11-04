@@ -56,3 +56,12 @@ body [data-lifeos-surface="auth"] input,body [data-lifeos-surface="auth"] select
 .lifeos-filing-footer{flex-shrink:0;box-sizing:border-box;margin:auto 0 0;padding:8px 16px calc(8px + env(safe-area-inset-bottom,0px));text-align:center;font-size:14px;line-height:1.5;color:var(--muted-foreground);background:var(--background);overflow-wrap:anywhere;}
 .lifeos-filing-footer a{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;max-width:100%;min-height:44px;color:inherit;padding:0 8px;}
 .lifeos-filing-footer a:focus-visible{outline:2px solid var(--ring);outline-offset:3px;}
+
+/* Owner workspaces scroll their content while the shell fills the viewport. */
+body:has(.lo-shell){height:100dvh;overflow:hidden;}
+body:has(.lo-shell) > .lifeos-filing-footer{position:fixed;inset:auto 0 0 var(--lo-sidebar-width);z-index:20;margin:0;}
+body:has(.lo-shell.lo-is-collapsed) > .lifeos-filing-footer{left:var(--lo-sidebar-collapsed);}
+body:has(.lo-shell):has(> .lifeos-filing-footer) .lo-main{padding-bottom:calc(var(--lo-content-padding) + var(--lo-filing-footer-space,60px));}
+body:has(.lo-shell):has(> .lifeos-filing-footer) .lo-undo-notice{bottom:calc(var(--lo-filing-footer-space,60px) + 24px);}
+@media(max-width:640px){body:has(.lo-shell):has(> .lifeos-filing-footer) .lo-undo-notice{bottom:calc(var(--lo-filing-footer-space,60px) + 16px);}}
+@media(max-width:850px){body:has(.lo-shell) > .lifeos-filing-footer{left:0;}}

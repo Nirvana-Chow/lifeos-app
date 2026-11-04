@@ -13,18 +13,20 @@ import { Button } from './ui/button';
 import styles from './task-grid.module.css';
 
 type CellEdit = TaskCellDraft & { writeDraft: (draft: TaskCellDraft | null) => void };
+type FieldAccess = Pick<TaskGridProps, 'writable' | 'blocked' | 'onSave' | 'getTaskFields' | 'draftMemory'>;
 const editableFields: readonly TaskCellField[] = ['title', 'status', 'due'];
-const columnLabels = ['待办', '状态', '到期日', '项目', '领域', '详情'];
-const columnIds = ['title', 'status', 'due', 'project', 'area', 'detail'];
-const columnWidths = [284, 176, 176, 150, 130, 114];
+const columnLabels = ['待办', '状态', '到期日', '项目', '领域', '详情', '完成'];
+const columnIds = ['title', 'status', 'due', 'project', 'area', 'detail', 'complete'];
+const columnWidths = [284, 176, 176, 150, 130, 114, 72];
+const columnMinWidths = [140, 112, 144, 90, 90, 80, 68];
 const valueOf = (task: TaskRow, field: TaskCellField) =>
   field === 'title' ? task.title : field === 'due' ? task.dueOn ?? '' : taskStatusLabels[task.status];
-const canWrite = (props: TaskGridProps) =>
+const canWrite = (props: FieldAccess) =>
   !!props.writable && !props.blocked && !!props.onSave && !!props.getTaskFields;
 
 function TaskGridInput({ edit, latest, close, advance, onError }: {
   edit: CellEdit;
-  latest: { current: TaskGridProps };
+  latest: { current: FieldAccess };
   close: () => void;
   advance: (direction: 'next' | 'previous') => void;
   onError: (message: string) => void;
@@ -52,10 +54,12 @@ function TaskGridInput({ edit, latest, close, advance, onError }: {
       // The memory already matched the authoritative receipt to this exact draft.
       controller.confirm();
     });
+    const undiscard = memory?.onDiscarded(controller.discard);
     return () => {
       controller.dispose();
       unregister?.();
       unconfirm?.();
+      undiscard?.();
       bridge.current = null;
     };
   }, [edit, latest, close, advance, onError]);
@@ -69,6 +73,74 @@ function TaskGridInput({ edit, latest, close, advance, onError }: {
     );
   }
   return <input ref={node => { input.current = node; }} className={styles.input} aria-label={label} type={edit.field === 'due' ? 'date' : 'text'} defaultValue={restored?.value ?? edit.value} />;
+}
+
+type TaskTitleFieldProps = FieldAccess & {
+  task: TaskRow;
+  className?: string;
+  onOpen?: (task: TaskRow, trigger?: HTMLButtonElement) => boolean | void;
+};
+
+/** Card and list titles use the same native field editor and receipt boundary as the grid. */
+export function TaskTitleField(props: TaskTitleFieldProps) {
+  const latest = useRef(props);
+  latest.current = props;
+  const trigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+  const [edit, setEdit] = useState<CellEdit | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const close = useCallback(() => {
+    setEdit(null);
+    setError(null);
+    returnFocus.current = true;
+  }, []);
+  const open = useCallback(() => {
+    const current = latest.current;
+    if (!canWrite(current)) return;
+    const fields = current.getTaskFields?.(current.task);
+    if (!fields) return;
+    const retained = current.draftMemory?.read();
+    const draft = retained?.task.id === current.task.id && retained.field === 'title' ? retained : {
+      task: { id: current.task.id, revision: current.task.revision },
+      fields: structuredClone(fields), field: 'title' as const, value: current.task.title,
+    };
+    const writeDraft = current.draftMemory?.claim(draft.task, 'title', () => window.confirm('放弃尚未保存的修改？'));
+    if (current.draftMemory && !writeDraft) return;
+    setError(null);
+    setEdit({ ...draft, writeDraft: writeDraft ?? (() => {}) });
+  }, []);
+  const onError = useCallback((message: string) => setError(message), []);
+  const advance = useCallback(() => {}, []);
+  useEffect(() => {
+    if (!edit && returnFocus.current) {
+      returnFocus.current = false;
+      trigger.current?.focus();
+    }
+  }, [edit]);
+  useEffect(() => {
+    const retained = props.draftMemory?.read();
+    if (!edit && retained?.task.id === props.task.id && retained.field === 'title') open();
+  }, [props.task.id, props.task.revision, props.draftMemory, props.writable, props.blocked, edit, open]);
+  if (edit) return (
+    <span className={styles.titleEditor}>
+      <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError}/>
+      {error && <span role="alert" className={styles.error}>{error}</span>}
+    </span>
+  );
+  const editable = canWrite(props);
+  return <Button ref={trigger} variant="ghost" className={props.className}
+    aria-label={`${editable ? '编辑标题' : '查看待办'}：${props.task.title}`}
+    aria-keyshortcuts={editable ? 'Enter F2' : undefined}
+    title={editable ? '双击编辑标题' : undefined}
+    onDoubleClick={editable ? open : undefined}
+    onClick={event => {
+      if (!editable) props.onOpen?.(props.task, event.currentTarget);
+      else if (event.detail === 0) open();
+    }}
+    onKeyDown={event => {
+      if (editable && event.key === 'F2') { event.preventDefault(); open(); }
+    }}
+  ><span>{props.task.title}</span>{props.task.referenceChanged && <span className={styles.referenceChanged} role="img" aria-label="关联待核对">!</span>}</Button>;
 }
 
 type GridCellState = {
@@ -88,6 +160,17 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
   if (!state) throw Error('Task cell requires its workspace context.');
   const { edit, latest, open, close, advance, onError } = state;
   const index = columnIds.indexOf(column.id);
+  if (column.id === 'complete') {
+    const task = row.original;
+    const allowed = () => !!latest.current.writable && !latest.current.blocked && !!latest.current.onSetTaskStatus;
+    return <Button variant="ghost" className={styles.complete} data-cell-interactive
+      aria-label={`${task.status === 'done' ? '重新打开' : '完成'}：${task.title}`}
+      aria-pressed={task.status === 'done'} disabled={!allowed()}
+      onClick={() => {
+        if (allowed()) latest.current.onSetTaskStatus?.({ id: task.id, revision: task.revision }, task.status === 'done' ? 'open' : 'done');
+      }}
+    ><span aria-hidden="true">{task.status === 'done' ? '✓' : '○'}</span></Button>;
+  }
   if (index >= 3) {
     return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
       aria-label={index === 5 ? `打开任务：${row.original.title}` : `${columnLabels[index]}：${String(getValue())}，打开任务：${row.original.title}`}
@@ -102,7 +185,7 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
 
 function TaskGridColumnHeader({ column }: HeaderContext<typeof dataGridFeatures, TaskRow, unknown>) {
   const index = columnIds.indexOf(column.id);
-  if (index === 5) return columnLabels[index];
+  if (index >= 5) return columnLabels[index];
   const direction = column.getIsSorted();
   return <Button variant="ghost" className={styles.sort} data-sorted={direction || undefined}
     onClick={column.getToggleSortingHandler()} aria-label={`按${columnLabels[index]}排序`}>
@@ -154,17 +237,17 @@ export function TaskGrid(props: TaskGridProps) {
     const rows = tableRef.current?.getRowModel().rows;
     if (!previous || !rows) return;
     const index = rows.findIndex(row => row.id === previous.task.id);
-    const position = index * 6 + editableFields.indexOf(previous.field) + (direction === 'next' ? 1 : -1);
-    if (position < 0 || position >= rows.length * 6) return;
-    const row = rows[Math.floor(position / 6)];
-    focusApi.current?.focusCell(row.id, columnIds[position % 6]);
+    const position = index * columnIds.length + editableFields.indexOf(previous.field) + (direction === 'next' ? 1 : -1);
+    if (position < 0 || position >= rows.length * columnIds.length) return;
+    const row = rows[Math.floor(position / columnIds.length)];
+    focusApi.current?.focusCell(row.id, columnIds[position % columnIds.length]);
   }, []);
   const onError = useCallback((message: string) => setError(message), []);
   const columns = useMemo<ColumnDef<typeof dataGridFeatures, TaskRow>[]>(() =>
     columnIds.map((id, index) => ({
       id,
       size: columnWidths[index],
-      minSize: columnWidths[index],
+      minSize: columnMinWidths[index],
       accessorFn: task => index === 1 ? task.status : index < 3 ? valueOf(task, editableFields[index]) : index === 3 ? task.project?.title ?? '—' : index === 4 ? task.area?.title ?? '—' : '查看详情',
       header: TaskGridColumnHeader,
       enableSorting: index < 5,
@@ -208,7 +291,7 @@ export function TaskGrid(props: TaskGridProps) {
             if (editableFields.includes(request.columnId as TaskCellField)) open(request.rowId, request.columnId as TaskCellField, request.initialText);
           }}
           i18n={{ labels: { empty: '没有符合条件的待办', loading: '正在加载表格…', allRowsLoaded: '已显示全部待办' } }}
-          tableLayout={{ width: 'fixed', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
+          tableLayout={{ width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
           tableClassNames={{ base: styles.table, headerRow: styles.header, bodyRow: styles.row }}>
           <DataGridTableVirtual height={460} estimateSize={52} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
           <DataGridCellSelection apiRef={focusApi} clipboard={false} />

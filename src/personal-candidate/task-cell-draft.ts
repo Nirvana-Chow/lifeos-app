@@ -8,7 +8,7 @@ const same=(a:PersonalBinding,b:PersonalBinding)=>a.ownerId===b.ownerId&&a.space
 const sameCell=(a:Pick<TaskCellDraft,'task'|'field'>,b:Pick<TaskCellDraft,'task'|'field'>)=>a.task.id===b.task.id&&a.task.revision===b.task.revision&&a.field===b.field;
 /** One in-memory draft; binding is deliberately absent from the UI-facing read result. No storage or writer. */
 export class TaskCellDraftMemory{
- private epoch=0;private active:PersonalBinding|null=null;private retained:{binding:PersonalBinding;draft:TaskCellDraft}|null=null;private capture:(()=>void)|null=null;private confirmed=new Set<()=>void>();
+ private epoch=0;private active:PersonalBinding|null=null;private retained:{binding:PersonalBinding;draft:TaskCellDraft}|null=null;private capture:(()=>void)|null=null;private confirmed=new Set<()=>void>();private discarded=new Set<()=>void>();
  verify(binding:PersonalBinding|null){if(!binding||!this.active||!same(binding,this.active))this.epoch++;if(binding&&this.retained&&!same(binding,this.retained.binding))this.retained=null;this.active=binding?{...binding}:null;}
  read():TaskCellDraft|null{return this.active&&this.retained&&same(this.active,this.retained.binding)?structuredClone(this.retained.draft):null;}
  /** Every editor receives a writer scoped to its binding, cell and lifecycle. Unrelated cleanup cannot clear it. */
@@ -19,6 +19,9 @@ export class TaskCellDraftMemory{
    this.retained=null;
   }
   const token=++this.epoch;
+  // The old input can still receive queued events before React unmounts it.
+  // End its native lifecycle after fencing its writer and before issuing the next claim.
+  this.discarded.forEach(fn=>fn());
   return draft=>{
    if(token!==this.epoch||!this.active||!same(binding,this.active))return;
    const ownsRetained=this.retained&&same(binding,this.retained.binding)&&sameCell(this.retained.draft,cell);
@@ -30,8 +33,11 @@ export class TaskCellDraftMemory{
  registerCapture(capture:()=>void){this.capture=capture;return()=>{if(this.capture===capture)this.capture=null;};}
  captureCurrent(){this.capture?.();}
  hasDraft(){return this.retained!==null;}
+ /** Called only after the host's navigation guard accepts discarding this draft. */
+ discardCurrent(){this.epoch++;this.retained=null;this.discarded.forEach(fn=>fn());}
  conceal(){this.captureCurrent();this.verify(null);}
  clear(){this.epoch++;this.retained=null;this.active=null;this.capture=null;}
  onConfirmed(listener:()=>void){this.confirmed.add(listener);return()=>{this.confirmed.delete(listener);};}
+ onDiscarded(listener:()=>void){this.discarded.add(listener);return()=>{this.discarded.delete(listener);};}
  confirm(receipt:PublicEntry){const draft=this.read();if(!draft||!this.active)return;try{if(taskReceiptMatchesSubmission({mode:'edit',task:draft.task},taskCellFields(draft.fields,draft.field,draft.value),receipt,this.active.spaceId)){this.retained=null;this.epoch++;this.confirmed.forEach(fn=>fn());}}catch{/* Invalid unsubmitted text cannot match a receipt. */}}
 }

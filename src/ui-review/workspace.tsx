@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   CheckSquare2,
   Folder,
   Layers,
-  Pencil,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -45,6 +44,7 @@ import {
   visibleWorkspaceState,
 } from "./selectors";
 import { TaskTable, statusLabels } from "./task-table";
+import { TaskTitleField } from "./task-grid";
 import { OverviewChart } from "./overview-chart";
 import type {
   LifeOSWorkspaceProps,
@@ -60,7 +60,7 @@ import {ThemeSwitch} from "../workbench/theme-switch";
 import {CategoryEntries} from "../personal-candidate/category-entries";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 
-import {workspaceHref} from '../workbench/private-navigation';
+import {readWorkspacePage,workspaceHref} from '../workbench/private-navigation';
 
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -71,6 +71,19 @@ const viewItems = [
   { id: "table", label: "表格", icon: Table2 },
   { id: "board", label: "看板", icon: Columns3 },
 ] as const;
+type WorkspaceHistoryEntry = {scope: string; index: number};
+const workspaceHistoryKey = '__lifeosWorkspace';
+function workspaceHistoryEntry(state: unknown): WorkspaceHistoryEntry | null {
+  const entry = state && typeof state === 'object' ? (state as Record<string, unknown>)[workspaceHistoryKey] : null;
+  if (!entry || typeof entry !== 'object') return null;
+  const {scope, index} = entry as WorkspaceHistoryEntry;
+  return typeof scope === 'string' && scope.length > 0 && Number.isSafeInteger(index) ? {scope, index} : null;
+}
+function browserHistoryIndex(): number | null {
+  const navigation = (window as Window & {navigation?: {currentEntry?: {index: number} | null}}).navigation;
+  const index = navigation?.currentEntry?.index;
+  return typeof index === 'number' && Number.isSafeInteger(index) && index >= 0 ? index : null;
+}
 const emptyTasks: readonly TaskRow[] = [];
 const defaultFilter: TaskFilter = {
   query: "",
@@ -121,12 +134,12 @@ function DataState({
 }
 
 export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
-  const { access, onRefresh, unavailablePage } = props;
+  const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const [page, setPage] = useState<WorkspacePage>(
     props.initialPage ?? "overview",
   );
-  const title = unavailablePage?.title ?? pageTitles[page];
+  const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
@@ -141,8 +154,19 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     menuButton = useRef<HTMLButtonElement | null>(null),
     helpButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
+  const currentHref = useRef("");
+  const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
+  const restoringHistory = useRef(false);
+  const currentBrowserIndex = useRef<number | null>(null);
+  const currentHistoryState = useRef<unknown>(null);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
+  // A router commit can occur inside popstate dispatch. Keep the native
+  // subscription intact and expose only the latest committed handlers to it.
+  const historyHandlers = useRef({tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate});
+  useLayoutEffect(() => {
+    historyHandlers.current = {tasks, onOpenTask: props.onOpenTask, onCreateTask: props.onCreateTask, onBeforeNavigate: props.onBeforeNavigate};
+  });
   const metrics = useMemo(() => taskMetrics(state), [state]);
   const rows = useMemo(
     () => filterTasks(tasks, { ...filter, inboxOnly: page === "inbox" || filter.inboxOnly }, data?.today),
@@ -155,23 +179,120 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const overviewTasks = page === "overview" && state.status === "ready"
     ? filterTasks(tasks, defaultFilter).slice(0, 6)
     : emptyTasks;
-  const inlineRow = overviewTasks.findIndex(task => task.id === props.inlineTask?.id) + 1;
+  const activeProjects = data?.projects.filter(project => project.stage === "active") ?? [];
   const detail = data?.tasks.find((task) => task.id === detailId) ?? null;
   const filterActive =
     !!filter.query ||
     !!filter.areaId ||
     !!filter.projectId ||
     filter.status !== "pending" || !!filter.inboxOnly || (!!filter.due && filter.due !== "all");
+  useEffect(() => {
+    if (!portalContainer) return;
+    const update = () => {
+      const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
+      if (footer) portalContainer.style.setProperty("--lo-filing-footer-space", `${footer.getBoundingClientRect().height}px`);
+      else portalContainer.style.removeProperty("--lo-filing-footer-space");
+    };
+    update();
+    const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
+    const observer = new ResizeObserver(update);
+    if (footer) observer.observe(footer);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      portalContainer.style.removeProperty("--lo-filing-footer-space");
+    };
+  }, [portalContainer]);
+  useEffect(() => {
+    if (!props.syncUrl) return;
+    if (!currentHistory.current) {
+      const entry = workspaceHistoryEntry(window.history.state) ?? {scope: crypto.randomUUID(), index: 0};
+      window.history.replaceState({...window.history.state, [workspaceHistoryKey]: entry}, '', window.location.href);
+      currentHistory.current = entry;
+      currentHistoryState.current = window.history.state;
+      currentBrowserIndex.current = browserHistoryIndex();
+      currentHref.current = window.location.pathname + window.location.search;
+    }
+    const onPopState = (event: PopStateEvent) => {
+      if (restoringHistory.current) {
+        restoringHistory.current = false;
+        return;
+      }
+      const {tasks, onOpenTask, onCreateTask, onBeforeNavigate} = historyHandlers.current;
+      const entry = workspaceHistoryEntry(event.state);
+      const url = new URL(window.location.href);
+      const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
+      if (url.pathname !== "/personal" && !isTaskLink) return;
+      const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
+      const wantsCreate = isTaskLink ? !url.searchParams.has("id") : url.searchParams.get("create") === "todo";
+      let allowed;
+      if (task && onOpenTask) allowed = onOpenTask(task);
+      else if (wantsCreate && onCreateTask) allowed = onCreateTask();
+      else allowed = onBeforeNavigate?.();
+      if (allowed === false) {
+        const active = currentHistory.current;
+        const nativeIndex = browserHistoryIndex();
+        const delta = nativeIndex !== null && currentBrowserIndex.current !== null
+          ? currentBrowserIndex.current - nativeIndex
+          : active && entry?.scope === active.scope ? active.index - entry.index : null;
+        // Reverse the traversal instead of pushing a replacement, which would
+        // discard Forward entries. Native indexes also cover pre-marker entries.
+        if (delta !== null && delta !== 0) {
+          restoringHistory.current = true;
+          window.history.go(delta);
+        } else {
+          // Older browsers cannot locate an unmarked history entry. Retain the
+          // current draft and URL without a reload, guessed direction or new entry.
+          window.history.replaceState(currentHistoryState.current, '', currentHref.current);
+          currentBrowserIndex.current = browserHistoryIndex();
+        }
+        return;
+      }
+      if (isTaskLink && !task && !wantsCreate) {
+        window.location.replace(url.pathname + url.search);
+        return;
+      }
+      setPage(isTaskLink ? "tasks" : readWorkspacePage(url.searchParams.get("page")));
+      setFilter(defaultFilter);
+      setMobileOpen(false);
+      setFiltersOpen(false);
+      setDetailId(null);
+      currentHref.current = url.pathname + url.search;
+      currentBrowserIndex.current = browserHistoryIndex();
+      currentHistory.current = entry ?? {scope: crypto.randomUUID(), index: 0};
+      if (!entry) window.history.replaceState({...window.history.state, [workspaceHistoryKey]: currentHistory.current}, '', currentHref.current);
+      currentHistoryState.current = window.history.state;
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [props.syncUrl]);
   function navigate(
     next: WorkspacePage,
     areaId: string | null = null,
     projectId: string | null = null,
   ) {
-    if (unavailablePage) {
-      window.location.assign(workspaceHref(next));
-      return;
+    if (restoringHistory.current || props.onBeforeNavigate?.() === false) return false;
+    if (props.onNavigatePage) {
+      props.onNavigatePage(next);
+      return true;
     }
-    if (props.onLeaveTaskInline?.() === false) return false;
+    if (unavailablePage || contentPage) {
+      window.location.assign(workspaceHref(next));
+      return true;
+    }
+    if (props.syncUrl) {
+      const href = workspaceHref(next);
+      if (window.location.pathname + window.location.search !== href) {
+        const active = currentHistory.current;
+        const entry = {scope: active?.scope ?? crypto.randomUUID(), index: (active?.index ?? 0) + 1};
+        window.history.pushState({...window.history.state, [workspaceHistoryKey]: entry}, '', href);
+        currentHistory.current = entry;
+        currentHistoryState.current = window.history.state;
+        currentBrowserIndex.current = browserHistoryIndex();
+      }
+      currentHref.current = href;
+    }
     setPage(next);
     setFilter({ ...defaultFilter, areaId, projectId });
     setMobileOpen(false);
@@ -181,12 +302,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   }
   function openTask(task: TaskRow, button?: HTMLButtonElement) {
     if (props.onOpenTask) {
-      props.onOpenTask({ id: task.id, revision: task.revision });
-      return;
+      return props.onOpenTask({ id: task.id, revision: task.revision }, button);
     }
-    if (props.onLeaveTaskInline?.() === false) return;
+    if (props.onBeforeNavigate?.() === false) return false;
     returnFocus.current = button ?? tableViewButton.current;
     setDetailId(task.id);
+    return true;
   }
   function toggleTask(task: TaskRow) {
     if (!canWrite || !props.onSetTaskStatus || pendingIds.has(task.id)) return;
@@ -202,10 +323,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <Button
             variant="ghost"
             key={id}
-            className={!unavailablePage && page === id ? "is-current" : ""}
+            className={!unavailablePage && !contentPage && page === id ? "is-current" : ""}
             title={collapsed ? label : undefined}
             aria-label={label}
-            aria-current={!unavailablePage && page === id ? "page" : undefined}
+            aria-current={!unavailablePage && !contentPage && page === id ? "page" : undefined}
+            data-workspace-nav
             onClick={() => navigate(id)}
           >
             <Icon size={19} />
@@ -220,6 +342,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           title={collapsed ? "设置" : undefined}
           className={page === "settings" ? "is-current" : ""}
           aria-current={page === "settings" ? "page" : undefined}
+          data-workspace-nav
           onClick={() => navigate("settings")}
         >
           <Settings size={19} />
@@ -242,8 +365,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     </>
   );
   function taskCard(task: TaskRow, board = false, overview = false) {
-    const inlineEdit = overview && canWrite && !!props.onEditTaskInline && !pendingIds.has(task.id);
-    const edit = (trigger: HTMLElement) => props.onEditTaskInline?.(task, trigger);
     return (
       <article
         className={board ? "lo-board-card" : overview ? "lo-task-row lo-overview-task" : "lo-task-row"}
@@ -255,10 +376,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           aria-label={`${task.status === "done" ? "重新打开" : "完成"}：${task.title}`}
           aria-busy={pendingIds.has(task.id)}
           disabled={
-            !canWrite || !!props.inlineTask ||
+            !canWrite ||
             !props.onSetTaskStatus ||
-            pendingIds.has(task.id) ||
-            task.status === "cancelled"
+            pendingIds.has(task.id)
           }
           onClick={() => toggleTask(task)}
         >
@@ -268,25 +388,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span className="lo-unchecked" />
           )}
         </Button>
-        <Button
-          variant="ghost"
+        <TaskTitleField
+          task={task}
+          writable={canWrite}
+          blocked={!!props.saving || !!props.uncertain || pendingIds.has(task.id)}
+          onSave={props.onSaveTask}
+          getTaskFields={props.getTaskFields}
+          draftMemory={props.taskCellDraftMemory}
           className="lo-task-title"
-          aria-label={`${inlineEdit ? "就地编辑" : "查看待办"}：${task.title}`}
-          aria-keyshortcuts={inlineEdit ? "Enter F2" : undefined}
-          onClick={(event) => {
-            if (!inlineEdit) openTask(task, event.currentTarget);
-            else if (event.detail === 0) edit(event.currentTarget);
-          }}
-          onDoubleClick={inlineEdit ? (event) => edit(event.currentTarget) : undefined}
-          onKeyDown={inlineEdit ? (event) => {
-            if (event.key === "F2") {event.preventDefault();edit(event.currentTarget);}
-          } : undefined}
-        >
-          <span>{task.title}</span>
-          {task.referenceChanged && (
-            <AlertTriangle size={15} aria-label="关联待核对" />
-          )}
-        </Button>
+          onOpen={openTask}
+        />
         <span className="lo-task-date">{task.dueOn ?? "—"}</span>
         {!board && (
           <span className="lo-task-project">{task.project?.title ?? "—"}</span>
@@ -294,10 +405,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <Badge variant="outline" className="lo-task-status">
           {statusLabels[task.status]}
         </Badge>
-        {overview && <div className="lo-overview-task-actions">
-          {inlineEdit && <Button variant="ghost" className="lo-icon-button" aria-label={`编辑：${task.title}`} title="就地编辑" onClick={event => edit(event.currentTarget)}><Pencil size={16}/></Button>}
+        <div className="lo-task-actions">
           <Button variant="ghost" className="lo-icon-button" aria-label={`展开详情：${task.title}`} title="展开详情" onClick={event => openTask(task,event.currentTarget)}><ArrowUpRight size={17}/></Button>
-        </div>}
+        </div>
       </article>
     );
   }
@@ -313,6 +423,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           onSave={props.onSaveTask}
           getTaskFields={props.getTaskFields}
           draftMemory={props.taskCellDraftMemory}
+          onSetTaskStatus={props.onSetTaskStatus}
           onOpen={(task, trigger) => openTask(task, trigger)}
         />
       );
@@ -383,9 +494,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     <div
       data-lifeos-surface="personal"
       className={`lo-shell ${collapsed ? "lo-is-collapsed" : ""}`}
+      onMouseDownCapture={event => {
+        const target = event.target as Element;
+        if (target.closest?.("[data-workspace-nav], a[href]") && document.activeElement?.matches("input, textarea, select")) event.preventDefault();
+      }}
       onClickCapture={event => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
         const href = (event.target as Element).closest?.('a[href]')?.getAttribute("href");
-        if (href && !href.startsWith("#") && (props.saving || props.uncertain || props.onLeaveTaskInline?.() === false)) {
+        if (href && !href.startsWith("#") && (props.saving || props.uncertain || props.onBeforeNavigate?.() === false)) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -407,6 +523,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           variant="ghost"
           className="lo-brand"
           aria-label="LifeOS 总览"
+          data-workspace-nav
           onClick={() => navigate("overview")}
         >
           LifeOS
@@ -433,7 +550,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
         <main id="personal-main" className="lo-main">
-          <div className={page === "settings" ? "lo-content lo-content-settings" :
+          <div className={contentPage ? "lo-content lo-content-account" : page === "settings" ? "lo-content lo-content-settings" :
             (page === "tasks" || page === "inbox") && view === "table" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
@@ -450,18 +567,17 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
             <div className="lo-page-actions">
-              {page !== "settings" && !unavailablePage && onRefresh && (
+              {page !== "settings" && !unavailablePage && !contentPage && onRefresh && (
                 <Button
                   variant="ghost"
                   className="lo-icon-button"
                   aria-label="刷新数据"
-                  disabled={!!props.inlineTask}
                   onClick={onRefresh}
                 >
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {page !== "settings" && !unavailablePage && (
+              {page !== "settings" && !unavailablePage && !contentPage && (
                 <span
                   title={
                     !canWrite
@@ -485,14 +601,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
           </div>
-          {unavailablePage ? (
+          {contentPage ? contentPage.content : unavailablePage ? (
             <p className="lo-unavailable" role="status">{unavailablePage.message}</p>
           ) : <>
           {props.testLabel && (
             <div className="lo-test-label">{props.testLabel}</div>
           )}
-          {props.undoDeadline && props.undoDeadline > undoNow && props.onUndoTaskStatus && <div role="status" className={`lo-undo-notice ${taskEditorStyles.undo}`}>状态已更新 <Button variant="ghost" disabled={!canWrite || !!props.inlineTask} onClick={props.onUndoTaskStatus}>撤销</Button></div>}
-          {props.mutationError && (!props.inlineTask || state.status !== "ready") && (
+          {props.undoDeadline && props.undoDeadline > undoNow && props.onUndoTaskStatus && <div role="status" className={`lo-undo-notice ${taskEditorStyles.undo}`}>状态已更新 <Button variant="ghost" disabled={!canWrite} onClick={props.onUndoTaskStatus}>撤销</Button></div>}
+          {props.mutationError && (
             <div className="lo-inline-error" role="alert">
               <AlertTriangle size={17} />
               {props.mutationError}
@@ -510,28 +626,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   {label:"待办",value:metrics.pending,metric:"pending"},
                   {label:"今日到期",value:metrics.dueToday,metric:"today"},
                   {label:"已逾期",value:metrics.overdue,metric:"overdue"},
-                  {label:"项目",value:data?.coverage === "complete" ? data.projects.length : null,metric:"projects"},
+                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
                 ] as const).map(({label,value,metric}) => (
-                  <button key={label} className="lo-metric" aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
+                  <button key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
                     <span>{label}</span><strong>{value === null ? "—" : value}</strong>
                   </button>
                 ))}
               </section>
               <div className="lo-overview-grid">
-                <section className="lo-panel" hidden={state.status !== "ready" && !props.inlineTask}>
+                <section className="lo-panel" hidden={state.status !== "ready"}>
                   <div className="lo-panel-heading">
                     <h2>待办</h2>
-                    <Button variant="ghost" aria-label="查看全部待办" onClick={() => navigate("tasks")}>
-                      <ArrowUpRight size={18} />
+                    <Button variant="ghost" aria-label="查看全部待办" data-workspace-nav onClick={() => navigate("tasks")}>
+                      <span>查看全部{metrics.pending === null ? "" : ` ${metrics.pending} 项`}</span><ArrowUpRight size={18} />
                     </Button>
                   </div>
                   <div className="lo-overview-task-list">
-                    {[
-                      ...overviewTasks.slice(0, inlineRow).map(task => taskCard(task, false, true)),
-                      props.inlineTask && <div className="lo-overview-editor" key="inline-editor">{props.inlineTask.content}</div>,
-                      ...overviewTasks.slice(inlineRow).map(task => taskCard(task, false, true)),
-                    ]}
+                    {overviewTasks.map(task => taskCard(task, false, true))}
                   </div>
+                  {metrics.pending !== null && metrics.pending > overviewTasks.length && <p className="lo-overview-preview-note">显示前 {overviewTasks.length} 项待办</p>}
                   {metrics.pending === 0 && <div className="lo-empty-compact">暂无待办</div>}
                 </section>
                 {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : (
@@ -573,21 +686,23 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {state.status === "ready" && (
                   <section className="lo-panel lo-project-overview">
                     <div className="lo-panel-heading">
-                      <h2>项目</h2>
+                      <h2>推进中项目</h2>
                       <Button
                         variant="ghost"
                         aria-label="查看全部项目"
+                        data-workspace-nav
                         onClick={() => navigate("projects")}
                       >
                         <ArrowUpRight size={18} />
                       </Button>
                     </div>
-                    {data?.projects.length ? (
-                      data.projects.slice(0, 5).map((project) => (
+                    {activeProjects.length ? (
+                      activeProjects.slice(0, 5).map((project) => (
                         <Button
                           variant="ghost"
                           key={project.id}
                           className="lo-project-line"
+                          data-workspace-nav
                           onClick={() => navigate("tasks", null, project.id)}
                         >
                           <Folder size={18} />
@@ -599,7 +714,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                         </Button>
                       ))
                     ) : (
-                      <div className="lo-empty-compact">暂无项目</div>
+                      <div className="lo-empty-compact">暂无推进中的项目</div>
                     )}
                   </section>
               )}
@@ -609,10 +724,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <>
               {page === "tasks" && (
                 <details className="lo-task-categories">
-                  <summary>分类管理</summary>
+                  <summary>管理项目与领域</summary>
                   <div className="lo-category-entries">
-                    <Button variant="outline" onClick={() => navigate("areas")}>领域</Button>
-                    <Button variant="outline" onClick={() => navigate("projects")}>项目</Button>
+                    <Button variant="outline" data-workspace-nav onClick={() => navigate("areas")}>管理领域</Button>
+                    <Button variant="outline" data-workspace-nav onClick={() => navigate("projects")}>管理项目</Button>
                     <CategoryEntries allowedTypes={access.allowedTypes} writable={canWrite && pendingIds.size === 0 && !props.mutationError} className="lo-category-entries"/>
                   </div>
                 </details>
@@ -640,8 +755,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                       aria-pressed={view === id}
                       className={view === id ? "is-active" : ""}
                       key={id}
+                      data-workspace-nav
                       ref={id === "table" ? tableViewButton : undefined}
                       onClick={() => {
+                        if (view !== id && props.onBeforeNavigate?.() === false) return;
                         setView(id);
                       }}
                     >
@@ -922,8 +1039,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         >
           <DialogTitle>帮助</DialogTitle>
           <DialogDescription>待办使用方式</DialogDescription>
-          <p>在总览双击待办标题就地编辑，也可以点标题旁的编辑按钮。点展开按钮查看详情。</p>
-          <p>切到待办的表格视图，可点击列标题排序，双击标题、到期日或状态可直接修改该字段。</p>
+          <ol className="lo-help-steps">
+            <li>表格中双击标题、日期或状态，直接修改这个字段。</li>
+            <li>点展开，查看并修改完整待办。</li>
+            <li>点击列标题排序，拖动列边界调整宽度。</li>
+          </ol>
         </DialogContent>
       </Dialog>
     </div>

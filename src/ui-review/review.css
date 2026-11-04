@@ -1,9 +1,10 @@
 .lo-shell {
   background: var(--background);
   color: var(--foreground);
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   font: var(--lo-font-body);
-  isolation: isolate;
 }
 .lo-shell * {
   box-sizing: border-box;
@@ -126,12 +127,13 @@
 .lo-body {
   display: grid;
   grid-template-columns: var(--lo-sidebar-width) minmax(0, 1fr);
-  min-height: calc(100dvh - var(--lo-header-height));
+  height: calc(100dvh - var(--lo-header-height));
+  min-height: 0;
 }
 .lo-sidebar {
-  position: sticky;
-  top: var(--lo-header-height);
-  height: calc(100dvh - var(--lo-header-height));
+  position: relative;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 20px 12px 14px;
@@ -192,10 +194,15 @@
   display: none;
 }
 .lo-shell .lo-main {
+  isolation: isolate;
   max-width: none;
   width: 100%;
   min-width: 0;
   margin: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--lo-content-padding);
 }
 .lo-page-heading {
@@ -535,7 +542,7 @@
 }
 .lo-task-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 108px 150px 92px;
+  grid-template-columns: 44px minmax(0, 1fr) 108px 130px 92px 44px;
   gap: 12px;
   align-items: center;
   padding: 8px 16px;
@@ -560,7 +567,8 @@
   border: 1px solid var(--input);
   border-radius: 4px;
 }
-.lo-shell .lo-task-title {
+.lo-shell .lo-task-title,
+.lo-shell .lo-task-title button {
   display: flex;
   justify-content: flex-start;
   align-items: center;
@@ -900,7 +908,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .lo-overview-grid .lo-task-row {
-    grid-template-columns: 32px minmax(0, 1fr) 108px 150px 92px;
+    grid-template-columns: 44px minmax(0, 1fr) 108px 130px 92px 44px;
   }
   .lo-overview-grid .lo-task-project,
   .lo-overview-grid .lo-task-status {
@@ -943,7 +951,8 @@
   .lo-body,
   .lo-is-collapsed .lo-body {
     display: block;
-    min-height: calc(100dvh - 56px);
+    height: calc(100dvh - var(--lo-header-height));
+    min-height: 0;
   }
   .lo-sidebar {
     display: none;
@@ -1233,8 +1242,8 @@
 
 /* Shared workspace rhythm; details retain their own scroll and focus boundary. */
 .lo-header{padding-inline:var(--lo-content-padding);gap:16px}
-.lo-sidebar{overflow-y:auto;overscroll-behavior:contain;gap:24px}
-.lo-nav{flex:1;align-content:start}.lo-sidebar-bottom{flex:none}
+.lo-sidebar{overflow:hidden;gap:24px}
+.lo-nav{flex:1;min-height:0;align-content:start;overflow-y:auto;overscroll-behavior:contain}.lo-sidebar-bottom{flex:none}
 .lo-content{overflow-wrap:anywhere}.lo-panel,.lo-settings,.lo-board-card{border-radius:var(--lo-radius-surface)}
 .lo-result-count,.lo-source-summary,.lo-nav-count,.lo-task-date,.lo-task-project{font-size:14px}
 .lo-metrics strong{font-variant-numeric:tabular-nums}.lo-task-title{text-align:left}
@@ -1261,5 +1270,21 @@
   padding-block: 6px;
 }
 .lo-overview-grid .lo-overview-task .lo-task-status { display: none; }
-.lo-overview-task-actions { display: flex; grid-column: 4; }
-.lo-overview-editor { min-width: 0; }
+.lo-task-actions { display: flex; }
+.lo-overview-task .lo-task-actions { grid-column: 4; grid-row: 1; }
+.lo-overview-preview-note { padding: 8px 16px; color: var(--muted-foreground); font-size: 14px; }
+.lo-task-title > button { width: 100%; }
+.lo-task-title { min-width: 0; }
+.lo-content-account { max-width: 1000px; }
+.lo-help-steps { margin: 12px 0 0; padding-left: 24px; }
+.lo-help-steps li { margin-block: 8px; line-height: 1.65; }
+.lo-content-account .lo-heading-title { width: 100%; }
+@media (max-width: 850px) {
+  .lo-task-row { grid-template-columns: 44px minmax(0, 1fr) 90px 44px; }
+  .lo-task-row .lo-task-actions { grid-column: 4; grid-row: 1; }
+  .lo-task-row .lo-task-status { grid-column: 2; }
+}
+@media (max-height: 480px) {
+  .lo-sidebar { padding-block: 8px; gap: 8px; }
+  .lo-sidebar-bottom { padding-top: 8px; }
+}

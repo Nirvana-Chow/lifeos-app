@@ -5,11 +5,12 @@ const secondId='33333333-3333-4333-8333-333333333333';
 const id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';const flush=async()=>{for(let i=0;i<8;i++)await new Promise<void>(r=>setImmediate(r));};
 function fixture(){let owner='fixture-owner',space='fixture-space',writable=true,mode:'save'|'reject'|'unknown'='save',revision=3,title='Original',notes='Body',gate:Promise<void>|null=null,release:()=>void=()=>{},second=false;const storage=new Map<string,string>(),requests:any[]=[],receipts=new Map<string,any>();
  const entry=()=>({id,kind:'todo',draft:{title,notes,dueOn:null,status:'open'},source:{id:sourceId,system:'website',externalId:id,version:1,asOf:'2026-10-27T00:00:00Z',original:{marker:'personal-manual-v1',spaceId:space,type:'todo',input:{}}},revision,syncState:'draft',externalStatus:null});
- const fetcher:typeof fetch=async(input,init)=>{const path=String(input);if(path.endsWith('/availability'))return Response.json({configured:true,loginAllowed:true,https:true});if(path.endsWith('/status'))return Response.json({scope:'personal-manual-candidate',ownerId:owner,spaceId:space,storageVerified:true,writable,allowedTypes:['todo']});if(path.includes('/overview'))return Response.json({items:[entry(),...(second?[{...entry(),id:secondId,draft:{...entry().draft,title:'Original B'},source:{...entry().source,id:'44444444-4444-4444-8444-444444444444',externalId:secondId}}]:[])],total:second?2:1,scope:'full-current-snapshot',truncated:false,today:new URL(path,'https://fixture.invalid').searchParams.get('today'),observedAt:'2026-10-27T00:00:00Z'});if(path.endsWith('/todo/'+id)&&init?.method==='PATCH'){const key=new Headers(init.headers).get('idempotency-key')!,body=JSON.parse(String(init.body));requests.push({key,body});if(gate)await gate;if(mode==='reject')return Response.json({error:{code:'INVALID_PERSONAL_FIELDS'}},{status:400});const duplicate=receipts.has(key);if(!duplicate){title=body.fields.title;notes=body.fields.notes;revision=body.expectedRevision+1;receipts.set(key,{...entry(),draft:body.fields});}if(mode==='unknown'){mode='save';throw Error('lost receipt');}return Response.json({entry:receipts.get(key),duplicate});}throw Error('unexpected '+path);};
+ const fetcher:typeof fetch=async(input,init)=>{const path=String(input);if(path.endsWith('/availability'))return Response.json({configured:true,loginAllowed:true,https:true});if(path.endsWith('/status'))return Response.json({scope:'personal-manual-candidate',ownerId:owner,spaceId:space,storageVerified:true,writable,allowedTypes:['todo']});if(path.includes('/overview'))return Response.json({items:[entry(),...(second?[{...entry(),id:secondId,draft:{...entry().draft,title:'Original B'},source:{...entry().source,id:'44444444-4444-4444-8444-444444444444',externalId:secondId}}]:[])],total:second?2:1,scope:'full-current-snapshot',truncated:false,today:new URL(path,'https://fixture.invalid').searchParams.get('today'),observedAt:'2026-10-27T00:00:00Z'});if(path.endsWith('/todo/'+secondId)&&init?.method==='PATCH'){const key=new Headers(init.headers).get('idempotency-key')!,body=JSON.parse(String(init.body));requests.push({key,body});return Response.json({entry:{...entry(),id:secondId,draft:body.fields,revision:body.expectedRevision+1,source:{...entry().source,id:'44444444-4444-4444-8444-444444444444',externalId:secondId}},duplicate:false});}if(path.endsWith('/todo/'+id)&&init?.method==='PATCH'){const key=new Headers(init.headers).get('idempotency-key')!,body=JSON.parse(String(init.body));requests.push({key,body});if(gate)await gate;if(mode==='reject')return Response.json({error:{code:'INVALID_PERSONAL_FIELDS'}},{status:400});const duplicate=receipts.has(key);if(!duplicate){title=body.fields.title;notes=body.fields.notes;revision=body.expectedRevision+1;receipts.set(key,{...entry(),draft:body.fields});}if(mode==='unknown'){mode='save';throw Error('lost receipt');}return Response.json({entry:receipts.get(key),duplicate});}throw Error('unexpected '+path);};
  return{addSecond(){second=true;},fetcher,storage,requests,mode:(v:typeof mode)=>mode=v,hold(){gate=new Promise<void>(r=>release=r);},release(){gate=null;release();},writable:(v:boolean)=>writable=v,remoteEdit(){revision++;title='Newer remote title';},changeBinding(which:'owner'|'space'){if(which==='owner')owner='other-owner';else space='other-space';title='Other binding';}};
 }
-function harness(f: ReturnType<typeof fixture>) {
+function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='grid') {
   let changed = false, actions: any, visibleTable = true, allowDiscard = false, confirms = 0;
+  let titleButton:any;const titleButtons=new Map<string,any>();
   let gridProps: any, tableOptions: any, mounted = false, rowsVisible = true, inputElement: Element | null = null, optimisticWrites = 0;
   const excluded = new Set<string>();
   type Effect = { run: () => void | (() => void); deps?: any[]; cleanup?: () => void; pending: boolean };
@@ -87,6 +88,7 @@ function harness(f: ReturnType<typeof fixture>) {
         visit(column.cell({ row: { id: task.id, original: task }, column: { id: column.id }, getValue: () => column.accessorFn(task) }), `row-${task.id}/column-${column.id}`);
       }
     }
+    if(node.type==='button'&&node.props['aria-label']?.startsWith('编辑标题：')){titleButton=node;titleButtons.set(node.props['aria-label'],node);}
     if (node.type === 'selection') node.props.apiRef.current = { focusCell() {} };
     if (node.type === 'input' || node.type === 'select') {
       const key = path + '/' + node.type; visited.add(key);
@@ -105,9 +107,11 @@ function harness(f: ReturnType<typeof fixture>) {
     for (let i = 0; i < 12; i++) {
       changed = false; hostHooks.reset(); hostModule.ConnectedPersonalWorkspace({ children: (props: any) => { actions = props; return null; } });
       if (actions.state.status === 'ready' && visibleTable) {
-        mounted = true; tableHooks.reset(); currentHooks = tableHooks; visited = new Set(); inputElement = null;
+        mounted = true; tableHooks.reset(); currentHooks = tableHooks; visited = new Set(); inputElement = null;titleButtons.clear();
         const tasks = actions.state.data.tasks.filter((task: any) => !excluded.has(task.id) && (task.status === 'open' || task.status === 'in_progress')).map((task: any) => new Proxy(task, { set(target, key, value) { optimisticWrites++; return Reflect.set(target, key, value); } }));
-        visit(tableModule.TaskGrid({ tasks, writable: actions.access.writable && !actions.saving && !actions.uncertain, blocked: actions.saving || actions.uncertain, onSave: actions.onSaveTask, getTaskFields: actions.getTaskFields, draftMemory: actions.taskCellDraftMemory, onOpen() {} }));
+        const shared={writable:actions.access.writable&&!actions.saving&&!actions.uncertain,blocked:actions.saving||actions.uncertain,onSave:actions.onSaveTask,getTaskFields:actions.getTaskFields,draftMemory:actions.taskCellDraftMemory};
+        if(presentation==='grid')visit(tableModule.TaskGrid({...shared,tasks,onOpen(){}}));
+        else visit(tasks.map((task:any)=>({type:tableModule.TaskTitleField,props:{...shared,task},key:task.id})));
         for (const [key, component] of childHooks) if (!visited.has(key)) { component.dispose(); childHooks.delete(key); }
         for (const key of dom.keys()) if (!visited.has(key)) dom.delete(key);
         for (const component of childHooks.values()) component.effects();
@@ -123,7 +127,7 @@ function harness(f: ReturnType<typeof fixture>) {
     async complete() { inputElement?.fire('keydown', { key: 'Enter' }); await flush(); render(); },
   };
   return {
-    render, table: () => table, actions: () => actions, input: () => inputElement,
+    render, titleButton:(title?:string)=>title?titleButtons.get('编辑标题：'+title):titleButton, table: () => table, actions: () => actions, input: () => inputElement,
     activeElement: () => document.activeElement,
     confirm(value: boolean) { allowDiscard = value; }, confirms: () => confirms,
     exclude(taskId: string) { excluded.add(taskId); render(); },
@@ -188,4 +192,53 @@ test('same-session virtual row unmount and remount restore retained native text 
 test('status and date initialText never fabricate native values or mutations; real selection still saves',async()=>{
  const f=fixture(),h=await ready(f);h.table().startEditCell(1,1,'任');assert.equal(h.input()?.value,'未完成');assert.equal(h.actions().taskCellDraftMemory.read(),null);assert.equal(f.requests.length,0);h.input()!.fire('keydown',{key:'Escape'});h.render();
  h.table().startEditCell(2,1);h.type('2026-11-09');await h.table().complete();h.table().startEditCell(2,1,'x');assert.equal(h.input()?.value,'2026-11-09');assert.equal(h.actions().taskCellDraftMemory.read(),null);assert.equal(f.requests.length,1);h.type('2026-11-10');await h.table().complete();assert.equal(f.requests[1].body.fields.dueOn,'2026-11-10');h.table().startEditCell(1,1);h.type('进行中');await h.table().complete();assert.equal(f.requests[2].body.fields.status,'in_progress');h.dispose();
+});
+
+
+test('card title double-click edits only its field through the original native adapter',async()=>{
+ const f=fixture(),h=harness(f,'title');
+ try{
+  h.render();await flush();h.render();
+  h.titleButton().props.onDoubleClick();h.render();
+  assert.equal(h.input()?.attrs.get('aria-label'),'编辑待办');
+  assert.equal(h.input()?.value,'Original');
+  h.type('Updated card title');
+  assert.equal(h.actions().onBeforeNavigate(),false);
+  h.render();assert.equal(h.input()?.value,'Updated card title');
+  h.input()!.fire('keydown',{key:'Enter'});await flush();h.render();
+  assert.equal(h.input(),null);
+  assert.equal(f.requests.length,1);
+  assert.equal(f.requests[0].body.expectedRevision,3);
+  assert.deepEqual(f.requests[0].body.fields,{title:'Updated card title',notes:'Body',dueOn:null,status:'open'});
+ }finally{h.dispose();}
+});
+
+test('accepted card draft navigation closes the input without submitting and invalidates its old writer',async()=>{
+ const f=fixture(),h=harness(f,'title');
+ try{
+  h.render();await flush();h.render();h.titleButton().props.onDoubleClick();h.render();
+  h.type('Discarded title');h.confirm(true);
+  assert.equal(h.actions().onBeforeNavigate(),true);h.render();
+  assert.equal(h.input(),null);
+  assert.equal(h.actions().taskCellDraftMemory.read(),null);
+  assert.equal(f.requests.length,0);assert.equal(h.unload(),0);
+ }finally{h.dispose();}
+});
+
+
+test('switching cards after invalid text disposes the old editor before its DOM unmounts and keeps the new writer',async()=>{
+ const f=fixture();f.addSecond();const h=harness(f,'title');
+ try{
+  h.render();await flush();h.render();h.titleButton('Original').props.onDoubleClick();h.render();
+  h.type(' ');h.input()!.fire('keydown',{key:'Enter'});await flush();h.render();
+  const old=h.input()!;assert.equal(old.value,' ');assert.equal(f.requests.length,0);
+  h.confirm(true);h.titleButton('Original B').props.onDoubleClick();
+  // A stale element can receive a queued event before React removes it.
+  old.value='Ghost card update';old.fire('input');old.fire('keydown',{key:'Enter'});await flush();h.render();
+  assert.equal(f.requests.length,0);assert.equal(h.input()?.value,'Original B');
+  h.type('Saved card B');h.input()!.fire('keydown',{key:'Enter'});await flush();h.render();
+  assert.equal(f.requests.length,1);assert.equal(h.input(),null);
+  assert.equal(h.actions().state.data.tasks.find((task:any)=>task.id===secondId).title,'Saved card B');
+  assert.equal(h.actions().state.data.tasks.find((task:any)=>task.id===id).title,'Original');
+ }finally{h.dispose();}
 });

@@ -15,8 +15,8 @@ export type ReuiGridPresentation = {
 export function reuiGridRendered(f: ReuiGridPresentation): boolean {
   return f.renderer === 'reui' && f.failures === 0 && f.grids === 1 && f.visible && f.nativeTitle &&
     f.expectedRows > 0 && f.declaredRows === f.expectedRows + 1 && f.renderedRows > 0 && f.renderedRows <= f.expectedRows &&
-    JSON.stringify(f.headers) === JSON.stringify(['待办', '状态', '到期日', '项目', '领域', '详情']) &&
-    f.cellsPerRow.length === f.renderedRows && f.cellsPerRow.every(count => count === 6);
+    JSON.stringify(f.headers) === JSON.stringify(['待办', '状态', '到期日', '项目', '领域', '详情', '完成']) &&
+    f.cellsPerRow.length === f.renderedRows && f.cellsPerRow.every(count => count === 7);
 }
 export const taskGridRoot = (page: Page) => page.locator('[data-task-grid="reui"]');
 export const taskGridInput = (page: Page) => taskGridRoot(page).getByRole('textbox', { name: '编辑待办', exact: true });
@@ -42,7 +42,9 @@ export async function requireTaskGrid(page: Page, title: string, expectedRows = 
       grids: grids?.length ?? 0,
       expectedRows,
       declaredRows: Number(grid?.getAttribute('aria-rowcount') ?? 0),
-      headers: Array.from(grid?.querySelectorAll('thead th') ?? []).map(node => {
+      // Resizing adds a native, aria-hidden fill strip outside the semantic
+      // column model. Keep blank/extra business headers in the strict oracle.
+      headers: Array.from(grid?.querySelectorAll('thead th:not([data-slot="data-grid-table-fill-head-cell"][aria-hidden="true"])') ?? []).map(node => {
         const label = node.cloneNode(true) as HTMLElement;
         label.querySelectorAll('[aria-hidden="true"]').forEach(decoration => decoration.remove());
         return label.textContent?.trim() ?? '';
@@ -52,5 +54,5 @@ export async function requireTaskGrid(page: Page, title: string, expectedRows = 
       nativeTitle: rows.some(row => row.querySelector('td[aria-colindex="1"]')?.textContent?.trim() === title),
       visible: hasBox(root) && hasBox(grid) && hasBox(viewport) && rows.every(hasBox),
     };
-  }, { title, expectedRows })), { timeout: 5000, message: 'Selected ReUI grid must render the native six-column synthetic row model' }).toBe(true);
+  }, { title, expectedRows })), { timeout: 5000, message: 'Selected ReUI grid must render the native seven-column synthetic row model' }).toBe(true);
 }

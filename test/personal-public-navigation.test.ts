@@ -13,7 +13,7 @@ import * as workspaceSelectors from '../src/ui-review/selectors.ts';
 
 type Node = {type:unknown;props:Record<string,any>};
 const jsx={jsx:(type:unknown,props:Record<string,any>)=>({type,props}),jsxs:(type:unknown,props:Record<string,any>)=>({type,props}),Fragment:'fragment'};
-const react={useRef:(value:any)=>({current:value}),useState:(value:any)=>[value,()=>{}],useEffect:()=>{},useMemo:(fn:()=>unknown)=>fn()};
+const react={useRef:(value:any)=>({current:value}),useState:(value:any)=>[value,()=>{}],useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn()};
 function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{if(key.endsWith('/key-management-config'))return {keyManagementFlag};assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
 function find(node:any,predicate:(n:Node)=>boolean):Node|undefined{if(!node||typeof node!=='object')return;if(Array.isArray(node)){for(const item of node){const found=find(item,predicate);if(found)return found;}return;}return predicate(node)?node:find(node.props?.children,predicate);}
 const destinations:string[]=[];
@@ -22,10 +22,11 @@ test('public editor redirects anonymous and failed identity checks before render
 test('authenticated public editor validates type and id before opening the workspace',async()=>{const page=load('../app/personal/edit/page.tsx',{'react/jsx-runtime':jsx,'next/headers':{headers:async()=>new Headers()},'next/navigation':{redirect:()=>{throw Error('unexpected redirect');}},'../../../src/platform/runtime':{readPlatformPagePrincipal:async()=>({id:'synthetic-owner'})},'../../../src/personal-candidate/workspace':{PersonalWorkspace:'private-workspace'},'../../../src/personal-candidate/live-workspace':{LivePersonalWorkspace:'task-workspace'},'../../../src/platform/domain':{validateId}});for(const [query,expectedType,expectedId] of [[{type:'project',id},'project',id],[{type:'invalid',id:'bad'},'todo','bad'],[{},'todo',undefined]] as const){const result=await page.default({searchParams:Promise.resolve(query)});if(expectedType==='todo'){assert.equal(result.type,'task-workspace');assert.equal(result.props.initialPage,'tasks');assert.equal(result.props.initialTaskId,expectedId);assert.equal(result.props.initialCreateTask,expectedId===undefined);}else{assert.equal(result.type,'private-workspace');assert.equal(result.props.initialType,expectedType);assert.equal(result.props.initialId,expectedId);}}});
 test('personal task actions open explicit local create/edit targets without document navigation',()=>{
  destinations.length=0;let target:any=null;const TaskEditor=()=>null;
- const localController={getEditorBinding:()=>({ownerId:'fixture-owner',spaceId:'fixture-space'}),getTaskEntry:()=>null,getRelationOptions:()=>({})};
- const hooks={...react,useRef:(initial:any)=>({current:initial===null?localController:initial}),useState:(initial:any)=>initial?.state?[{...initial,state:{status:'ready',data:{tasks:[]}}},()=>{}]:[target,(next:any)=>{target=next;} ]};
+ const localController={getSnapshot:()=>({saving:false,uncertain:false}),getEditorBinding:()=>({ownerId:'fixture-owner',spaceId:'fixture-space'}),getTaskEntry:()=>null,getRelationOptions:()=>({})};
+ let refCursor=0;
+ const hooks={...react,useRef:(initial:any)=>({current:refCursor++===0?localController:initial}),useState:(initial:any)=>initial?.state?[{...initial,state:{status:'ready',data:{tasks:[]}}},()=>{}]:[target,(next:any)=>{target=next;} ]};
  const module=load('../src/personal-candidate/connected-workspace.tsx',{'react/jsx-runtime':jsx,'react-dom':{flushSync:(fn:()=>void)=>fn()},react:hooks,'./workspace-controller':{PersonalWorkspaceController:class {}},'./task-editor':{TaskEditor},'./task-editor.module.css':{default:{}},'./editor':{editorFromEntry},'./task-editor-state':{resolveTaskTarget},'./task-cell-draft':{TaskCellDraftMemory}});
- let actions:any;const render=()=>module.ConnectedPersonalWorkspace({children:(value:any)=>{actions=value;return null;}});
+ let actions:any;const render=()=>{refCursor=0;return module.ConnectedPersonalWorkspace({children:(value:any)=>{actions=value;return null;}});};
  render();actions.onCreateTask();let tree=render();assert.deepEqual(find(tree,n=>n.type===TaskEditor)?.props.target,{mode:'create'});
  actions.onOpenTask({id:'a/b',revision:3});tree=render();assert.deepEqual(find(tree,n=>n.type===TaskEditor)?.props.target,{mode:'edit',task:{id:'a/b',revision:3}});assert.deepEqual(destinations,[]);
 });
@@ -87,10 +88,127 @@ test('legacy journal manager sends todo to the canonical shell after dirty and r
 
 test('collapsed personal navigation keeps available tooltips and hides journal and schedule',()=>{
  const states:any[]=[];let cursor=0;const hooks={...react,useState:(initial:any)=>{const at=cursor++;if(!(at in states))states[at]=typeof initial==='function'?initial():initial;return[states[at],(value:any)=>{states[at]=value;}];}};
- const nativeRequire=createRequire(import.meta.url),workspace=load('../src/ui-review/workspace.tsx',{'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),'./ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},'./ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},'./selectors':workspaceSelectors,'./task-table':{},'./overview-chart':{},'./review.css':{},'../workbench/private-navigation':privateNavigation,'../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{},'./source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}}});
+ const nativeRequire=createRequire(import.meta.url),workspace=load('../src/ui-review/workspace.tsx',{'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),'./ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},'./ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},'./selectors':workspaceSelectors,'./task-table':{},'./task-grid':{TaskTitleField:'title-field'},'./overview-chart':{},'./review.css':{},'../workbench/private-navigation':privateNavigation,'../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{},'./source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}}});
  const render=()=>{cursor=0;return workspace.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null}});};
  let tree=render();
  find(tree,n=>n.props['aria-label']==='收起侧栏')!.props.onClick();tree=render();
  for(const label of ['待办','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
  for(const path of ['schedule','journal'] as const)assert.equal(find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path]),undefined);
+});
+
+test('a parent commit during popstate keeps the subscribed listener and reads committed guards and tasks',()=>{
+ type Effect={deps:unknown[]|undefined;run:()=>void|(()=>void);cleanup?:()=>void;pending:boolean;layout:boolean};
+ const values:any[]=[],effects=new Map<number,Effect>();
+ let cursor=0;
+ const same=(a:unknown[]|undefined,b:unknown[]|undefined)=>!!a&&!!b&&a.length===b.length&&a.every((v,i)=>Object.is(v,b[i]));
+ function effect(run:Effect['run'],deps:unknown[]|undefined,layout:boolean){
+  const at=cursor++,previous=effects.get(at);
+  if(!previous||!same(previous.deps,deps))effects.set(at,{deps,run,cleanup:previous?.cleanup,pending:true,layout});
+ }
+ function flush(layout:boolean){
+  for(const item of effects.values())if(item.pending&&item.layout===layout){
+   item.pending=false;
+   item.cleanup?.();
+   item.cleanup=item.run()||undefined;
+  }
+ }
+ const hooks={
+  ...react,
+  useRef(initial:unknown){const at=cursor++;return values[at]??(values[at]={current:initial});},
+  useState(initial:any){
+   const at=cursor++;
+   if(!(at in values))values[at]=typeof initial==='function'?initial():initial;
+   return [values[at],(next:any)=>{values[at]=typeof next==='function'?next(values[at]):next;}];
+  },
+  useMemo(fn:()=>unknown){cursor++;return fn();},
+  useEffect(run:Effect['run'],deps?:unknown[]){effect(run,deps,false);},
+  useLayoutEffect(run:Effect['run'],deps?:unknown[]){effect(run,deps,true);},
+ };
+ type Registration={type:string;callback:Function;removed:boolean};
+ const registrations:Registration[]=[];
+ const add=(type:string,callback:Function)=>{
+  if(!registrations.some(item=>item.type===type&&item.callback===callback&&!item.removed))registrations.push({type,callback,removed:false});
+ };
+ const remove=(type:string,callback:Function)=>{
+  for(const item of registrations)if(item.type===type&&item.callback===callback)item.removed=true;
+ };
+ let location=new URL('https://fixture.invalid/personal'),nativeIndex=0;
+ const replaced:string[]=[],guards:string[]=[],opened:unknown[]=[];
+ const history={
+  state:{__lifeosWorkspace:{scope:'fixture-history',index:0}},
+  replaceState(state:any,_title:string,href:string){this.state=state;location=new URL(href,location);},
+  pushState(state:any,_title:string,href:string){this.state=state;location=new URL(href,location);nativeIndex++;},
+  go(){assert.fail('This accepted traversal must not request a history correction');},
+ };
+ const browser={
+  history,
+  location:{
+   get href(){return location.href;},
+   get pathname(){return location.pathname;},
+   get search(){return location.search;},
+   replace(href:string){replaced.push(href);},
+  },
+  navigation:{get currentEntry(){return {index:nativeIndex};}},
+  addEventListener:add,
+  removeEventListener:remove,
+ };
+ const ready=(tasks:unknown[])=>({status:'ready',data:{tasks,areas:[],projects:[],coverage:'complete',today:'2030-11-02',asOf:'2030-11-02T00:00:00Z'}});
+ let props:any={
+  syncUrl:true,state:ready([]),access:{authenticated:true,writable:true,loginAllowed:true},
+  onBeforeNavigate:()=>{guards.push('old');return true;},
+  onOpenTask:(task:unknown)=>{opened.push({old:task});return true;},
+ };
+ let workspace:any,tree:any,churn:(()=>void)|null=null;
+ function render(passive=true){
+  cursor=0;
+  tree=workspace.LifeOSWorkspace(props);
+  flush(true); // A committed layout update precedes passive subscription effects.
+  if(passive)flush(false);
+  return tree;
+ }
+ // The earlier router listener commits new parent props during the same native dispatch.
+ add('popstate',()=>churn?.());
+ const nativeRequire=createRequire(import.meta.url);
+ workspace=load('../src/ui-review/workspace.tsx',{
+  'react/jsx-runtime':jsx,react:hooks,'lucide-react':nativeRequire('lucide-react'),
+  './ui/button':{Button:'button'},'./ui/input':{Input:'input'},'./ui/badge':{Badge:'badge'},
+  './ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'dialog-title',DialogDescription:'dialog-description'},
+  './selectors':workspaceSelectors,'./task-table':{TaskTable:'task-table'},'./task-grid':{TaskTitleField:'title-field'},
+  './overview-chart':{OverviewChart:'chart'},'./review.css':{},'../workbench/private-navigation':privateNavigation,
+  '../workbench/theme-switch':{ThemeSwitch:'appearance-control'},'../personal-candidate/category-entries':{CategoryEntries:'categories'},
+  './source-summary':{},'../personal-candidate/task-editor.module.css':{default:{}},
+ },browser);
+ render();
+ const subscribed=registrations.filter(item=>item.type==='popstate'&&!item.removed).at(-1)!.callback;
+ function traverse(href:string,index:number){
+  location=new URL(href,location);
+  nativeIndex=index;
+  history.state={__lifeosWorkspace:{scope:'fixture-history',index}};
+  const event={state:history.state};
+  // Native dispatch snapshots registrations. Removed listeners do not run,
+  // and listeners added during this dispatch begin with the next event.
+  for(const item of registrations.filter(item=>item.type==='popstate'&&!item.removed)){
+   if(!item.removed)item.callback(event);
+  }
+ }
+ churn=()=>{
+  props={...props,state:ready([]),onBeforeNavigate:()=>{guards.push('committed');return true;}};
+  render();
+ };
+ traverse('/personal?page=settings',1);
+ assert.deepEqual(guards,['committed'],'The same popstate must reach the workspace with the latest committed guard');
+ assert.equal(find(render(),node=>node.type==='h1')?.props.children,'设置');
+ assert.equal(registrations.filter(item=>item.type==='popstate'&&!item.removed).at(-1)!.callback,subscribed);
+
+ const latestTask={id,revision:9,title:'Synthetic task',notes:'',status:'open',dueOn:null,area:null,project:null,inInbox:null,sourceLabel:null};
+ churn=()=>{
+  props={...props,state:ready([latestTask]),onOpenTask:(task:unknown)=>{opened.push(task);return true;}};
+  render(false); // The history handler must see layout-committed data before passive effects flush.
+ };
+ traverse('/personal/edit?type=todo&id='+id,2);
+ assert.equal(opened.length,1);
+ assert.deepEqual({id:(opened[0] as any).id,revision:(opened[0] as any).revision},{id,revision:9});
+ assert.deepEqual(replaced,[],'A newly committed task must not fall through to missing-record document navigation');
+ flush(false);
+ for(const item of effects.values())item.cleanup?.();
 });

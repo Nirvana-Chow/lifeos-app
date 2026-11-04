@@ -25,39 +25,6 @@
 .detail dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:0}
 .detail dt{color:var(--muted-foreground);font-size:var(--lo-font-small,14px)}
 .detail dd{margin:4px 0 0}
-.editor button.primaryAction{background:var(--primary);color:var(--primary-foreground)}
 
 .editor input[type="date"]::-webkit-calendar-picker-indicator{width:22px;height:22px;cursor:pointer}
 .editor .row :is(input[type="date"],select){height:46px;padding-block:0}
-
-.inline {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: none;
-  height: auto;
-  max-height: none;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--lo-radius-control);
-}
-.inline .header,
-.inline .body,
-.inline .footer {
-  padding: 12px 16px;
-}
-.inline .header {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-.inline .header h3 {
-  margin: 0;
-  font-size: var(--lo-font-small, 14px);
-  font-weight: 600;
-}
-.inline .body {
-  overflow: visible;
-}
-.inline .row {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
-  gap: 0 12px;
-}
