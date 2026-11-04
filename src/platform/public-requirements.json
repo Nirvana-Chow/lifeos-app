@@ -227,7 +227,7 @@
     },
     {
       "id": "LO-REQ-001",
-      "version": 1,
+      "version": 2,
       "title": "范围与验收",
       "description": "计划、实现与实际验收分别记录。",
       "status": "in_progress",
@@ -241,7 +241,9 @@
       "acceptanceCriteria": [
         "项目目标、当前阶段、下一步、实现状态及验收依据从同一基线读取。",
         "每个新增录入功能同步交付 Agent API、capability discovery 与 Skill，并以同一受测源码核验。",
-        "源码或 CI 不能自动设置本人已验收；新想法保留待排期，单独确认范围。"
+        "源码或 CI 不能自动设置本人已验收；新想法保留待排期，单独确认范围。",
+        "新工作先入需求池并保留来源、稳定ID、验收、优先级和依赖，查重拆分后再实施。",
+        "新输入追加旧未完成项，仅本人明确取消或替代才能移出范围。"
       ],
       "evidence": [
         {
@@ -425,7 +427,7 @@
     },
     {
       "id": "LO-JOURNAL-001",
-      "version": 1,
+      "version": 2,
       "title": "日记更正与保存恢复",
       "description": "保留原文和冻结请求，可靠更正日记。",
       "status": "in_progress",
@@ -437,7 +439,8 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "本地草稿恢复、自动保存和CAS冲突沿唯一写入适配器；关联项目、领域、人物及主题沿统一关联合同。"
       ],
       "evidence": [
         {
@@ -583,7 +586,7 @@
     },
     {
       "id": "LO-FIN-001",
-      "version": 1,
+      "version": 2,
       "title": "金额与转账语义",
       "description": "准确表达收入、支出、退款、转账和还款。",
       "status": "in_progress",
@@ -594,7 +597,9 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "真实导出保留账户/分类/覆盖截止，余额区分权威as_of、估算与未知；退款/转账/还款不混为消费。",
+        "无已验证钱迹API时不宣称自动或双向同步，受控导入与恢复验收独立。"
       ],
       "evidence": [
         {
@@ -620,7 +625,7 @@
     },
     {
       "id": "LO-SCHEDULE-001",
-      "version": 1,
+      "version": 2,
       "title": "站内日程与日历路径",
       "description": "区分站内计划、外部同步和真实活动。",
       "status": "in_progress",
@@ -632,7 +637,9 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "全可见日历按每源窗口显示真实覆盖，保留时区、全天结束不含与重复occurrence。",
+        "人生阶段、纪念日和倒计时使用有依据的日期，缺失日期进入未排期。"
       ],
       "evidence": [
         {
@@ -791,7 +798,7 @@
     },
     {
       "id": "LO-HEALTH-001",
-      "version": 1,
+      "version": 2,
       "title": "训练计划与完成状态",
       "description": "明确区分计划、完成和未知数据。",
       "status": "in_progress",
@@ -802,7 +809,9 @@
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "训记训练逐日full、身体分页、饮食合法窗与官方计划分别记录覆盖、来源、截断和失败。",
+        "已导入运动摘要与心率不冒充全部Apple健康，睡眠/HRV/日常步数缺接口时明确未接入。"
       ],
       "evidence": [
         {
@@ -1052,6 +1061,346 @@
         ],
         "prRefs": [],
         "specTaskRefs": []
+      }
+    },
+    {
+      "id": "LO-AUTH-002",
+      "version": 1,
+      "title": "对象权限与跨账号隔离",
+      "description": "已有owner与space约束，持续保留跨账号负向验证。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "src/agent-api/http.ts",
+        "src/personal-candidate/service.ts",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+      ],
+      "acceptanceCriteria": [
+        "伪造 owner 字段被拒绝，其他账号对象不可见。",
+        "页面、接口、搜索及来源均按同一owner/space校验，缺失与无权访问保持一致。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/agent-api/http.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/service.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有owner与space约束，持续保留跨账号负向验证。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-SEC-001",
+      "version": 1,
+      "title": "两步验证、恢复与会话",
+      "description": "已有两步验证与受控恢复；保留会话及实际体验门禁。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "src/personal-candidate/owner-mfa.ts",
+        "src/personal-candidate/owner-recovery-access.ts",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+      ],
+      "acceptanceCriteria": [
+        "绑定、恢复和会话管理分别记录可用范围，未启用能力明确显示。",
+        "身份与恢复变化需要具体授权和独立验证，不从界面显示推断安全功能通过。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/owner-mfa.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "src/personal-candidate/owner-recovery-access.ts"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有两步验证与受控恢复；保留会话及实际体验门禁。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/3"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-TIME-001",
+      "version": 1,
+      "title": "时间分配与历史覆盖",
+      "description": "历史覆盖和时段比较待设计，不自动新建时间账本。",
+      "status": "not_started",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "AGENTS.md"
+      ],
+      "acceptanceCriteria": [
+        "首次记录日、实际记录天数、领域覆盖与筛选分母分别表示，不声称完整生活覆盖。",
+        "支持跨年查找、时段比较及不等长/重叠/闰日/时区规则；修订和重复不重复计数。",
+        "保留源时刻与时区，日期型字段保持日期语义，缺记录不推断未发生。",
+        "仅查询已有获准历史；不自动重启已停用时间账本。"
+      ],
+      "evidence": [],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P2",
+        "implementation": "not_started",
+        "summary": "历史覆盖和时段比较待设计，不自动新建时间账本。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-PEOPLE-001",
+      "version": 1,
+      "title": "人物与社交记录",
+      "description": "需求已入池；人物模型与关联规则待设计。",
+      "status": "not_started",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/32"
+      ],
+      "acceptanceCriteria": [
+        "人物使用稳定ID，重名与别名规则明确。",
+        "日记、事项、日程及项目可关联同账号人物并回看相关记录。",
+        "不读取未授权通讯录或社交消息，纪念日沿日程真实日期。",
+        "新增API、最小scope、能力发现和Skill同步交付。"
+      ],
+      "evidence": [],
+      "blockedBy": [
+        "LO-LINK-001 统一关联合同。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "not_started",
+        "summary": "需求已入池；人物模型与关联规则待设计。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/32"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-EXPERIMENT-001",
+      "version": 1,
+      "title": "可控技术实验",
+      "description": "保留原技术实验要求，具体试验另行评审。",
+      "status": "not_started",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "AGENTS.md"
+      ],
+      "acceptanceCriteria": [
+        "不默认安装或调用外部模型，保持具体实验授权。",
+        "隔离实验资料并保留需求、固定代码、测试与结果追溯。"
+      ],
+      "evidence": [],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P2",
+        "implementation": "not_started",
+        "summary": "保留原技术实验要求，具体试验另行评审。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-LEGAL-001",
+      "version": 1,
+      "title": "法律资料定向检索实验",
+      "description": "保留原实验需求，地区和范围尚未确定。",
+      "status": "not_started",
+      "delivery": "backlog",
+      "sourceRefs": [
+        "AGENTS.md"
+      ],
+      "acceptanceCriteria": [
+        "先明确地区、资料范围和来源。",
+        "未批准不导入资料或启用外部接口，结果保留官方来源与适用范围。"
+      ],
+      "evidence": [],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P2",
+        "implementation": "not_started",
+        "summary": "保留原实验需求，地区和范围尚未确定。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-LINK-001",
+      "version": 1,
+      "title": "跨业务关联",
+      "description": "关联合同已登记，是人物与关系图谱的共同前置。",
+      "status": "not_started",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/33"
+      ],
+      "acceptanceCriteria": [
+        "日记、事项、日程可关联项目、领域、人物、主题及标签；明确类型和基数。",
+        "同账号稳定ID/来源/版本关联，不复制正文；重复、错类型、过期和并发有校验。",
+        "可双向回看记录与历史，目标缺失或无权访问不泄露元数据。",
+        "唯一CAS/幂等写入、受控迁移与最小scope同步API/discovery/Skill。"
+      ],
+      "evidence": [],
+      "blockedBy": [
+        "先明确人物/主题/标签类型与允许关系；新schema及权限单独评审。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "not_started",
+        "summary": "关联合同已登记，是人物与关系图谱的共同前置。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/33"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-GRAPH-001",
+      "version": 1,
+      "title": "可量化关系图谱",
+      "description": "已入池并开始开源选型，未生成个人关系或图谱。",
+      "status": "not_started",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/34"
+      ],
+      "acceptanceCriteria": [
+        "比较ECharts、Cytoscape.js、Sigma/Graphology的版本、许可、交互和维护成本。",
+        "真实关联显示次数与时间范围，口径和筛选分母明确，布局距离不代表关系强弱。",
+        "点连线回看构成计数的有权记录，修订、重复和缺失日期规则明确。",
+        "支持时间/类型/项目/领域/主题过滤与列表替代，明确未关联及数据覆盖。",
+        "图谱是事实层只读投影，显式关联与推测共现区分；API/discovery/Skill同步。"
+      ],
+      "evidence": [],
+      "blockedBy": [
+        "LO-LINK-001 明确关联与可访问证据合同；LO-PEOPLE-001 人物身份。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "not_started",
+        "summary": "已入池并开始开源选型，未生成个人关系或图谱。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/34"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
+    },
+    {
+      "id": "LO-AGENT-001",
+      "version": 1,
+      "title": "Agent接入与Skill分发",
+      "description": "已有待办API与Skill，本轮补完整读取、下载与密钥弹窗，运行验收待做。",
+      "status": "in_progress",
+      "delivery": "current",
+      "sourceRefs": [
+        "AGENTS.md",
+        "src/agent-api/capabilities.ts",
+        "skills/lifeos-agent/SKILL.md",
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/35"
+      ],
+      "acceptanceCriteria": [
+        "网页下载完整通用Skill并复制安装说明，相对引用完整，包内没有账号配置或密钥。",
+        "各用户使用自己的密钥；发现能力与生成的Skill参考来自同一operation registry。",
+        "有效密钥可使用已有scope内新增operation，新scope需要本人明确授权。",
+        "完整待办盘点必须全量快照或可信分页，截断不冒充完整。",
+        "密钥创建和一次性复制/关闭为弹窗，保留365天、未知结果及撤销边界。",
+        "批量整理具有预览/提交/CAS/幂等/回读，不用浏览器cookies或SQL旁路。"
+      ],
+      "evidence": [
+        {
+          "scope": "source",
+          "ref": "src/agent-api/capabilities.ts"
+        },
+        {
+          "scope": "source",
+          "ref": "skills/lifeos-agent/SKILL.md"
+        }
+      ],
+      "blockedBy": [],
+      "roadmap": {
+        "phaseId": "foundation",
+        "priority": "P0",
+        "implementation": "partial",
+        "summary": "已有待办API与Skill，本轮补完整读取、下载与密钥弹窗，运行验收待做。",
+        "nextStep": "按已登记验收完善设计、依赖与独立执行切片。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/35"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
       }
     }
   ],

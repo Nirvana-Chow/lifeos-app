@@ -137,7 +137,7 @@ test('OPT-IN isolated PostgreSQL Agent grants, revocation and todo write/readbac
     assert.equal((await send('/v1/capabilities', otherSpace.key)).status, 403);
     const allowed = await send('/v1/capabilities', reader.key);
     assert.equal(allowed.status, 200);
-    assert.deepEqual(allowed.body.operations.map((operation: {method: string}) => operation.method), ['GET', 'GET', 'GET']);
+    assert.deepEqual(allowed.body.operations.map((operation: {method: string}) => operation.method), ['GET', 'GET', 'GET', 'GET']);
 
     const idempotencyKey = 'fixture-agent-create-' + randomUUID();
     const fields = {title: 'Synthetic Agent PostgreSQL todo', notes: 'Retained', dueOn: null, status: 'open'};

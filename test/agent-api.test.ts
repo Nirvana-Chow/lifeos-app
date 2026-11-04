@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MemoryPort} from './helpers/platform.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
+import {PersonalService} from '../src/personal-candidate/service.ts';
 
 const baseURL = 'http://127.0.0.1:3190';
 const ownerId = 'synthetic-owner-a';
@@ -58,10 +59,54 @@ test('versioned discovery exposes exactly the operations authorized by the grant
   const reader = await send('/v1/capabilities');
   assert.equal(reader.cache, 'private, no-store');
   assert.equal(reader.body.apiVersion, '1');
-  assert.deepEqual(reader.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET']);
+  assert.deepEqual(reader.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET', 'GET']);
   const writer = await send('/v1/capabilities', 'GET', 'writer');
-  assert.deepEqual(writer.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET', 'POST', 'PATCH']);
+  assert.deepEqual(writer.body.operations.map((item: {method: string}) => item.method), ['GET', 'GET', 'GET', 'GET', 'POST', 'PATCH']);
   assert.equal((await send('/v2/capabilities')).status, 404);
+});
+
+test('full todo snapshot returns complete fields beyond the bounded list without disclosing other types or owners', async () => {
+  const {send, repository} = fixture();
+  for (let n = 0; n < 55; n++) {
+    assert.equal((await send('/v1/todos', 'POST', 'writer', {fields: {...fields, title: `Synthetic ${n}`}}, `synthetic-snapshot-${n.toString().padStart(4, '0')}`)).status, 201);
+  }
+  repository.readCurrentSnapshot = async owner => structuredClone([...repository.rows.values()].filter(row => row.ownerId === owner));
+  const records = new PersonalService(repository, {...config, allowedTypes: ['todo', 'journal']});
+  await records.mutate(ownerId, 'journal', null,
+    {spaceId, confirmed: true, fields: {title: 'Private other type', text: 'Never include this journal', occurredOn: null}},
+    'synthetic-other-type-0001');
+  assert.equal((await send('/v1/todos')).body.truncated, true);
+  const snapshot = await send('/v1/todos/snapshot');
+  assert.equal(snapshot.status, 200);
+  assert.equal(snapshot.cache, 'private, no-store');
+  assert.equal(snapshot.body.scope, 'full-current-todo-snapshot');
+  assert.equal(snapshot.body.truncated, false);
+  assert.equal(snapshot.body.total, 55);
+  assert.equal(snapshot.body.items.length, 55);
+  assert.equal(new Set(snapshot.body.items.map((item: {id: string}) => item.id)).size, 55);
+  assert.equal(snapshot.body.items[0].fields.notes, 'Retain me');
+  assert.equal(snapshot.body.items[0].fields.personal, null);
+  assert.equal(typeof snapshot.body.observedAt, 'string');
+  assert.equal(JSON.stringify(snapshot.body).includes('ownerId'), false);
+  assert.equal(JSON.stringify(snapshot.body).includes('Private other type'), false);
+  assert.equal(JSON.stringify(snapshot.body).includes('Never include this journal'), false);
+  assert.equal((await send('/v1/todos/snapshot', 'GET', '')).status, 401);
+  assert.equal((await send('/v1/todos/snapshot', 'GET', 'foreign')).status, 403);
+  assert.equal((await send('/v1/todos/snapshot?ownerId=synthetic-owner-b')).status, 404);
+  assert.equal((await send('/v1/todos/snapshot', 'POST', 'writer')).status, 404);
+});
+
+test('full todo snapshot fails closed when the complete-read adapter is unavailable or invalid', async () => {
+  const {send, repository} = fixture();
+  assert.equal((await send('/v1/todos/snapshot')).status, 503);
+  repository.readCurrentSnapshot = async () => Array.from({length: 10001}, () => ({})) as never;
+  assert.equal((await send('/v1/todos/snapshot')).status, 503);
+  await send('/v1/todos', 'POST', 'writer', {fields}, 'synthetic-snapshot-foreign');
+  const entry = [...repository.rows.values()][0];
+  repository.readCurrentSnapshot = async () => [{...entry, ownerId: 'foreign-owner'}];
+  const rejected = await send('/v1/todos/snapshot');
+  assert.equal(rejected.status, 503);
+  assert.equal(JSON.stringify(rejected.body).includes(fields.title), false);
 });
 
 test('shared todo service handles write scope, field rejection, replay, version and readback', async () => {

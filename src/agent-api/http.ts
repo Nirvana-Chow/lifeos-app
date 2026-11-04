@@ -2,7 +2,7 @@ import type {PlatformRepository, PublicEntry} from '../platform/contracts.ts';
 import {object, PlatformError, todoKeys} from '../platform/domain.ts';
 import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
-import {PersonalService} from '../personal-candidate/service.ts';
+import {PersonalService, personalEntryType} from '../personal-candidate/service.ts';
 import {assertAgentTodoWriteGrant} from './grant-fence.ts';
 import {agentApiVersion, agentOperations, type AgentScope} from './capabilities.ts';
 
@@ -74,6 +74,12 @@ export function createAgentHandler(options: Options) {
       if (operation.id === 'getTodo') {
         if (!recordId) return respond(404, {error: 'NOT_FOUND'});
         return respond(200, detail(await service.get(grant.ownerId, 'todo', recordId)));
+      }
+      if (operation.id === 'snapshotTodos') {
+        const items = (await service.currentSnapshot(grant.ownerId))
+          .filter(entry => personalEntryType(entry, config.spaceId) === 'todo').map(detail);
+        return respond(200, {scope: 'full-current-todo-snapshot', items, total: items.length,
+          truncated: false, observedAt: new Date().toISOString()});
       }
       if (operation.id !== 'createTodo' && operation.id !== 'updateTodo') {
         const unimplemented: never = operation;
