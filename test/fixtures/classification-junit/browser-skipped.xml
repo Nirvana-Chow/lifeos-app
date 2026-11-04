@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Captured Node 24 JUnit; synthetic tests only; host, path and timings normalized. -->
+<testsuites>
+  <testcase name="classification dialog preserves context and recovers explicit commands" time="0" classname="test" file="test/classification-review-browser.integration.test.ts">
+    <skipped type="skipped" message="true" />
+  </testcase>
+</testsuites>

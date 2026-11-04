@@ -1,0 +1,83 @@
+{
+  "postgres": {
+    "file": "test/classification-postgres.integration.test.ts",
+    "suites": {
+      "classification PostgreSQL immutable storage qualification (explicit isolated fixture)": [
+        "three separate forced-RLS tables qualify without changing schema2 and original four-table gate",
+        "readiness fails closed for privilege, policy, RLS, trigger and schema drift",
+        "readiness rejects same-name same-count consumption UNIQUE with command key added",
+        "readiness rejects same-name same-count command primary key with plan added",
+        "readiness rejects same-name same-count approval FK missing digest and proposal columns",
+        "readiness rejects same-name same-count command FK targets plan instead of approval",
+        "readiness rejects same-name same-count approval FK becomes deferred",
+        "readiness rejects same-name same-count approval FK allows cascading deletion",
+        "readiness rejects same-name same-count approval FK allows cascading update",
+        "readiness rejects same-name same-count approval FK changes match mode",
+        "readiness rejects same-name same-count approval FK is unvalidated",
+        "readiness rejects same-name same-count required plan JSON CHECK replaced with true",
+        "readiness rejects same-name same-count required plan JSON CHECK permits unknown shape",
+        "readiness rejects binding trigger with wrong event",
+        "readiness rejects binding trigger with statement instead of row",
+        "readiness rejects binding trigger with after instead of before",
+        "readiness rejects binding trigger with conditional insertion",
+        "readiness rejects binding trigger with column restricted update",
+        "readiness rejects nullable mandatory FK columns despite unchanged constraints",
+        "readiness accepts equivalent CHECK formatting, key ordering and object names",
+        "same transaction stores immutable plan approval and batch receipt separately from legacy commands",
+        "owner and space isolation deny reads and inserts outside both boundaries",
+        "plan receipt DAO reads historical result without its command key",
+        "native validator accepts legacy and observation plans but rejects malformed or unbound observations",
+        "runtime cannot update delete truncate; manager and verifier have no business-table privileges",
+        "native JSON checks reject omitted/unknown fields, bad UUID/revision, counts and producer mismatch",
+        "compact plans within 128KiB remain accepted despite PostgreSQL JSON display whitespace",
+        "native approval and command bindings reject substitution before any approval is saved",
+        "actual stored malformed JSON fails the application decoder even if a privileged fixture bypassed a CHECK",
+        "feature transaction uses the original writer and rolls back business rows history and plan together",
+        "unique plan consumption rejects a second command even for all no-op plans"
+      ],
+      "classification native atomic service, authority and deterministic concurrency": [
+        "read-only producer preview, owner approval/commit preserve grant bytes and unrelated business fields",
+        "last conflict writes zero batch history/receipt and stale approval bindings reject",
+        "lost response after native COMMIT recovers original receipt after edits/expiry across API and owner",
+        "all-no-op native plan concurrent same key restores duplicate",
+        "all-no-op native plan concurrent different keys yield one conflict",
+        "all-no-op native plan concurrent same key changed body conflicts",
+        "preview grant fence vs revoke: producer wins",
+        "preview grant fence vs reduce: producer wins",
+        "preview grant fence vs revoke: manager wins",
+        "preview grant fence vs reduce: manager wins",
+        "owner commit grant fence vs revoke: producer wins",
+        "owner commit grant fence vs reduce: producer wins",
+        "owner commit grant fence vs revoke: manager wins",
+        "owner commit grant fence vs reduce: manager wins",
+        "expiry and current permission CAS invalidate unconsumed plans",
+        "owner maintenance exclusive gate blocks whole classification before records",
+        "ordered physical rows: project and classification, classification leads",
+        "ordered physical rows: project and classification, opponent leads",
+        "ordered physical rows: todo and classification, classification leads",
+        "ordered physical rows: todo and classification, opponent leads",
+        "ordered physical rows: batch and classification, classification leads",
+        "ordered physical rows: batch and classification, opponent leads",
+        "two occupied business connections use same-client readiness rather than borrow a third connection",
+        "three occupied business connections still revalidate native owner sessions through bounded read pool",
+        "producer expiry committed ahead of a waiting owner fence rejects with zero writes",
+        "native review restores historical receipt with write guard closed after subsequent edits expiry and policy change",
+        "historical receipt review rejects producer natural expiry after a successful fence while awaiting the plan lock",
+        "historical before-only target update wins physical lock against approve",
+        "historical before-only target update wins physical lock against commit",
+        "selection and approval serialize on base plan; approval wins",
+        "selection and approval serialize on base plan; selection wins without revoking base",
+        "review awaiting native plan lock rejects revoked MFA without returning receipt or storing a plan",
+        "selection awaiting native plan lock rejects revoked MFA without returning receipt or storing a plan"
+      ]
+    },
+    "cases": []
+  },
+  "browser": {
+    "file": "test/classification-review-browser.integration.test.ts",
+    "suites": {},
+    "cases": [
+      "classification dialog preserves context and recovers explicit commands"
+    ]
+  }
+}

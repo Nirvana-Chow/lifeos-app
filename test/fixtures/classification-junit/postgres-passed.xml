@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Captured Node 24 JUnit; synthetic tests only; host, path and timings normalized. -->
+<testsuites>
+  <testsuite name="classification PostgreSQL immutable storage qualification (explicit isolated fixture)" time="0" disabled="0" errors="0" tests="31" failures="0" skipped="0">
+    <testcase name="three separate forced-RLS tables qualify without changing schema2 and original four-table gate" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness fails closed for privilege, policy, RLS, trigger and schema drift" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count consumption UNIQUE with command key added" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count command primary key with plan added" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK missing digest and proposal columns" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count command FK targets plan instead of approval" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK becomes deferred" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK allows cascading deletion" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK allows cascading update" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK changes match mode" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count approval FK is unvalidated" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count required plan JSON CHECK replaced with true" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects same-name same-count required plan JSON CHECK permits unknown shape" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects binding trigger with wrong event" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects binding trigger with statement instead of row" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects binding trigger with after instead of before" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects binding trigger with conditional insertion" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects binding trigger with column restricted update" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness rejects nullable mandatory FK columns despite unchanged constraints" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="readiness accepts equivalent CHECK formatting, key ordering and object names" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="same transaction stores immutable plan approval and batch receipt separately from legacy commands" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner and space isolation deny reads and inserts outside both boundaries" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="plan receipt DAO reads historical result without its command key" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="native validator accepts legacy and observation plans but rejects malformed or unbound observations" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="runtime cannot update delete truncate; manager and verifier have no business-table privileges" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="native JSON checks reject omitted/unknown fields, bad UUID/revision, counts and producer mismatch" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="compact plans within 128KiB remain accepted despite PostgreSQL JSON display whitespace" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="native approval and command bindings reject substitution before any approval is saved" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="actual stored malformed JSON fails the application decoder even if a privileged fixture bypassed a CHECK" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="feature transaction uses the original writer and rolls back business rows history and plan together" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="unique plan consumption rejects a second command even for all no-op plans" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+  </testsuite>
+  <testsuite name="classification native atomic service, authority and deterministic concurrency" time="0" disabled="0" errors="0" tests="33" failures="0" skipped="0">
+    <testcase name="read-only producer preview, owner approval/commit preserve grant bytes and unrelated business fields" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="last conflict writes zero batch history/receipt and stale approval bindings reject" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="lost response after native COMMIT recovers original receipt after edits/expiry across API and owner" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="all-no-op native plan concurrent same key restores duplicate" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="all-no-op native plan concurrent different keys yield one conflict" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="all-no-op native plan concurrent same key changed body conflicts" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="preview grant fence vs revoke: producer wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="preview grant fence vs reduce: producer wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="preview grant fence vs revoke: manager wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="preview grant fence vs reduce: manager wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner commit grant fence vs revoke: producer wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner commit grant fence vs reduce: producer wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner commit grant fence vs revoke: manager wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner commit grant fence vs reduce: manager wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="expiry and current permission CAS invalidate unconsumed plans" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="owner maintenance exclusive gate blocks whole classification before records" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: project and classification, classification leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: project and classification, opponent leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: todo and classification, classification leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: todo and classification, opponent leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: batch and classification, classification leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="ordered physical rows: batch and classification, opponent leads" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="two occupied business connections use same-client readiness rather than borrow a third connection" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="three occupied business connections still revalidate native owner sessions through bounded read pool" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="producer expiry committed ahead of a waiting owner fence rejects with zero writes" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="native review restores historical receipt with write guard closed after subsequent edits expiry and policy change" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="historical receipt review rejects producer natural expiry after a successful fence while awaiting the plan lock" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="historical before-only target update wins physical lock against approve" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="historical before-only target update wins physical lock against commit" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="selection and approval serialize on base plan; approval wins" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="selection and approval serialize on base plan; selection wins without revoking base" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="review awaiting native plan lock rejects revoked MFA without returning receipt or storing a plan" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+    <testcase name="selection awaiting native plan lock rejects revoked MFA without returning receipt or storing a plan" time="0" classname="test" file="test/classification-postgres.integration.test.ts" />
+  </testsuite>
+</testsuites>
