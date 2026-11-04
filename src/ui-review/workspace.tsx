@@ -616,8 +616,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
-        <main id="personal-main" className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""}`}>
-          <div className={contentPage ? "lo-content lo-content-account" : page === "settings" ? "lo-content lo-content-settings" :
+        <main id="personal-main" className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""} ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas"].includes(page)?"lo-main-matters":""}`}>
+          <div data-matters-filters-expanded={filtersOpen&&(page==="tasks"||page==="inbox")?"":undefined} className={contentPage ? "lo-content lo-content-account" : page === "settings" ? "lo-content lo-content-settings" :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <div className="lo-page-heading">
             <div className="lo-heading-title">

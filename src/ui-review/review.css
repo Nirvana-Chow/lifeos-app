@@ -1326,3 +1326,18 @@
  .lo-settings-panels { flex:none; flex-direction:row; }
  .lo-settings-panel { flex:1; }
 }
+
+/* Match the allocated workspace, including header/footer reserve, rather than the
+   device height. Short frames scroll the tools and a usable content viewport. */
+.lo-main-matters { container:lo-matters / size; }
+@container lo-matters (max-height:600px) {
+ .lo-main-matters > .lo-content { overflow-y:auto; overscroll-behavior:contain; }
+ .lo-main-matters .lo-workspace-view { flex:none; height:320px; min-height:320px; }
+ .lo-main-matters [data-category-grid] { flex:none; height:520px; min-height:520px; }
+}
+/* Mobile filters can consume the frame even on a tall phone. Keep the complete
+   filter form and the results in the same reachable vertical flow. */
+@media(max-width:850px) {
+ .lo-main-matters > .lo-content[data-matters-filters-expanded] { overflow-y:auto; overscroll-behavior:contain; }
+ .lo-main-matters > .lo-content[data-matters-filters-expanded] .lo-workspace-view { flex:none; height:320px; min-height:320px; }
+}
