@@ -6,7 +6,8 @@ import {agentOperations} from '../src/agent-api/capabilities.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {LifeOSApiClient} from '../src/mcp-candidate/client.ts';
 import {createLifeOSMcpServer} from '../src/mcp-candidate/tools.ts';
-import {parseArguments} from '../src/mcp-candidate/schemas.ts';
+import {parseArguments,argumentSchema} from '../src/mcp-candidate/schemas.ts';
+import {z} from 'zod';
 import {MemoryPort} from './helpers/platform.ts';
 
 type Schema=Record<string,any>;
@@ -166,7 +167,7 @@ test('new modules stay absent for old grants, readonly writes and disabled nativ
   const f=await fixture(options);try{
    const descriptors=f.descriptors.filter(op=>/Media|Career|Portfolio/.test(op.id));assert.equal(descriptors.length,options.readOnly?6:0);
    const list=await f.client.listTools();const advertised=JSON.stringify(list.tools.find(t=>t.name==='lifeos_call')?.inputSchema);
-   for(const suffix of ['Media','Career','Portfolio']){assert.equal(advertised.includes('create'+suffix),false);assert.equal(advertised.includes('update'+suffix),false);const denied=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'create'+suffix,arguments:{fields:{},idempotencyKey:'synthetic-closed'}}});assert.equal((denied.structuredContent as any).error,'OPERATION_UNAVAILABLE');}
+   for(const suffix of ['Media','Career','Portfolio']){assert.equal(advertised.includes('create'+suffix),false);assert.equal(advertised.includes('update'+suffix),false);const args=fromSchema(z.toJSONSchema(argumentSchema(agentOperations.find(op=>op.id==='create'+suffix)!)));args.idempotencyKey='synthetic-closed';const denied=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'create'+suffix,arguments:args}});assert.equal((denied.structuredContent as any).error,'OPERATION_UNAVAILABLE');}
    assert.equal(f.writes.length,0);
   }finally{await f.close();}
  }
@@ -223,7 +224,10 @@ test('full current catalog pairs all 50 reviewed operations and rejects altered 
  for(const suffix of ['Media','Career','Portfolio']){
   const operation=agentOperations.find(op=>op.id==='create'+suffix)!;
   for(const altered of [{...operation,requiredScopes:['todo:read','todo:write']},{...operation,path:'/v1/records/unreviewed'},{...operation,requiredScopes:[suffix.toLowerCase()+':write']}, {...operation,id:'createUnreviewed'}]){
-   const client=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:[altered]}));assert.deepEqual((await client.discover()).operations,[]);assert.equal((await client.execute(operation.id,{})).error,'OPERATION_UNAVAILABLE');
+   const client=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:[altered]}));
+   const args=fromSchema(z.toJSONSchema(argumentSchema(operation)));
+   if(altered.id===operation.id){await assert.rejects(client.discover(),/API_CONTRACT_MISMATCH/);assert.equal((await client.execute(operation.id,args)).error,'API_CONTRACT_MISMATCH');}
+   else{assert.deepEqual((await client.discover()).operations,[]);assert.equal((await client.execute(operation.id,args)).error,'OPERATION_UNAVAILABLE');}
   }
  }
 });

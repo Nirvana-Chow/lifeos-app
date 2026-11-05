@@ -5,6 +5,10 @@ import {MemoryPort} from './helpers/platform.ts';
 import {agentOperations} from '../src/agent-api/capabilities.ts';
 import {LifeOSApiClient} from '../src/mcp-candidate/client.ts';
 import {parseMcpRuntimeConfig} from '../src/mcp-candidate/config.ts';
+import {DurableStore} from '../src/mcp-candidate/native-store.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 
 const origin='https://fixture.example.invalid';
 const key='synthetic-secret-lure';
@@ -40,7 +44,7 @@ test('each call rediscovers revoked scopes and disabled modules',async()=>{
 });
 test('catalog cannot supply arbitrary routes, methods or new operations',async()=>{
  const client=new LifeOSApiClient({origin,credentialProvider:async()=>key},async()=>Response.json({apiVersion:'2',operations:[{...agentOperations.find(o=>o.id==='listTodos'),path:'https://evil.invalid'}, {id:'ownerApprove',method:'POST',path:'/approve'}]}));
- assert.deepEqual((await client.discover()).operations,[]);
+ await assert.rejects(client.discover(),/API_CONTRACT_MISMATCH/);
  assert.equal((await client.execute('ownerApprove',{})).error,'OPERATION_UNAVAILABLE');
 });
 test('identity and raw URL injection fail before a business request',async()=>{
@@ -55,7 +59,7 @@ test('malformed and oversized responses fail wholly; write outcome remains unkno
  for(const response of [()=>new Response(new Uint8Array([0xff])),()=>new Response('x'.repeat(8*1024*1024+1)),()=>new Response('{'),()=>{throw Error(key);}]){
   let calls=0;const c=new LifeOSApiClient({origin,credentialProvider:async()=>key},async()=>{calls++;return calls===1?Response.json({apiVersion:'2',operations:agentOperations}):response();});
   const result=await c.execute('createTodo',{fields,idempotencyKey:'fixture-unknown-01'});
-  assert.equal(result.ok,false);assert.equal(result.outcome,'unknown');assert.equal(calls,3);assert.equal(JSON.stringify(result).includes(key),false);
+  assert.equal(result.ok,false);assert.equal(result.outcome,'unknown');assert.equal(calls,2);assert.equal(result.readback,undefined);assert.equal(JSON.stringify(result).includes(key),false);
  }
 });
 test('configuration accepts an exact HTTPS origin without credential fields',()=>{
@@ -67,22 +71,26 @@ test('classification preview stays read-only and approved commit preserves API r
  const {fixture:classificationFixture}=await import('./helpers/classification-service-fixture.ts');
  const {ClassificationService}=await import('../src/personal-candidate/classification-service.ts');
  for(const write of [false,true]){
-  const f=await classificationFixture(write);
+  const f=await classificationFixture(write),now=Date.now();f.setNow(now);
+  const directory=mkdtempSync(join(tmpdir(),'lifeos-mcp-classification-'));
+  try{
   const config={ownerId:f.owner.ownerId,spaceId:f.owner.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',baseURL:origin,allowedTypes:['todo','project','domain','topic']} as const;
   const grant={grantId:f.agent.grantId,ownerId:f.agent.ownerId,spaceId:f.agent.spaceId,scopes:f.agent.scopes,authorizationRevision:'a'.repeat(64)};
   let available=true,withdrawAfterDiscovery=false;
-  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',modules:{organization:true,classification:true},fenceWrites:true,config,repository:f.port,verify:async()=>grant,readCurrentGrant:async()=>grant,operationAvailable:()=>available,assertWritable:async()=>{},classification:authority=>new ClassificationService(f.port,config,{authority,assertReady:async()=>{},assertWritable:async()=>{},policyRevision:()=> 'policy-v1',now:()=>Date.parse('2026-11-05T00:00:00.000Z')})});
-  const client=new LifeOSApiClient({origin,credentialProvider:async()=>key},async(input,init)=>{const r=new Request(input,init);r.headers.set('host',new URL(r.url).host);const response=await handler(r);if(withdrawAfterDiscovery)available=false;return response;});
+  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',modules:{organization:true,classification:true},fenceWrites:true,config,repository:f.port,verify:async()=>grant,readCurrentGrant:async()=>grant,operationAvailable:()=>available,assertWritable:async()=>{},classification:authority=>new ClassificationService(f.port,config,{authority,assertReady:async()=>{},assertWritable:async()=>{},policyRevision:()=> 'policy-v1',now:()=>now})});
+  const client=new LifeOSApiClient({origin,credentialProvider:async()=>key,durable:new DurableStore(directory,'a'.repeat(64))},async(input,init)=>{const r=new Request(input,init);r.headers.set('host',new URL(r.url).host);const response=await handler(r);if(withdrawAfterDiscovery)available=false;return response;});
   const preview=await client.execute('previewTodoClassification',{changes:f.changes});assert.equal(preview.status,200);
   assert.equal(f.port.classificationReceipts.size,0);assert.ok(f.todos.every(todo=>f.port.rows.get(todo.id)?.revision===1));
   const confirmation={planId:preview.data!.planId,digest:preview.data!.digest,confirmed:true};
   const args={...confirmation,idempotencyKey:'classification-command'};
   assert.equal((await client.execute('commitTodoClassification',args)).status,403);
   await f.service.approve(f.owner,confirmation);
-  const committed=await client.execute('commitTodoClassification',args);
-  if(write){assert.equal(committed.status,200);assert.equal(committed.data?.duplicate,false);const replay=await client.execute('commitTodoClassification',args);assert.equal(replay.data?.duplicate,true);assert.deepEqual(replay.data?.entries,committed.data?.entries);assert.equal(f.port.classificationReceipts.size,1);}
+  const attempted=await client.execute('commitTodoClassification',args);
+  const committed=attempted.error==='RECOVERY_REQUIRED'?await client.retry(attempted.recovery!.requestId):attempted;
+  if(write){assert.equal(committed.status,200,JSON.stringify(committed));assert.equal(committed.data?.duplicate,false);assert.equal(committed.verification?.verified,true);const repeat=await client.execute('commitTodoClassification',args);assert.equal(repeat.error,'RECOVERY_REQUIRED');const replay=await client.retry(repeat.recovery!.requestId);assert.deepEqual(replay.data?.entries,committed.data?.entries);assert.equal(replay.verification?.verified,true);assert.equal(f.port.classificationReceipts.size,1);}
   else{assert.equal(committed.status,403);assert.equal(f.port.classificationReceipts.size,0);}
   withdrawAfterDiscovery=true;const unavailable=await client.execute('previewTodoClassification',{changes:f.changes});assert.equal(unavailable.status,503);
+  }finally{rmSync(directory,{recursive:true,force:true});}
  }
 });
 
@@ -118,7 +126,7 @@ test('canonical-valid classification exceeds the request byte cap only after its
 test('redirect is not followed, untrusted API errors cannot echo the configured credential',async()=>{
  let calls=0;const secret='SYNTHETIC_SECRET_LURE';
  const c=new LifeOSApiClient({origin,credentialProvider:async()=>secret},async()=>{calls++;return calls===1?Response.json({apiVersion:'2',operations:agentOperations}):Response.json({error:secret},{status:503});});
- const result=await c.execute('createTodo',{fields,idempotencyKey:'fixture-error-001'});assert.equal(JSON.stringify(result).includes(secret),false);assert.equal(result.outcome,'unknown');assert.equal(calls,3);
+ const result=await c.execute('createTodo',{fields,idempotencyKey:'fixture-error-001'});assert.equal(JSON.stringify(result).includes(secret),false);assert.equal(result.outcome,'unknown');assert.equal(calls,2);assert.equal(result.readback,undefined);
  let redirects=0;const redirect=new LifeOSApiClient({origin,credentialProvider:async()=>key},async()=>{redirects++;return new Response(null,{status:302,headers:{location:'https://evil.invalid'}});});
  await assert.rejects(redirect.discover());assert.equal(redirects,1);
 });

@@ -31,25 +31,26 @@ test('rejects off-origin responses and stops at v2 denial without downgrade',asy
 // A write may have committed before the connection is lost. Only its exact frozen command can be retried.
 test('unknown writes retain exact original bytes, independently GET and stop retry after revocation',async()=>{
  let lost=true,revoked=false;const writes:{body:string;key:string|null}[]=[];const reads:string[]=[];
+ let entry={id:'00000000-0000-4000-8000-000000000001',sourceId:'00000000-0000-4000-8000-000000000002',revision:1,fields:{title:'Synthetic',notes:'',dueOn:null,status:'open',personal:null}};
  const client=new LifeOSApiClient({origin:'https://fixture.invalid',credentialProvider:async()=>secret},async(url,init)=>{
   const path=new URL(String(url)).pathname;
   if(revoked)return Response.json({error:'ACCESS_DENIED'},{status:403});
   if(path.endsWith('/v2/capabilities'))return Response.json({apiVersion:'2',operations:agentOperations});
-  if(init?.method==='POST'){writes.push({body:String(init.body),key:new Headers(init.headers).get('idempotency-key')});if(lost){lost=false;throw Error(secret);}return Response.json({entry:{id:'00000000-0000-4000-8000-000000000001',revision:1},duplicate:true});}
-  reads.push(path);return Response.json({items:[],truncated:false});
+  if(init?.method==='POST'){writes.push({body:String(init.body),key:new Headers(init.headers).get('idempotency-key')});entry={...entry,fields:{...JSON.parse(String(init.body)).fields,personal:null}};if(lost){lost=false;throw Error(secret);}return Response.json({entry,duplicate:true});}
+  reads.push(path);return Response.json(entry);
  });
  const args={fields:{title:'Synthetic',notes:'',dueOn:null,status:'open'},idempotencyKey:'synthetic-exact-retry'};
  const result=await client.execute('createTodo',args);assert.equal(result.outcome,'unknown');
- assert.equal(JSON.stringify(result).includes(secret),false);assert.ok(reads.includes('/api/platform/agent/v1/todos/snapshot'));
+ assert.equal(JSON.stringify(result).includes(secret),false);assert.equal(reads.length,0);assert.equal(result.readback,undefined);
  assert.ok(result.recovery?.requestId);args.fields.title='Mutated by caller';
- const retry=await client.retry(result.recovery.requestId);assert.equal(retry.ok,true);assert.equal(writes.length,2);assert.deepEqual(writes[1],writes[0]);
+ const retry=await client.retry(result.recovery.requestId);assert.equal(retry.ok,true);assert.equal(retry.verification?.verified,true);assert.ok(reads.includes('/api/platform/agent/v1/todos/'+entry.id));assert.equal(writes.length,2);assert.deepEqual(writes[1],writes[0]);
  const another=await client.execute('createTodo',{...args,idempotencyKey:'synthetic-other-key'});assert.equal(another.ok,true);
  lost=true;const unknown=await client.execute('createTodo',{...args,idempotencyKey:'synthetic-revocation'});assert.equal(unknown.outcome,'unknown');
  revoked=true;const denied=await client.retry(unknown.recovery!.requestId);assert.equal(denied.status,403);assert.equal(writes.length,4);assert.equal(denied.outcome,'unknown');
 });
 test('current catalog rejects duplicate, altered scopes, protected and unsupported operations',async()=>{
  const list=operation('listTodos');const client=new LifeOSApiClient({origin:'https://fixture.invalid',credentialProvider:async()=>secret},async()=>Response.json({apiVersion:'2',operations:[list,list,{...operation('createTodo'),requiredScopes:['todo:read']},{id:'approveTodoClassification',method:'POST',path:'/v1/todo-classifications/approve',requiredScopes:['todo:read']},{id:'rotateKey',method:'POST',path:'/v1/keys',requiredScopes:['key:write']},{id:'futureUnreviewed',method:'GET',path:'/v1/records/future/snapshot',requiredScopes:['future:read']}]}));
- assert.deepEqual((await client.discover()).operations,[]);assert.equal((await client.execute('rotateKey',{})).status,403);assert.equal((await client.execute('futureUnreviewed',{})).status,403);
+ await assert.rejects(client.discover(),/API_CATALOG_INVALID/);assert.equal((await client.execute('rotateKey',{})).status,403);assert.equal((await client.execute('futureUnreviewed',{})).status,403);
 });
 test('trusted before-use runs before discovery; failed or missing provider causes no API request',async()=>{
  const calls:string[]=[];let deny=false;
