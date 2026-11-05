@@ -89,3 +89,20 @@ test('new reference adapters preserve native organization pins and reject wrong 
  await service.mutate(config.ownerId,'portfolio',account.id,{...body(emptyPortfolioPersonal('account')),expectedRevision:1},'synthetic-account-revised');
  const revised=snapshot(repo);await assert.rejects(save('portfolio',{...emptyPortfolioPersonal('asset'),account:reference}),{code:'REFERENCE_CONFLICT'});assert.deepEqual(snapshot(repo),revised);
 });
+test('unverified storage hides all three new business types from owner aggregates while preserving legacy records',async t=>{
+ const {repo,service,save}=setup(),newEntries:Awaited<ReturnType<PersonalService['get']>>[]=[];
+ for(const [type,personal]of [['media',emptyMediaPersonal()],['career',emptyCareerPersonal()],['portfolio',emptyPortfolioPersonal('account')]] as const)newEntries.push(await save(type,personal));
+ const legacy=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic legacy',text:'Synthetic legacy journal',occurredOn:null}},'synthetic-legacy-aggregate')).entry;
+ const make=(storageVerified:boolean)=>createPersonalPlatformHandler({repository:repo,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},config,storageVerified,assertWritable:async()=>{}});
+ const send=async(storageVerified:boolean,path:string)=>{const response=await make(storageVerified)(new Request(config.baseURL+'/api/platform/personal/'+path,{headers:{host:'three.example.test'}}));return{status:response.status,body:await response.json()};};
+ const status=await send(false,'status');for(const flag of ['mediaEnabled','careerEnabled','portfolioEnabled'])assert.equal(status.body[flag],false);
+ for(const type of ['media','career','portfolio'])assert.equal((await send(false,type+'/snapshot')).status,503);
+ for(const path of ['overview?today=2030-11-05','search?q=Synthetic','export'])await t.test(path,async()=>{
+  const closed=await send(false,path);assert.equal(closed.status,200,path);
+  const items=path==='export'?closed.body.entries:closed.body.items;assert.deepEqual(items.map((entry:{id:string})=>entry.id),[legacy.id],path);
+  if(path==='export')assert.deepEqual(closed.body.history.map((entry:{id:string})=>entry.id),[legacy.id]);
+  const text=JSON.stringify(closed.body);for(const entry of newEntries)assert.equal(text.includes(entry.id),false,path);
+  const ready=await send(true,path);assert.equal(ready.status,200);assert.equal((path==='export'?ready.body.entries:ready.body.items).length,4,path);
+ });
+ const ready=await send(true,'status');for(const flag of ['mediaEnabled','careerEnabled','portfolioEnabled'])assert.equal(ready.body[flag],true);
+});

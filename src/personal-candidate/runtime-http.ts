@@ -35,7 +35,8 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
 export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
- const service=new PersonalService(options.repository,options.config,{currentSourceSha:()=>artifact()?.sourceSha??null});
+ const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined};
+ const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
