@@ -496,15 +496,34 @@ export async function verifyPersonalWorkspace(page:Page){
  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
  const records=[domain,project,todo];
  phase='readonly-ui';const cleanupReadonly=await installReadonlyPersonalReads(page);let mutations=0;const count=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))mutations++;};page.on('request',count);
- try{await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});await expect(complete).toBeDisabled();await complete.evaluate((node:HTMLElement)=>node.click());await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);await page.getByRole('button',{name:'领域分类视图',exact:true}).click();await expect(page.getByRole('link',{name:'新建领域',exact:true})).toHaveCount(0);await expect(page.getByRole('link',{name:/编辑领域/})).toHaveCount(0);
- await page.goto(editorURL,{waitUntil:'domcontentloaded'});
- const detail=await readyTaskDetail(page,synthetic.title,true);
- await expect(detail.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();
- await expect(detail.getByText(synthetic.editedNotes,{exact:true})).toBeVisible();
- await expect(detail.getByText(synthetic.editedDate,{exact:true})).toBeVisible();
- await expect(detail.getByRole('button',{name:'编辑待办',exact:true})).toHaveCount(0);
- assert.equal(mutations,0,'readonly UI attempted mutations');
- }finally{await cleanupReadonly();page.off('request',count);assert.equal((await json(page,'/api/platform/personal/status')).writable,true);assert.equal((await json(page,'/api/platform/personal/availability')).writable,true);await page.goto(editorURL,{waitUntil:'domcontentloaded'});await verifyFields();}
+ let readonlyFailurePhase:string|null=null;
+ try{
+  phase='readonly-load';await page.goto(tasksURL,{waitUntil:'domcontentloaded'});
+  phase='readonly-create-disabled';await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();
+  phase='readonly-list';await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
+  phase='readonly-title-visible';await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();
+  const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});
+  phase='readonly-completion-disabled';await expect(complete).toBeDisabled();
+  phase='readonly-completion-noop';await complete.evaluate((node:HTMLElement)=>node.click());
+  phase='readonly-management-hidden';await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
+  phase='readonly-areas';await page.getByRole('button',{name:'领域分类视图',exact:true}).click();
+  phase='readonly-area-create-hidden';await expect(page.getByRole('link',{name:'新建领域',exact:true})).toHaveCount(0);
+  phase='readonly-area-edit-hidden';await expect(page.getByRole('link',{name:/编辑领域/})).toHaveCount(0);
+  phase='readonly-detail-load';await page.goto(editorURL,{waitUntil:'domcontentloaded'});
+  phase='readonly-detail-structure';const detail=await readyTaskDetail(page,synthetic.title,true);
+  phase='readonly-detail-status';await expect(detail.getByRole('status').filter({hasText:'当前为只读'})).toBeVisible();
+  phase='readonly-detail-text';await expect(detail.getByText(synthetic.editedNotes,{exact:true})).toBeVisible();
+  phase='readonly-detail-date';await expect(detail.getByText(synthetic.editedDate,{exact:true})).toBeVisible();
+  phase='readonly-edit-hidden';await expect(detail.getByRole('button',{name:'编辑待办',exact:true})).toHaveCount(0);
+  phase='readonly-write-count';assert.equal(mutations,0,'readonly UI attempted mutations');
+ }catch(error){readonlyFailurePhase=phase;throw error;}
+ finally{try{
+  phase='readonly-restore-routes';await cleanupReadonly();page.off('request',count);
+  phase='readonly-restore-status';assert.equal((await json(page,'/api/platform/personal/status')).writable,true);
+  phase='readonly-restore-availability';assert.equal((await json(page,'/api/platform/personal/availability')).writable,true);
+  phase='readonly-restore-load';await page.goto(editorURL,{waitUntil:'domcontentloaded'});
+  phase='readonly-restore-fields';await verifyFields();
+ }finally{if(readonlyFailurePhase!==null)phase=readonlyFailurePhase;}}
  phase='workspace-history-url';
  await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);

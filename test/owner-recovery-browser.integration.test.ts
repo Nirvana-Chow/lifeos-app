@@ -63,7 +63,7 @@ async function assertPublicChineseHeading(page:Page,heading:'main h1'|'main h2')
 }
 
 // Real public components and shared styles; synthetic form only, no runtime/PG or submissions.
-test('OPT-IN public auth theme oracle follows approved shared palette',{
+if(!enabled||process.env.RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS==='1')test('OPT-IN public auth theme oracle follows approved shared palette',{
  skip:process.env.RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS!=='1',timeout:120000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-'));
