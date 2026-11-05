@@ -56,6 +56,17 @@ test('version-read is durable per owner/space/source and never an acceptance cla
  const otherConfig={...config,spaceId:'another-support-space'},other=new RequirementSupportService(repository,otherConfig,new RequirementsService(repository,otherConfig),{currentSourceSha:()=>sourceSha});assert.equal((await other.releaseRead(config.ownerId,sourceSha)).seen,false);
  assert.equal(JSON.stringify(await restarted.releaseRead(config.ownerId,sourceSha)).includes('accepted'),false);
 });
+test('committed version-read replays after deployment without authorizing a new historical write',async()=>{
+ const {repository,service,req}=setup(),sourceSha='a'.repeat(40),command={spaceId:config.spaceId,confirmed:true,sourceSha};
+ const original=await service.markReleaseRead(config.ownerId,command,'support-read-before-deploy');
+ const next=new RequirementSupportService(repository,config,req,{currentSourceSha:()=> 'b'.repeat(40)});
+ const replay=await next.markReleaseRead(config.ownerId,command,'support-read-before-deploy');
+ assert.deepEqual(replay,{...original,duplicate:true});
+ assert.equal((await next.releaseRead(config.ownerId,sourceSha)).seen,true);
+ await assert.rejects(next.markReleaseRead(config.ownerId,command,'support-read-new-historical-command'),{code:'CURRENT_RELEASE_CHANGED'});
+ await assert.rejects(next.markReleaseRead(config.ownerId,{...command,sourceSha:'b'.repeat(40)},'support-read-before-deploy'),{code:'COMMAND_CONFLICT'});
+ assert.equal(repository.rows.size,1);assert.equal(repository.receipts.size,1);assert.equal(repository.historyRows.length,1);
+});
 test('lost committed conversion replays the same historical receipt; competing commands cannot create a second requirement',async()=>{
  const {repository,service}=setup(),created=await service.createFeedback(config.ownerId,input,'support-race-input'),native=repository.transaction.bind(repository);let lose=true;
  repository.transaction=async(owner,key,fn)=>{const result=await native(owner,key,fn);if(lose){lose=false;throw Error('synthetic response lost after commit');}return result;};
