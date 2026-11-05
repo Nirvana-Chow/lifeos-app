@@ -1,0 +1,17 @@
+import {object} from '../platform/domain.ts';
+/** Host-owned configuration only. No tool, business record or downloaded documentation supplies this. */
+export type McpRuntimeConfig=Readonly<{origin:string}>;
+export type CredentialProvider=()=>Promise<string|null>;
+export type McpRuntimeOptions=McpRuntimeConfig&Readonly<{
+ credentialProvider:CredentialProvider;
+ /** Optional trusted-code wrapper for the existing documentation updater; never remote executable code. */
+ beforeUse?:()=>Promise<void>;
+}>;
+export function parseMcpRuntimeConfig(input:unknown):McpRuntimeConfig {
+ try{
+  const value=object(input,['origin']);if(typeof value.origin!=='string')throw Error();
+  const url=new URL(value.origin);
+  if(url.protocol!=='https:'||url.username||url.password||url.origin!==value.origin)throw Error();
+  return Object.freeze({origin:url.origin});
+ }catch{throw Error('MCP_CONFIG_INVALID');}
+}

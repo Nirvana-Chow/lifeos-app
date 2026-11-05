@@ -1,0 +1,59 @@
+// Inherits the official-SDK structural projection from e890615 / 5eaf53f;
+// current business validation stays in the existing API/domain modules.
+import {z} from 'zod';
+import {agentOperations} from '../agent-api/capabilities.ts';
+import {object,todoKeys,todoRequiredKeys,financeKeys,validateId,validateRevision,validateIdempotencyKey,validateTodo,validateFinance,PlatformError} from '../platform/domain.ts';
+import {normalizePersonalFields} from '../personal-candidate/business.ts';
+import {organizationTypes,completeOrganizationFields} from '../agent-api/organization.ts';
+import {completeRecordFields,isRecordModule} from '../agent-api/personal-records.ts';
+import {requirementId,validateRequirementFields,validateBaselineBinding} from '../requirements-candidate/domain.ts';
+import {validateFeedbackInput} from '../requirement-support-candidate/domain.ts';
+import {decodeChanges} from '../personal-candidate/classification-contracts.ts';
+import {classificationConfirmation} from '../personal-candidate/classification-service.ts';
+export type Operation=typeof agentOperations[number];
+const fields=z.record(z.string(),z.unknown());
+export function argumentSchema(operation:Operation){
+ const shape:Record<string,z.ZodType>={};
+ if(operation.path.includes('{id}'))shape.id=z.string();
+ if(operation.path.includes('{type}'))shape.type=z.enum(organizationTypes);
+ if(operation.id==='previewTodoClassification')shape.changes=z.array(fields);
+ else if(operation.id==='commitTodoClassification'){shape.planId=z.string();shape.digest=z.string();shape.confirmed=z.literal(true);shape.idempotencyKey=z.string();}
+ else if(operation.method!=='GET'){
+  shape.fields=fields;shape.idempotencyKey=z.string();
+  if(operation.method==='PATCH')shape.expectedRevision=z.number();
+  if(operation.id==='updateRequirement')shape.baselineBinding=z.union([fields,z.null()]);
+ }
+ return z.strictObject(shape);
+}
+export function parseArguments(operation:Operation,input:unknown){
+ const parsed=argumentSchema(operation).safeParse(input);
+ if(!parsed.success)throw new PlatformError(400,'INVALID_ARGUMENTS','Invalid arguments');
+ const args=parsed.data;let path:string=operation.path;
+ if(path.includes('{id}'))path=path.replace('{id}',operation.module==='requirements'?requirementId(args.id):validateId(args.id));
+ if(path.includes('{type}'))path=path.replace('{type}',String(args.type));
+ const {id:_id,type:_type,idempotencyKey,...body}=args;
+ if(idempotencyKey!==undefined)validateIdempotencyKey(idempotencyKey);
+ if(operation.id==='previewTodoClassification')decodeChanges(body.changes);
+ else if(operation.id==='commitTodoClassification')classificationConfirmation(body);
+ else if(operation.method!=='GET'){
+  if(operation.method==='PATCH'&&!(operation.module==='requirements'&&typeof args.id==='string'&&args.id.startsWith('LO-')&&body.expectedRevision===0))validateRevision(body.expectedRevision);
+  if(operation.module==='requirements'){
+   validateRequirementFields(body.fields);
+   if(operation.method==='PATCH')validateBaselineBinding(body.baselineBinding);
+  }else if(operation.module==='todo'){
+   const value=object(body.fields,todoKeys);
+   if(operation.method==='PATCH'&&todoRequiredKeys.some(k=>!Object.hasOwn(value,k)))throw new PlatformError(400,'COMPLETE_TODO_REQUIRED','Complete fields required');
+   validateTodo(value.personal===null?Object.fromEntries(Object.entries(value).filter(([k])=>k!=='personal')):value);
+  }else if(operation.module==='feedback')validateFeedbackInput(body.fields);
+  else if(operation.module==='finance'){
+   const value=object(body.fields,financeKeys);
+   if(financeKeys.some(k=>!Object.hasOwn(value,k)))throw new PlatformError(400,'COMPLETE_FINANCE_REQUIRED','Complete fields required');
+   validateFinance(value);
+  }else if(isRecordModule(operation.module))normalizePersonalFields(operation.module,completeRecordFields(body.fields,operation.module));
+  else if(operation.module==='organization'){
+   if(operation.method==='PATCH')completeOrganizationFields(body.fields);
+   normalizePersonalFields(String(args.type),body.fields);
+  }else throw new PlatformError(400,'OPERATION_UNSUPPORTED','Unsupported operation');
+ }
+ return{path,body:operation.method==='GET'?undefined:body,key:typeof idempotencyKey==='string'?idempotencyKey:undefined};
+}
