@@ -422,19 +422,23 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
      finally{footer.style.pointerEvents=previous;}
     });
     assert.equal(settingsAboveFooter,true,'mobile settings paint above the filing footer');
-    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=tasks&modal=settings&panel=general');await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await page.keyboard.press('Escape');
+    await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=tasks&modal=settings&panel=general');await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();
    }
-   await page.getByRole('button',{name:'帮助',exact:true}).click();
-   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toBeVisible();
-   await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCSS('pointer-events','auto');
+   await expect(page.getByRole('button',{name:'帮助',exact:true,includeHidden:true})).toHaveCount(0);
+   // The owner removed Help. Exercise the same live footer/overlay contract on
+   // Settings; mobile already entered it through its navigation drawer above.
+   if(width===1365)await page.getByRole('button',{name:'设置',exact:true}).click();
+   const settingsDialog=page.getByRole('dialog',{name:'设置',exact:true});
+   await expect(settingsDialog).toBeVisible();
+   await expect(settingsDialog).toHaveCSS('pointer-events','auto');
    const overlayAboveFooter=await page.evaluate(()=>{
     const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!,previous=footer.style.pointerEvents;
     footer.style.pointerEvents='auto';
     try{const rect=footer.getBoundingClientRect();return document.elementFromPoint(innerWidth-8,rect.y+rect.height/2)?.matches('[data-slot="dialog-overlay"]')??false;}
     finally{footer.style.pointerEvents=previous;}
    });
-   assert.equal(overlayAboveFooter,true,'help backdrop paints above the filing footer');
-   await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'帮助',exact:true})).toHaveCount(0);await expect(page.locator('body')).toHaveCSS('pointer-events','auto');
+   assert.equal(overlayAboveFooter,true,'settings backdrop paints above the filing footer');
+   await page.keyboard.press('Escape');await expect(settingsDialog).toHaveCount(0);await expect(page.locator('body')).toHaveCSS('pointer-events','auto');
   }finally{
    await page.evaluate(()=>{document.querySelector('[data-synthetic-filing-probe]')?.remove();document.querySelector('[data-synthetic-scroll-probe]')?.remove();window.dispatchEvent(new Event('resize'));});
   }
