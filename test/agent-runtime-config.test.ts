@@ -53,6 +53,57 @@ test('loading a validated runtime configuration clears inherited Agent enablemen
   for(const key of Object.keys(agent))assert.equal(env[key],undefined);
 });
 
+test('protected startup admits exact optional business modules with a complete Agent binding',()=>{
+  for(const modules of [
+    {LIFEOS_AGENT_ORGANIZATION:'organization-v1'},
+    {LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'},
+  ]) {
+    const approved=validateReviewConfig({...platform,...personal,...agent,...modules});
+    assert.equal(approved.LIFEOS_AGENT_ORGANIZATION,'organization-v1');
+    assert.equal(approved.LIFEOS_AGENT_CLASSIFICATION,modules.LIFEOS_AGENT_CLASSIFICATION);
+  }
+});
+
+test('protected startup rejects malformed, standalone and unknown business module configuration',()=>{
+  const modules={LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'};
+  for(const change of [
+    {LIFEOS_AGENT_ORGANIZATION:'yes'},
+    {LIFEOS_AGENT_ORGANIZATION:''},
+    {LIFEOS_AGENT_ORGANIZATION:1},
+    {LIFEOS_AGENT_CLASSIFICATION:'yes'},
+    {LIFEOS_AGENT_CLASSIFICATION:''},
+    {LIFEOS_AGENT_CLASSIFICATION:false},
+    {LIFEOS_AGENT_EXTRA_MODULE:'future-v1'},
+  ]) assert.throws(()=>validateReviewConfig({...platform,...personal,...agent,...modules,...change}),/^Error: Isolated review configuration unavailable$/);
+  for(const value of [
+    {...platform,...personal,...agent,LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'},
+    {...platform,...personal,...modules},
+    {...platform,...modules},
+    {...platform,...agent,...modules},
+  ]) assert.throws(()=>validateReviewConfig(value),/^Error: Isolated review configuration unavailable$/);
+});
+
+test('loading legacy runtime configuration clears inherited business module flags',()=>{
+  const bindings:Record<string,string>[]=[{...platform,...personal},{...platform,...personal,...agent}];
+  for(const binding of bindings) {
+    const env:Record<string,string|undefined>={LIFEOS_AGENT_ORGANIZATION:'organization-v1',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'};
+    applyReviewEnvironment(binding,env);
+    assert.equal(env.LIFEOS_AGENT_ORGANIZATION,undefined);
+    assert.equal(env.LIFEOS_AGENT_CLASSIFICATION,undefined);
+    assert.equal(env.LIFEOS_AGENT_API_ENABLED,binding.LIFEOS_AGENT_API_ENABLED);
+  }
+});
+
+test('loading an organization-only binding replaces inherited flags without activating classification',()=>{
+  const env:Record<string,string|undefined>={LIFEOS_AGENT_ORGANIZATION:'invalid',LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'};
+  applyReviewEnvironment({...platform,...personal,...agent,LIFEOS_AGENT_ORGANIZATION:'organization-v1'},env);
+  assert.equal(env.LIFEOS_AGENT_ORGANIZATION,'organization-v1');
+  assert.equal(env.LIFEOS_AGENT_CLASSIFICATION,undefined);
+  const previous={...env};
+  assert.throws(()=>applyReviewEnvironment({...platform,...personal,...agent,LIFEOS_AGENT_CLASSIFICATION:'todo-classification-v1'},env));
+  assert.deepEqual(env,previous);
+});
+
 
 test('the mounted Agent route closes without an explicit validated runtime binding',async()=>{
   const previous=process.env.LIFEOS_AGENT_API_ENABLED;

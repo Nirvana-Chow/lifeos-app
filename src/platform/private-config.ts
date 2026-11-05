@@ -1,5 +1,5 @@
 import{keyManagementFlag}from'../agent-api/key-management-config.ts';
-import{agentRuntimeKeys,readAgentRuntimeConfig}from'../agent-api/config.ts';
+import{agentRuntimeKeys,readAgentRuntimeConfig,readAgentBusinessModules}from'../agent-api/config.ts';
 import{personalConfigKeys,readPersonalConfig}from'../personal-candidate/config.ts';
 import{readCaptureRunCandidateFlag}from'../capture-runs-candidate/config.ts';
 import{readChatCandidateFlag}from'../chat-candidate/config.ts';
@@ -24,6 +24,7 @@ export function validateReviewConfig(value:Record<string,unknown>):Record<string
   if(Object.keys(value).length!==keys.length||keys.some(k=>k!=='LIFEOS_PERSONAL_RECOVERY_APPROVAL'&&typeof value[k]!=='string'))throw Error();
   const env={...value} as Record<string,string>;if(typeof value.LIFEOS_PERSONAL_RECOVERY_APPROVAL!=='string')delete env.LIFEOS_PERSONAL_RECOVERY_APPROVAL;const config=readPlatformConfig(env);if(!config)throw Error();
   const personal=readPersonalConfig(env,config);const agent=readAgentRuntimeConfig(env,config,personal);
+  readAgentBusinessModules(env,personal);
   if(env[keyManagementFlag]!==undefined&&(env[keyManagementFlag]!=='1'||!agent))throw Error();
   if(personal){
    // Personal mode is manual-only. It cannot inherit optional model, import or fixture capabilities.

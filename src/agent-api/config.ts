@@ -5,6 +5,8 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_API_ENABLED',
   'LIFEOS_AGENT_API_DATABASE_URL',
   'LIFEOS_AGENT_API_SECRET',
+  'LIFEOS_AGENT_ORGANIZATION',
+  'LIFEOS_AGENT_CLASSIFICATION',
 ] as const;
 
 export const agentVerifierRole = 'lifeos_agent_verifier';
