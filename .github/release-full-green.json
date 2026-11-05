@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "repository": "Nirvana-Chow/lifeos-app",
+  "repositoryId": 1443243170,
+  "sourceSha": "8ccc33d78d490a67c8c799dfc4b236539f3d7c55",
+  "treeSha": "91b19b93553b4b20a12635e17c7b522cf8e6fc0a",
+  "runId": "41947417812",
+  "runAttempt": "1",
+  "workflowId": 404768741,
+  "workflowPath": ".github/workflows/ci.yml",
+  "workflowSha256": "c33cc8f56866d6251c9c3ba003585c0507521a16f3ad86f74d5a854fbe861014",
+  "conclusion": "success",
+  "jobNames": ["Tests, types, webpack, isolated Auth and PostgreSQL", "Isolated PostgreSQL recovery and native MFA"]
+}

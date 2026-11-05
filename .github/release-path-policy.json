@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "routinePaths": [
+    "src/ui-review/requirements-page.tsx",
+    "src/ui-review/requirements-detail.tsx",
+    "src/ui-review/requirements-views.tsx",
+    "src/ui-review/requirements-page.module.css",
+    "src/ui-review/task-grid.tsx",
+    "src/ui-review/task-grid.module.css",
+    "src/ui-review/task-table.tsx",
+    "src/ui-review/task-board.tsx",
+    "src/ui-review/category-grid.tsx",
+    "src/ui-review/category-grid.module.css",
+    "src/ui-review/record-grid.tsx",
+    "src/ui-review/record-grid.module.css",
+    "src/ui-review/source-summary.tsx",
+    "src/ui-review/overview-chart.tsx",
+    "src/personal-candidate/workspace.module.css",
+    "src/personal-candidate/task-editor.module.css"
+  ],
+  "routinePrefixes": ["docs/", "openspec/"],
+  "releaseJobs": ["Unit, types and source contracts", "Release eligibility"],
+  "qualificationJobs": ["Qualification policy", "Tests, types, webpack, isolated Auth and PostgreSQL", "Isolated PostgreSQL recovery and native MFA"]
+}
