@@ -43,6 +43,7 @@ import {
   visibleWorkspaceState,
 } from "./selectors";
 import { TaskTable, statusLabels } from "./task-table";
+import {TaskBoard} from "./task-board";
 import { TaskTitleField } from "./task-grid";
 import { OverviewChart } from "./overview-chart";
 import type {
@@ -525,36 +526,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <div className="lo-list-rows">{rows.map((task) => taskCard(task))}</div>
         </div>
       );
-    const columns: {
-      status: "pending" | "in_progress" | "done" | "cancelled";
-      title: string;
-    }[] = [
-      { status: "pending", title: "未完成" },
-      { status: "in_progress", title: "进行中" },
-      { status: "done", title: "已完成" },
-      { status: "cancelled", title: "已取消" },
-    ];
-    return (
-      <div className="lo-board">
-        {columns.map((column) => {
-          const items = rows.filter((task) =>
-            column.status === "pending"
-              ? task.status === "open"
-              : task.status === column.status,
-          );
-          return (
-            <section className="lo-board-column" key={column.status}>
-              <h2>
-                {column.title}
-                <span>{items.length}</span>
-              </h2>
-              <div className="lo-board-cards">{items.map((task) => taskCard(task, true))}
-              {!items.length && <div className="lo-board-empty">暂无待办</div>}</div>
-            </section>
-          );
-        })}
-      </div>
-    );
+    return <TaskBoard tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
   }
   return (
     <div
