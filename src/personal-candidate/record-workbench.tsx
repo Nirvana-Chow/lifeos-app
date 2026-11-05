@@ -23,7 +23,7 @@ import {TrainingCalendar} from '../personal-health/xunji-log/calendar';
 import {HealthTrendView} from '../personal-health/trend';
 import s from './record-workbench.module.css';
 const labels={journal:'日记',health:'健康',person:'人物'};
-const recordLabels={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物'};
+const recordLabels={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资'};
 const zone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch{return'UTC';}};
 const emptyLinks=()=>({project:null,domain:null,topics:[],people:[]});
 const fresh=(type:RecordModule):RecordFields=>type==='health'?emptyHealthFields('body',zone()):{title:'',text:'',occurredOn:null,personal:type==='person'?emptyPersonPersonal():{type:'journal',links:emptyLinks()}};

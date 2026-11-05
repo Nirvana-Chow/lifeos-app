@@ -37,13 +37,13 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
  constructor(repository:PlatformRepository,config:PersonalConfig,options:{currentSourceSha?:()=>string|null}={}){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);this.requirementSupport=new RequirementSupportService(repository,this.config,this.requirements,options);}
- private allows(type:PersonalType){return type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
+ private allows(type:PersonalType){return type==='media'?this.config.mediaEnabled===true:type==='career'?this.config.careerEnabled===true:type==='portfolio'?this.config.portfolioEnabled===true:type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
  private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
  private matches(entry:StoredEntry|null,owner:string,type?:PersonalType|'person',id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.allows(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
  async get(owner:string,type:PersonalType,id:string):Promise<PublicEntry>{this.owner(owner);this.enabled(type);id=validateId(id);const entry=await this.repository.get(owner,type==='todo'?'todo':'inbox',id);if(!this.matches(entry,owner,type,id))return missing();return publicEntry(entry);}
  private async page(owner:string,mode:'current'|'history',limit:number,type?:PersonalType,id?:string):Promise<PersonalPage>{
-  this.owner(owner);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
+  this.owner(owner);if(type&&['media','career','portfolio'].includes(type))this.enabled(type);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   if(!this.repository.readWindow)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','未配置有界读取，已停止。');
   const rows=await this.repository.readWindow(owner,mode,{anchor:null,after:null},limit+1);
   if(!Array.isArray(rows)||rows.length>limit+1)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','有界存储响应无效。');
@@ -55,7 +55,7 @@ export class PersonalService{
  }
  async list(owner:string,type?:PersonalType,limit=50){return this.page(owner,'current',limit,type);}
  async history(owner:string,type:PersonalType,id:string,limit=50){
-  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person'].includes(type))return this.page(owner,'history',limit,type,id);
+  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person','media','career','portfolio'].includes(type))return this.page(owner,'history',limit,type,id);
   if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   const rows=await this.repository.history(owner,'inbox',id);
   if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,'CALENDAR_HISTORY_UNAVAILABLE','日程历史读取无效。');
@@ -79,7 +79,14 @@ export class PersonalService{
    const records=await lockPersonalRecords(tx,[...(id?[{kind,id} as const]:[]),...references.map(({link})=>({kind:'inbox' as const,id:link.id}))]);
    if(id){const old=records.get(JSON.stringify([kind,id]))??null;if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');entry={...old,draft:preserveOmittedPlanning(type,(raw as {fields:unknown}).fields,old.draft,draft),revision:old.revision+1,updatedAt:now};}
    else{const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
-   for(const {type:targetType,link} of references){const target=records.get(JSON.stringify(['inbox',link.id]))??null;if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');}
+   for(const reference of references){
+    const {type:targetType,link}=reference,target=records.get(JSON.stringify(['inbox',link.id]))??null;
+    if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');
+    if('expectedKinds'in reference&&reference.expectedKinds){
+     const personal=target&&'personal'in target.draft?target.draft.personal:undefined,subtype=personal&&'type'in personal?(personal.type==='career'?personal.careerKind:personal.type==='portfolio'?personal.portfolioKind:null):null;
+     if(!subtype||!(reference.expectedKinds as readonly string[]).includes(subtype))fail(409,'REFERENCE_CONFLICT','关联记录子类型不符合当前字段，请重新核对。');
+    }
+   }
    await guard();await tx.write(entry,raw,!id);const result={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest,result});return result;
   });
  }

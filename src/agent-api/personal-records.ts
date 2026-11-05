@@ -14,6 +14,9 @@ export function personalRecordModuleEnabled(module:string,config:PersonalConfig,
   case 'health':return config.healthEnabled===true;
   case 'person':return config.peopleEnabled===true;
   case 'finance':return config.financeEnabled===true;
+  case 'media':return config.mediaEnabled===true;
+  case 'career':return config.careerEnabled===true;
+  case 'portfolio':return config.portfolioEnabled===true;
   case 'feedback':return config.requirementSupportEnabled===true&&config.requirementsEnabled===true;
   default:return false;
  }

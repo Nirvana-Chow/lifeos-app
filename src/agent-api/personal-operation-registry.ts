@@ -1,6 +1,6 @@
 import type {AgentScope} from './scopes.ts';
 
-export const personalRecordTypes=['journal','calendar','health','person','finance'] as const;
+export const personalRecordTypes=['journal','calendar','health','person','finance','media','career','portfolio'] as const;
 export type AgentRecordType=typeof personalRecordTypes[number];
 export type BusinessScope=`${AgentRecordType|'feedback'}:${'read'|'write'}`;
 export type OperationScope=AgentScope|BusinessScope;

@@ -26,6 +26,18 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 | `getFinance` | `GET` | `/v1/records/finance/{id}` | `finance:read` | Read one owner finance record with complete fields and its current revision. |
 | `createFinance` | `POST` | `/v1/records/finance` | `finance:read, finance:write` | Create one finance record through the native owner writer with complete fields and an idempotency key. |
 | `updateFinance` | `PATCH` | `/v1/records/finance/{id}` | `finance:read, finance:write` | Update one finance record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotMedia` | `GET` | `/v1/records/media/snapshot` | `media:read` | Read the complete current media snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getMedia` | `GET` | `/v1/records/media/{id}` | `media:read` | Read one owner media record with complete fields and its current revision. |
+| `createMedia` | `POST` | `/v1/records/media` | `media:read, media:write` | Create one media record through the native owner writer with complete fields and an idempotency key. |
+| `updateMedia` | `PATCH` | `/v1/records/media/{id}` | `media:read, media:write` | Update one media record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotCareer` | `GET` | `/v1/records/career/snapshot` | `career:read` | Read the complete current career snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getCareer` | `GET` | `/v1/records/career/{id}` | `career:read` | Read one owner career record with complete fields and its current revision. |
+| `createCareer` | `POST` | `/v1/records/career` | `career:read, career:write` | Create one career record through the native owner writer with complete fields and an idempotency key. |
+| `updateCareer` | `PATCH` | `/v1/records/career/{id}` | `career:read, career:write` | Update one career record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotPortfolio` | `GET` | `/v1/records/portfolio/snapshot` | `portfolio:read` | Read the complete current portfolio snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getPortfolio` | `GET` | `/v1/records/portfolio/{id}` | `portfolio:read` | Read one owner portfolio record with complete fields and its current revision. |
+| `createPortfolio` | `POST` | `/v1/records/portfolio` | `portfolio:read, portfolio:write` | Create one portfolio record through the native owner writer with complete fields and an idempotency key. |
+| `updatePortfolio` | `PATCH` | `/v1/records/portfolio/{id}` | `portfolio:read, portfolio:write` | Update one portfolio record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
 | `snapshotFeedback` | `GET` | `/v1/feedback/snapshot` | `feedback:read` | Read the complete owner feedback snapshot with explicit source channels and revisions. |
 | `getFeedback` | `GET` | `/v1/feedback/{id}` | `feedback:read` | Read one owner feedback record to verify the result and its revision. |
 | `createFeedback` | `POST` | `/v1/feedback` | `feedback:read, feedback:write` | Create feedback with the server-owned agent-feedback channel and an idempotency key; this does not approve or convert a requirement. |
