@@ -78,7 +78,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   const dialog=page.getByRole('dialog'),title=dialog.getByRole('heading',{level:2});
   await expect(dialog).toBeVisible();await expect(title).toBeFocused();
   const item=baseline.requirements.find(r=>r.id===expected[0])!;
-  await expect(dialog.getByText('待办与项目工作台',{exact:true})).toBeVisible();
+  await expect(dialog.getByText(baseline.roadmap!.phases.find(phase=>phase.id==='workspace')!.title,{exact:true})).toBeVisible();
   for(const criterion of item.acceptanceCriteria)await expect(dialog.getByText(criterion,{exact:true})).toBeVisible();
   const handle=await dialog.elementHandle();
   await dialog.evaluate(node=>(node as HTMLElement).dataset.continuity='same');
