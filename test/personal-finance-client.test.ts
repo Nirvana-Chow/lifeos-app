@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PersonalFinanceService} from '../src/personal-finance/service.ts';
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
-import {freezePersonalFinanceCommand,keepPersonalFinanceCommand,readPersonalFinanceCommand,sendPersonalFinanceCommand,readPersonalFinanceSnapshot} from '../src/personal-finance/client.ts';
+import {clearPersonalFinanceCommand,freezePersonalFinanceCommand,keepPersonalFinanceCommand,readPersonalFinanceCommand,sendPersonalFinanceCommand,readPersonalFinanceSnapshot} from '../src/personal-finance/client.ts';
 import {financeAmountMinor,formatFinanceAmount} from '../src/personal-finance/domain.ts';
 import {MemoryPort} from './helpers/platform.ts';
 const binding={ownerId:'finance-http-fixture',spaceId:'finance-http-space'},baseURL='https://finance.example.test';
@@ -59,4 +59,14 @@ test('an uncertain finance write stays uncertain after later definite conflicts,
 test('finance recovery only clears after storage removal is independently confirmed',async()=>{
  const {fetcher,store}=setup(),command=freezePersonalFinanceCommand(binding,fields,null,'finance-clear-failure');const blocked={...store,removeItem:()=>{}};
  await assert.rejects(sendPersonalFinanceCommand(fetcher,blocked,command),{uncertain:true});assert.equal(readPersonalFinanceCommand(store,binding)?.key,command.key);
+});
+test('a definite first rejection may release its frozen command for correction; an unknown or failed-readback command may not',async()=>{
+ const {fetcher,store}=setup(),rejected=freezePersonalFinanceCommand(binding,fields,null,'finance-known-rejection');
+ const deny=(async(input:RequestInfo|URL,init?:RequestInit)=>init?.method?Response.json({error:{code:'INVALID_REFUND_SOURCE',message:'退款需要原支出'}},{status:400}):fetcher(input,init)) as typeof fetch;
+ await assert.rejects(sendPersonalFinanceCommand(deny,store,rejected),{status:400,uncertain:false});clearPersonalFinanceCommand(store,rejected);assert.equal(readPersonalFinanceCommand(store,binding),null);
+ const unknown=freezePersonalFinanceCommand(binding,fields,null,'finance-readback-blocks-release');
+ const noReadback=(async(input:RequestInfo|URL,init?:RequestInit)=>!init?.method&&/\/[a-f0-9-]{36}$/.test(String(input))?Response.json({error:{code:'UNAVAILABLE',message:'暂时无法读回'}},{status:503}):fetcher(input,init)) as typeof fetch;
+ await assert.rejects(sendPersonalFinanceCommand(noReadback,store,unknown),{uncertain:true});
+ await assert.rejects(sendPersonalFinanceCommand(deny,store,readPersonalFinanceCommand(store,binding)!),{status:400,uncertain:true});
+ assert.throws(()=>clearPersonalFinanceCommand(store,unknown),{uncertain:true});assert.equal(readPersonalFinanceCommand(store,binding)?.key,unknown.key);
 });
