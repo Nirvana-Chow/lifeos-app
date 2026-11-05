@@ -193,7 +193,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     const text = `请从 ${window.location.origin}/api/platform/agent-skill 下载 LifeOS Agent Skill（lifeos-agent.tar.gz），解压后将完整 lifeos-agent 文件夹安装到当前 AI 工具支持的 Skills 目录，并保留 SKILL.md 与 references 的相对位置。如果工具不支持安装 Skill，请先让它读取 SKILL.md 和引用文件。\n\n在本站 API 密钥设置中新建自己的密钥，只授予需要的模块读取或写入权限。通过当前工具批准的凭据存储单独配置密钥与本站 HTTPS 地址；不要把密钥写入 Skill、聊天、URL 或共享文件。压缩包不包含任何人的密钥。\n\n开始使用时，让 AI 读取 Skill 及随包的 references/operations.md，先执行能力发现，再按实际授权读取记录。写入前明确目标，写入后读回确认。当前支持待办以及项目、领域和主题的查询、新建和修改；实际可用业务以能力发现和操作清单为准。`;
     setInstructions(text);
     try {await navigator.clipboard.writeText(text); setSkillMessage('安装说明已复制');}
-    catch {setSkillMessage('无法访问剪贴板，请选中下方说明手动复制。');}
+    catch {setSkillMessage('无法访问剪贴板，请展开安装和使用说明，选中文字手动复制。');}
   }
 
   function reload() {
@@ -435,14 +435,16 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     </>}
     <section className={styles.section} aria-labelledby="skill-title">
       <h2 id="skill-title">连接你的 AI 工具</h2>
-      <p>下载 LifeOS Agent Skill，让 AI 按你的授权管理待办、项目、领域和主题。每位用户使用自己的密钥，安装包不含凭据。</p>
+      <p>使用你自己的 API 密钥，只授予需要的权限。安装包不含凭据；不要把密钥放入 Skill、聊天、URL 或共享文件。</p>
       <div className={styles.actions}>
         <a className={styles.download} href="/api/platform/agent-skill" download="lifeos-agent.tar.gz">下载 LifeOS Agent Skill</a>
         <Button type="button" variant="outline" onClick={copyInstructions}>复制安装说明</Button>
       </div>
-      <p className={styles.skillHint}>压缩包附带当前操作清单。解压后安装完整文件夹，再单独配置本站地址和自己的密钥。</p>
       {skillMessage && <p role="status">{skillMessage}</p>}
-      {instructions && <details><summary>查看安装和使用说明</summary><pre className={styles.instructions}>{instructions}</pre></details>}
+      <details><summary>安装和使用说明</summary>
+        <p className={styles.skillHint}>LifeOS Agent Skill 让 AI 按你的授权管理待办、项目、领域和标签。压缩包附带当前操作清单；解压后安装完整文件夹，再通过工具批准的凭据存储单独配置本站地址和自己的密钥。</p>
+        {instructions && <pre className={styles.instructions}>{instructions}</pre>}
+      </details>
     </section>
     <Dialog open={dialogOpen} onOpenChange={open=>{if (!open) closeDialog();}}>
       {/* Content-local Escape also covers the native layer-registration window. */}

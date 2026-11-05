@@ -137,10 +137,10 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   };
   await nav('设置');
   const settings=page.getByRole('dialog',{name:'设置',exact:true});
-  await settings.getByRole('button',{name:'业务标签',exact:true}).click();
-  const topics=settings.getByRole('region',{name:'业务标签',exact:true});
+  await settings.getByRole('button',{name:'标签',exact:true}).click();
+  const topics=settings.getByRole('region',{name:'标签',exact:true});
   await expect(topics.getByText('合成主题',{exact:true})).toBeVisible();
-  await expect(topics.getByRole('link',{name:'编辑主题',exact:true})).toHaveAttribute('href','/personal/edit?type=topic&id='+ids[6]);
+  await expect(topics.getByRole('link',{name:'编辑标签',exact:true})).toHaveAttribute('href','/personal/edit?type=topic&id='+ids[6]);
   await page.keyboard.press('Escape');await expect(settings).toHaveCount(0);
   await nav('设置');await expect(settings).toBeVisible();
   await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(settings).toHaveCount(0);

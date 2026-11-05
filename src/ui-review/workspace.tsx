@@ -939,7 +939,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <DialogTitle id="lo-settings-title" tabIndex={-1}>设置</DialogTitle>
           <div className="lo-settings-layout">
             <nav aria-label="设置分类" className="lo-settings-panels">
-              {([{id:'general',label:'通用'},{id:'topics',label:'业务标签'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'}] as const)
+              {([{id:'general',label:'通用'},{id:'topics',label:'标签'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'}] as const)
                 .filter(item=>item.id==='general'||item.id==='topics'&&access.allowedTypes?.includes('topic')||props.availableSettingsPanels?.includes(item.id))
                 .map(item=><Button variant="ghost" key={item.id} aria-pressed={settingsPanel===item.id} onClick={()=>selectSettingsPanel(item.id)}>{item.label}</Button>)}
             </nav>
@@ -964,18 +964,19 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
           )}
-              {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="业务标签">
-                <h2>业务标签</h2>
+              {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="标签">
+                <h2>标签</h2>
+                <p>同一标签可关联不同项目和待办，方便按主题归类。</p>
           {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : <>
-            <label className="lo-topic-search">搜索业务标签<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按主题名称搜索"/></label>
-            {data?.topics === undefined ? <p role="status">主题列表暂不可用，请重新读取。</p> : <>
+            <label className="lo-topic-search">搜索标签<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按标签名称搜索"/></label>
+            {data?.topics === undefined ? <p role="status">标签列表暂不可用，请重新读取。</p> : <>
               <ul className="lo-topic-list">{data.topics.filter(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())).map(topic =>
                 <li key={topic.id}><strong>{topic.title}</strong><span>版本 {topic.revision}</span>
-                  {canWrite && <a href={"/personal/edit?type=topic&id="+encodeURIComponent(topic.id)}>编辑主题</a>}
+                  {canWrite && <a href={"/personal/edit?type=topic&id="+encodeURIComponent(topic.id)}>编辑标签</a>}
                 </li>)}</ul>
-              {!data.topics.some(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())) && <p>{topicQuery.trim()?"没有符合条件的主题。":"暂无主题。"}</p>}
+              {!data.topics.some(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())) && <p>{topicQuery.trim()?"没有符合条件的标签。":"暂无标签。"}</p>}
             </>}
-            {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建业务标签</a>}
+            {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建标签</a>}
           </>}
               </section>}
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
