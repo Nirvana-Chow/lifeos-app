@@ -668,6 +668,45 @@
       ]
     },
     {
+      "path": "node_modules/@modelcontextprotocol/client",
+      "name": "@modelcontextprotocol/client",
+      "version": "2.4.0",
+      "license": "Apache-2.0",
+      "source": "https://registry.npmjs.org/@modelcontextprotocol/client/-/client-2.4.0.tgz",
+      "integrity": "sha512-LgrD2OphHuG12vfKFKz6SOnq7bKHQmhGJIAYdD+MZBn2npHEyry6uD8zvktodtl5CQM85MO0anUyD9JwmUmxww==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
+      "path": "node_modules/@modelcontextprotocol/core",
+      "name": "@modelcontextprotocol/core",
+      "version": "2.4.0",
+      "license": "Apache-2.0",
+      "source": "https://registry.npmjs.org/@modelcontextprotocol/core/-/core-2.4.0.tgz",
+      "integrity": "sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==",
+      "development": false,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
+      "path": "node_modules/@modelcontextprotocol/server",
+      "name": "@modelcontextprotocol/server",
+      "version": "2.4.0",
+      "license": "Apache-2.0",
+      "source": "https://registry.npmjs.org/@modelcontextprotocol/server/-/server-2.4.0.tgz",
+      "integrity": "sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==",
+      "development": false,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
       "path": "node_modules/@napi-rs/wasm-runtime",
       "name": "@napi-rs/wasm-runtime",
       "version": "1.2.5",
@@ -2252,6 +2291,19 @@
       ]
     },
     {
+      "path": "node_modules/cross-spawn",
+      "name": "cross-spawn",
+      "version": "7.0.6",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",
+      "integrity": "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
       "path": "node_modules/csstype",
       "name": "csstype",
       "version": "3.2.3",
@@ -2395,6 +2447,19 @@
       ]
     },
     {
+      "path": "node_modules/eventsource",
+      "name": "eventsource",
+      "version": "3.0.7",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/eventsource/-/eventsource-3.0.7.tgz",
+      "integrity": "sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
       "path": "node_modules/eventsource-parser",
       "name": "eventsource-parser",
       "version": "3.1.1",
@@ -2470,6 +2535,19 @@
       "optional": false,
       "licensePathsInPackage": [
         "license"
+      ]
+    },
+    {
+      "path": "node_modules/isexe",
+      "name": "isexe",
+      "version": "2.0.0",
+      "license": "ISC",
+      "source": "https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz",
+      "integrity": "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
       ]
     },
     {
@@ -2948,6 +3026,19 @@
       ]
     },
     {
+      "path": "node_modules/path-key",
+      "name": "path-key",
+      "version": "3.1.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz",
+      "integrity": "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "license"
+      ]
+    },
+    {
       "path": "node_modules/pg",
       "name": "pg",
       "version": "8.23.1",
@@ -3137,6 +3228,19 @@
       "source": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
       "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==",
       "development": false,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
+      "path": "node_modules/pkce-challenge",
+      "name": "pkce-challenge",
+      "version": "5.0.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/pkce-challenge/-/pkce-challenge-5.0.1.tgz",
+      "integrity": "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==",
+      "development": true,
       "optional": false,
       "licensePathsInPackage": [
         "LICENSE"
@@ -3461,6 +3565,32 @@
       ]
     },
     {
+      "path": "node_modules/shebang-command",
+      "name": "shebang-command",
+      "version": "2.0.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz",
+      "integrity": "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "license"
+      ]
+    },
+    {
+      "path": "node_modules/shebang-regex",
+      "name": "shebang-regex",
+      "version": "3.0.0",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz",
+      "integrity": "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==",
+      "development": true,
+      "optional": false,
+      "licensePathsInPackage": [
+        "license"
+      ]
+    },
+    {
       "path": "node_modules/source-map-js",
       "name": "source-map-js",
       "version": "1.2.2",
@@ -3651,6 +3781,19 @@
       "source": "https://registry.npmjs.org/use-sync-external-store/-/use-sync-external-store-1.7.0.tgz",
       "integrity": "sha512-6L+EeigHMQhdaIPNIFUKwfWJSwWFQ8gJbJ2DLOs5sDIegTwR9fRxvnM3uciHKjIZhFz+KAv2emhWMRvDmMcY8A==",
       "development": false,
+      "optional": false,
+      "licensePathsInPackage": [
+        "LICENSE"
+      ]
+    },
+    {
+      "path": "node_modules/which",
+      "name": "which",
+      "version": "2.0.2",
+      "license": "ISC",
+      "source": "https://registry.npmjs.org/which/-/which-2.0.2.tgz",
+      "integrity": "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==",
+      "development": true,
       "optional": false,
       "licensePathsInPackage": [
         "LICENSE"
