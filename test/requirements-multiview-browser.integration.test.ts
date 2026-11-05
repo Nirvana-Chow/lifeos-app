@@ -68,6 +68,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   assert.ok(expected.length>0);assert.deepEqual(await visibleIds(),expected);
   await page.getByRole('button',{name:'甘特视图',exact:true}).click();
   assert.deepEqual(await visibleIds(),[]);
+  assert.equal(await page.locator('[data-requirements-filters]').evaluate(node=>(node as HTMLDetailsElement).open),false);
   await expect(page.getByRole('heading',{name:`未排期（${expected.length}）`,exact:true})).toBeVisible();
   await expect(page.getByText('尚无完整排期；设置计划开始和结束日期后显示甘特条',{exact:true})).toBeVisible();
   await expect(page.locator('[data-gantt-bar],time')).toHaveCount(0);
@@ -101,9 +102,18 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await page.route('**/*',route=>new URL(route.request().url()).origin===origin&&['GET','HEAD'].includes(route.request().method())?route.continue():route.abort());
   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
   await page.getByRole('button',{name:({table:'表格',board:'看板',gantt:'甘特'}[view])+'视图',exact:true}).click();
+  if(view==='gantt'){
+   // The public baseline has no planning dates. Preserve reachability through the table;
+   // undated records must never be stacked into the chart to satisfy this oracle.
+   const gantt=page.getByRole('region',{name:'需求甘特'});
+   assert.ok((await gantt.boundingBox())!.height>=96);
+   await expect(gantt.locator('[data-requirement-id]')).toHaveCount(0);
+   await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
+   const table=gantt.getByRole('button',{name:'查看需求表格',exact:true});await table.scrollIntoViewIfNeeded();await expect(table).toBeInViewport({ratio:0.5});await table.click();
+  }
   const populatedColumn=page.locator('[aria-label="按阶段查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
-  const viewport=view==='table'?page.locator('[data-slot="data-grid-table-viewport"]'):view==='gantt'?page.getByRole('region',{name:'需求甘特'}).locator(':scope > div'):populatedColumn.first().locator(':scope > div');
-  const headerHeight=view==='table'?(await viewport.locator('thead').boundingBox())!.height:0;
+  const viewport=view==='board'?populatedColumn.first().locator(':scope > div'):page.locator('[data-slot="data-grid-table-viewport"]');
+  const headerHeight=view!=='board'?(await viewport.locator('thead').boundingBox())!.height:0;
   const height=(await viewport.boundingBox())!.height;
   assert.ok(height-headerHeight>=96,`${view} requires visible row area, got ${height-headerHeight}px`);
   const entries=page.locator('[data-requirement-id] button');
@@ -112,7 +122,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
    const id=await trigger.locator('span').first().textContent();
    await trigger.click();await expect(page.getByRole('dialog').getByText(id!,{exact:true})).toBeVisible();await page.keyboard.press('Escape');
   }
-  await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
+  if(view!=='gantt')await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  });
 });
