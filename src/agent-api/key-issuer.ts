@@ -1,3 +1,5 @@
+import {allPersonalBusinessPolicy,type BusinessDataPolicy} from './business-policy.ts';
+import {readBusinessPolicyCatalog} from './business-policy-postgres.ts';
 import {verifyAgentBusinessReadiness,verifyAgentRequirementsReadiness} from './runtime.ts';
 import {createHmac, timingSafeEqual} from 'node:crypto';
 import {isHTTPSOrigin} from '../platform/config.ts';
@@ -11,6 +13,7 @@ const ownerSessionCookie = '__Secure-lifeos-platform-candidate.session_token';
 
 export type KeySummary = Readonly<{
   grantDigest?: string;
+  businessDataPolicy?: BusinessDataPolicy;
   id: string;
   name: string;
   scopes: readonly AgentScope[];
@@ -19,12 +22,13 @@ export type KeySummary = Readonly<{
   status: 'active' | 'expired' | 'revoked';
 }>;
 export type KeyOperation = 'list'|'create'|'revoke'|'setScopes';
-export type SetScopesInput = {id:string;expectedGrantDigest:string;scopes:readonly AgentScope[]};
-type IssueInput = {name: string; scopes: AgentScope[]; expiresIn: number};
+export type SetScopesInput = {id:string;expectedGrantDigest:string;scopes:readonly AgentScope[];businessDataPolicy?:BusinessDataPolicy|null};
+type IssueInput = {name: string; scopes: AgentScope[]; expiresIn: number;businessDataPolicy?:BusinessDataPolicy};
 type Issued = {grant: KeySummary; key: string};
 type KeyPage = {keys: KeySummary[]; nextCursor?: string};
 const cursorPattern = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)~([A-Za-z0-9_-]{1,80})$/;
 type Dependencies = {
+  businessPolicyAvailable?:()=>Promise<boolean>;
   authenticate: (cookie: string) => Promise<boolean>;
   list: (cursor?: string) => Promise<KeyPage>;
   issue: (input: IssueInput) => Promise<Issued>;
@@ -40,8 +44,8 @@ function fields(body: unknown, expected: readonly string[]): Record<string, unkn
 }
 
 function safeSummary(value: KeySummary): KeySummary {
-  const {id,name,scopes,createdAt,expiresAt,status,grantDigest} = value;
-  return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{})};
+  const {id,name,scopes,createdAt,expiresAt,status,grantDigest,businessDataPolicy} = value;
+  return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{}),...(businessDataPolicy?{businessDataPolicy}:{})};
 }
 
 export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessScopes?:'organization-v1'|'requirements-v1') {
@@ -49,13 +53,14 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
     const fail = (status:number,error:string): Result => ({status,body:{error}});
     try {
       if (!cookie || Buffer.byteLength(cookie) > 8192 || !await deps.authenticate(cookie)) return fail(401,'AUTH_REQUIRED');
+      const policyAvailable=await deps.businessPolicyAvailable?.()===true;
       if (operation === 'list') {
         const input = fields(body, ['cursor']);
         const cursor = input?.cursor;
         if (!fields(body, []) && (typeof cursor !== 'string' || !cursorPattern.test(cursor) || !Number.isFinite(Date.parse(cursor.split('~')[0]))))
           return fail(400, 'INVALID_REQUEST');
         const page = await deps.list(typeof cursor === 'string' ? cursor : undefined);
-        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(businessScopes?{availableScopes:issuerScopes(businessScopes)}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
+        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(policyAvailable?{availablePolicies:[allPersonalBusinessPolicy]}:{}), ...(businessScopes?{availableScopes:issuerScopes(businessScopes)}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
       }
       if (operation === 'revoke') {
         const input = fields(body,['id']);
@@ -64,15 +69,19 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
       }
       if (operation === 'setScopes') {
         if (!businessScopes || !deps.setScopes) return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
-        const input=fields(body,['id','expectedGrantDigest','scopes']);
+        const input=fields(body,['id','expectedGrantDigest','scopes'])??fields(body,['id','expectedGrantDigest','scopes','businessDataPolicy']);
+        if(input&&Object.hasOwn(input,'businessDataPolicy')&&input.businessDataPolicy!==null&&input.businessDataPolicy!==allPersonalBusinessPolicy)return fail(400,'INVALID_REQUEST');
+        if(input?.businessDataPolicy&&!policyAvailable)return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
         if (typeof input?.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)||
             typeof input.expectedGrantDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedGrantDigest)) return fail(400,'INVALID_REQUEST');
         let scopes:readonly AgentScope[];
         try {scopes=normalizeAgentScopes(input.scopes);if(scopes.some(s=>!issuerScopes(businessScopes).includes(s)))return fail(400,'INVALID_REQUEST');} catch {return fail(400,'INVALID_REQUEST');}
-        const grant=await deps.setScopes({id:input.id,expectedGrantDigest:input.expectedGrantDigest,scopes},cookie);
+        const grant=await deps.setScopes({id:input.id,expectedGrantDigest:input.expectedGrantDigest,scopes,...(Object.hasOwn(input,'businessDataPolicy')?{businessDataPolicy:input.businessDataPolicy as BusinessDataPolicy|null}:{})},cookie);
         return {status:200,body:{grant:safeSummary(grant)}};
       }
-      const input = fields(body,['name','scopes','expiresAt']) ?? fields(body,['name','scopes','expiresInDays']);
+      const input = fields(body,['name','scopes','expiresAt']) ?? fields(body,['name','scopes','expiresInDays']) ?? fields(body,['name','scopes','expiresAt','businessDataPolicy']) ?? fields(body,['name','scopes','expiresInDays','businessDataPolicy']);
+      if(input&&Object.hasOwn(input,'businessDataPolicy')&&input.businessDataPolicy!==allPersonalBusinessPolicy)return fail(400,'INVALID_REQUEST');
+      if(input?.businessDataPolicy&&!policyAvailable)return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
       const name = typeof input?.name === 'string' ? input.name.trim() : '';
       let scopes:readonly AgentScope[];
       try {scopes=normalizeAgentScopes(input?.scopes);} catch {return fail(400,'INVALID_REQUEST');}
@@ -93,7 +102,7 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
             remaining<1000 || remaining>maxExpirySeconds*1000) return fail(400,'INVALID_EXPIRY');
         expiresIn=Math.floor(remaining/1000);
       }
-      const issued=await deps.issue({name,scopes:scopes as AgentScope[],expiresIn});
+      const issued=await deps.issue({name,scopes:scopes as AgentScope[],expiresIn,...(input?.businessDataPolicy?{businessDataPolicy:allPersonalBusinessPolicy}:{})});
       return {status:201,body:{grant:safeSummary(issued.grant),key:issued.key}};
     } catch (error) {
       if(error instanceof PlatformError)return fail(error.status,error.code);
@@ -121,13 +130,15 @@ export function readSignedOwnerSession(header: string, secret: string): string |
 
 export type KeyIssuerConfig = Readonly<{
   businessScopes?:'organization-v1'|'requirements-v1';
+  businessDataPolicy?:BusinessDataPolicy;
   socketPath:string; baseURL:string; databaseURL:string; databaseName:string;
   ownerId:string; ownerEmail:string; spaceId:string; sessionSecret:string; agentSecret:string;
 }>;
 
 export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   const keys=['socketPath','baseURL','databaseURL','ownerId','ownerEmail','spaceId','sessionSecret','agentSecret'] as const;
-  const values=fields(raw,keys)??fields(raw,[...keys,'businessScopes']);
+  const values=fields(raw,keys)??fields(raw,[...keys,'businessScopes'])??fields(raw,[...keys,'businessScopes','businessDataPolicy']);
+  if(values&&Object.hasOwn(values,'businessDataPolicy')&&(values.businessDataPolicy!==allPersonalBusinessPolicy||values.businessScopes!=='requirements-v1'))throw Error('Invalid issuer configuration');
   if(values&&Object.hasOwn(values,'businessScopes')&&values.businessScopes!=='organization-v1'&&values.businessScopes!=='requirements-v1')throw Error('Invalid issuer configuration');
   if (!values || keys.some(key=>typeof values[key]!=='string')) throw Error('Invalid issuer configuration');
   const config=values as Omit<KeyIssuerConfig,'databaseName'>;
@@ -145,12 +156,15 @@ export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   return Object.freeze({...config,databaseName:database.pathname.slice(1)});
 }
 
-type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string;grantDigest?:string};
+type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string;grantDigest?:string;metadata?:unknown};
 function fromRow(row: GrantRow): KeySummary {
   const permissions=typeof row.permissions==='string'?JSON.parse(row.permissions):row.permissions;
   const scopes=decodeAgentPermissions(permissions);
   if (!scopes) throw Error('Unexpected grant metadata');
-  return {id:row.id,name:row.name??'',scopes,...(row.grantDigest?{grantDigest:row.grantDigest}:{}),
+  const metadata=typeof row.metadata==='string'?JSON.parse(row.metadata):row.metadata;
+  const policy=metadata&&typeof metadata==='object'&&Object.hasOwn(metadata,'businessDataPolicy')?(metadata as {businessDataPolicy:unknown}).businessDataPolicy:undefined;
+  if(policy!==undefined&&policy!==allPersonalBusinessPolicy)throw Error('Unexpected grant policy');
+  return {id:row.id,name:row.name??'',scopes,...(policy?{businessDataPolicy:policy}:{}),...(row.grantDigest?{grantDigest:row.grantDigest}:{}),
     createdAt:new Date(row.createdAt).toISOString(),expiresAt:row.expiresAt?.toISOString()??null,
     status:row.enabled===false?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
 }
@@ -182,12 +196,15 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
         Object.entries(permissions).some(([key,value])=>key!=='role'&&key!=='database'&&value!==true)) throw Error('Restricted issuer role required');
     if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
     if(config.businessScopes==='requirements-v1')await verifyAgentRequirementsReadiness(pool);
+    if(config.businessDataPolicy)await readBusinessPolicyCatalog(pool);
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
       logger:{disabled:true},telemetry:{enabled:false},plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,
         keyExpiration:{minExpiresIn:0,maxExpiresIn:365},maximumNameLength:80,startingCharactersConfig:{shouldStore:false}})]});
     await auth.$context;
     const bind=[config.ownerId,config.spaceId];
+    const digestFunction=config.businessDataPolicy?'lifeos_agent.current_managed_grant_digest':'lifeos_agent.managed_grant_digest';
     const handle=createKeyIssuer({
+      ...(config.businessDataPolicy?{businessPolicyAvailable:async()=>(await readBusinessPolicyCatalog(pool)).enabled}:{}),
       authenticate:async header=>{
         if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
         if(config.businessScopes==='requirements-v1')await verifyAgentRequirementsReadiness(pool);
@@ -198,8 +215,8 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       },
       list:async cursor=>{
         const [,time,id]=cursor ? cursorPattern.exec(cursor)! : [];
-        const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,
-          ${config.businessScopes?'lifeos_agent.managed_grant_digest(id) AS "grantDigest",':''}
+        const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,
+          ${config.businessScopes?digestFunction+'(id) AS "grantDigest",':''}
           to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime"
           FROM lifeos_agent.apikey WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2
           AND ($3::timestamptz IS NULL OR ("createdAt",id)<($3::timestamptz,$4::text))
@@ -210,10 +227,10 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       },
       issue:async input=>{
         const key=await auth.api.createApiKey({body:{userId:config.ownerId,name:input.name,expiresIn:input.expiresIn,
-          metadata:{spaceId:config.spaceId},permissions:Object.fromEntries(Object.entries(encodeAgentPermissions(input.scopes)).map(([domain,actions])=>[domain,[...actions]])),
+          metadata:{spaceId:config.spaceId,...(input.businessDataPolicy?{businessDataPolicy:input.businessDataPolicy}:{})},permissions:Object.fromEntries(Object.entries(encodeAgentPermissions(input.scopes)).map(([domain,actions])=>[domain,[...actions]])),
           rateLimitEnabled:true,rateLimitTimeWindow:60000,rateLimitMax:20}});
         if (!key.expiresAt || typeof key.key!=='string') throw Error('Unconfirmed issuer result');
-        const digest=config.businessScopes?(await pool.query('SELECT lifeos_agent.managed_grant_digest($1) AS digest',[key.id])).rows[0]?.digest:undefined;
+        const digest=config.businessScopes?(await pool.query(`SELECT ${digestFunction}($1) AS digest`,[key.id])).rows[0]?.digest:undefined;
         return {grant:fromRow({...key,expiresAt:key.expiresAt,grantDigest:digest}),key:key.key};
       },
       setScopes:async(input,cookie)=>{
@@ -222,8 +239,8 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
         const client=await pool.connect();
         try {
           await client.query('BEGIN');
-          await client.query('SELECT lifeos_agent.set_managed_grant_scopes($1,$2,$3,$4::jsonb)',[token,input.id,input.expectedGrantDigest,JSON.stringify(encodeAgentPermissions(input.scopes))]);
-          const {rows}=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,lifeos_agent.managed_grant_digest(id) AS "grantDigest" FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
+          await client.query(config.businessDataPolicy?'SELECT lifeos_agent.set_managed_business_grant($1,$2,$3,$4::jsonb,$5::text)':'SELECT lifeos_agent.set_managed_grant_scopes($1,$2,$3,$4::jsonb)',[token,input.id,input.expectedGrantDigest,JSON.stringify(encodeAgentPermissions(input.scopes)),...(config.businessDataPolicy?[input.businessDataPolicy??null]:[])]);
+          const {rows}=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,${digestFunction}(id) AS "grantDigest" FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
           if(rows.length!==1)throw Error('Unconfirmed grant');
           const result=fromRow(rows[0]);await client.query('COMMIT');return result;
         }catch(error){

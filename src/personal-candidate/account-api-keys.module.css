@@ -86,3 +86,6 @@
 .scopeFields input:focus-visible { outline:2px solid var(--ring); outline-offset:3px; }
 .scopeFields:disabled label { cursor:default; opacity:.65; }
 .scopeSummary { display:grid; gap:8px; padding:12px; background:var(--muted); border-radius:var(--lo-radius-control); }
+.policyFields { display:grid; grid-column:1 / -1; min-width:0; gap:6px; }
+.policyFields select { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:6px 10px; border:1px solid var(--input); border-radius:var(--lo-radius-control); background:var(--card); color:var(--foreground); font:inherit; }
+.policyFields small { line-height:1.55; color:var(--muted-foreground); }

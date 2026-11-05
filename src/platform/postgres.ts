@@ -77,9 +77,9 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
-   ...(this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
-    if(grant.ownerId!==owner)return false;
-    const result=await client.query('SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes]);
+   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
+    if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
+    const result=await client.query(this.businessFeatures?.businessDataPolicy?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(this.businessFeatures?.businessDataPolicy?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);
     return result.rows[0]?.allowed===true;
    }}:{}),
    ...(this.agentWriteFenceEnabled?{lockAgentTodoWriteGrant:async(grant:Readonly<{grantId:string;ownerId:string;spaceId:string}>)=>{

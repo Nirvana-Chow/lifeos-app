@@ -8,7 +8,9 @@ import {PlatformError} from '../platform/domain.ts';
 import {PostgresPlatformRepository, verifyRestrictedPool, type SqlPool} from '../platform/postgres.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules,type AgentModules} from './config.ts';
-import {decodeAgentPermissions} from './scopes.ts';
+import {decodeAgentPermissions,type AgentScope} from './scopes.ts';
+import {resolveBusinessPolicyGrant,type PolicyResolutionOptions,type PolicyGrantRow} from './business-policy.ts';
+import {readBusinessPolicyCatalog} from './business-policy-postgres.ts';
 import {createAgentHandler} from './http.ts';
 import {organizationTypes} from './organization.ts';
 import {agentOperations} from './capabilities.ts';
@@ -27,7 +29,7 @@ function failure(status: 403 | 404 | 503, code: string): Response {
 
 type GrantLookupPool = {query:(sql:string,values:string[])=>Promise<{rows:unknown[]}>};
 /** Read only current non-secret grant fields; never invoke the quota-counting verifier. */
-export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
+export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, policyOptions?:()=>Promise<Omit<PolicyResolutionOptions,'now'>>) {
   const {rows} = await pool.query('SELECT id, "referenceId", metadata, permissions, enabled, "expiresAt" FROM lifeos_agent.apikey WHERE id = $1', [id]);
   if (rows.length !== 1 || !rows[0] || typeof rows[0] !== 'object') return null;
   const row = rows[0] as Record<string,unknown>;
@@ -39,7 +41,14 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
     if (row.id !== id || typeof row.referenceId !== 'string' || !row.referenceId || !metadata || typeof metadata !== 'object' ||
         typeof metadata.spaceId !== 'string' || !metadata.spaceId || row.enabled !== true && row.enabled !== null ||
         expires !== null && (!Number.isFinite(expires) || expires <= Date.now()) || !scopes) return null;
-    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString()})};
+    let policyGrant:ReturnType<typeof resolveBusinessPolicyGrant>|undefined;
+    if(Object.hasOwn(metadata,'businessDataPolicy')){
+      if(!policyOptions)return null;
+      policyGrant=resolveBusinessPolicyGrant(row as PolicyGrantRow,{...await policyOptions(),now:Date.now()});
+      if(!policyGrant)return null;
+    }
+    const policy=policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,allowedOperationIds:policyGrant.allowedOperationIds}:{};
+    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly AgentScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
   } catch {return null;}
 }
 
@@ -142,7 +151,8 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
   try {
     await verifyRestrictedPool(business as SqlPool);
     const modules=readAgentBusinessModules(process.env,personal);
-    if(modules.organization)await verifyAgentBusinessReadiness(business);
+    if(modules.organization||modules.businessDataPolicy)await verifyAgentBusinessReadiness(business);
+    if(modules.businessDataPolicy)await readBusinessPolicyCatalog(verifier);
     const {rows: fences} = await business.query(`SELECT
       has_function_privilege(current_user,to_regprocedure('lifeos_agent.assert_todo_write_grant(text,text,text)'),'EXECUTE') AS can_fence,
       NOT has_table_privilege(current_user,'lifeos_agent.apikey','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') AS no_key_access,
@@ -183,6 +193,16 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
 
     const repository=new PostgresPlatformRepository(business as SqlPool,true,true,modules);
     const classificationReady=async()=>{await verifyAgentBusinessReadiness(business);await verifyClassificationPool(business as SqlPool);};
+    const policyOptions=modules.businessDataPolicy?async()=>{
+      const catalog=await readBusinessPolicyCatalog(verifier);
+      const readiness=await Promise.all(agentOperations.map(async operation=>{
+        if(!agentOperationAvailable(operation.id,personal,fenceReady,modules))return false;
+        if(operation.module==='requirements')await verifyAgentRequirementsReadiness(business);
+        if(operation.module==='classification')await classificationReady();
+        return catalog.operations.some(entry=>entry.id===operation.id&&entry.enabled);
+      }));
+      return {ownerId:personal.ownerId,spaceId:personal.spaceId,policyEnabled:catalog.enabled,registry:agentOperations,operationAvailable:(id:string)=>readiness[agentOperations.findIndex(op=>op.id===id)]===true};
+    }:undefined;
     const handler=createAgentHandler({
       enabled: true,
       modules,
@@ -197,11 +217,9 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         const key = result.key;
         const spaceId = key?.metadata?.spaceId;
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
-        const scopes = decodeAgentPermissions(key.permissions);
-        if (!scopes) return null;
-        return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
+        return readCurrentAgentGrant(verifier,key.id,policyOptions);
       },
-      readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
+      readCurrentGrant: id => readCurrentAgentGrant(verifier, id,policyOptions),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
         if(agentOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
@@ -210,7 +228,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
-    return{handler:modules.organization?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id)};
+    return{handler:modules.organization||modules.businessDataPolicy?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id,policyOptions)};
   } catch (error) {
     await Promise.allSettled([business.end(), verifier.end()]);
     throw error;

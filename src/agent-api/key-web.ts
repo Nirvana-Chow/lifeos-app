@@ -34,7 +34,8 @@ export function createKeyManagementHandler(baseURL: string, issuer: Issuer) {
         return failure(401, 'AUTH_REQUIRED');
       let body = operation === 'create' || operation === 'setScopes' ? await readJSONBody(request) : operation === 'revoke' ? {id: match![1]} : cursor ? {cursor} : {};
       if(operation==='setScopes'){
-        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==2||
+        if(!body||typeof body!=='object'||Array.isArray(body)||![2,3].includes(Object.keys(body).length)||
+          Object.keys(body).some(key=>!['expectedGrantDigest','scopes','businessDataPolicy'].includes(key))||
           !Object.hasOwn(body,'expectedGrantDigest')||!Object.hasOwn(body,'scopes'))return failure(400,'INVALID_KEY_REQUEST');
         body={...body,id:scopeMatch![1]};
       }

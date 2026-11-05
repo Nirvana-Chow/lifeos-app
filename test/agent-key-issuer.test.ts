@@ -82,3 +82,23 @@ test('business issuer validates explicit scope CAS and exposes safe grant digest
   assert.equal((await createKeyIssuer(deps,()=>now)('setScopes',cookie,input)).status,503);
   assert.equal((await enabled('create',cookie,{name:'organization',scopes:['organization:read'],expiresInDays:7})).status,201);
 });
+
+test('all-data policy is explicit, default closed and included in same-key CAS without changing legacy requests',async()=>{
+ const calls:unknown[]=[];
+ let enabled=false;
+ const policy='all-personal-business-v1' as const;
+ const handle=createKeyIssuer({authenticate:async()=>true,list:async()=>({keys:[item]}),revoke:async()=>false,
+  businessPolicyAvailable:async()=>enabled,
+  issue:async input=>{calls.push(input);return{grant:{...item,...(input.businessDataPolicy?{businessDataPolicy:input.businessDataPolicy}:{})},key:'synthetic-once'};},
+  setScopes:async input=>{calls.push(input);return{...item,grantDigest:'b'.repeat(64),...(input.businessDataPolicy?{businessDataPolicy:input.businessDataPolicy}:{})};}},()=>now,'requirements-v1');
+ const body={name:'all business',scopes:['todo:read'],expiresInDays:30,businessDataPolicy:policy};
+ assert.equal((await handle('create',cookie,body)).status,503);
+ enabled=true;
+ const page=await handle('list',cookie,{});assert.deepEqual((page.body as {availablePolicies:unknown}).availablePolicies,[policy]);
+ assert.equal((await handle('create',cookie,body)).status,201);
+ assert.deepEqual(calls[0],{name:'all business',scopes:['todo:read'],expiresIn:30*86400,businessDataPolicy:policy});
+ const change={id:item.id,expectedGrantDigest:'a'.repeat(64),scopes:['todo:read'],businessDataPolicy:policy};
+ assert.equal((await handle('setScopes',cookie,change)).status,200);assert.deepEqual(calls[1],change);
+ assert.equal((await handle('setScopes',cookie,{...change,businessDataPolicy:null})).status,200);
+ assert.equal((await handle('create',cookie,{...body,businessDataPolicy:'*'})).status,400);
+});

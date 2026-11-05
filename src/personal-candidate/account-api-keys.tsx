@@ -7,6 +7,7 @@ import {Button} from '../ui-review/ui/button';
 import {Dialog, DialogContent, DialogDescription, DialogTitle} from '../ui-review/ui/dialog';
 import {Input} from '../ui-review/ui/input';
 import {agentScopes, normalizeAgentScopes, type AgentScope} from '../agent-api/scopes';
+import {allPersonalBusinessPolicy,type BusinessDataPolicy} from '../agent-api/business-policy';
 import {estimateApiKeyExpiry, resolveApiKeyExpiry} from './account-api-key-expiry';
 import styles from './account-api-keys.module.css';
 
@@ -17,25 +18,34 @@ type Grant = {
   name: string;
   scopes: readonly AgentScope[];
   grantDigest?: string;
+  businessDataPolicy?:BusinessDataPolicy;
   createdAt: string;
   expiresAt: string | null;
   status: keyof typeof statuses;
 };
-type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[]};
+type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[]};
 const requestOptions = {cache: 'no-store', credentials: 'same-origin'} as const;
 async function readGrantPage(response: Response) {
-  const data: {keys: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[]} = await response.json();
+  const data: {keys: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[]} = await response.json();
   if (!Array.isArray(data.keys) ||
       (data.nextCursor !== undefined && (typeof data.nextCursor !== 'string' || !data.nextCursor))) throw Error();
-  return {grants: data.keys, nextCursor: data.nextCursor, availableScopes: data.availableScopes === undefined ? undefined : normalizeAgentScopes(data.availableScopes)};
+  if(data.availablePolicies!==undefined&&(!Array.isArray(data.availablePolicies)||data.availablePolicies.some(policy=>policy!==allPersonalBusinessPolicy)))throw Error();
+  if(data.keys.some(grant=>grant.businessDataPolicy!==undefined&&grant.businessDataPolicy!==allPersonalBusinessPolicy))throw Error();
+  return {availablePolicies:data.availablePolicies,grants: data.keys, nextCursor: data.nextCursor, availableScopes: data.availableScopes === undefined ? undefined : normalizeAgentScopes(data.availableScopes)};
 }
 
 const scopeModules = [{id: 'todo', label: '待办'}, {id: 'organization', label: '项目、领域和主题'}, {id:'requirements',label:'需求'}] as const;
 const describeScopes = (scopes: readonly AgentScope[]) => scopeModules.filter(module => scopes.includes(`${module.id}:read`))
   .map(module => `${module.label}：${scopes.includes(`${module.id}:write`) ? '读取和写入' : '仅读取'}`).join('；') || '未选择权限';
 const sameScopes = (a: readonly AgentScope[], b: readonly AgentScope[]) => a.length === b.length && a.every(scope => b.includes(scope));
-type ScopeEdit = {current: Grant; proposed: readonly AgentScope[]; phase: 'editing' | 'saving' | 'conflict' | 'unknown';
-  frozen?: Readonly<{expectedGrantDigest: string; scopes: readonly AgentScope[]}>};
+const describePolicy=(policy:BusinessDataPolicy|null|undefined,scopes:readonly AgentScope[])=>policy?'全部个人业务数据读写（含后续已上线业务模块）':describeScopes(scopes);
+function PolicyFields({value,onChange,disabled=false,allAvailable=true}: {value:BusinessDataPolicy|null;onChange:(value:BusinessDataPolicy|null)=>void;disabled?:boolean;allAvailable?:boolean}){
+  return <label className={styles.policyFields}>授权方式<select value={value??'explicit'} disabled={disabled} onChange={event=>onChange(event.target.value===allPersonalBusinessPolicy?allPersonalBusinessPolicy:null)}>
+    <option value="explicit">按模块选择权限</option><option value={allPersonalBusinessPolicy} disabled={!allAvailable}>全部个人业务数据读写（含后续已上线业务模块）</option></select>
+    {value&&<small>所有持有这把密钥的客户端均可读写当前及后续已启用的个人业务模块。实际能力以发现结果为准；不包含账户安全、密钥管理、系统设置、外部付款或下单及不可逆操作。</small>}</label>;
+}
+type ScopeEdit = {current: Grant; proposed: readonly AgentScope[];proposedPolicy?:BusinessDataPolicy|null; phase: 'editing' | 'saving' | 'conflict' | 'unknown';
+  frozen?: Readonly<{expectedGrantDigest: string; scopes: readonly AgentScope[];businessDataPolicy?:BusinessDataPolicy|null}>};
 
 function ScopeFields({available, value, onChange, disabled=false}: {available: readonly AgentScope[]; value: readonly AgentScope[];
   onChange: (value: readonly AgentScope[]) => void; disabled?: boolean}) {
@@ -70,6 +80,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
   const [pageError, setPageError] = useState(false);
   const [name, setName] = useState('');
   const [permission, setPermission] = useState('read');
+  const [createPolicy,setCreatePolicy]=useState<BusinessDataPolicy|null>(null);
   const [createScopes, setCreateScopes] = useState<readonly AgentScope[]>(['todo:read']);
   const [scopeEdit, setScopeEdit] = useState<ScopeEdit | null>(null);
   const scopeEditRef = useRef<ScopeEdit | null>(null);
@@ -181,6 +192,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     creator.current = trigger;
     creatorGrant.current = grant?.id ?? null;
     setReplacement(grant);
+    setCreatePolicy(grant?.businessDataPolicy??null);
     setName(grant?.name ?? '');
     setPermission(grant?.scopes.includes('todo:write') ? 'write' : 'read');
     setCreateScopes(grant?.scopes ?? ['todo:read']);
@@ -257,7 +269,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         ...requestOptions,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: name.trim(), scopes, ...expiration}),
+        body: JSON.stringify({name: name.trim(), scopes, ...expiration,...(createPolicy?{businessDataPolicy:createPolicy}:{})}),
       });
       if (response.status === 400) {
         setMessage('创建请求未通过。请核对名称、权限和到期时间。');
@@ -265,7 +277,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
       }
       if (!response.ok) throw Error();
       const result: {key: string; grant: Grant} = await response.json();
-      if (typeof result.key !== 'string' || !result.key || !result.grant?.id) throw Error();
+      if (typeof result.key !== 'string' || !result.key || !result.grant?.id || (result.grant.businessDataPolicy??null)!==createPolicy) throw Error();
       if (pageActive.current) setReveal(result);
       setCopied(false);
       setName('');
@@ -309,7 +321,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
       } while (cursor);
       if (!found?.grantDigest) throw Error();
       if (pending.phase === 'unknown') {
-        if (found.status === 'active' && sameScopes(found.scopes, pending.frozen!.scopes)) {
+        if (found.status === 'active' && sameScopes(found.scopes, pending.frozen!.scopes) && (found.businessDataPolicy??null)===(pending.frozen!.businessDataPolicy??null)) {
           updateScopeEdit(null); setMessage('已读回确认密钥权限。'); reload();
         } else {
           // A different snapshot cannot disprove a delayed write. Retain the exact original body and digest.
@@ -328,7 +340,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
   async function setScopes() {
     const edit = scopeEditRef.current;
     if (!edit || edit.phase !== 'editing' || !edit.current.grantDigest || !edit.proposed.length || actionLock.current || scopeReadLock.current) return;
-    const frozen = Object.freeze({expectedGrantDigest:edit.current.grantDigest,scopes:normalizeAgentScopes(edit.proposed)});
+    const frozen = Object.freeze({expectedGrantDigest:edit.current.grantDigest,scopes:normalizeAgentScopes(edit.proposed),...(edit.proposedPolicy!==undefined?{businessDataPolicy:edit.proposedPolicy}:{})});
     const pending: ScopeEdit = {...edit,phase:'saving',frozen};
     updateScopeEdit(pending);
     actionLock.current = true; setBusy(true); setScopeMessage('');
@@ -348,7 +360,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
       }
       if (!response.ok) throw Error();
       const result: {grant: Grant} = await response.json();
-      if (result.grant?.id !== edit.current.id || !result.grant.grantDigest || !sameScopes(result.grant.scopes,frozen.scopes) || result.grant.expiresAt !== edit.current.expiresAt) throw Error();
+      if (result.grant?.id !== edit.current.id || !result.grant.grantDigest || !sameScopes(result.grant.scopes,frozen.scopes) || (result.grant.businessDataPolicy??null)!==(frozen.businessDataPolicy??null) || result.grant.expiresAt !== edit.current.expiresAt) throw Error();
       updateScopeEdit(null); setMessage('密钥权限已修改。'); reload();
     } catch {
       updateScopeEdit({...pending,phase:'unknown'});
@@ -412,7 +424,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
           {list.grants.map(grant => <li key={grant.id} className={styles.grant}>
             <div>
               <div className={styles.grantHeading}><strong>{grant.name}</strong><Badge variant={grant.status === 'active' ? 'default' : 'secondary'}>{statuses[grant.status]}</Badge></div>
-              <p>{describeScopes(grant.scopes)}</p>
+              <p>{describePolicy(grant.businessDataPolicy,grant.scopes)}</p>
               <dl className={styles.details}>
                 <div><dt>授权编号</dt><dd><code>{grant.id}</code></dd></div>
                 <div><dt>创建</dt><dd><time dateTime={grant.createdAt}>{formatDate(grant.createdAt)}</time></dd></div>
@@ -421,7 +433,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
             </div>
             {grant.status === 'active' && <div className={styles.actions}>
               {list.availableScopes && grant.grantDigest && <Button type="button" variant="outline" disabled={busy || uncertain || !!reveal}
-                aria-label={'修改权限 ' + grant.name} onClick={event => {scopeTrigger.current=event.currentTarget; setScopeMessage(''); updateScopeEdit({current:grant,proposed:grant.scopes,phase:'editing'});}}>修改权限</Button>}
+                aria-label={'修改权限 ' + grant.name} onClick={event => {scopeTrigger.current=event.currentTarget; setScopeMessage(''); updateScopeEdit({current:grant,proposed:grant.scopes,...(list.availablePolicies||grant.businessDataPolicy?{proposedPolicy:grant.businessDataPolicy??null}:{}),phase:'editing'});}}>修改权限</Button>}
               <Button ref={node=>{if (node) replacementButtons.current.set(grant.id,node); else replacementButtons.current.delete(grant.id);}} type="button" variant="outline" disabled={busy || uncertain || !!reveal} aria-label={'替换 ' + grant.name} onClick={event => prepareCreate(event.currentTarget, grant)}>替换</Button>
               <Button type="button" variant="ghost" disabled={busy || uncertain || !!reveal} aria-label={'撤销 ' + grant.name} onClick={event => {revoker.current = event.currentTarget; setRevoking(grant);}}>撤销</Button>
             </div>}
@@ -473,9 +485,10 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         <form method="post" action="/account/api-keys" onSubmit={create}>
           <fieldset className={styles.fields} disabled={busy || uncertain || list.kind !== 'ready'}>
             <label>名称<Input ref={nameInput} name="name" required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="例如：个人待办 Skill"/></label>
-            <>{list.kind === 'ready' && list.availableScopes ? <ScopeFields available={list.availableScopes} value={createScopes} onChange={setCreateScopes}/> : <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
+            {list.kind==='ready'&&(list.availablePolicies?.includes(allPersonalBusinessPolicy)||createPolicy)&&<PolicyFields value={createPolicy} allAvailable={list.availablePolicies?.includes(allPersonalBusinessPolicy)===true} onChange={policy=>{setCreatePolicy(policy);if(policy&&!createScopes.length)setCreateScopes(['todo:read']);}}/>}
+            {!createPolicy&&<>{list.kind === 'ready' && list.availableScopes ? <ScopeFields available={list.availableScopes} value={createScopes} onChange={setCreateScopes}/> : <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
               <option value="read">仅读取待办</option><option value="write">读取和写入待办</option>
-            </select></label>}</>
+            </select></label>}</>}
             <label>有效期限<select aria-describedby="key-expiry-hint" name="expiry" value={expiry} onChange={event => setExpiry(event.target.value)}>
               <option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option><option value="365">365 天</option><option value="custom">选择到期日期</option>
             </select></label>
@@ -507,14 +520,15 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         {scopeEdit && <>
           <strong>{scopeEdit.current.name}</strong>
           <p>到期：{scopeEdit.current.expiresAt ? formatDate(scopeEdit.current.expiresAt) : '未设置'}（本次修改不会延长）</p>
-          <div className={styles.scopeSummary}><p>当前权限：{describeScopes(scopeEdit.current.scopes)}</p><p>拟改权限：{describeScopes(scopeEdit.proposed)}</p></div>
-          <ScopeFields available={list.kind === 'ready' ? list.availableScopes ?? [] : []} value={scopeEdit.proposed}
-            disabled={busy || readingScopes || scopeEdit.phase !== 'editing'} onChange={proposed=>updateScopeEdit({...scopeEdit,proposed})}/>
+          <div className={styles.scopeSummary}><p>当前权限：{describePolicy(scopeEdit.current.businessDataPolicy,scopeEdit.current.scopes)}</p><p>拟改权限：{describePolicy(scopeEdit.proposedPolicy,scopeEdit.proposed)}</p></div>
+          {(list.kind==='ready'&&list.availablePolicies?.includes(allPersonalBusinessPolicy)||scopeEdit.current.businessDataPolicy)&&<PolicyFields value={scopeEdit.proposedPolicy??null} allAvailable={list.kind==='ready'&&list.availablePolicies?.includes(allPersonalBusinessPolicy)===true} disabled={busy||readingScopes||scopeEdit.phase!=='editing'} onChange={proposedPolicy=>updateScopeEdit({...scopeEdit,proposedPolicy,...(proposedPolicy&&!scopeEdit.proposed.length?{proposed:['todo:read'] as const}:{})})}/>}
+          {!scopeEdit.proposedPolicy&&<ScopeFields available={list.kind === 'ready' ? list.availableScopes ?? [] : []} value={scopeEdit.proposed}
+            disabled={busy || readingScopes || scopeEdit.phase !== 'editing'} onChange={proposed=>updateScopeEdit({...scopeEdit,proposed})}/> }
           {scopeMessage && <p role="status">{scopeMessage}</p>}
           {(scopeEdit.phase==='unknown' || scopeEdit.phase==='conflict') && <Button type="button" variant="outline" disabled={busy || readingScopes} onClick={readCurrentScopes}>重新读取当前权限</Button>}
           <div className={styles.actions}>
             <Button type="button" variant="outline" disabled={busy || readingScopes || scopeEdit.phase==='unknown'} onClick={closeScopeEdit}>取消</Button>
-            <Button type="button" disabled={busy || readingScopes || scopeEdit.phase!=='editing' || !scopeEdit.proposed.length || scopeEdit.current.status!=='active' || sameScopes(scopeEdit.current.scopes,scopeEdit.proposed)} onClick={setScopes}>确认修改权限</Button>
+            <Button type="button" disabled={busy || readingScopes || scopeEdit.phase!=='editing' || !scopeEdit.proposed.length || scopeEdit.current.status!=='active' || (sameScopes(scopeEdit.current.scopes,scopeEdit.proposed)&&(scopeEdit.current.businessDataPolicy??null)===(scopeEdit.proposedPolicy??null))} onClick={setScopes}>确认修改权限</Button>
           </div>
         </>}
       </DialogContent>

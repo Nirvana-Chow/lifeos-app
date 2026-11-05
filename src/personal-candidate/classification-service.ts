@@ -36,7 +36,11 @@ export class ClassificationService {
  private async fence(tx:ClassificationTransaction,actor:TrustedActor,plan:ClassificationPlan|null,commit=false){
   if(actor.kind==='agent-grant'&&plan&&actor.grantId!==plan.grantId)return fail(403,'CLASSIFICATION_AUTHORITY');
   const grantId=plan?plan.grantId:actor.kind==='agent-grant'?actor.grantId:null;
-  if(grantId)await assertAgentGrant(tx,{grantId,ownerId:this.config.ownerId,spaceId:this.config.spaceId},commit&&actor.kind==='agent-grant'?commitScopes:readScopes);
+  if(grantId){
+   const binding=actor.kind==='agent-grant'?actor:await this.options.authority.currentProducerBinding(grantId);
+   if(!binding)return fail(403,'CLASSIFICATION_AUTHORITY');
+   await assertAgentGrant(tx,binding,commit&&actor.kind==='agent-grant'?commitScopes:readScopes,commit&&actor.kind==='agent-grant'?'commitTodoClassification':'previewTodoClassification');
+  }
  }
  private async producer(grantId:string|null){if(!grantId)return null;const revision=await this.options.authority.currentProducerRevision(grantId);if(!revision)return fail(403,'CLASSIFICATION_AUTHORITY');return revision;}
  private async current(plan:ClassificationPlan){

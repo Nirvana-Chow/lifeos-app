@@ -70,6 +70,28 @@ test('versioned discovery exposes exactly the operations authorized by the grant
   assert.equal((await send('/v2/capabilities')).body.apiVersion, '2');
 });
 
+test('policy flag absent preserves the exact legacy v2 todo method/path/requiredScopes tuples',async()=>{
+  const {send}=fixture();const response=await send('/v2/capabilities','GET','writer');
+  assert.equal(response.status,200);assert.equal(response.body.authorization,undefined);
+  const known=[
+    ['discoverV2','GET','/v2/capabilities',[]],['discover','GET','/v1/capabilities',['todo:read']],
+    ['listTodos','GET','/v1/todos',['todo:read']],['snapshotTodos','GET','/v1/todos/snapshot',['todo:read']],
+    ['getTodo','GET','/v1/todos/{id}',['todo:read']],['createTodo','POST','/v1/todos',['todo:write']],
+    ['updateTodo','PATCH','/v1/todos/{id}',['todo:write']],
+  ];
+  assert.deepEqual(response.body.operations.map((op:{id:string;method:string;path:string;requiredScopes:string[]})=>[op.id,op.method,op.path,op.requiredScopes]),known);
+});
+
+test('all-data discovery shows actual policy and refuses an unregistered operation sharing the same scopes',async()=>{
+  const grant={grantId:'synthetic-all-policy',ownerId,spaceId,scopes:['todo:read','todo:write'] as const,businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:['listTodos']};
+  const handler=createAgentHandler({config,repository:new MemoryPort(),enabled:true,verify:async()=>grant,readCurrentGrant:async()=>grant,operationAvailable:()=>true,assertWritable:async()=>{}});
+  const send=(path:string)=>handler(new Request(baseURL+path,{headers:{host:'127.0.0.1:3190',authorization:'Bearer synthetic-policy'}}));
+  const response=await send('/v2/capabilities'),body=await response.json();assert.equal(response.status,200);
+  assert.deepEqual(body.authorization,{businessDataPolicy:grant.businessDataPolicy,scopes:grant.scopes});
+  assert.deepEqual(body.operations.map((op:{id:string})=>op.id),['discoverV2','listTodos']);
+  assert.equal((await send('/v1/todos/snapshot')).status,403);
+});
+
 test('full todo snapshot returns complete fields beyond the bounded list without disclosing other types or owners', async () => {
   const {send, repository} = fixture();
   for (let n = 0; n < 55; n++) {

@@ -43,6 +43,27 @@ Supported business scopes SHALL be assignable to the same valid key only through
 - **WHEN** the submitted grant digest is stale
 - **THEN** the change is rejected without modifying permissions or automatically substituting the latest digest
 
+### Requirement: Future-module data coverage requires a separate explicit policy
+
+The owner MAY select `all-personal-business-v1` through current MFA and policy-aware CAS. It SHALL cover current and future reviewed, enabled ordinary personal business data operations on the same bound key without changing its expiry. Existing module grants SHALL retain their exact scopes. The policy SHALL remain closed until its SQL, issuer and verifier are qualified.
+
+#### Scenario: Owner explicitly includes later business modules
+
+- **WHEN** the owner selects the displayed all-personal-business policy using current MFA and the exact policy-aware grant digest
+- **THEN** key bytes, owner/space and expiry remain unchanged, all holders share the chosen coverage, and later registered ready data operations need no replacement key
+- **AND** account security, credential management, system settings, external payment/order and irreversible operations remain excluded
+
+#### Scenario: Policy is removed while an Agent request waits
+
+- **WHEN** a request parsed an all-data policy actor before a policy-removing CAS acquires the authorization row
+- **THEN** the transaction fence rejects that old actor after the wait, even if fallback explicit scopes would independently allow the operation
+
+#### Scenario: One operation closes while a same-scope operation remains enabled
+
+- **WHEN** a request passes HTTP authorization and its exact operation is then disabled, unregistered or rescoped before its transaction fence acquires the operation row
+- **THEN** the write is rejected even if another enabled operation advertises identical scopes
+- **AND** a transaction that locks the exact operation and policy control first may finish before closure commits; closure waits for that transaction
+
 ### Requirement: Legacy and multi-scope capability catalogs are distinct
 
 The v1 catalog SHALL retain todo:read authorization and the original six-operation universe filtered by the original scope fields. A v2 catalog SHALL admit any valid bound grant and filter operations by all required scopes, implementation, enablement and readiness. Catalog version MUST NOT imply unadvertised business routes.
@@ -56,6 +77,12 @@ The v1 catalog SHALL retain todo:read authorization and the original six-operati
 
 - **WHEN** a legacy todo:read client requests `/v1/capabilities`
 - **THEN** the original operation contract and scope-filtered subset remain intact and no new module is falsely represented by a legacy single scope
+
+#### Scenario: Strict existing todo client requests v2 with policy absent or enabled
+
+- **WHEN** an existing client compares the advertised todo operation method, path and requiredScopes against its reviewed contract
+- **THEN** createTodo and updateTodo still advertise exactly todo:write, and both policy-off and policy-on catalogs pass that unchanged strict contract
+- **AND** the policy authorization layer independently requires read with write; its two-operation compatibility closure cannot authorize future arbitrary write-only operations
 
 ### Requirement: Portable entrypoints share one current contract
 

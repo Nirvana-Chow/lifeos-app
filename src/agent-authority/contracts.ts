@@ -3,7 +3,7 @@ declare const trustedBrand: unique symbol;
 type TrustedBrand = {readonly [trustedBrand]: true};
 export type AuthoritySourceRef = Readonly<{provider:string;sourceId:string;revision:number}>;
 export type TrustedOwnerActor = Readonly<{kind:'owner-session';ownerId:string;spaceId:string;sessionRef:string}> & TrustedBrand;
-export type TrustedAgentActor = Readonly<{kind:'agent-grant';ownerId:string;spaceId:string;grantId:string;scopes:readonly AgentScope[]}> & TrustedBrand;
+export type TrustedAgentActor = Readonly<{kind:'agent-grant';ownerId:string;spaceId:string;grantId:string;scopes:readonly AgentScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}> & TrustedBrand;
 export type TrustedRunActor = Readonly<{kind:'run-capability';ownerId:string;spaceId:string;runId:string;capabilityRef:string}> & TrustedBrand;
 export type TrustedActor = TrustedOwnerActor | TrustedAgentActor | TrustedRunActor;
 export type ProducerAuthority = Readonly<{kind:'owner-session'|'agent-grant';reference:string;authorizationRevision:string}>;

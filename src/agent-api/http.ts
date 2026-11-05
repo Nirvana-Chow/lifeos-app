@@ -12,7 +12,7 @@ import type {AgentModules} from './config.ts';
 import type {OrganizationType} from '../personal-candidate/business.ts';
 import {organizationDetail,organizationSnapshot,completeOrganizationFields} from './organization.ts';
 
-type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[]}>;
+type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
 type Options = {
   enabled?: boolean;
   modules?: AgentModules;
@@ -89,13 +89,13 @@ export function createAgentHandler(options: Options) {
       if (!actor) return respond(403, {error:'ACCESS_DENIED'});
       try {await authority.assertCurrentAuthority(actor, operation.id);} catch {return respond(403, {error:'ACCESS_DENIED'});}
       if (operation.id === 'discoverV2') {
-        const permitted = agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)));
+        const permitted = agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.module==='catalog' || actor.allowedOperationIds?.includes(entry.id)));
         const readiness = await Promise.all(permitted.map(entry => available(entry.id)));
-        return respond(200, {apiVersion:'2', operations:permitted.filter((_, index) => readiness[index])});
+        return respond(200, {apiVersion:'2', ...(actor.businessDataPolicy?{authorization:{businessDataPolicy:actor.businessDataPolicy,scopes:actor.scopes}}:{}), operations:permitted.filter((_, index) => readiness[index])});
       }
       if (operation.id === 'discover') {
         return respond(200, {apiVersion: agentApiVersion,
-          operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
+          operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
       if(operation.module==='requirements'){
@@ -105,7 +105,7 @@ export function createAgentHandler(options: Options) {
         const updating=operation.id==='updateRequirement',input=object(await readJSONBody(request),updating?['fields','expectedRevision','baselineBinding']:['fields']);
         const result=await requirements.mutate(actor.ownerId,requirementId??null,{...input,spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',async()=>{
           if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await options.assertWritable(grant);
-        },tx=>assertAgentGrant(tx,actor,operation.requiredScopes));
+        },tx=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id));
         return respond(!updating&&!result.duplicate?201:200,result);
       }
       if (operation.module === 'classification') {
@@ -128,7 +128,7 @@ export function createAgentHandler(options: Options) {
           async()=>{
             if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
             await options.assertWritable(grant);
-          },tx=>assertAgentGrant(tx,actor,operation.requiredScopes));
+          },tx=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id));
         return respond(!updating&&!result.duplicate?201:200,{entry:organizationDetail(result.entry,actor.spaceId),duplicate:result.duplicate});
       }
       if (operation.id === 'listTodos') {
@@ -162,7 +162,7 @@ export function createAgentHandler(options: Options) {
         async () => {
           if (request.signal.aborted) throw new PlatformError(499, 'REQUEST_CANCELLED', '已取消。');
           await options.assertWritable(grant);
-        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant) : undefined);
+        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant,operation.id) : undefined);
       return respond(operation.id === 'createTodo' && !result.duplicate ? 201 : 200,
         {entry: detail(result.entry), duplicate: result.duplicate});
     } catch (error) {

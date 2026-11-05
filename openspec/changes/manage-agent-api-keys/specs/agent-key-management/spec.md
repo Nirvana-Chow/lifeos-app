@@ -2,7 +2,7 @@
 
 ### Requirement: Owner manages Agent API keys in account settings
 
-LifeOS SHALL allow a verified owner session to list, create, and revoke API keys for the configured space. Only supported todo permission presets SHALL be assignable. Management SHALL reject bearer-only access and cross-origin mutations.
+LifeOS SHALL allow a verified owner session to list, create, and revoke API keys for the configured space. The default issuer SHALL retain its supported todo presets. Qualified business issuers MAY expose module scopes and a separately explicit all-personal-business policy. Settings SHALL show the actual policy and shared-holder impact. Missing policy SHALL retain existing explicit permissions. Management SHALL reject bearer-only access and cross-origin mutations.
 
 #### Scenario: Owner lists grants
 
