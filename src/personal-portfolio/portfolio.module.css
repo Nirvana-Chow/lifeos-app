@@ -1,0 +1,20 @@
+.fields,.fields *,.overview,.overview *{box-sizing:border-box}
+.fields{display:grid;gap:14px;min-width:0;margin:0;padding:0;border:0;color:var(--foreground);font:inherit}
+.fields legend{margin-bottom:12px;font-weight:600}
+.fields label{display:grid;gap:5px;min-width:0;font-size:16px}
+.fields :is(input,select){width:100%;min-width:0;min-height:44px;padding:8px 10px;border:1px solid var(--input);border-radius:var(--lo-radius-control);background:var(--card);color:var(--foreground);font:inherit;font-size:16px}
+.fields :is(input,select,summary):focus-visible,.overview :is(button,[role=tabpanel]):focus-visible{outline:2px solid var(--ring);outline-offset:3px}
+.fields:disabled{opacity:.65}.fields summary{min-height:44px;align-content:center;cursor:pointer}.fields details>.grid{margin-top:12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.hint{margin:0;color:var(--muted-foreground);font-size:14px;line-height:1.6;overflow-wrap:anywhere}.error{color:var(--danger);font-size:14px;line-height:1.5}
+.overview{display:grid;gap:16px;min-width:0;color:var(--foreground)}.heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:4px;border-radius:var(--lo-radius-control);background:var(--muted)}
+.tabs button,.create{min-height:44px;padding:8px 14px;border:1px solid transparent;border-radius:var(--lo-radius-control);font:inherit;font-size:16px;background:transparent;color:var(--muted-foreground)}
+.tabs button[aria-selected=true]{color:var(--foreground);background:var(--card);border-color:var(--border)}.tabs button span{margin-left:4px;font-variant-numeric:tabular-nums}.create{background:var(--primary);color:var(--primary-foreground)}
+.panel{display:grid;gap:16px;min-width:0}.empty{padding:20px 0;color:var(--muted-foreground)}
+.totals{display:flex;flex-wrap:wrap;gap:16px 32px;margin:0}.totals>div{display:grid;gap:4px;min-width:0;max-width:100%}.totals dt,.totals small{font-size:14px;color:var(--muted-foreground)}.totals dd{margin:0;font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.list{list-style:none;padding:0;margin:0;border-top:1px solid var(--border)}.list li{border-bottom:1px solid var(--border);padding:2px 0}.record{display:flex;justify-content:space-between;align-items:baseline;gap:16px;width:100%;padding:12px 8px;text-align:left;border:0;background:transparent;color:inherit;font:inherit;min-height:64px;border-radius:var(--lo-radius-control)}.record:hover{background:var(--accent)}
+.recordTitle,.recordAmount{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}.recordTitle strong{font-weight:600}.recordTitle>span,.recordAmount>span,.cost{font-size:14px;color:var(--muted-foreground)}.recordAmount{text-align:right;font-variant-numeric:tabular-nums}.recordAmount strong{font-weight:550}.cost{padding:0 8px 10px;margin:0}
+@media(max-width:680px){.grid{grid-template-columns:1fr}.record{flex-wrap:wrap;gap:10px}.recordTitle{flex:1 1 50%}.recordAmount{flex:1 1 auto;text-align:left}.totals dd{font-size:22px}}
+@media(min-width:1024px) and (pointer:fine){.fields label,.fields :is(input,select){font-size:14px}.fields :is(input,select){min-height:32px;padding:4px 8px}}
+:global([data-lifeos-theme="dark"]) .fields input[type="date"]{color-scheme:dark}
