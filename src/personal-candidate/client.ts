@@ -8,7 +8,7 @@ import type {PersonalType} from './config.ts';
 export type {PersonalFields};
 export type PersonalBinding=Readonly<{ownerId:string;spaceId:string}>;
 export type PersonalCommand=Readonly<{ownerId:string;spaceId:string;type:PersonalType;id:string|null;key:string;method:'POST'|'PATCH';body:PersonalBody}>;
-export type PersonalState=Readonly<{phase:'idle'|'saving'|'uncertain'|'saved'|'rejected';pending:PersonalCommand|null;saved:PublicEntry|null;error:string}>;
+export type PersonalState=Readonly<{phase:'idle'|'saving'|'uncertain'|'saved'|'rejected';pending:PersonalCommand|null;saved:PublicEntry|null;observed?:PublicEntry;error:string}>;
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type PersonalFetch=(url:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 const obj=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -33,6 +33,15 @@ function matches(command:PersonalCommand,value:unknown):value is PublicEntry{
  const original=value.source.original;if(original.marker!=='personal-manual-v1'&&!(command.id&&command.type==='todo'&&original.marker===appleOriginMarker)||original.spaceId!==command.spaceId||original.type!==command.type||value.kind!==(command.type==='todo'?'todo':'inbox')||value.syncState!=='draft'||value.externalStatus!==null||value.source.externalId!==value.id||value.source.system!=='website'||value.source.version!==1)return false;
  try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else object(original,['marker','spaceId','type','input']);validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
 }
+function observedReadback(command:PersonalCommand,receipt:PublicEntry,value:unknown):value is PublicEntry{
+ try{const row=object(value,['id','kind','draft','source','revision','createdAt','updatedAt','syncState','externalStatus']);validateRevision(row.revision);
+  if(row.id!==receipt.id||row.kind!==receipt.kind||row.createdAt!==receipt.createdAt||row.syncState!=='draft'||row.externalStatus!==null||canonical(row.source)!==canonical(receipt.source)||Number(row.revision)<receipt.revision||typeof row.updatedAt!=='string'||!Number.isFinite(Date.parse(row.updatedAt)))return false;
+  if(row.revision===receipt.revision)return canonical(value)===canonical(receipt);
+  if(command.type==='todo')return canonical(validateTodo(row.draft))===canonical(row.draft);
+  const draft=object(row.draft,['title','text','occurredOn','personal','disposition']);if(draft.disposition!=='reference')return false;const {disposition,...fields}=draft;void disposition;
+  return canonical(validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'}))===canonical(row.draft);
+ }catch{return false;}
+}
 const unknown='保存结果尚未确认。请保留原请求，恢复当前本人身份后重试同一内容。';
 export class PersonalMutationSession{
  private state:PersonalState=freeze({phase:'idle',pending:null,saved:null,error:''});private binding:PersonalBinding;private storage?:Store;private fetcher:PersonalFetch;private assertBinding:()=>boolean;private storageKey:string;private listeners=new Set<()=>void>();private verifyReadback=false;private uncertain=false;private invalidated=false;private controller:AbortController|null=null;private attemptGeneration=0;
@@ -56,8 +65,9 @@ export class PersonalMutationSession{
   try{if(!this.active())throw Error();const response=await this.fetcher('/api/platform/personal/'+command.type+(command.id?'/'+command.id:''),{method:command.method,headers:{'content-type':'application/json','idempotency-key':command.key},credentials:'same-origin',body:JSON.stringify(command.body),signal:controller.signal});if(!current())return;const value:unknown=await response.json();if(!current())return;if(!this.active()||controller.signal.aborted)throw Error();
    if(response.status>=400&&response.status<500&&obj(value)&&obj(value.error)&&typeof value.error.code==='string'){if(this.uncertain)throw Error();this.clear(command);this.update({phase:'rejected',pending:null,saved:null,error:value.error.code==='REVISION_CONFLICT'?'版本冲突：请重新读取当前记录，核对后再保存。':value.error.code==='REFERENCE_CONFLICT'?'关联版本冲突：请重新选择当前来源后保存。':'请求未被接受，请重新核对本人身份、内容或版本。'});return;}
    if(!(response.status===200||command.method==='POST'&&response.status===201)||!obj(value)||typeof value.duplicate!=='boolean'||!matches(command,value.entry))throw Error();
-   if(this.verifyReadback){const read=await this.fetcher('/api/platform/personal/'+command.type+'/'+(value.entry as PublicEntry).id,{credentials:'same-origin',cache:'no-store',signal:controller.signal}),detail:unknown=await read.json();if(!current())return;if(!this.active()||controller.signal.aborted||!read.ok||!obj(detail)||canonical(detail.entry)!==canonical(value.entry))throw Error();const check=await this.fetcher('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store',signal:controller.signal}),status:unknown=await check.json();if(!current())return;if(!this.active()||!check.ok||!obj(status)||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true)throw Error();}
-   this.clear(command);this.update({phase:'saved',pending:null,saved:value.entry,error:''});
+   let observed:PublicEntry|undefined;
+   if(this.verifyReadback){const read=await this.fetcher('/api/platform/personal/'+command.type+'/'+(value.entry as PublicEntry).id,{credentials:'same-origin',cache:'no-store',signal:controller.signal}),detail:unknown=await read.json();if(!current())return;if(!this.active()||controller.signal.aborted||!read.ok||!obj(detail)||!observedReadback(command,value.entry as PublicEntry,detail.entry))throw Error();observed=detail.entry;const check=await this.fetcher('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store',signal:controller.signal}),status:unknown=await check.json();if(!current())return;if(!this.active()||!check.ok||!obj(status)||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true)throw Error();}
+   this.clear(command);this.update({phase:'saved',pending:null,saved:value.entry,...(observed?{observed}:{}),error:''});
   }catch{if(current()){this.uncertain=true;this.update({phase:'uncertain',pending:command,saved:null,error:unknown});}}finally{if(current()&&this.controller===controller)this.controller=null;}
  }
 }
