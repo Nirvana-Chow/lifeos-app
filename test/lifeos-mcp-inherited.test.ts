@@ -122,4 +122,3 @@ test('redirect is not followed, untrusted API errors cannot echo the configured 
  let redirects=0;const redirect=new LifeOSApiClient({origin,credentialProvider:async()=>key},async()=>{redirects++;return new Response(null,{status:302,headers:{location:'https://evil.invalid'}});});
  await assert.rejects(redirect.discover());assert.equal(redirects,1);
 });
-

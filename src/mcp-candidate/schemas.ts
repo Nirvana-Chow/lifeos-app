@@ -10,9 +10,12 @@ import {requirementId,validateRequirementFields,validateBaselineBinding} from '.
 import {validateFeedbackInput} from '../requirement-support-candidate/domain.ts';
 import {decodeChanges} from '../personal-candidate/classification-contracts.ts';
 import {classificationConfirmation} from '../personal-candidate/classification-service.ts';
+import {writeFieldsSchema,organizationFieldsSchema,classificationChanges,recordId,revision,commandKey,digest,baselineBinding} from './field-schemas.ts';
 export type Operation=typeof agentOperations[number];
 const fields=z.record(z.string(),z.unknown());
-export function argumentSchema(operation:Operation){
+// Envelope parsing deliberately leaves business values to the canonical native
+// normalizers below. The discovery projection must never become a second writer.
+function envelopeSchema(operation:Operation){
  const shape:Record<string,z.ZodType>={};
  if(operation.path.includes('{id}'))shape.id=z.string();
  if(operation.path.includes('{type}'))shape.type=z.enum(organizationTypes);
@@ -25,8 +28,26 @@ export function argumentSchema(operation:Operation){
  }
  return z.strictObject(shape);
 }
+/** Native contract structure, including complete fields and mutually exclusive kinds. */
+export function argumentSchema(operation:Operation):z.ZodType{
+ const shape:Record<string,z.ZodType>={};
+ if(operation.path.includes('{id}'))shape.id=operation.module==='requirements'?z.union([recordId,z.string().regex(/^LO-[A-Z]+-\d{3}$/)]):recordId;
+ if(operation.path.includes('{type}'))shape.type=z.enum(organizationTypes);
+ if(operation.id==='previewTodoClassification')shape.changes=classificationChanges;
+ else if(operation.id==='commitTodoClassification'){shape.planId=recordId;shape.digest=digest;shape.confirmed=z.literal(true);shape.idempotencyKey=commandKey;}
+ else if(operation.method!=='GET'){
+  shape.idempotencyKey=commandKey;
+  if(operation.method==='PATCH')shape.expectedRevision=operation.module==='requirements'?z.number().int().min(0).max(2147483647).describe('CAS revision from GET; zero only for the first edit of a public LO-ID.'):revision;
+  if(operation.id==='updateRequirement')shape.baselineBinding=baselineBinding;
+  if(operation.module==='organization'){
+   return z.xor(organizationTypes.map(type=>z.strictObject({...shape,type:z.literal(type),fields:organizationFieldsSchema(type,operation.method==='PATCH')}))).describe('Complete organization fields on PATCH; metadata type must match route type. Omitted optional project planning dates preserve saved dates; null clears.');
+  }
+  shape.fields=writeFieldsSchema(operation.module,operation.method==='PATCH');
+ }
+ return z.strictObject(shape).describe(operation.method==='PATCH'?'Submit complete required fields, not a partial merge. Preserve current fields from GET; optional planning/workflow omission preserves values and null clears. Native normalizers and current authorization remain authoritative.':operation.description);
+}
 export function parseArguments(operation:Operation,input:unknown){
- const parsed=argumentSchema(operation).safeParse(input);
+ const parsed=envelopeSchema(operation).safeParse(input);
  if(!parsed.success)throw new PlatformError(400,'INVALID_ARGUMENTS','Invalid arguments');
  const args=parsed.data;let path:string=operation.path;
  if(path.includes('{id}'))path=path.replace('{id}',operation.module==='requirements'?requirementId(args.id):validateId(args.id));
