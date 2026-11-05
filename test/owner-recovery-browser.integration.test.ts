@@ -4,9 +4,9 @@ import {join,resolve} from 'node:path';
 import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {spawn} from 'node:child_process';
-import {once} from 'node:events';
 import {renderedContrast} from './helpers/personal-contrast.ts';
-import {chromium,type Browser,type BrowserContext,type Page,type Request as BrowserRequest} from '@playwright/test';
+import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
+import {chromium,type Browser,type BrowserServer,type BrowserContext,type Page,type Request as BrowserRequest} from '@playwright/test';
 import {Pool} from 'pg';
 import {readReviewConfig} from '../src/platform/private-config.ts';
 import {readPlatformConfig} from '../src/platform/config.ts';
@@ -67,28 +67,33 @@ test('OPT-IN public auth theme oracle follows approved shared palette',{
  skip:process.env.RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS!=='1',timeout:120000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-'));
- t.after(()=>rm(root,{recursive:true,force:true}));
+ let browser:Browser|undefined,browserServer:BrowserServer|undefined,ownedServer:FixtureProcess|undefined,ownedBrowser:FixtureProcess|undefined;
+ t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer,browserProcess:ownedBrowser,server:ownedServer}));
+ let stage='setup';try{
  await mkdir(join(root,'app','recover'),{recursive:true});
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','page.tsx'),`import {LoginPage} from '../src/personal-candidate/login';export default function Page(){return <LoginPage capability={{mode:'synthetic',enabled:true}}/>}`);
  await writeFile(join(root,'app','recover','page.tsx'),`import {OwnerRecoveryFinishPanel} from '../../src/personal-candidate/owner-recovery-finish-panel';export default function Page(){return <OwnerRecoveryFinishPanel enabled/>}`);
- const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
- const stopped=once(server,'exit');t.after(async()=>{server.kill('SIGTERM');await stopped;});
- const base=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('AUTH_THEME_FIXTURE_STARTUP')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('AUTH_THEME_FIXTURE_EXIT'));});server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
- const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const detached=process.platform!=='win32',server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],detached});
+ ownedServer=trackAuthThemeProcess(server,detached);server.stderr.resume();
+ stage='startup';const base=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('AUTH_THEME_FIXTURE_STARTUP')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('AUTH_THEME_FIXTURE_EXIT'));});server.once('error',()=>{clearTimeout(timer);reject(Error('AUTH_THEME_FIXTURE_SPAWN'));});server.stdout.on('data',chunk=>{output=(output+String(chunk)).slice(-65536);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
+ stage='browser-launch';browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});ownedBrowser=trackAuthThemeProcess(browserServer.process());
+ stage='browser-connect';browser=await chromium.connect(browserServer.wsEndpoint());
+ stage='context';
  for(const width of [1365,390])for(const theme of ['light','dark'] as const){
   const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,hasTouch:width===390,isMobile:width===390});
   try{const page=await context.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
    for(const route of ['/','/recover']){
-    await page.goto(base+route,{waitUntil:'networkidle'});await page.waitForFunction(()=>!!document.querySelector('form button:not(:disabled)'));
-    await assertAuthTheme(page,theme);await assertPublicLayout(page,{expectFits:true});
+    stage='navigation';await page.goto(base+route,{waitUntil:'networkidle'});await page.waitForFunction(()=>!!document.querySelector('form button:not(:disabled)'));
+    stage='theme';await assertAuthTheme(page,theme);stage='layout';await assertPublicLayout(page,{expectFits:true});
     const facts=await page.locator('form input').first().evaluate(node=>{const style=getComputedStyle(node);return {font:parseFloat(style.fontSize),height:node.getBoundingClientRect().height,ink:style.color,paper:style.backgroundColor};});
-    must(facts.font>=16&&facts.height>=44,'auth-input-geometry');must(renderedContrast(facts.ink,[{backgroundColor:facts.paper}]).contrast>=4.5,'auth-input-contrast');
+    stage='input';must(facts.font>=16&&facts.height>=44,'auth-input-geometry');must(renderedContrast(facts.ink,[{backgroundColor:facts.paper}]).contrast>=4.5,'auth-input-contrast');
     const button=await page.locator('form button').evaluate(node=>{const style=getComputedStyle(node);return {height:node.getBoundingClientRect().height,ink:style.color,paper:style.backgroundColor};});
-    must(button.height>=44&&renderedContrast(button.ink,[{backgroundColor:button.paper}]).contrast>=4.5,'auth-button-contrast');
+    stage='button';must(button.height>=44&&renderedContrast(button.ink,[{backgroundColor:button.paper}]).contrast>=4.5,'auth-button-contrast');
    }must(errors.length===0,'auth-page-errors');
   }finally{await context.close();}
  }
+ }catch(error){const reason=error instanceof Error&&/^(?:theme-(?:resolved|root|body|page|input|button)|auth-(?:input-geometry|input-contrast|button-contrast|page-errors))$/.test(error.message)?error.message:error instanceof Error&&error.name==='TimeoutError'?'timeout':error instanceof Error&&error.name==='AssertionError'?'assertion':'other';console.log('AUTH_THEME_FIXTURE_FAILURE '+JSON.stringify({stage,reason}));throw error;}
 });
 
 test('no-JS page lifecycle finishes and closes before the next page opens',{timeout:1000},async()=>{
