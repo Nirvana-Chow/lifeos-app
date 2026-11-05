@@ -159,7 +159,7 @@
   padding: 10px 12px;
   color: var(--muted-foreground);
 }
-.lo-nav button.is-current,
+.lo-nav button.is-current,.lo-nav a[aria-current="page"],
 .lo-sidebar-bottom button.is-current {
   background: var(--accent);
   color: var(--foreground);
@@ -1356,7 +1356,7 @@
  .lo-board-column{padding:10px}.lo-board-card{padding:10px}.lo-board-cards{gap:8px}
  .lo-settings-panels button{min-height:32px}.lo-settings-panel h2{font-size:16px;margin-bottom:12px}
  .lo-settings-dialog[data-slot="dialog-content"]{gap:16px;padding:20px}
- .lo-nav button.is-current,.lo-sidebar-bottom button.is-current{background:var(--lo-selected);color:var(--lo-selected-foreground)}
+ .lo-nav button.is-current,.lo-nav a[aria-current="page"],.lo-sidebar-bottom button.is-current{background:var(--lo-selected);color:var(--lo-selected-foreground)}
 }
 .lo-native-board{display:flex;flex:1;min-height:0;flex-direction:column;gap:8px;overflow:hidden}.lo-native-board>[data-slot="kanban"]{display:flex;flex-direction:column;min-height:0;flex:1}.lo-board-view-note{font-size:var(--lo-font-meta);color:var(--muted-foreground)}.lo-native-board .lo-board{display:flex;flex:1;gap:12px;overflow-x:auto}.lo-native-board .lo-board-column{flex:0 0 280px;min-width:0}.lo-kanban-card{background:var(--card);border:1px solid var(--border);border-radius:8px;flex:none;min-width:0}.lo-native-board .lo-board-card{border:0;margin:0;padding-top:4px}.lo-board-card-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px}.lo-shell .lo-column-drag{border:0;background:transparent;display:flex;align-items:center;gap:6px;font:inherit;padding:0;touch-action:none}.lo-card-drag{touch-action:none}.lo-board-move{display:flex;align-items:center;gap:8px;color:var(--muted-foreground);font-size:var(--lo-font-meta)}.lo-board-move select{max-width:132px}.lo-native-board .lo-board-column>h2{flex:none}.lo-shell .lo-card-drag:focus-visible,.lo-shell .lo-column-drag:focus-visible{outline:2px solid var(--ring)}
 @media(min-width:1024px) and (pointer:fine){.lo-native-board .lo-board-column{flex-basis:260px}.lo-board-card-tools{padding:2px 6px}.lo-board-move select{font-size:12px;min-height:28px;padding:3px 6px}}

@@ -61,6 +61,8 @@ import type {
 import "./review.css";
 import {ThemeSwitch,AppearanceSettings} from "../workbench/theme-switch";
 import {CategoryGrid} from "./category-grid";
+import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
+import {OwnerReleaseNotice} from './owner-release-notice';
 import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 
@@ -143,6 +145,7 @@ function DataState({
 export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
+  const ownerModules=useOwnerModules(access.authenticated===true,props.viewPreferenceScope??null);
   const [page, setPage] = useState<WorkspacePage>(
     props.initialPage === "settings" ? "overview" : props.initialPage ?? "overview",
   );
@@ -406,6 +409,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span>{label}</span>
           </Button>
         ))}
+        <OwnerModuleLinks links={ownerModules.links} path={ownerModules.path} collapsed={collapsed}/>
       </nav>
       <div className="lo-sidebar-bottom">
         <Button
@@ -555,6 +559,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }}
       ref={setPortalContainer}
     >
+      {ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope} container={portalContainer} blocked={state.status!=='ready'||!!props.saving||!!props.uncertain||settingsOpen||!!classificationPlanId||mobileOpen}/>}
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
       <header className="lo-header">
         <Button
