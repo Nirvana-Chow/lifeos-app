@@ -9,6 +9,7 @@ import ts from 'typescript';
 import type {PublicEntry} from '../src/platform/contracts.ts';
 import {privateHrefs} from '../src/workbench/private-navigation.ts';
 import * as fixture from './helpers/private-business-browser-fixture.ts';
+import {presentationDensity} from './helpers/personal-workspace-browser-fixture.ts';
 
 test('missing private handoff fails before trust launch or body access',async()=>{
  let touched=false;
@@ -196,4 +197,23 @@ test('category capture admits only the reviewed category component labels and st
  const texts=fixture.captureSourceText();
  for(const label of ['未完待办','项目数','操作','全部阶段','搜索'])assert.ok(texts.has(label),label);
  assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,texts:['unreviewed private sentinel'],values:[],editable:[],recordIds:[]},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+});
+
+// Current shell desktop density must not weaken touch or standalone form minima.
+test('private presentation geometry accepts only the matching pointer-specific shell height',()=>{
+ const row={height:52,display:'flex',wrap:'nowrap',gap:14,contained:true,childHeights:[32,32,32]};
+ assert.doesNotThrow(()=>fixture.assertPrivateHeaderGeometry('workspace',1365,row,true));
+ assert.throws(()=>fixture.assertPrivateHeaderGeometry('workspace',1365,{...row,height:64},true),/PRIVATE_HEADER_GEOMETRY/);
+ assert.doesNotThrow(()=>fixture.assertPrivateHeaderGeometry('workspace',1365,{...row,height:64},false));
+ assert.throws(()=>fixture.assertPrivateHeaderGeometry('workspace',1365,row,false),/PRIVATE_HEADER_GEOMETRY/);
+});
+
+test('density policy preserves coarse touch and explicit standalone editor form roles',()=>{
+ assert.deepEqual(presentationDensity(1365,true),{compact:true,title:22,body:14,metadata:12,form:14,hit:32});
+ assert.equal(presentationDensity(1365,true,'standalone-editor').form,16);
+ for(const [width,fine] of [[1365,false],[1024,false],[390,true],[390,false]] as const){
+  const policy=presentationDensity(width,fine);assert.equal(policy.form,16);assert.equal(policy.metadata,14);assert.equal(policy.hit,44);
+ }
+ assert.equal(presentationDensity(390,false).title,24);
+ assert.equal(presentationDensity(1365,false).title,28);
 });

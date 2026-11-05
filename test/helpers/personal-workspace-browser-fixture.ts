@@ -9,6 +9,11 @@ import type {PublicEntry} from '../../src/platform/contracts.ts';
 import {themeStorageKey} from '../../src/workbench/theme.ts';
 import {requireTaskGrid,taskGridRoot,taskGridInput,taskGridTitleCell,taskGridViewport} from './task-grid-browser-driver.ts';
 
+/** Approved density roles; standalone journal forms retain their explicit16px style. */
+export function presentationDensity(width:number,finePointer:boolean,surface:'workspace'|'standalone-editor'='workspace'){
+ const compact=width>=1024&&finePointer;
+ return {compact,title:compact?22:width>=1024?28:24,body:14,metadata:compact?12:14,form:compact&&surface==='workspace'?14:16,hit:compact?32:44};
+}
 const origin='https://review.example.test';
 const target='postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local';
 const synthetic={domain:'合成浏览器领域',project:'合成浏览器项目',initial:'合成浏览器待办',title:'合成浏览器待办更正',notes:'仅用于隔离浏览器的合成补充内容',editedNotes:'仅用于隔离浏览器的合成更正内容',date:'2030-11-02',editedDate:'2030-11-03'};
@@ -221,7 +226,7 @@ async function presentation(page:Page,kind:'workspace'|'editor',width:number,the
    return {foreground:getComputedStyle(element).color,layers};
   };
   const control=content.querySelector('input'),c=content.getBoundingClientRect(),m=main.getBoundingClientRect(),style=getComputedStyle(content),surface=getComputedStyle(document.body);
-  return {noOverflow:root.scrollWidth<=root.clientWidth,centerDelta:Math.abs(c.x+c.width/2-(kind==='workspace'?m.x+m.width/2:root.clientWidth/2)),left:style.textAlign==='left'||style.textAlign==='start',paper:surface.backgroundColor,ink:surface.color,scheme:getComputedStyle(root).colorScheme,dialogWidth:c.width,dialogHeight:c.height,viewportHeight:innerHeight,inputSize:kind==='editor'?parseFloat(getComputedStyle(content.querySelector('input')!).fontSize):16,text:colors(document.body),control:control?colors(control):null};
+  return {finePointer:matchMedia('(pointer:fine)').matches,noOverflow:root.scrollWidth<=root.clientWidth,centerDelta:Math.abs(c.x+c.width/2-(kind==='workspace'?m.x+m.width/2:root.clientWidth/2)),left:style.textAlign==='left'||style.textAlign==='start',paper:surface.backgroundColor,ink:surface.color,scheme:getComputedStyle(root).colorScheme,dialogWidth:c.width,dialogHeight:c.height,viewportHeight:innerHeight,inputSize:kind==='editor'?parseFloat(getComputedStyle(content.querySelector('input')!).fontSize):16,text:colors(document.body),control:control?colors(control):null};
  },{kind,width});
  diagnostic('text-measure');const text=renderedContrast(facts.text.foreground,facts.text.layers);
  diagnostic('text',{contrast:text.contrast,alpha:text.foregroundAlpha});assert.equal(text.contrast>=4.5,true,'personal rendered text contrast');
@@ -229,11 +234,12 @@ async function presentation(page:Page,kind:'workspace'|'editor',width:number,the
  diagnostic('overflow',{match:facts.noOverflow});assert.equal(facts.noOverflow,true,'personal document overflow');
  diagnostic('center',{width,centerDelta:facts.centerDelta});assert.equal(width!==1365||facts.centerDelta<=1,true,'personal container center');
  diagnostic('left',{match:facts.left});assert.equal(facts.left,true,'personal text alignment');
- diagnostic('paper',{match:facts.paper===(theme==='dark'?'rgb(31, 31, 31)':'rgb(255, 255, 255)')});assert.equal(facts.paper,theme==='dark'?'rgb(31, 31, 31)':'rgb(255, 255, 255)','personal themed surface');
- diagnostic('ink',{match:facts.ink===(theme==='dark'?'rgb(204, 204, 204)':'rgb(31, 31, 31)')});assert.equal(facts.ink,theme==='dark'?'rgb(204, 204, 204)':'rgb(31, 31, 31)','personal themed ink');
+ diagnostic('paper',{match:facts.paper===(theme==='dark'?'rgb(17, 17, 19)':'rgb(252, 252, 253)')});assert.equal(facts.paper,theme==='dark'?'rgb(17, 17, 19)':'rgb(252, 252, 253)','personal themed surface');
+ diagnostic('ink',{match:facts.ink===(theme==='dark'?'rgb(237, 238, 240)':'rgb(28, 32, 36)')});assert.equal(facts.ink,theme==='dark'?'rgb(237, 238, 240)':'rgb(28, 32, 36)','personal themed ink');
  diagnostic('scheme',{match:facts.scheme===theme});assert.equal(facts.scheme,theme,'personal theme scheme');
  if(kind==='editor'){
-  diagnostic('input-size',{match:facts.inputSize>=16});assert.equal(facts.inputSize>=16,true,'editor readable inputs');
+  const minimum=presentationDensity(width,facts.finePointer).form;
+  diagnostic('input-size',{match:facts.inputSize>=minimum});assert.equal(facts.inputSize>=minimum,true,'editor readable inputs');
   diagnostic('editor-width',{width:facts.dialogWidth});assert.equal(width===1365?facts.dialogWidth<=680:Math.abs(facts.dialogWidth-width)<=1,true,'editor adaptive width');
   if(width!==1365){diagnostic('editor-height',{match:Math.abs(facts.dialogHeight-facts.viewportHeight)<=1});assert.equal(Math.abs(facts.dialogHeight-facts.viewportHeight)<=1,true,'editor mobile fullscreen');}
   diagnostic('save-viewport');await expect(form(page).getByRole('button',{name:'保存待办',exact:true})).toBeInViewport();
