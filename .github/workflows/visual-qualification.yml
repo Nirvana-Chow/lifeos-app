@@ -19,6 +19,8 @@ on:
       - 'scripts/synthetic-rendered-qualification.ts'
       - 'scripts/client-bundle-evidence.mjs'
       - 'scripts/attach-vtable-benchmark.py'
+      - 'scripts/ci/prepare-runner-cjk-fonts.sh'
+      - 'test/ci-cjk-fonts.test.ts'
       - '.github/workflows/visual-qualification.yml'
   push:
     branches: [main]
@@ -35,6 +37,8 @@ on:
       - 'scripts/synthetic-rendered-qualification.ts'
       - 'scripts/client-bundle-evidence.mjs'
       - 'scripts/attach-vtable-benchmark.py'
+      - 'scripts/ci/prepare-runner-cjk-fonts.sh'
+      - 'test/ci-cjk-fonts.test.ts'
       - '.github/workflows/visual-qualification.yml'
   workflow_dispatch:
 
@@ -433,19 +437,19 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
+        timeout-minutes: 4
         run: |
           set -euo pipefail
           # Official Ubuntu noble; SIL-1.1 font, GPL-3+ packaging. No product font bundle.
-          sudo -n apt-get update -qq
-          sudo -n apt-get install -y --no-install-recommends 'fonts-noto-cjk=1:20230817+repack1-3'
+          bash scripts/ci/prepare-runner-cjk-fonts.sh
           test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
           test -s /usr/share/doc/fonts-noto-cjk/copyright
-          fc-cache -f
-          cjk_family="$(fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
+          timeout --kill-after=5s 25s fc-cache -f
+          cjk_family="$(timeout --kill-after=5s 10s fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
           case "$cjk_family" in *'Noto Sans CJK'*) ;; *) exit 1 ;; esac
           command -v google-chrome >/dev/null
           command -v certutil >/dev/null
-          google-chrome --version
+          timeout --kill-after=5s 10s google-chrome --version
       - name: Check changed UI contracts early with native Chrome
         timeout-minutes: 8
         env:
