@@ -12,6 +12,7 @@ import type{PublicEntry}from'../platform/contracts';
 import type{WorkspaceTask}from'./workspace-data';
 type EditorContext={target:TaskTarget;binding:PersonalBinding};
 type TaskActions={
+ viewPreferenceScope:string|null;
  onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:()=>boolean;
  onOpenTask:(task:TaskIdentity,trigger?:HTMLElement)=>boolean;
  onBeforeNavigate:()=>boolean;
@@ -88,6 +89,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  />;
  return <>{children({
   ...snapshot,
+  viewPreferenceScope:verifiedBinding?JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]):null,
   onRefresh:()=>{if(beforeNavigate())void controller.current?.refresh();},
   onLogin:()=>navigate('/login'),
   onLogout:()=>{if(beforeNavigate())void controller.current?.logout();},
