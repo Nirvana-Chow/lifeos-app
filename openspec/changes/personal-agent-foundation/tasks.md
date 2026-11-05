@@ -1,5 +1,7 @@
 # Tasks
 
+Owner priority correction (2026-11-05): deliver the previously requested business first versions before concentrated visual review, using the [bounded parallel plan](../../../docs/superpowers/plans/2026-11-05-business-first-versions.md). Continue6.1–6.4/9.7 with real owner input/list/detail/edit and matching scoped API/discovery/Skill; preserve original IDs, paused model/Agent work and all runtime/migration/permission gates. The rejected requirements-table appearance remains tracked, without blocking usable modules.
+
 Latest owner priority is requirements/matters → business data with API/Skill → personal Agent. Continue the [owner-review refinement](../../../docs/superpowers/plans/2026-11-05-requirements-matters-refinement.md) under original UI IDs,9.4 and the explicit backend extension9.7 below; preserve existing task IDs, completion evidence and all unfinished work. A cleared runtime Goal does not cancel the roadmap or authorize resuming paused Agent/calendar development.
 
 This is the sole execution checklist for the new PersonalAgent intent. The existing 34 requirement IDs and Issues remain the backlog; the original `unified-business-ui` five tasks retain inherited2/5. Detailed plan checkboxes describe procedures, not independent completion state. Ordinary source work proceeds under continuous authorization; concrete runtime/data/permission/cost packages remain separate gates.

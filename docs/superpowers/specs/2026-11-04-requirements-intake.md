@@ -2,6 +2,16 @@
 
 The 2026-11-04 owner feedback requires intake before implementation: record the addition, deduplicate by behavior, retain a stable ID/source/acceptance/priority/dependencies/status, split independently verifiable slices, then execute. New messages append to unfinished requirements. Explicit owner cancellation or replacement is required to remove scope. The project AGENTS and LO-REQ-001 now state this order.
 
+## 2026-11-05 owner correction: usable business modules before detailed polish
+
+Source: the owner rejected the current requirements-table screenshot, then explicitly asked for usable first versions of all previously requested business modules before concentrated product review. Continue the original IDs and Issues: LO-TASK-001/#5 and projects/#7; LO-JOURNAL-001/#6; LO-SCHEDULE-001/#12; LO-HEALTH-001/#15; finance/#11; LO-PEOPLE-001/#32; LO-LINK-001/#33; LO-REQ-001/#30; LO-AGENT-001/#35. The execution intake is recorded on [Issue30](https://github.com/Nirvana-Chow/lifeos-app/issues/30#issuecomment-6658805425).
+
+Priority: finish and publish existing owner module candidates, in parallel with health, finance and people input/list/detail/edit slices. Every new input includes scoped Agent operations, discovery and portable Skill contracts in the same delivery. Keep shared owner/space checks, CAS, exact idempotent recovery, reference pins and individual readback. Empty modules stay empty; synthetic fixtures remain internal verification, never owner delivery. Existing Keys retain their actual grants; the explicit all-business policy is a separate activation gate.
+
+The rejected table's heavy filler borders, button-as-input styling and fixed-width clipping remain LO-REQ-001/LO-UI-001 corrections, to be fixed without delaying the business first versions. All original acceptance and unfinished migration/classification requirements remain. Actual private migration, bulk business writes, new permissions and external source activation still require their concrete authorized target; no direct production business SQL. The personal Agent/model/worker phase stays later. A cleared execution Goal is not recreated by this intake.
+
+Implementation plan: [business first versions](../plans/2026-11-05-business-first-versions.md). Source, verification, deployment and owner acceptance remain distinct.
+
 ## Reconciliation
 
 The original product baseline has 31 IDs. The previous public projection retained25 and omitted6; those6 are restored as their original IDs, not replacement backlog items. Only generic product requirements enter public source. Private operational targets, personal records, credentials and historic private evidence remain outside it. Previously implemented evidence is not reset; original implementation/verification/deployment/owner-acceptance gates remain distinct.
