@@ -59,10 +59,10 @@ export async function withPrivateBrowserFixture<T>(handoff:PrivateBrowserHandoff
 
 // Independent literals, calibrated against Task4. Do not derive expected routes from the map under test.
 export const privateDestinations=[
- ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','运动健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日历与日程'],['time','/personal/time','时间分配'],['people','/personal/people','人际与纪念日'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?modal=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
+ ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?modal=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
 ] as const;
 const families=[
- ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','运动健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?modal=settings&panel=general','总览'],['private-outputs-dialog','/personal/outputs','输出中心'],
+ ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?modal=settings&panel=general','总览'],['private-outputs-dialog','/personal/outputs','输出中心'],
 ] as const;
 export const privateCaptureCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'||key==='private-settings'?1:0})))));
 export function assertPrivateCaptureScope(f:{name:string;url:string;width:number;theme:string;heading:string;dialog:number}):void{
@@ -172,7 +172,22 @@ function watchPrivateTransport(page:Page,{legacy=false}:{legacy?:boolean}={}){
 export async function readyHeading(page:Page,heading:string){
  if(heading==='设置'){await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();return;}
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
- if(heading==='日历与日程'||heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ if(heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(['健康','人物','财务','日程'].includes(heading)){
+  // These modules are deliberately closed in the recovery fixture. Their real
+  // content pages replace the former placeholders; a task action is unrelated.
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+  if(heading==='健康'||heading==='人物'){
+   await expect(page.locator('[data-personal-record-module]').getByRole('alert')).toHaveText('此模块尚未开放。');
+   await expect(page.getByRole('button',{name:'新增'+heading,exact:true})).toBeDisabled();
+  }else if(heading==='财务'){
+   await expect(page.getByRole('heading',{level:3,name:'财务记录尚未开放',exact:true})).toBeVisible();
+   await expect(page.getByRole('button',{name:'记一笔',exact:true})).toBeDisabled();
+  }else{
+   await expect(page.getByRole('heading',{level:2,name:'个人日程尚未开放',exact:true})).toBeVisible();
+   await expect(page.getByRole('button',{name:'新建日程',exact:true})).toBeDisabled();
+  }
+ }
  else if(heading==='项目'||heading==='领域'){
   const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:'新建'+heading,exact:true});
   await expect(create).toBeVisible();
@@ -194,6 +209,14 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
   await expect(page.getByText(/项目与行动总项|导出记录窗口/)).toHaveCount(0);
  }
 }
+export async function assertPrivateFixtureNavigation(page:Page){
+ const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
+ await expect(navigation.getByRole('button')).toHaveText(['总览','事项','需求池']);
+ await expect(navigation.getByRole('link')).toHaveText(['日记']);
+ await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
+ await expect(navigation.locator('summary')).toHaveCount(0);
+ return navigation;
+}
 export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
  const {page,browser,entries}=f;assert.deepEqual(Object.fromEntries(privateDestinations.map(([id,path])=>[id,path])),privateHrefs);
  const transport=watchPrivateTransport(page);let routes=0;
@@ -201,9 +224,7 @@ export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
   for(const width of [1365,390]){await page.setViewportSize({width,height:width===1365?900:844});await page.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});
    await readyHeading(page,'总览');
    if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
-   const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
-   await expect(navigation.getByRole('button')).toHaveText(['总览','事项','需求池']);
-   await expect(navigation.locator('a,summary')).toHaveCount(0);
+   const navigation=await assertPrivateFixtureNavigation(page);
    await navigation.getByRole('button',{name:'事项',exact:true}).click();await readyHeading(page,'待办');
    for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading);routes++;}
   }
@@ -234,7 +255,7 @@ async function verifyPrivateAppearanceAndDraftsBody(f:PrivateFixture,setPhase:(p
   setPhase('dark-selection');await switchTheme(page,'dark');await themeState(page,'dark','dark');setPhase('dark-storage-readback');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
   setPhase('dark-reload');await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark','saved-dark-reload');await themeState(page,'dark','dark');
   // The retained Schedule bookmark tests first paint on a new document.
-  setPhase('dark-navigation');await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true})).toHaveCount(0);await page.goto(privateOrigin+'/personal/schedule',{waitUntil:'domcontentloaded'});await readyHeading(page,'日历与日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
+  setPhase('dark-navigation');await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true})).toHaveCount(0);await page.goto(privateOrigin+'/personal/schedule',{waitUntil:'domcontentloaded'});await readyHeading(page,'日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
   setPhase('os-media');await page.emulateMedia({colorScheme:'dark'});await switchTheme(page,'light');await themeState(page,'light','light');await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.reload({waitUntil:'domcontentloaded'});await themeState(page,'dark','system');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');
   // Storage events reach the other window only. The source is still dark after removeItem.
   setPhase('cross-tab');const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await switchTheme(sibling,'light');await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}
