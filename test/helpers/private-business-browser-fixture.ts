@@ -135,11 +135,15 @@ export const privateCaptureSources=[
  'src/workbench/shell.tsx','src/workbench/navigation.ts','src/workbench/draft-workspace.tsx','src/workbench/draft-contract.ts','src/workbench/domain.tsx','src/workbench/empty-state.tsx','src/workbench/entry-preview.tsx','src/workbench/entry-fields.ts','src/workbench/workflow.tsx','src/workbench/settings.tsx','src/workbench/theme-switch.tsx',
  'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/connected-workspace.tsx',
  'src/personal-candidate/privacy.tsx','src/personal-candidate/live-workspace.tsx','app/layout.tsx','app/personal/[...section]/page.tsx',
+ 'src/personal-candidate/record-workbench.tsx','src/personal-candidate/record-modules.ts',
+ 'src/personal-finance/workbench.tsx','src/personal-finance/client.ts',
 ] as const;
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
- const out=new Set<string>();for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
+ // This closed fixture's only rendered native compound is assembled from two
+ // source literals. Admit its exact value, never a prefix or body-derived text.
+ const out=new Set<string>(['新增健康']);for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
 }
 async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark){
  mark('capture-receipts');requireFixture();await assertPrivateReceipts(page,entries);
@@ -333,11 +337,22 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
  if(dialog){const button=page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
  mark('keyboard');const focus=page.locator(themeButtonSelector);await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>document.activeElement===n&&n.matches(':focus-visible')&&getComputedStyle(n).outlineStyle!=='none'),true,'private keyboard focus');
 }
-async function privateLocalInteractions(page:Page,key:string){
+export async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'){
-  const draft=page.getByRole('form',{name:'财务流水未保存草稿'});await draft.getByLabel('草稿：金额（元）',{exact:true}).fill('12.50');await page.getByRole('button',{name:'账户与对账',exact:true}).click();await page.getByRole('button',{name:'流水',exact:true}).click();await expect(draft.getByLabel('草稿：金额（元）',{exact:true})).toHaveValue('12.50');await draft.getByRole('button',{name:'取消草稿'}).click();await expect(draft.getByLabel('草稿：金额（元）',{exact:true})).toHaveValue('');
-  await page.getByRole('form',{name:'财务筛选'}).getByRole('button',{name:'检查筛选'}).click();await expect(page.getByRole('status').filter({hasText:'没有执行查询'})).toBeVisible();
- }else if(key==='private-health'){await page.getByRole('button',{name:'添加一组',exact:true}).click();await page.getByLabel('第 1 组 次数',{exact:true}).fill('5');await page.getByRole('button',{name:'移除第 1 组',exact:true}).click();await expect(page.getByLabel('第 1 组 次数',{exact:true})).toHaveCount(0);}
+  const module=page.getByRole('region',{name:'财务记录',exact:true});
+  await expect(module.getByRole('button',{name:'记一笔',exact:true})).toBeDisabled();
+  await expect(module.locator('form')).toHaveCount(0);
+  await module.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(module.getByRole('heading',{level:3,name:'财务记录尚未开放',exact:true})).toBeVisible();
+ }else if(key==='private-health'){
+  const module=page.locator('[data-personal-record-module="health"]');
+  await expect(module.getByRole('button',{name:'新增健康',exact:true})).toBeDisabled();
+  await expect(module.locator('form')).toHaveCount(0);
+  await module.getByRole('button',{name:'趋势',exact:true}).click();
+  await module.getByRole('button',{name:'表格',exact:true}).click();
+  await module.getByRole('button',{name:'刷新',exact:true}).click();
+  await expect(module.getByRole('alert')).toHaveText('此模块尚未开放。');
+ }
  else if(key==='private-workflows'){await page.getByRole('tab',{name:'设计草稿',exact:true}).click();await page.getByRole('button',{name:'添加步骤',exact:true}).click();await page.getByRole('textbox',{name:'步骤1名称',exact:true}).fill('合成审核步骤');await page.getByRole('button',{name:'移除此步骤',exact:true}).click();await expect(page.getByRole('button',{name:'保存流程 · 待接入',exact:true})).toBeDisabled();}
  else if(key==='private-tools'){const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'授权与执行要求'})}).first();await details.locator('summary').click();await expect(details).toContainText('需确认来源');await details.locator('summary').click();await expect(page.getByRole('button',{name:'连接 · 未实现',exact:true}).first()).toBeDisabled();}
  else if(key==='private-chat')await expect(page.locator('main').getByRole('heading',{level:2,name:'AI 聊天尚未接入',exact:true})).toBeVisible();
@@ -351,7 +366,7 @@ async function privateLocalInteractions(page:Page,key:string){
   assert.ok(bounds&&Math.abs(bounds.x+bounds.width/2-(await page.evaluate(()=>innerWidth))/2)<=1,'settings are centered in the viewport');
  }
  if(key==='private-finance'||key==='private-health'){
-  const notice=page.getByText('本模块来源尚未连接，当前没有查询结果。',{exact:true});
+  const notice=key==='private-finance'?page.getByRole('heading',{level:3,name:'财务记录尚未开放',exact:true}):page.locator('[data-personal-record-module="health"]').getByRole('alert');
   await expect(notice).toBeVisible();
   const fits=await notice.evaluate(element=>{
    const range=document.createRange();
@@ -369,6 +384,11 @@ async function privateLocalInteractions(page:Page,key:string){
   });
   assert.equal(fits,true,'empty state text fits the visible content width');
  }
+}
+export async function privateMobileNavigation(page:Page){
+ const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();
+ const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});await expect(drawer).toBeVisible();
+ await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();
 }
 // Bind the visible timestamp to the exact snapshot that this navigation fetched.
 async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture['entries']):Promise<string>{
@@ -486,7 +506,7 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
    await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace');await capturePrivatePage(page,row,entries,mark);cells++;
    mark('close-dialog');if(row.key==='private-settings'){await page.getByRole('dialog',{name:'设置',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();}else if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
-   mark('mobile-navigation');if(row.width<800&&row.key==='private-finance'){const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();const drawer=page.getByRole('dialog',{name:'手机导航',exact:true});await expect(drawer).toBeVisible();await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();}
+   mark('mobile-navigation');if(row.width<800&&row.key==='private-finance')await privateMobileNavigation(page);
   }
   // Credential-node pages receive geometry/DOM checks, never capture permission.
   row=undefined;mark('settings');await page.goto(privateOrigin+'/personal/settings/ai',{waitUntil:'domcontentloaded'});await readyHeading(page,'AI 服务设置');await expect(page.getByLabel('API Key · 待安全配置',{exact:true})).toBeDisabled();await measurePrivatePresentation(page,430,'dark',mark);mark('receipts');await assertPrivateReceipts(page,entries);

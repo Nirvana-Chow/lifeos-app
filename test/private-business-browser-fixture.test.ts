@@ -192,6 +192,16 @@ test('real RecordGrid SSR headers pass only the finite direct-adapter source cap
  assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/ui-review/record-grid.module.css']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
 });
 
+test('real native finance heading passes the finite capture guard without admitting private text',()=>{
+ const html=renderRealComponent('src/personal-finance/workbench.tsx','PersonalFinanceWorkbench',{});
+ const heading=Array.from(html.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g),match=>match[1].replace(/<[^>]+>/g,'').trim());
+ assert.ok(heading.includes('记录每一笔，清楚看收支'));
+ const facts={forbidden:0,values:[],texts:heading,editable:[],recordIds:[]};
+ const texts=fixture.captureSourceText();
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
+ assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,texts:[...heading,'private financial body']},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+});
+
 
 test('category capture admits only the reviewed category component labels and still rejects unknown body text',()=>{
  const texts=fixture.captureSourceText();
