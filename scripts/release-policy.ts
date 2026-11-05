@@ -26,10 +26,14 @@ export function localReleaseDecision(previousFailed=true, baseline=fullGreenReco
   if (tree!==baseline.treeSha) throw Error('BASELINE_TREE_CHANGED');
   git('merge-base','--is-ancestor',baseline.sourceSha,head);
   // Two-tree cumulative diff, never event.before or HEAD~1. No rename inference.
-  const fields=git('diff','--name-status','-z','--no-renames',baseline.sourceSha,head).split('\0');
+  const fields=git('diff','--raw','--no-abbrev','-z','--no-renames',baseline.sourceSha,head).split('\0');
   if (fields.pop()!=='') throw Error('INCOMPLETE_DIFF');
   const changes:{status:string;path:string}[]=[];
-  for(let i=0;i<fields.length;i+=2) {if(!fields[i+1])throw Error('INCOMPLETE_DIFF');changes.push({status:fields[i]!,path:fields[i+1]!});}
+  for(let i=0;i<fields.length;i+=2) {
+   const raw=/^:(\d{6}) (\d{6}) [a-f0-9]{40} [a-f0-9]{40} ([A-Z])$/.exec(fields[i]!);
+   if(!raw||!fields[i+1])throw Error('INCOMPLETE_DIFF');
+   changes.push({status:raw[1]===raw[2]?raw[3]!:'T',path:fields[i+1]!});
+  }
   return classifyRelease({baseline,head,ancestor:true,previousFailed,changes});
  } catch {return {profile:'full',reason:'local-evidence-unavailable',baselineSha:baseline.sourceSha,changedPaths:[]};}
 }

@@ -28,7 +28,7 @@ sha='a'*40;url='https://github.com/Nirvana-Chow/lifeos-app/actions/runs/10';repo
 run={'id':10,'run_attempt':1,'head_sha':sha,'head_branch':'main','event':'push','status':'completed','conclusion':'success','workflow_id':20,'path':'.github/workflows/qualification.yml','repository':repo,'head_repository':repo,'html_url':url}
 jobs={'total_count':3,'jobs':[{'id':30+i,'name':n,'head_sha':sha,'run_id':10,'run_attempt':1,'status':'completed','conclusion':'success','html_url':url+'/job/'+str(30+i)} for i,n in enumerate(sorted(FULL_JOBS))]}
 assert qualify_full(run,jobs,20,sha)
-for patch in ({'conclusion':'skipped'},{'run_attempt':2},{'head_sha':'b'*40},{'id':31}):
+for patch in ({'conclusion':'skipped'},{'run_attempt':2},{'run_attempt':True},{'head_sha':'b'*40},{'id':31}):
  changed=copy.deepcopy(jobs);changed['jobs'][0].update(patch)
  try:qualify_full(run,changed,20,sha)
  except ValueError:pass

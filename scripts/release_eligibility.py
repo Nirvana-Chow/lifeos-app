@@ -74,6 +74,7 @@ def qualify_full(run, jobs, workflow_id, sha):
     require({j.get('name') for j in rows} == FULL_JOBS and len({j.get('id') for j in rows}) == 3)
     for j in rows:
         require(type(j.get('id')) is int and j['id'] > 0)
+        require(type(j.get('run_id')) is int and type(j.get('run_attempt')) is int)
         require(all(j.get(k) == v for k, v in {'head_sha': sha, 'run_id': run['id'],
                     'run_attempt': run['run_attempt'], 'status': 'completed', 'conclusion': 'success',
                     'html_url': url + '/job/' + str(j['id'])}.items()))
