@@ -12,7 +12,8 @@ test('roadmap retains original IDs and exposes a current phase and actionable ro
  assert.ok(b.roadmap.phases.some(p=>p.id===b.roadmap!.currentPhaseId));
  assert.deepEqual(b.roadmap.phases.map(p=>p.order),Array.from({length:b.roadmap.phases.length},(_,index)=>index+1));
  for(const id of ['foundation','workspace','business','integration','qualification'])assert.ok(b.roadmap.phases.some(p=>p.id===id),'Preserve original phase '+id);
- assert.equal(b.roadmap.currentPhaseId,'workspace');
+ assert.equal(b.roadmap.currentPhaseId,'integration');
+ assert.ok(b.roadmap.phases.find(p=>p.id==='integration')!.order<b.roadmap.phases.find(p=>p.id==='workspace')!.order,'The latest owner priority is external API before the next UI slice');
  assert.ok(b.roadmap.phases.find(p=>p.id==='personal-agent')!.order>b.roadmap.phases.find(p=>p.id==='business')!.order,'Business data precedes the Agent');
  assert.ok(b.requirements.every(r=>r.roadmap&&r.roadmap.nextStep.length>0));
  assert.ok(b.requirements.find(r=>r.id==='LO-TASK-001')?.roadmap?.issueRefs.includes('https://github.com/Nirvana-Chow/lifeos-app/issues/5'));

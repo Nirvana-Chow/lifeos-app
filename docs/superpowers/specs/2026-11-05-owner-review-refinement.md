@@ -4,7 +4,7 @@ The owner reviewed actual source release `8ccc33d` and requested a denser deskto
 
 ## Product order
 
-Deliver the requirements pool and matters first. Then deliver usable journal, calendar, health, finance and people modules together with their API/Skill input and output. Personal context, retrieval and an autonomous Agent come afterwards. Keep identity, permissions, storage, source/version/relations and the operation registry as the shared core; extend business modules within the existing application. A third-party plugin loader, sandbox or marketplace is not needed for these business modules.
+The owner subsequently clarified the immediate priority: make shared business API access usable for different AI clients before the website Agent. Prioritize current todo/organization read/write, the actual key/runtime and portable instructions; requirements/matters UI may progress independently. Then migrate supported old LifeOS repository data and deliver persistent requirements plus usable journal, calendar, health, finance and people modules with matching API/Skill input and output. Personal context, retrieval and an autonomous Agent come afterwards. Keep identity, permissions, storage, source/version/relations and the operation registry as the shared core; extend business modules within the existing application. A third-party plugin loader, sandbox or marketplace is not needed for these business modules.
 
 Website AI and a user's own AI client are two later entry points over the same authorized data and tools. Neither creates a second writer or a separate fact store. Existing Agent/framework/MCP candidates remain recorded, with their unfinished gates.
 

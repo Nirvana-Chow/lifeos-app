@@ -625,18 +625,21 @@
     },
     {
       "id": "LO-DATA-001",
-      "version": 1,
-      "title": "导入预检与导出",
-      "description": "先核对字段、数量和去重，再决定数据交换。",
+      "version": 2,
+      "title": "旧 LifeOS 仓库迁入与数据交换",
+      "description": "把旧资料按类型迁入当前数据库，保留原文、来源与历史，并供网站和统一 API 使用。",
       "status": "in_progress",
-      "delivery": "backlog",
+      "delivery": "current",
       "sourceRefs": [
         "https://github.com/Nirvana-Chow/lifeos-app/issues/10",
         "src/import-preview/preview.ts"
       ],
       "acceptanceCriteria": [
         "用隔离合成数据验证所述业务语义、来源和账号边界；记录已测与未测范围。",
-        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。"
+        "新增录入能力须同步交付 Agent API、capability discovery 与 Skill；本人验收另记。",
+        "旧LifeOS资料按实际内容映射到项目/领域、日记、目标、任务等受支持类型；规则、程序、凭据不导入为个人事实。",
+        "保留源文件与源版本、稳定ID、原文和发生时间；先展示数量/映射/重复/冲突/缺口，再按固定清单幂等迁入并逐项读回。",
+        "仓库盘点、迁移预览、真实写入、网站/API读回与本人验收分别记录；盘点和只读合成预检不算已迁入。"
       ],
       "evidence": [
         {
@@ -649,17 +652,21 @@
       ],
       "roadmap": {
         "phaseId": "integration",
-        "priority": "P1",
+        "priority": "P0",
         "implementation": "partial",
-        "summary": "已有只读合成导入预检；明确不执行导入，也不证明恢复成功。",
-        "nextStep": "设计受支持格式的映射与预检/提交边界；真实迁移需另行授权。",
+        "summary": "旧仓库迁库需求已登记；目前只有只读盘点和预检准备，真实资料尚未导入网站数据库。",
+        "nextStep": "基础API可用后，按实际源内容完成typed映射、去重预览和固定迁移包，再真实写入与回读。",
         "issueRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/issues/10"
         ],
         "prRefs": [
           "https://github.com/Nirvana-Chow/lifeos-app/pull/2"
         ],
-        "specTaskRefs": []
+        "specTaskRefs": [
+          "openspec/changes/personal-agent-foundation/tasks.md#4.1",
+          "openspec/changes/personal-agent-foundation/tasks.md#4.2",
+          "openspec/changes/personal-agent-foundation/tasks.md#4.3"
+        ]
       }
     },
     {
@@ -1548,8 +1555,8 @@
   ],
   "roadmap": {
     "goal": "记录人生数据，通过统一 API 与 Skill 让 AI 协助整理，再逐步加入个人智能体与业务扩展。",
-    "currentPhaseId": "workspace",
-    "nextStep": "先做好需求池与事项，再接日记、日程、健康、财务和人物，并同步提供 API/Skill；个人智能体随后推进。",
+    "currentPhaseId": "integration",
+    "nextStep": "先开放可用业务API给不同AI，再迁入旧LifeOS资料并完善需求池/事项与业务模块；网页Agent后置。",
     "phases": [
       {
         "id": "foundation",
@@ -1558,22 +1565,22 @@
         "goal": "建立默认私有、身份隔离、来源修订和版本追溯。"
       },
       {
-        "id": "workspace",
+        "id": "integration",
         "order": 2,
+        "title": "统一 API 与 AI 工具",
+        "goal": "先打通可用业务读写、显式权限与Skill，让用户自选AI客户端操作同一数据。"
+      },
+      {
+        "id": "workspace",
+        "order": 3,
         "title": "需求池与事项",
         "goal": "让需求、项目和待办可录入、整理、查看并审核，先交付真实可用体验。"
       },
       {
         "id": "business",
-        "order": 3,
+        "order": 4,
         "title": "业务记录与关联",
         "goal": "接入日记、日程、健康、财务和人物，每项同步实现 API/Skill 输入输出。"
-      },
-      {
-        "id": "integration",
-        "order": 4,
-        "title": "开放接入与数据交换",
-        "goal": "统一服务、API/Skill与可恢复同步，支持用户自选AI客户端，不重复事实源。"
       },
       {
         "id": "qualification",

@@ -10,6 +10,12 @@
 
 Binding intent: [owner review specification](../specs/2026-11-05-owner-review-refinement.md). BASE actual remote main `8ccc33d78d490a67c8c799dfc4b236539f3d7c55`. Earlier production release and its evidence remain intact. This plan has work units, not a competing completion checklist; canonical requirements and existing OpenSpec IDs remain authoritative.
 
+## API-first clarification and current dispatch
+
+The owner clarified that open business API access for different AI clients comes before the website Agent. The current release priority is working shared todo/organization API, actual key/runtime validation and portable usage; Task1 UI work may proceed independently. Task2 persistent requirements remains queued, not dropped or already implemented. The old LifeOS repository migration remains LO-DATA-001/#10 and original4.1–4.3 after the basic API; inventory is not migration. Root may dispatch narrow core runtime-configuration and secure-client work under Task3 before its final qualification. No model/website-Agent activation is implied.
+
+Because source workers share this worktree, root alone stages/commits/pushes/merges. Implementers report their exact changed files and stop; they do not use the shared index or create commits. Runtime-client candidate source stays outside Git and contains no real key.
+
 ## Global constraints
 
 - Follow the binding owner specification; preserve mobile16/14/44, desktop14/12/32 at>=1024px fine-pointer, readable contrast4.5, existing current-authorization/receipt/unknown protections and all old stable IDs.
