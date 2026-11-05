@@ -23,13 +23,13 @@ function RequirementHeader({column}:HeaderContext<typeof requirementFeatures,Req
  return <Button variant="ghost" className={styles.sort} onClick={column.getToggleSortingHandler()} aria-label={`按${label}排序`}>{label}<span aria-hidden="true">{direction==='asc'?'↑':direction==='desc'?'↓':'↕'}</span></Button>;
 }
 function RequirementTitle({item,onOpen}:{item:Requirement;onOpen:OpenRequirement}){
- return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id} title={item.id}>{item.id.startsWith('LO-')?item.id:'私有 · '+item.id.slice(0,8)}</span><span>{item.title}</span></button></div>;
+ return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" data-slot="requirement-title-trigger" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id} title={item.id}>{item.id.startsWith('LO-')?item.id:'私有 · '+item.id.slice(0,8)}</span><span>{item.title}</span></button></div>;
 }
 export function RequirementsTable({rows,phases,onOpen}:ViewProps){
  const columns=useMemo<ColumnDef<typeof requirementFeatures,Requirement>[]>(()=>{
   const phaseTitles=new Map(phases.map(phase=>[phase.id,phase.title]));
   return ([['title','需求',260],['phase','阶段',180],['priority','优先级',100],['implementation','实现',140],['acceptance','验收',170],['next','下一步',240]] as const).map(([id,title,size])=>({
-   id,size,minSize:id==='priority'?90:120,header:RequirementHeader,meta:{headerTitle:title,cellClassName:styles.cell},
+   id,size,minSize:id==='priority'?90:120,header:RequirementHeader,meta:{headerTitle:title,cellClassName:styles.cell,fillWidth:id==='title'},
    accessorFn:item=>id==='title'?item.title:id==='phase'?phaseTitles.get(item.roadmap?.phaseId??'')??'未排阶段':id==='priority'?item.roadmap?.priority??'待定':id==='implementation'?item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验':id==='acceptance'?acceptanceLabels[item.status]:item.roadmap?.nextStep??'按验收条件验证',
    cell:({row,getValue})=>row.getIsGrouped()?id==='title'?<span className={styles.phaseGroup} data-requirements-phase={row.subRows[0]?.original.roadmap?.phaseId??'unassigned'} data-phase-tone={phaseColor(row.subRows[0]?.original.roadmap?.phaseId??'')}><strong>{String(row.groupingValue)}</strong><span>{row.subRows.length} 项</span></span>:null:id==='title'?<RequirementTitle item={row.original} onOpen={onOpen}/>:<span data-priority={id==='priority'?row.original.roadmap?.priority:undefined} className={id==='next'?styles.nextCell:styles.value}>{String(getValue())}</span>,
   }));

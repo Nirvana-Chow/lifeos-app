@@ -21,7 +21,9 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   symlink(join(source,'node_modules'),join(root,'node_modules')),
   symlink(join(source,'components'),join(root,'components')),
  ]);
- await writeFile(join(root,'app/page.tsx'),`import {RequirementsPage} from '../src/ui-review/requirements-page';export default function Page(){return <main data-lifeos-surface style={{height:'100dvh',minHeight:0,padding:16,display:'flex',flexDirection:'column',overflow:'hidden'}}><RequirementsPage/></main>}`);
+ // Keep the production shell cascade and content allocation: a standalone page
+ // misses native-button overrides and the sidebar's effect on available width.
+ await writeFile(join(root,'app/page.tsx'),`import {RequirementsPage} from '../src/ui-review/requirements-page';import '../src/ui-review/review.css';export default function Page(){return <div data-lifeos-surface="personal" className="lo-shell"><header className="lo-header">LifeOS</header><div className="lo-body"><aside className="lo-sidebar" aria-label="导航">需求池</aside><main className="lo-main lo-main-bounded"><div className="lo-content lo-content-wide"><div className="lo-page-heading"><h1>需求池</h1></div><RequirementsPage/></div></main></div></div>}`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
@@ -29,13 +31,46 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const baseline=requirements(), allIds=baseline.requirements.map(r=>r.id).sort();
  const screenshots=join(source,'.review-results');await mkdir(screenshots,{recursive:true});
- for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
+ for(const [width,theme] of [[1920,'light'],[1920,'dark'],[1365,'light'],[1365,'dark'],[390,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme});page.setDefaultTimeout(8000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',route=>new URL(route.request().url()).origin===origin&&['GET','HEAD'].includes(route.request().method())?route.continue():route.abort());
   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
   await expect(page.locator('[data-requirements-grid="reui"]')).toBeVisible();
   await expect(page.getByText('验收条件',{exact:true})).toHaveCount(0);
+  await t.test(`title stays an unboxed row action in the real shell ${width}/${theme}`,async()=>{
+   const appearance=await page.locator('[data-requirement-id] button').first().evaluate(node=>{
+    const style=getComputedStyle(node);return{border:parseFloat(style.borderTopWidth),background:style.backgroundColor,height:node.getBoundingClientRect().height,padding:parseFloat(style.paddingInlineStart)};
+   });
+   assert.equal(appearance.border,0,'Requirement titles must not inherit the shell native input-like border');
+   assert.equal(appearance.background,'rgba(0, 0, 0, 0)','Requirement titles remain part of the row surface');
+   assert.equal(appearance.padding,0,'Title text aligns with the data-cell inset');
+   assert.ok(appearance.height>=(width>=1024?32:44),'Title actions retain the existing pointer/touch target');
+  });
+  await t.test(`native table fills its workspace with semantic borders ${width}/${theme}`,async()=>{
+   const geometry=await page.locator('[data-requirements-grid="reui"]').evaluate(node=>{
+    const viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!,table=node.querySelector('table')!,fill=node.querySelector('[data-slot="data-grid-table-fill-head-cell"]')!;
+    const border=getComputedStyle(node).borderBottomColor;
+    return{viewport:viewport.clientWidth,table:table.getBoundingClientRect().width,fill:fill.getBoundingClientRect().width,header:node.querySelector('thead')!.getBoundingClientRect().height,borders:[...node.querySelectorAll('th,td')].map(cell=>getComputedStyle(cell).borderBottomColor),border};
+   });
+   assert.ok(geometry.table>=geometry.viewport-2,'Table reaches the available workspace edge');
+   assert.ok(geometry.fill<=1,`Free space belongs to the title column, not a ${geometry.fill}px filler strip`);
+   assert.ok(geometry.borders.every(color=>color===geometry.border),'All native grid cells, including the filler, use the themed divider color');
+   if(width>=1024)assert.ok(geometry.header<=44,`Compact desktop headers do not wrap, got ${geometry.header}px`);
+  });
+  await t.test(`view controls keep a single selected segment in the real shell ${width}/${theme}`,async()=>{
+   const segments=await page.getByRole('group',{name:'需求视图'}).getByRole('button').evaluateAll(nodes=>nodes.map(node=>({selected:node.getAttribute('aria-pressed')==='true',border:parseFloat(getComputedStyle(node).borderTopWidth),background:getComputedStyle(node).backgroundColor})));
+   assert.equal(segments.filter(segment=>segment.selected).length,1);
+   assert.ok(segments.every(segment=>segment.border===0),'View segments do not inherit three standalone native-button borders');
+   assert.ok(segments.filter(segment=>!segment.selected).every(segment=>segment.background==='rgba(0, 0, 0, 0)'),'Unselected segments share the group surface');
+  });
+  if(width===1920&&theme==='light')await t.test('resizing a metadata column preserves the full-width title column',async()=>{
+   const header=page.locator('[data-requirements-grid="reui"] thead th').nth(1),before=(await header.boundingBox())!.width;
+   const handle=await header.locator('[data-slot="data-grid-table-resize-handle"]').boundingBox();assert.ok(handle);
+   await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();await page.mouse.move(handle.x+handle.width/2+48,handle.y+handle.height/2,{steps:6});await page.mouse.up();
+   await expect.poll(async()=>(await header.boundingBox())!.width).toBeGreaterThan(before+40);
+   assert.ok((await page.locator('[data-slot="data-grid-table-fill-head-cell"]').boundingBox())!.width<=1,'Resizing does not recreate the empty filler strip');
+  });
   await t.test(`readable table typography ${width}/${theme}`,async()=>{
    const sizes=await page.locator('[data-requirement-id]').first().evaluate(node=>({body:parseFloat(getComputedStyle(node.querySelector('button')!).fontSize),metadata:parseFloat(getComputedStyle(node.querySelector('button span')!).fontSize)}));
    assert.ok(sizes.body>=(width>=1024?14:16),`Requirement body must be at least 16px, got ${sizes.body}`);
