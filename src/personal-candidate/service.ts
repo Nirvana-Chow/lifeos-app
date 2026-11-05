@@ -1,4 +1,5 @@
 import {RequirementsService} from '../requirements-candidate/service.ts';
+import {RequirementSupportService} from '../requirement-support-candidate/service.ts';
 import {lockPersonalRecords} from './personal-record-locks.ts';
 import {reminderSourceDigest} from '../import-preview/reminders.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
@@ -33,8 +34,8 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
  return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{})};
 }
 export class PersonalService{
- readonly config:PersonalConfig;readonly requirements:RequirementsService;private repository:PlatformRepository;
- constructor(repository:PlatformRepository,config:PersonalConfig){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);}
+ readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
+ constructor(repository:PlatformRepository,config:PersonalConfig,options:{currentSourceSha?:()=>string|null}={}){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);this.requirementSupport=new RequirementSupportService(repository,this.config,this.requirements,options);}
  private allows(type:PersonalType){return type==='calendar'?this.config.calendarEnabled===true:this.config.allowedTypes.includes(type);}
  private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}

@@ -1,6 +1,8 @@
 import {PersonalCalendarService} from '../calendar-candidate/personal-service.ts';
 import {handlePersonalCalendar} from '../calendar-candidate/personal-http.ts';
 import {handleRequirementsRequest} from '../requirements-candidate/http.ts';
+import {handleRequirementSupportRequest} from '../requirement-support-candidate/http.ts';
+import {readReleaseArtifact,type ReleaseArtifact} from '../release-notes-candidate/runtime.ts';
 import type {AuthorityService} from '../agent-authority/service.ts';
 import type {ClassificationService} from './classification-service.ts';
 import {handleOwnerClassificationRequest} from './classification-http.ts';
@@ -15,7 +17,7 @@ import {handlePersonalRequest} from './http.ts';
 export const personalPermitPath='/run/lifeos-platform/write-gate/permit.json';
 /** No password, URL credentials, API secret or owner content participates in this digest. */
 export function personalPermitBinding(config:PersonalConfig,sourceSha:string):WritePermitBinding{
- const configDigest=createHash('sha256').update(JSON.stringify({ownerId:config.ownerId,ownerEmail:config.ownerEmail,spaceId:config.spaceId,databaseName:config.databaseName,baseURL:config.baseURL,allowedTypes:config.allowedTypes,...(config.transport?{transport:config.transport}:{}),...(config.readonlyLoginApproved?{readonlyLoginApproved:true}:{}),...(config.calendarEnabled?{calendarEnabled:true}:{}),...(config.requirementsEnabled?{requirementsEnabled:true}:{}),...(config.businessWriteMode?{businessWriteMode:config.businessWriteMode}:{})})).digest('hex');
+ const configDigest=createHash('sha256').update(JSON.stringify({ownerId:config.ownerId,ownerEmail:config.ownerEmail,spaceId:config.spaceId,databaseName:config.databaseName,baseURL:config.baseURL,allowedTypes:config.allowedTypes,...(config.transport?{transport:config.transport}:{}),...(config.readonlyLoginApproved?{readonlyLoginApproved:true}:{}),...(config.calendarEnabled?{calendarEnabled:true}:{}),...(config.requirementsEnabled?{requirementsEnabled:true}:{}),...(config.requirementSupportEnabled?{requirementSupportEnabled:true}:{}),...(config.businessWriteMode?{businessWriteMode:config.businessWriteMode}:{})})).digest('hex');
  return{sourceSha,spaceId:config.spaceId,configDigest};
 }
 export function requirePersonalWritePermit(config:PersonalConfig,sourceSha:string):void{
@@ -29,8 +31,9 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
- const service=new PersonalService(options.repository,options.config);
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+ const artifact=options.releaseArtifact??readReleaseArtifact;
+ const service=new PersonalService(options.repository,options.config,{currentSourceSha:()=>artifact()?.sourceSha??null});
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
@@ -49,7 +52,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status'){
     if(request.method!=='GET'||url.search)return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此状态仅可读取。'}},405);
     let writable=false;try{await options.assertWritable();writable=true;}catch{/* Only this capability is unavailable; never leak the permit path or contents. */}
-    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,writable,aiEnabled:false,userAccepted:false});
+    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,writable,aiEnabled:false,userAccepted:false});
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
@@ -67,6 +70,8 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     const response=await handlePersonalCalendar(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:calendar,guard:async()=>{if(request.signal.aborted)throw new PlatformError(409,'REQUEST_CANCELLED','请求已取消，保存结果未确认。');await assertOwner();await options.assertWritable();}});
     await assertOwner();return response!;
    }
+   const supportResponse=await handleRequirementSupportRequest(request,options.config.ownerId,service.requirementSupport,{assertOwner,assertWritable:options.assertWritable},artifact);
+   if(supportResponse)return supportResponse;
    const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable});
    if(requirementResponse)return requirementResponse;
    const response=await handlePersonalRequest(request,options.config.ownerId,options.config.baseURL,service,{assertOwner,assertWritable:options.assertWritable});

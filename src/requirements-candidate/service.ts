@@ -80,11 +80,28 @@ export class RequirementsService{
   if(!Array.isArray(rows)||rows.length>100||rows.some((r,i)=>!this.matches(r,owner,id)||r.id!==recordId||r.source.id!==current.sourceId||r.revision>current.revision||i>0&&rows[i-1].revision<=r.revision))fail(503,'REQUIREMENTS_HISTORY_UNAVAILABLE','需求历史无效。');
   return{items:rows.slice(0,limit).map(row=>this.project(id,publicEntry(row))),limit,truncated:rows.length>limit||rows.length===100&&rows.at(-1)!.revision>1,scope:'bounded-requirement-history' as const};
  }
+ /** Internal composition seam: caller owns the same owner transaction/receipt.
+  * This is the existing private creation writer, never a second repository. */
+ async createInTransaction(owner:string,id:string,input:unknown,tx:Transaction,guard:()=>Promise<void>):Promise<StoredEntry>{
+  this.owner(owner);id=validateId(id);const raw=structuredClone(input),body=command(raw,null,this.config.spaceId),baseline=this.baseline();
+  if(!baseline.roadmap?.phases.some(p=>p.id===body.fields.phaseId))fail(400,'INVALID_REQUIREMENT_PHASE','需求阶段不存在。');
+  if(!tx.lockRecordIdentity)fail(503,'REQUIREMENTS_IDENTITY_LOCK_UNAVAILABLE','需求身份锁尚未配置。');
+  await tx.lockRecordIdentity!('inbox',id);if(await tx.get('inbox',id))fail(409,'REVISION_CONFLICT','需求记录已存在，请重新读取。');
+  const {title,body:text,...planning}=body.fields,now=new Date().toISOString();
+  const draft=validateInbox({title,text,occurredOn:null,disposition:'reference',requirement:{schema:2,id,baselineBinding:null,...planning}});
+  const entry:StoredEntry={id,ownerId:owner,kind:'inbox',draft,source:{id:randomUUID(),system:'website',externalId:id,version:1,asOf:now,original:{marker:requirementMarker,schema:2,type:'requirement',spaceId:this.config.spaceId,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};
+  await guard();await tx.write(entry,raw,true);return entry;
+ }
+ async getInTransaction(owner:string,id:string,tx:Transaction):Promise<RequirementItem>{
+  this.owner(owner);id=requirementId(id);const recordId=id.startsWith('LO-')?requirementIdentity(owner,this.config.spaceId,id):id,row=await tx.get('inbox',recordId);
+  if(row&&!this.matches(row,owner,id))return missing();return this.project(id,row?publicEntry(row):null);
+ }
  async mutate(owner:string,id:string|null,input:unknown,key:string,guard:()=>Promise<void>=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<{entry:RequirementItem;duplicate:boolean}>{
   this.owner(owner);if(id)id=requirementId(id);validateIdempotencyKey(key);const raw=structuredClone(input),body=command(raw,id,this.config.spaceId),commandDigest=digest({action:requirementMarker,owner,spaceId:this.config.spaceId,id,raw});await guard();
   const result=await this.repository.transaction(owner,key,async tx=>{
    await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
    if(receipt){if(receipt.digest!==commandDigest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!metadata(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
+   if(!id){const entry=await this.createInTransaction(owner,randomUUID(),raw,tx,guard),result:MutationResult={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest:commandDigest,result});return result;}
    const b=this.baseline();if(!b.roadmap?.phases.some(p=>p.id===body.fields.phaseId))fail(400,'INVALID_REQUIREMENT_PHASE','需求阶段不存在。');
    if(id?.startsWith('LO-')&&!same(body.baselineBinding,requirementBinding(b,id)))fail(409,'BASELINE_CONFLICT','公共需求基线已变化，请重新核对。');
    const stableId=id??randomUUID(),recordId=stableId.startsWith('LO-')?requirementIdentity(owner,this.config.spaceId,stableId):stableId;
