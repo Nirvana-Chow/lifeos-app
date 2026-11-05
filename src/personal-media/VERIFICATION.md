@@ -42,3 +42,11 @@ Parent retains responsibility for the sole PersonalService/PersonalObject/type/o
 - `git diff --check`: exit 0.
 - Initial browser run exposed a test-locator difference (`getByLabel` on a nested select); accessible-tree evidence showed the valid combobox and the test now uses the accessible role. A separate browser RED caught read-only open being incorrectly disabled; removing that disabled flag produced GREEN.
 - Full suite/build/CI are not repeated in this leaf; parent runs the appropriate integration checks after serial central integration at its fixed SHA. No production or real-record claim is made here.
+
+## Independent review P2 follow-up
+
+The review reproduced a valid Douban book URL surviving a change to film/series (and the reverse), leaving the controlled draft invalid for its new kind. `MediaFields` now resets every platform-specific work association to `{provider:'manual',id:null,url:null}` when the kind changes; inert manual references remain. State, dates, creators, rating and links remain intact, with the existing percent-preserving/page-or-episode-reset progress rules.
+
+`test/personal-media-fields.test.ts` transpiles and invokes the real `MediaFields` component and its real kind-selector `onChange`, using the repository's existing React component-test pattern. RED reproduced the exact retained `https://book.douban.com/subject/123/` association on book→film. GREEN covers book→film, book→series, film→book and series→book, validates every resulting draft, checks immutable source values and preserved personal history, and retains the manual-source behavior.
+
+Follow-up command: `node --test test/personal-media-fields.test.ts test/personal-media-domain.test.ts test/personal-media-projection.test.ts test/personal-media-metadata.test.ts` — 13 passed, 0 failed, 0 skipped. `npm run typecheck` and `git diff --check` passed. The earlier desktop/mobile Chrome evidence remains applicable to layout; the full browser matrix was not repeated for this single callback correction.

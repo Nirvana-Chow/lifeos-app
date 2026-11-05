@@ -7,7 +7,7 @@ import styles from './media.module.css';
 const providerLabels={manual:'手动来源',openlibrary:'Open Library（书籍资料）',tmdb:'TMDB（手动链接）',imdb:'IMDb（手动链接）',douban:'豆瓣（手动链接）'};
 const numeric=(value:string)=>value===''?null:Number(value);
 export function MediaFields({value,onChange,options,disabled=false}:{value:MediaPersonal;onChange:(value:MediaPersonal)=>void;options:Record<string,PublicEntry[]>;disabled?:boolean}){
- function changeKind(kind:MediaKind){const progress=value.progress.unit==='percent'?value.progress:{current:null,total:null,unit:null};onChange({...value,mediaKind:kind,isbn:kind==='book'?value.isbn:null,progress,external:value.external.provider==='manual'||value.external.provider==='douban'?value.external:{provider:'manual',id:null,url:null}});}
+ function changeKind(kind:MediaKind){const progress=value.progress.unit==='percent'?value.progress:{current:null,total:null,unit:null};onChange({...value,mediaKind:kind,isbn:kind==='book'?value.isbn:null,progress,external:value.external.provider==='manual'?value.external:{provider:'manual',id:null,url:null}});}
  return <fieldset disabled={disabled} className={styles.fields}>
   <legend>阅读 / 观影</legend>
   <div className={styles.grid}>
