@@ -1,7 +1,7 @@
 import {object,validateId,validateRevision} from '../platform/domain.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
 import {normalizePersonalFields,type ObjectFields} from './business.ts';
-export type RecordModule='journal'|'health'|'person';
+export type RecordModule='journal'|'health'|'person'|'media'|'career'|'portfolio';
 export type RecordFields={title:string;text:string;occurredOn:string|null;personal?:ObjectFields['personal']};
 export function ownerRecord(entry:unknown,type:RecordModule,spaceId:string):PublicEntry {
  const e=entry as PublicEntry,source=e?.source,original=object(source?.original,['marker','spaceId','type','input']);

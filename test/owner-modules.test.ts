@@ -19,3 +19,11 @@ test('release notice uses only an actual unread running source and never announc
  assert.equal(readReleaseNotice({...notes,records:notes.records.slice(1)})?.records.length,0);
  assert.equal(readReleaseNotice({...notes,records:[{...record,sourceURL:'https://example.invalid/'}]}),null);
 });
+
+test('new business links appear only for the exact verified module flags',()=>{
+ const flags={mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
+ const expected=['/personal/media','/personal/career','/personal/portfolio'];
+ assert.deepEqual(ownerModules({...status,calendarEnabled:false,requirementsEnabled:false,...flags},scope).map(row=>row.href),expected);
+ assert.deepEqual(ownerModules({...status,storageVerified:false,...flags},scope),[]);
+ for(const key of Object.keys(flags))assert.equal(ownerModules({...status,[key]:false},scope).some(row=>expected.includes(row.href)),false);
+});
