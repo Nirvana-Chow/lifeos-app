@@ -1,0 +1,29 @@
+.fields,.fields *,.summary,.summary *,.trend,.trend *{box-sizing:border-box}
+.fields{display:grid;gap:14px;min-width:0;margin:0;border:0;padding:0;color:var(--foreground);font:inherit}
+.fields legend{margin-bottom:12px;font-weight:600}
+.fields label{display:grid;gap:5px;min-width:0;font-size:16px}
+.fields :is(input,select){width:100%;min-width:0;min-height:44px;padding:8px 10px;color:var(--foreground);background:var(--card);border:1px solid var(--input);border-radius:var(--lo-radius-control);font:inherit;font-size:16px}
+.fields :is(input,select,summary):focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.fields:disabled{opacity:.65}
+.fields summary,.trend summary{min-height:44px;align-content:center;cursor:pointer}
+.fields details>.grid{margin-top:10px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.quantity{display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:8px;min-width:0}
+.hint{margin:0;color:var(--muted-foreground);font-size:var(--lo-font-meta);line-height:1.6;overflow-wrap:anywhere}
+.empty{padding:16px 0;color:var(--muted-foreground);line-height:1.6}
+.recordSummary{display:grid;gap:8px;overflow-wrap:anywhere}
+.recordSummary p{margin:0}
+.summary{display:grid;gap:12px;color:var(--foreground)}
+.summary dl{display:flex;gap:12px 32px;flex-wrap:wrap;margin:0}
+.summary dl>div{display:flex;align-items:baseline;gap:8px}
+.summary dt{color:var(--muted-foreground)}
+.summary dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.trend{display:grid;gap:16px;min-width:0;color:var(--foreground)}
+.trend h3{font-size:var(--lo-font-section);font-weight:600;margin:0}
+.chart{width:100%;height:260px;min-width:0}
+.trendTable{max-width:100%;overflow:auto}
+.trend table{width:100%;border-collapse:collapse;font:inherit;text-align:left}
+.trend th,.trend td{padding:8px 10px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap}
+.trend summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+@media(min-width:1024px) and (pointer:fine){.fields label,.fields :is(input,select){font-size:14px}.fields :is(input,select){min-height:32px;padding:4px 8px}.fields summary,.trend summary{min-height:32px}}
+@media(max-width:680px){.grid{grid-template-columns:1fr}.summary dl{gap:12px 20px}}
