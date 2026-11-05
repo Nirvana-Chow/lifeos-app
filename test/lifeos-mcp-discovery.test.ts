@@ -6,6 +6,7 @@ import {agentOperations} from '../src/agent-api/capabilities.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {LifeOSApiClient} from '../src/mcp-candidate/client.ts';
 import {createLifeOSMcpServer} from '../src/mcp-candidate/tools.ts';
+import {parseArguments} from '../src/mcp-candidate/schemas.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
 type Schema=Record<string,any>;
@@ -46,7 +47,7 @@ async function fixture({readOnly=false,legacy=false,disabledTypes=[] as string[]
  const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  const discover=await client.callTool({name:'lifeos_discover',arguments:{}});assert.equal(discover.isError,false);
  const descriptors=(discover.structuredContent as {operations:Descriptor[]}).operations;
- return{client,descriptors,requests,writes,loseNextWrite:()=>{loseWrite=true;},revoke:()=>{revoked=true;},close:async()=>{await client.close();await server.close();}};
+ return{client,descriptors,requests,writes,handler,loseNextWrite:()=>{loseWrite=true;},revoke:()=>{revoked=true;},close:async()=>{await client.close();await server.close();}};
 }
 // Removing concrete properties/required or the operation/arguments association
 // prevents constructing any of these writes from advertised schemas alone.
@@ -252,5 +253,35 @@ test('advertised schemas reject incomplete fields, wrong units, mismatched route
   const update=fromSchema(schema('updateJournal'));delete update.fields.text;invalid('updateJournal',update);
   invalid('getJournal',{id:'00000000-0000-4000-8000-000000000001',ownerId:'foreign'});
   invalid('updateRequirement',{...fromSchema(schema('updateRequirement')),baselineBinding:{}});
+ }finally{await f.close();}
+});
+
+test('actual Agent todo POST accepts omitted or current relations, rejects null, while PATCH null clears',async()=>{
+ const f=await fixture();try{
+  const send=async(path:string,method='GET',body?:unknown,key='synthetic-native-todo-key')=>{const response=await f.handler(new Request(origin+'/api/platform/agent'+path,{method,headers:{host:new URL(origin).host,authorization:'Bearer synthetic-native-token','content-type':'application/json','idempotency-key':key},...(body?{body:JSON.stringify(body)}:{})}));return{status:response.status,data:await response.json()};};
+  const fields={title:'Synthetic native todo',notes:'Original notes',dueOn:null,status:'open'};
+  const nullCreate=await send('/v1/todos','POST',{fields:{...fields,personal:null}},'synthetic-native-null');assert.equal(nullCreate.status,400);assert.equal(nullCreate.data.error,'INVALID_BODY');
+  const omitted=await send('/v1/todos','POST',{fields},'synthetic-native-omit');assert.equal(omitted.status,201);assert.equal((await send('/v1/todos/'+omitted.data.entry.id)).data.fields.personal,null);
+  const schema=f.descriptors.find(op=>op.id==='createOrganization')!.inputSchema,args=fromSchema(schema);args.idempotencyKey='synthetic-native-project';
+  const saved=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'createOrganization',arguments:args}}),project=(saved.structuredContent as any).readback.data;
+  const personal={project:{id:project.id,sourceId:project.sourceId,revision:project.revision},domain:null,topics:[]};
+  const linked=await send('/v1/todos','POST',{fields:{...fields,personal}},'synthetic-native-linked');assert.equal(linked.status,201);assert.deepEqual((await send('/v1/todos/'+linked.data.entry.id)).data.fields.personal,personal);
+  const command={fields:{...fields,personal},idempotencyKey:'synthetic-mcp-real-relations'};assertMatches(f.descriptors.find(op=>op.id==='createTodo')!.inputSchema,command);const mcpLinked=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'createTodo',arguments:command}});assert.equal(mcpLinked.isError,false);assert.deepEqual((mcpLinked.structuredContent as any).readback.data.fields.personal,personal);
+  const cleared=await send('/v1/todos/'+linked.data.entry.id,'PATCH',{fields:{...fields,personal:null},expectedRevision:1},'synthetic-native-clear');assert.equal(cleared.status,200);assert.equal(cleared.data.entry.revision,2);assert.equal((await send('/v1/todos/'+linked.data.entry.id)).data.fields.personal,null);
+ }finally{await f.close();}
+});
+
+test('Todo discovery and parser reject create null without body mutation but retain omit/object/PATCH-null contracts',async()=>{
+ const f=await fixture();try{
+  const create=agentOperations.find(op=>op.id==='createTodo')!,update=agentOperations.find(op=>op.id==='updateTodo')!;
+  const schema=(id:string)=>f.descriptors.find(op=>op.id===id)!.inputSchema;
+  const fields={title:'Synthetic MCP todo',notes:'Keep bytes',dueOn:null,status:'open'},key='synthetic-todo-null-contract';
+  const bad=Object.freeze({fields:Object.freeze({...fields,personal:null}),idempotencyKey:key});
+  assert.equal(validator.getValidator(schema(create.id))(bad).valid,false);
+  assert.throws(()=>parseArguments(create,bad),{status:400,code:'INVALID_BODY'});
+  assert.deepEqual(bad,{fields:{...fields,personal:null},idempotencyKey:key});
+  const before=f.writes.length,denied=await f.client.callTool({name:'lifeos_call',arguments:{operationId:create.id,arguments:bad}});assert.equal((denied.structuredContent as any).error,'INVALID_BODY');assert.equal(f.writes.length,before);
+  for(const value of [fields,{...fields,personal:{project:null,domain:null,topics:[]}}]){const args={fields:value,idempotencyKey:key};assertMatches(schema(create.id),args);assert.deepEqual(parseArguments(create,args),{path:'/v1/todos',body:{fields:value},key});}
+  const clear={id:'00000000-0000-4000-8000-000000000001',fields:{...fields,personal:null},expectedRevision:1,idempotencyKey:key};assertMatches(schema(update.id),clear);assert.deepEqual(parseArguments(update,clear),{path:'/v1/todos/'+clear.id,body:{fields:clear.fields,expectedRevision:1},key});
  }finally{await f.close();}
 });

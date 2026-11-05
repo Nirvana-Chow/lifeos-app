@@ -104,7 +104,7 @@ export function writeFieldsSchema(module:string,patch:boolean):z.ZodType{
   case 'portfolio':return record(portfolio);
   case 'todo':{
    const base={title:text(240,true),notes:text(16384),dueOn:optionalDate,status:z.enum(['open','in_progress','done','cancelled']),personal:relations.nullable()};
-   return patch?z.strictObject({...base,...planning}):z.strictObject({...base,notes:base.notes.optional(),dueOn:base.dueOn.optional(),status:base.status.optional(),personal:base.personal.optional(),...planning});
+   return patch?z.strictObject({...base,...planning}):z.strictObject({...base,notes:base.notes.optional(),dueOn:base.dueOn.optional(),status:base.status.optional(),personal:relations.optional().describe('Omit for an unclassified new todo, or supply a relations object. Null clears relations only on PATCH.'),...planning});
   }
   case 'requirements':return z.strictObject({title:text(240,true),body:text(16384),phaseId:z.string().regex(/^[a-z][a-z0-9-]{0,79}$/).meta({examples:['business']}),priority:z.enum(['P0','P1','P2','P3']),plannedStartOn:optionalDate,plannedEndOn:optionalDate,workflow:z.strictObject({state:z.enum(requirementWorkflowStates),purpose:text(4096),nextStep:text(4096)}).nullable().optional().describe('Omitted preserves saved workflow on PATCH; null clears. Does not change engineering or owner acceptance.')});
   case 'feedback':return z.strictObject({title:text(240,true).optional(),text:text(16384,true),sourceLabel:text(240,true).nullable().optional()});

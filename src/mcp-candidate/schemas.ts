@@ -64,7 +64,9 @@ export function parseArguments(operation:Operation,input:unknown){
   }else if(operation.module==='todo'){
    const value=object(body.fields,todoKeys);
    if(operation.method==='PATCH'&&todoRequiredKeys.some(k=>!Object.hasOwn(value,k)))throw new PlatformError(400,'COMPLETE_TODO_REQUIRED','Complete fields required');
-   validateTodo(value.personal===null?Object.fromEntries(Object.entries(value).filter(([k])=>k!=='personal')):value);
+   // The native HTTP contract accepts null as a PATCH clear only; POST must
+   // omit personal or supply relations. Validate without rewriting the wire body.
+   validateTodo(operation.method==='PATCH'&&value.personal===null?Object.fromEntries(Object.entries(value).filter(([k])=>k!=='personal')):value);
   }else if(operation.module==='feedback')validateFeedbackInput(body.fields);
   else if(operation.module==='finance'){
    const value=object(body.fields,financeKeys);
