@@ -32,6 +32,8 @@ Binding intent: [owner review specification](../specs/2026-11-05-owner-review-re
 
 Own the shared theme/store/runtime/switch, global review CSS, workspace, task grid/table and task-editor UI plus the smallest native Kanban adapter and related tests. Own package.json/package-lock and ReUI/Radix provenance changes for exactly the three approved MIT DnD dependencies; do not update unrelated versions. Leave requirements-page/views/detail/CSS, requirement/data/API contracts and public requirements JSON to their owners.
 
+Task1 is the sole writer of all existing UI browser integration tests/helpers, including `test/workspace-roadmap-browser.integration.test.ts` where old desktop typography and requirements structure share one case. Task2 sends its new requirement-page selector/contract needs rather than editing that file. Update legitimate shared assertions after both components exist; Task3 performs final integrated browser qualification. Do not duplicate ownership under the generic phrase "related tests".
+
 Implement the specification's desktop/mobile split, three paired palettes, thin scrollbars/help removal, direct project/domain create controls, preserved hidden topics, leading completion column and stable-ID column order/visibility. Integrate mature native board drag with existing onSetTaskStatus writer, guards, receipts and explicit move alternatives. Browser-only layout preferences are owner-scoped and honestly distinct from shared task ranking. Do not add a new status writer or change permissions.
 
 Workspace integration contract: RequirementsPage accepts optional `container:HTMLElement|null` and `navigationGuard:{current:(()=>boolean)|null}`. Provide the existing content-region container and consult this guard on actual page departure/history, preserving settings overlays on the current background. Requirement implementation owns these props. Do not overwrite task drafts or waive uncertain-command guards.
@@ -47,6 +49,8 @@ Report task-1-report.md with commits, files, decisions, exact commands/results, 
 - [ ] Run focused tests/types, provide native setup contract and commit/report the exact result.
 
 Own typed requirement domain/service/projection, PersonalService/core integration, owner HTTP/runtime, Agent scope/registry/issuer/readiness contracts, new exact-target proposed SQL as required, generated Skill/artifact, requirements-page/views/detail/CSS and focused tests. Do not edit Task1's shared appearance/workspace/task-grid/task-editor UI or package/lock. Root alone edits baseline JSON/canonical OpenSpec/checklists and integrates Git.
+
+Task2 owns new requirement service/owner/client/native-PG tests and its own new helpers. Existing UI browser integration tests/helpers belong only to Task1; send selector/contract changes to root/Task1. This explicit exclusion takes precedence over generic focused-test ownership.
 
 Implement one server-composed pool over the34 frozen public IDs and private typed inbox records. Preserve source/history and immutable acceptance/evidence; support create and title/body/phase/priority/real optional planned-date updates with current-owner authorization, baseline digest/version binding, unique deterministic overlay identity, CAS/idempotency/unknown recovery, complete snapshot and correctly bounded history. P3 is a supported low priority. Do not use global windows or localStorage as a complete authoritative pool.
 
