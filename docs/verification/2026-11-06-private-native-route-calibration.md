@@ -15,3 +15,13 @@ Verification:
 - Scoped independent review: no P1/P2; no privacy gate relaxation.
 
 Not yet evidenced by these local checks: final real TLS/PostgreSQL qualification, production publication, owner experience acceptance. The separate full visual matrix still contains legacy interactions and capture-source allowlists and remains unverified; this patch does not claim that matrix passed.
+
+## Release follow-up on 2026-11-06
+
+Source `25764b5ccc4be3cc5fd9a36f66703de659159e2f` passed every job in [source CI 42086046815](https://github.com/Nirvana-Chow/lifeos-app/actions/runs/42086046815) and [full required qualification 42086046732](https://github.com/Nirvana-Chow/lifeos-app/actions/runs/42086046732). The final private route and appearance safety/data groups passed. The fixed runner font preparation also completed. These results supersede the earlier failed or cancelled source attempts without changing their historical conclusions.
+
+The private event pipeline then built and verified the production image, with dependency cache hits and a 77-second application build. It stopped before any application switch; the previous website continued running. Read-only diagnosis confirmed insufficient free space at the native pre-publication guard. The outer null-output service wrapper had collapsed its inner error into a generic failure, so this is a supported diagnosis rather than a preserved original inner error message.
+
+Rebuildable cache capacity has been restored while retaining the running application, database, runtime configuration, recovery images and failure evidence. A separately reviewed private correction admits one exact, unmodified built checkpoint through the original receiver and publisher only when its root-owned, short-lived, single-use seal and original source/full-CI identity match. All original preflight, backup, permission, startup and health gates remain. Inner failures now retain finite error codes without raw arguments, environment or private output. No public CI production credentials or new publication service are introduced.
+
+This documentation-only follow-up provides a genuine next main-source CI event for the restored normal pipeline. Actual deployment, the running source/build and owner experience must still be read back; this document does not attest those pending outcomes or claim real-data import, broader API grants, MCP host adoption or owner acceptance.
