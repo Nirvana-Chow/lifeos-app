@@ -1,0 +1,28 @@
+.root,.root *{box-sizing:border-box}
+.root{min-width:0;display:grid;gap:12px;color:var(--foreground);font:var(--lo-font-body)}
+.root h2,.root h3,.root p{margin:0}
+.root h2{font-size:var(--lo-font-section);font-weight:650}
+.root h3{font-size:16px;font-weight:600}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.header label{display:flex;align-items:center;gap:8px;font-size:var(--lo-font-meta)}
+.header select{min-height:44px;max-width:100%;padding:8px 10px;border:1px solid var(--input);border-radius:var(--lo-radius-control);background:var(--card);color:var(--foreground);font:inherit;font-size:16px}
+.header select:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.hint{color:var(--muted-foreground);font-size:var(--lo-font-meta);line-height:1.6;overflow-wrap:anywhere}
+.empty{padding:16px 0;line-height:1.6;color:var(--muted-foreground)}
+.panel{display:grid;gap:12px;min-width:0;border-top:1px solid var(--border);padding-top:16px}
+.metrics{display:flex;gap:8px;flex-wrap:wrap}
+.root :global(button[data-slot=button]){width:auto;min-height:44px;touch-action:manipulation}
+.metrics :global(button[aria-pressed=true]){background:var(--lo-selected);color:var(--lo-selected-foreground)}
+.chart{min-width:0;width:100%}
+.tableWrap{max-width:100%;min-width:0;overflow:auto}
+.table{width:100%;border-collapse:collapse;text-align:left;table-layout:fixed}
+.table th,.table td{vertical-align:top;padding:12px 8px;border-bottom:1px solid var(--border)}
+.table th:first-child,.table td:first-child{width:112px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.table th{color:var(--muted-foreground);font-size:var(--lo-font-meta);font-weight:500}
+.root .recordButton{padding:0;max-width:100%;min-height:44px;white-space:normal;text-align:left;justify-content:flex-start;overflow-wrap:anywhere;text-decoration:none}
+.recordButton:hover{text-decoration:underline}
+.dayRecords{display:grid;gap:10px;padding:14px;border:1px solid var(--border);border-radius:var(--lo-radius-control);background:var(--muted)}
+.root .dayRecord{display:flex;flex-direction:column;align-items:flex-start;gap:4px;white-space:normal;text-align:left}
+.dayRecord small{font-size:var(--lo-font-meta);color:var(--muted-foreground)}
+@media(min-width:1024px) and (pointer:fine){.header select{min-height:32px;font-size:14px;padding:4px 8px}.root :global(button[data-slot=button]){min-height:32px;font-size:14px}.root h3{font-size:14px}.table th,.table td{padding-block:8px}}
+@media(max-width:680px){.header{align-items:flex-start}.header label{font-size:16px}.table th:first-child,.table td:first-child{width:100px}.table th,.table td{padding-inline:4px}.root .recordButton{font-size:16px}.metrics{gap:6px}}

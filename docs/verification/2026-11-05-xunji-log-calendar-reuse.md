@@ -1,0 +1,26 @@
+# Reused xunji-log activity calendar
+
+Scope: LO-HEALTH-001/#15 and LO-UI-001/#30, intake/base `05e36b9b53164e69041b8f1aec7ad90c97f64bbc`. The owner requested actual mature-project code reuse while preserving the existing Next/React/ReUI/backend/authorization foundation.
+
+## Source and exported contract
+
+The runtime derivative is copied/adapted from the fixed MIT [xunji-log Calendar](https://github.com/imklayhu/xunji-log/blob/267c02e96f7b18fcaf14d742f54253f55cb42dd8/web/src/pages/Calendar.tsx), with its [Chart wrapper](https://github.com/imklayhu/xunji-log/blob/267c02e96f7b18fcaf14d742f54253f55cb42dd8/web/src/components/Chart.tsx) seam. Original byte-for-byte snapshots, the full copyright/license and exact source/hash/modification manifest are retained in `third-party/xunji-log/`. The upstream API types were inspected to identify the incompatible mandatory numeric/volume assumptions; that API implementation, auth, synchronization and server are not imported.
+
+Import `TrainingCalendar` from `src/personal-health/xunji-log/calendar`. Props are `{records:readonly {id:string;revision:number;fields:HealthPersonalFields}[];onOpenRecord:(id:string)=>void}`. Root supplies successful, validated owner-scoped snapshots and binds the existing authoritative record dialog. This view introduces no new input writer, operation, scope, capability or database schema.
+
+The Calendar implementation retains upstream daily grouping, trained-date checks, cell mapping, day opening, heatmap events, metric controls, native ECharts calendar/visualMap/heatmap composition and recent details. The new adapter uses only completed training records; planned records remain separate. General activity titles are preserved. Unsupported volume, tonnage, calorie and heart-rate figures are removed. Duration/distance totals are unknown when incomplete; original km/mi never merge; absent dates are not manufactured as zero/rest. Known zero remains zero.
+
+Heatmap geometry encodes actual per-day completed-session count independently from the selected metric. A missing selected metric has a neutral gray cell and remains clickable, without substituting zero. A single-record day opens that exact id; several records on a day expose their original titles for selection. Recent-list buttons call the same `onOpenRecord(id)`. The local list supports keyboard access when a heatmap cell is too small for precise touch.
+
+The default90-day range ends on the latest dated record actually supplied; existing record years are selectable. Date iteration uses UTC calendar arithmetic, retaining leap days without DST shifts. Completed records with unknown dates stay accessible in the recent list and do not enter the heatmap. Empty snapshots render an honest empty state. The component starts at h2 and does not add a second page h1. Native ReUI buttons retain `data-slot=button`; desktop/mobile light/dark layout uses existing semantic tokens. No packages or lockfiles were changed.
+
+## Verification boundary
+
+- `node --test test/xunji-log-adapter.test.ts`: four tests observed red before implementation, then four passed. Covers plan separation, non-training exclusion, original sports/titles/units, unknown/explicit-zero behavior, partial totals, leap-day windows, invalid dates and exact heatmap/day/id mapping.
+- `./node_modules/.bin/tsc --noEmit --incremental false`: passed with the adapted source and internal browser fixture.
+- The opt-in native Chrome fixture checks a real rendered SVG, empty state, plan exclusion, actual heatmap click→day choice→record callback, recent-row callback, neutral unknown-metric click, 1366px light and390px dark geometry, mobile native control/font size and no horizontal page overflow. Its initial broad image selector was narrowed to the component region to exclude the Next development indicator. The fixture host explicitly uses `data-lifeos-surface` as the real application shell does, excluding unrelated legacy standalone-reader styles.
+- `RUN_XUNJI_LOG_BROWSER_TESTS=1 LIFEOS_TEST_CHROMIUM_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' node --test test/xunji-log-browser.integration.test.ts`: final run passed1/1, zero failed/skipped,9.4s including temporary Next startup. Both final desktop-light and mobile-dark screenshots were visually inspected. This does not assert owner acceptance.
+- The three original SHA-256 values were independently read back and checked against the fixed Calendar/Chart/LICENSE before writing the provenance manifest. The existing lock matched before an uncommitted dependency symlink was borrowed; no install, full duplicate suite or production build was run by this leaf.
+- The native fixture is local, synthetic and in-memory only. It is not API, identity, storage, source synchronization, deployment or real-record acceptance. Its default test invocation is explicitly skipped unless enabled. Internal screenshots are not delivered as owner data.
+
+Root retains independent review, integrated checks, Agent/API/Skill parity, fixed-SHA CI, release/readback and real-site owner review. Xunji ingestion and full source coverage, sleep/body/diet views beyond the existing health fields, and the original health/migration acceptance remain unfinished. No credentials, real health records, production host, push or private-data migration was accessed in this slice.

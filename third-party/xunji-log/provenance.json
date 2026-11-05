@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/imklayhu/xunji-log",
+  "commit": "267c02e96f7b18fcaf14d742f54253f55cb42dd8",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 xunji-log contributors",
+  "upstreamFiles": [
+    {
+      "upstreamPath": "LICENSE",
+      "sourceUrl": "https://raw.githubusercontent.com/imklayhu/xunji-log/267c02e96f7b18fcaf14d742f54253f55cb42dd8/LICENSE",
+      "localPath": "third-party/xunji-log/LICENSE",
+      "sha256": "4d672946018582b2b0d67b7ab1b0f039835beb733a9f1e1140baeef87ee42223",
+      "modified": false
+    },
+    {
+      "upstreamPath": "web/src/pages/Calendar.tsx",
+      "sourceUrl": "https://raw.githubusercontent.com/imklayhu/xunji-log/267c02e96f7b18fcaf14d742f54253f55cb42dd8/web/src/pages/Calendar.tsx",
+      "localPath": "third-party/xunji-log/source/web/src/pages/Calendar.tsx",
+      "sha256": "8d1bedce04e46b987259956d8b68f6c21d16effe8487c35d22aace3713b4b59c",
+      "modified": false
+    },
+    {
+      "upstreamPath": "web/src/components/Chart.tsx",
+      "sourceUrl": "https://raw.githubusercontent.com/imklayhu/xunji-log/267c02e96f7b18fcaf14d742f54253f55cb42dd8/web/src/components/Chart.tsx",
+      "localPath": "third-party/xunji-log/source/web/src/components/Chart.tsx",
+      "sha256": "a1ac98d0c8f8e8935ce7f841de4f16d38412fdafae2dc2bbcdd2e2bb64bb4361",
+      "modified": false
+    }
+  ],
+  "adaptations": [
+    {
+      "derivedFrom": "web/src/pages/Calendar.tsx",
+      "localPath": "src/personal-health/xunji-log/calendar.tsx",
+      "sha256": "bff33ab02bf23f2bcf65ab820e193354ba77863247f1c2072332b4317dd626c0",
+      "changes": [
+        "Copied the original Calendar implementation and adapted its daily cells, trainedDates, openDay, heatmap click handler, metric controls, native calendar/visualMap/heatmap options and recent table.",
+        "Replace upstream Analysis/DrillPanel with validated owner health records and a single existing onOpenRecord(id) callback; multi-record days preserve original titles for selection.",
+        "Keep plans separate, omit unsupported volume/calories/heart-rate fields, preserve source units/nulls and avoid absent-day zeros.",
+        "Use native ReUI Button, existing semantic tokens and responsive calendar orientation; no second page h1 or source sync claims."
+      ]
+    },
+    {
+      "derivedFrom": "web/src/components/Chart.tsx",
+      "localPath": "src/personal-health/xunji-log/chart.tsx",
+      "sha256": "5820368dd9fe6609f3ab8b84d1a6947700392e9cb566855bef879a0d0783eba4",
+      "changes": [
+        "Retain upstream option/height/className/onEvents wrapper seam.",
+        "Replace echarts-for-react/Canvas with existing ECharts6.1.0 dynamic core/calendar/heatmap/visualMap/tooltip/ARIA/SVG modules.",
+        "Add native resize/theme/event lifecycle cleanup and accessible chart failure fallback; do not add upstream router or server."
+      ]
+    },
+    {
+      "derivedFrom": null,
+      "localPath": "src/personal-health/xunji-log/adapter.ts",
+      "sha256": "87b2dcff0b208271b4dce995a6c1a74bece80eb56736be83dfc52050672ed9a3",
+      "changes": [
+        "New narrow typed owner-record adapter; explicit calendar dates, completed versus planned, per-unit distance, unknown totals, range and exact id mapping."
+      ]
+    },
+    {
+      "derivedFrom": null,
+      "localPath": "src/personal-health/xunji-log/calendar.module.css",
+      "sha256": "47722bd90a50d63ce7480038b844629c9b957d5bf4eeaf115224b6d67d9004c4",
+      "changes": [
+        "LifeOS token, native-control and responsive styling for the derivative only."
+      ]
+    }
+  ],
+  "existingRuntime": {
+    "echarts": "6.1.0",
+    "react": "19.3.0"
+  },
+  "notImported": [
+    "upstream authentication",
+    "upstream API client and server",
+    "synchronization jobs",
+    "echarts-for-react",
+    "react-router-dom",
+    "private health records"
+  ],
+  "runtimeEntry": "src/personal-health/xunji-log/calendar.tsx"
+}
