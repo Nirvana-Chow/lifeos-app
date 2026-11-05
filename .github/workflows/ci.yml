@@ -171,9 +171,14 @@ jobs:
           python3 - <<'PY_REQUIREMENTS_PG'
           import os, xml.etree.ElementTree as ET
           cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'requirements-pg.xml')).getroot().iter('testcase'))
-          assert len(cases) == 4, f'Expected four requirements PostgreSQL cases, found {len(cases)}'
+          expected = {
+            'concurrent first overlays lock one deterministic identity and second different key sees CAS conflict',
+            'create restart readback update history and lost committed response recover exact command',
+            'new issuer mode has independently verified native scopes and fence rejects revoked requirements grants',
+          }
+          assert len(cases) == len(expected) and {c.get('name') for c in cases} == expected, 'Expected the three named requirements PostgreSQL leaf cases'
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Requirements PostgreSQL skip or failure is not acceptance'
-          print('PASS: four isolated requirements persistence/grant cases, zero skips; production SQL and grants unchanged.')
+          print('PASS: three named isolated requirements persistence/grant leaf cases, zero skips; production SQL and grants unchanged.')
           PY_REQUIREMENTS_PG
       - name: Prepare the empty runner-local synthetic PostgreSQL fixture
         run: |
@@ -386,6 +391,7 @@ jobs:
           command -v certutil >/dev/null
           google-chrome --version
       - name: Check changed UI contracts early with native Chrome
+        timeout-minutes: 8
         env:
           RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS: '1'
           RUN_UI_DENSITY_BROWSER_TESTS: '1'
