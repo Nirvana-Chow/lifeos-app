@@ -6,6 +6,8 @@ LifeOS currently exposes individual business tools without a durable personal as
 
 ## What Changes
 
+Current owner priority (2026-11-05 live review): requirements/matters first, then usable personal business data with API/Skill, then the durable Agent and modular extensions. Retain the candidates below as later architecture, not a prerequisite blocking the data system. See the [refinement specification](../../../docs/superpowers/specs/2026-11-05-owner-review-refinement.md).
+
 - Establish a single LangGraph JS orchestrator with a PostgreSQL checkpointer and a mature PostgreSQL worker; retain AI SDK as the bounded model/structured-output client and the existing business services as the authoritative writers.
 - Add typed source coverage, confirmed facts/goals/preferences, inferences, immutable proposals, review receipts, run authority and budget reservations. Import approved source packages through versioned typed mappings while preserving originals and source authority.
 - Deliver visible website slices: organization and explicit scope settings; atomic classification review; context/coverage and migration reconciliation; durable run progress; professional business views; evidence-backed insights and a local MCP adapter.

@@ -6,6 +6,15 @@ Give the owner one understandable website for reviewing proposed actions, checki
 
 ## ADDED Requirements
 
+### Requirement: Business data before autonomous operation
+The system SHALL prioritize the owner's usable requirements/matters pool and business input/output with a shared scoped API/Skill before the website Agent. It SHALL preserve the original public requirement identities and keep private new/overlay data in the same authorized projection without promoting edits to engineering completion or acceptance.
+
+#### Scenario: Add or edit a private requirement
+- **WHEN** the authorized owner saves new text or a baseline-bound edit
+- **THEN** the existing writer persists source/history and an idempotent versioned result, the website reads it back, and the matching Agent operation uses explicit requirement scopes
+- **AND** stale baselines, concurrent duplicate overlays, foreign owners, removed grants and uncertain results cannot silently overwrite or duplicate data
+- **AND** missing activation remains explicit and does not prevent independent already-authorized source work
+
 ### Requirement: Every delivery slice exposes usable website value
 
 Each released slice SHALL include an operable website path, honest connection/availability state, version identity and a real readback path. API-only source work, document visibility or internal synthetic previews SHALL NOT be described as completed owner delivery.

@@ -1,5 +1,7 @@
 # Tasks
 
+Owner review of release8ccc33d (2026-11-05) adds desktop density/paired presets, compact and editable requirements, content-region expansion, leading completion/column preferences and native board status moves. Continue these through the original1.2/3.1/3.2 criteria and [refinement plan](../../../docs/superpowers/plans/2026-11-05-requirements-matters-refinement.md); all five IDs and inherited statuses remain. Earlier desktop font evidence is historical after the explicit compact-size change; mobile, contrast, privacy, capture and receipt gates remain. New requirement data/API extension maps to personal-agent-foundation9.7 and board behavior to9.4. No new user acceptance is asserted.
+
 This is the sole mapped execution checklist for `unified-business-ui`. The original five task IDs and inherited 2/5 baseline are retained. Current qualification is 4/5 after the 2026-11-05 evidence update below: 1.1/1.2 retain inherited implementation status, 2.1/3.1 have qualified source evidence, and 3.2 remains open. Checked items do not claim owner acceptance or a new production release. Source-transfer evidence must identify its own exact source/build and executed, failed, skipped or unavailable checks.
 
 ## 1. Shared interface and Header appearance

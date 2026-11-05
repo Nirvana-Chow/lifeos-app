@@ -1,5 +1,7 @@
 # Tasks
 
+Latest owner priority is requirements/matters → business data with API/Skill → personal Agent. Continue the [owner-review refinement](../../../docs/superpowers/plans/2026-11-05-requirements-matters-refinement.md) under original UI IDs,9.4 and the explicit backend extension9.7 below; preserve existing task IDs, completion evidence and all unfinished work. A cleared runtime Goal does not cancel the roadmap or authorize resuming paused Agent/calendar development.
+
 This is the sole execution checklist for the new PersonalAgent intent. The existing 34 requirement IDs and Issues remain the backlog; the original `unified-business-ui` five tasks retain inherited2/5. Detailed plan checkboxes describe procedures, not independent completion state. Ordinary source work proceeds under continuous authorization; concrete runtime/data/permission/cost packages remain separate gates.
 
 ## 1. Organization and explicit access — A1
@@ -65,6 +67,7 @@ These are execution references for previously recorded requirements, not a secon
 - [ ] 9.4 Continue LO-TASK-001/#5 Kanban dragging through the authoritative mutation/CAS/receipt path; verify status movement, cancel/conflict/unknown retry, keyboard/mobile interaction and persisted refresh without a second writer.
 - [ ] 9.5 Continue LO-TASK-001/#5 newline batch entry using the accepted preview/selection/commit direction; verify exact per-line proposal identity, whitespace/duplicates, supported atomicity and unknown-result recovery with matching API/discovery/Skill and owner website qualification.
 - [ ] 9.6 Continue LO-TASK-001/#5 reversible task deletion and restoration; verify stable source identity/history, explicit deleted versus cancelled semantics, reference/CAS conflicts and restore readback before offering real deletion, retaining concrete migration/irreversibility boundaries.
+- [ ] 9.7 Continue LO-REQ-001/#30 with typed private requirement intake and baseline-bound overlays in one server-composed pool, using the existing writer; verify complete reads, unique identity, CAS/idempotency/history, immutable evidence/acceptance, owner/foreign boundaries, matching scoped API/discovery/Skill and actual website save/refresh. Prepare exact new-scope/runtime activation separately; browser storage and unavailable controls are not persistence acceptance.
 
 ## 10. Other original domain and bounded experiment follow-through
 

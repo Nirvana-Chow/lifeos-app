@@ -1,5 +1,9 @@
 # Design
 
+## Owner review refinement — 2026-11-05
+
+Continue the original five task IDs and inherited status. The owner reviewed actual release8ccc33d and requested desktop compact density, curated paired palettes, practical matters and an editable single requirements pool. The binding [refinement specification](../../../docs/superpowers/specs/2026-11-05-owner-review-refinement.md) and [work plan](../../../docs/superpowers/plans/2026-11-05-requirements-matters-refinement.md) refine the shared interface; they do not restart qualification or create a replacement UI checklist. Mobile16/14/44 remains; the earlier all-width rule changes only for the explicit desktop preference. Preserve source, tests, deployed capability and owner acceptance separately. The cleared broad Goal and unrelated paused work remain stopped.
+
 ## Context
 
 See [proposal.md](proposal.md). The existing private workspace and business workbench share record services but have separate shells. This change carries their approved theme, navigation and table implementations into one application source tree. [tasks.md](tasks.md) is the sole active execution checklist for this mapped change; inherited implementation status is distinct from fresh validation and delivery.

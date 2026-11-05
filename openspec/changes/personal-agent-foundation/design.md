@@ -1,5 +1,9 @@
 # Design
 
+## Current execution order — 2026-11-05 owner review
+
+Make the requirements pool and matters actually usable, then connect journal/calendar/health/finance/people with matching API/Skill input/output; personal context and the website Agent follow. Maintain the shared identity/data/source/relation/operation core and add business modules within the existing app; do not build a third-party plugin engine now. The [owner refinement](../../../docs/superpowers/specs/2026-11-05-owner-review-refinement.md) covers the scoped next implementation. Existing candidates, original34IDs and unfinished acceptance remain; the owner-cleared continuous Goal and unrelated paused work are not restarted by this bounded UI/data request.
+
 ## Context
 
 See `proposal.md` for motivation and the [complete architecture](../../../docs/superpowers/specs/2026-11-05-personal-agent-design.md) for product stages, source semantics and official references. Current source has a restricted PostgreSQL business repository, PersonalService, six todo Agent operations and guarded AI SDK calls limited to the current message. It has no durable personal run, unrestricted historical model context, MCP service or production-qualified worker.

@@ -10,7 +10,10 @@ test('roadmap retains original IDs and exposes a current phase and actionable ro
  assert.ok(b.roadmap,'The requirement pool needs a project goal and development route');
  assert.ok(b.roadmap.goal.length>0&&b.roadmap.nextStep.length>0);
  assert.ok(b.roadmap.phases.some(p=>p.id===b.roadmap!.currentPhaseId));
- assert.deepEqual(b.roadmap.phases.map(p=>p.order),[1,2,3,4,5]);
+ assert.deepEqual(b.roadmap.phases.map(p=>p.order),Array.from({length:b.roadmap.phases.length},(_,index)=>index+1));
+ for(const id of ['foundation','workspace','business','integration','qualification'])assert.ok(b.roadmap.phases.some(p=>p.id===id),'Preserve original phase '+id);
+ assert.equal(b.roadmap.currentPhaseId,'workspace');
+ assert.ok(b.roadmap.phases.find(p=>p.id==='personal-agent')!.order>b.roadmap.phases.find(p=>p.id==='business')!.order,'Business data precedes the Agent');
  assert.ok(b.requirements.every(r=>r.roadmap&&r.roadmap.nextStep.length>0));
  assert.ok(b.requirements.find(r=>r.id==='LO-TASK-001')?.roadmap?.issueRefs.includes('https://github.com/Nirvana-Chow/lifeos-app/issues/5'));
  assert.ok(b.requirements.find(r=>r.id==='LO-PROJECT-001')?.roadmap?.issueRefs.includes('https://github.com/Nirvana-Chow/lifeos-app/issues/7'));
@@ -77,9 +80,12 @@ test('shared requirement filters intersect phase, priority and acceptance while 
  assert.equal(JSON.stringify(b),before);
 });
 
-test('project goal covers the connected personal data system',()=>{
- const goal=model.requirements().roadmap!.goal;
- for(const area of ['训练','睡眠','健康','财务','日程','日记','人生阶段'])assert.ok(goal.includes(area),area);
+test('project goal is compact while the preserved pool covers the connected personal data system',()=>{
+ const baseline=model.requirements(),goal=baseline.roadmap!.goal;
+ assert.ok(goal.length<=80,'Keep the top goal compact; details belong to requirements');
+ assert.match(goal,/API/);assert.match(goal,/Skill/);
+ const coverage=baseline.requirements.map(r=>[r.title,r.description,...r.acceptanceCriteria].join('\n')).join('\n');
+ for(const area of ['训练','睡眠','健康','财务','日程','日记','人生阶段'])assert.ok(coverage.includes(area),area);
 });
 
 test('intake retains all 31 inherited stable IDs and records people, links, graph and portable Agent delivery',()=>{

@@ -88,12 +88,35 @@ The system SHALL preserve a valid appearance preference across refresh and route
 - **THEN** the selected mode still applies in the current document and the control reports that persistence was unavailable
 
 ### Requirement: Responsive and accessible interaction
-The system SHALL retain visible focus, readable Chinese text and reachable dialog actions in both themes at desktop and 360/390/430px widths. Body and form text SHALL be at least 16px, metadata at least 14px and interactive targets at least 44px.
+The system SHALL preserve readable Chinese text, visible focus and reachable actions in both themes. Mobile/touch layouts SHALL retain16px body/input,14px metadata and44px targets. The owner's compact fine-pointer desktop preference SHALL be applied independently, without global CSS zoom or disabling browser zoom.
 
 #### Scenario: Edit on a narrow display
 - **WHEN** the owner opens and edits a task at a mobile width
 - **THEN** labels, inputs, errors, cancel and save remain reachable without document-wide horizontal overflow
 - **AND** focus stays visible and returns appropriately after the dialog closes
+
+#### Scenario: Use a compact desktop workbench
+- **WHEN** the owner opens the workspace at1366×768 or1440×900 with100% browser zoom
+- **THEN** the default desktop density shows more readable rows without changing mobile sizes
+- **AND** at widths >=1024px with a fine pointer, body14px, metadata12px and controls32px implement the explicit desktop correction to the earlier all-width16/14/44 rule
+- **AND** narrow native scrollbars retain mouse, keyboard and touchpad operation
+- **AND** three curated palette families each provide complete light/dark semantic states, with first-paint and preference synchronization preserved
+
+### Requirement: Owner-review requirements and matter usability
+The system SHALL continue the existing shared workspace with a concise phase roadmap, persistent owner requirement intake/editing, leading task completion, native column preferences and authoritative Kanban status movement. Public baseline evidence and owner acceptance SHALL remain distinct from privately edited planning content.
+
+#### Scenario: Inspect and edit one requirements pool
+- **WHEN** an authorized owner adds text or changes a requirement's content, priority, real dates or phase
+- **THEN** the same visible pool preserves public stable IDs and private original/history, performs versioned save/readback and retains uncertain commands
+- **AND** the compact table/board groups by phase, colors retain labels, and Gantt uses genuine dates while keeping undated items visible
+- **AND** detail expansion occupies the content region and retains sidebar, draft/navigation guards and focus restoration
+
+#### Scenario: Create and move a matter
+- **WHEN** the owner creates a todo or moves a board card
+- **THEN** project/domain choices are visible and optional, topic controls are absent from new-todo UI and existing topic links survive other edits
+- **AND** completion precedes title, reordered/hidden columns keep stable field identities, and status changes use the original writer/CAS/receipt/readback
+- **AND** keyboard/mobile move alternatives and cancel/conflict/unknown recovery remain available
+- **AND** browser-only layout preferences are not represented as shared record ranking
 
 ### Requirement: Preserve record correctness and privacy
 The system MUST retain owner/MFA and write permissions, source and record IDs, revisions, command semantics, draft recovery, authoritative receipts and unknown/conflict handling during interface changes.
