@@ -256,7 +256,7 @@ async function saveTask(page:Page,previous?:PublicEntry):Promise<PublicEntry>{
  if(previous){assert.equal(entry.id,previous.id);assert.equal(entry.source.id,previous.source.id);assert.deepEqual(entry.source.original,previous.source.original);}
  await expect(page.getByRole('dialog')).toHaveCount(0);assert.deepEqual((await json(page,path+(previous?'':'/'+entry.id))).entry,entry);return entry;
 }
-async function taskRelations(page:Page){const details=form(page).locator('details');if(!await details.evaluate(node=>(node as HTMLDetailsElement).open))await details.locator('summary').click();}
+export async function taskRelations(page:Page){const details=form(page).locator('details');if(await details.count()&&!await details.evaluate(node=>(node as HTMLDetailsElement).open))await details.locator('summary').click();}
 type LatencyPhase='tasks-table-ready'|'native-input-visible'|'editor-form-ready'|'body-next-frame';
 // Synthetic fixture only: fixed labels and elapsed numbers, never data or request details.
 function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.now()-start;assert.equal(Number.isFinite(elapsedMs)&&elapsedMs>=0,true);console.log('PERSONAL_LATENCY',JSON.stringify({phase,elapsedMs:Math.round(elapsedMs*100)/100}));}

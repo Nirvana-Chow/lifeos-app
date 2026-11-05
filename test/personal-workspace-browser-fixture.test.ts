@@ -2,14 +2,17 @@ import test from 'node:test';
 import {EventEmitter} from 'node:events';
 import {readFileSync,existsSync} from 'node:fs';
 import {createRequire} from 'node:module';
-import {dirname,resolve,extname} from 'node:path';
+import {dirname,resolve,extname,join} from 'node:path';
+import {mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import vm from 'node:vm';
 import * as React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
-import {expect,type Dialog} from '@playwright/test';
+import {chromium,expect,type Dialog,type Browser,type BrowserServer} from '@playwright/test';
+import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import assert from 'node:assert/strict';
-import {assertPersonalCapture,personalCaptureAllowedValues,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,projectPersonalHistoryDiagnostic,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
+import {assertPersonalCapture,personalCaptureAllowedValues,taskRelations,confirmDiscard,installReadonlyPersonalReads,nativeTableRendered,recordFieldLabel,personalBrowserFailureKind,projectPersonalHistoryDiagnostic,type PersonalCapture} from './helpers/personal-workspace-browser-fixture.ts';
 
 // A missing fixture, auth node, foreign record, or arbitrary output path must
 // prevent capture, even when the browser otherwise contains synthetic text.
@@ -304,4 +307,18 @@ test('history diagnostic projects finite facts and never emits private values or
  assert.deepEqual(result,{route:'other',markerIndex:null,nativeIndex:null,inputCount:null,canaryMatches:null,focused:null,writeAttempts:null});
  assert.equal(JSON.stringify(result).includes(secret),false);
  assert.deepEqual(projectPersonalHistoryDiagnostic(null,0),{route:'other',markerIndex:null,nativeIndex:null,inputCount:null,canaryMatches:null,focused:null,writeAttempts:0});
+});
+
+// Actual Chromium DOM only: no Next server, TLS, PostgreSQL, profile or real data.
+test('OPT-IN optional task relations preserve create/edit controls and cancel without writes',{skip:process.env.RUN_PERSONAL_RELATIONS_BROWSER_TESTS!=='1',timeout:20000},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-'));let browser:Browser|undefined,server:BrowserServer|undefined,tracked:FixtureProcess|undefined;
+ t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer:server,browserProcess:tracked}));
+ server=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});tracked=trackAuthThemeProcess(server.process());browser=await chromium.connect(server.wsEndpoint());
+ const page=await browser.newPage();page.setDefaultTimeout(500);let writes=0;page.on('request',r=>{if(['POST','PATCH'].includes(r.method()))writes++;});await page.route('**/*',r=>r.abort());
+ for(const mode of ['create','edit'] as const){
+  await page.setContent(`<dialog open><form><label>标题<input value="${mode==='edit'?'synthetic-edit':''}"></label><label>项目<select><option value="">不分类</option></select></label><label>领域<select><option value="">不分类</option></select></label>${mode==='edit'?'<details><summary>业务标签（可选）</summary><label>合成主题<input type="checkbox"></label></details>':''}<button type="button" onclick="this.closest('dialog').remove()">取消</button></form></dialog>`);
+  await taskRelations(page);if(mode==='edit'){await expect(page.locator('details')).toHaveAttribute('open','');await taskRelations(page);await expect(page.locator('details')).toHaveAttribute('open','');}else await expect(page.locator('details')).toHaveCount(0);
+  for(const label of ['项目','领域']){await expect(page.getByLabel(recordFieldLabel(label))).toHaveValue('');await expect(page.getByLabel(recordFieldLabel(label)).locator('option')).toHaveCount(1);}
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue(mode==='edit'?'synthetic-edit':'');await page.getByRole('button',{name:'取消',exact:true}).click();await expect(page.locator('dialog')).toHaveCount(0);assert.equal(writes,0);
+ }
 });
