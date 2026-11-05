@@ -1,4 +1,4 @@
-import {verifyAgentBusinessReadiness} from './runtime.ts';
+import {verifyAgentBusinessReadiness,verifyAgentRequirementsReadiness} from './runtime.ts';
 import {createHmac, timingSafeEqual} from 'node:crypto';
 import {isHTTPSOrigin} from '../platform/config.ts';
 import {PlatformError} from '../platform/domain.ts';
@@ -6,6 +6,7 @@ import {agentScopes, normalizeAgentScopes, encodeAgentPermissions, decodeAgentPe
 
 const role = 'lifeos_agent_key_manager';
 const maxExpirySeconds = 365 * 86400;
+export const issuerScopes=(mode?:'organization-v1'|'requirements-v1')=>agentScopes.filter(scope=>mode==='requirements-v1'||scope.startsWith('todo:')||mode==='organization-v1'&&scope.startsWith('organization:'));
 const ownerSessionCookie = '__Secure-lifeos-platform-candidate.session_token';
 
 export type KeySummary = Readonly<{
@@ -43,7 +44,7 @@ function safeSummary(value: KeySummary): KeySummary {
   return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{})};
 }
 
-export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessScopes?:'organization-v1') {
+export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessScopes?:'organization-v1'|'requirements-v1') {
   return async (operation: KeyOperation, cookie: string, body: unknown): Promise<Result> => {
     const fail = (status:number,error:string): Result => ({status,body:{error}});
     try {
@@ -54,7 +55,7 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
         if (!fields(body, []) && (typeof cursor !== 'string' || !cursorPattern.test(cursor) || !Number.isFinite(Date.parse(cursor.split('~')[0]))))
           return fail(400, 'INVALID_REQUEST');
         const page = await deps.list(typeof cursor === 'string' ? cursor : undefined);
-        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(businessScopes?{availableScopes:agentScopes}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
+        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(businessScopes?{availableScopes:issuerScopes(businessScopes)}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
       }
       if (operation === 'revoke') {
         const input = fields(body,['id']);
@@ -67,7 +68,7 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
         if (typeof input?.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(input.id)||
             typeof input.expectedGrantDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.expectedGrantDigest)) return fail(400,'INVALID_REQUEST');
         let scopes:readonly AgentScope[];
-        try {scopes=normalizeAgentScopes(input.scopes);} catch {return fail(400,'INVALID_REQUEST');}
+        try {scopes=normalizeAgentScopes(input.scopes);if(scopes.some(s=>!issuerScopes(businessScopes).includes(s)))return fail(400,'INVALID_REQUEST');} catch {return fail(400,'INVALID_REQUEST');}
         const grant=await deps.setScopes({id:input.id,expectedGrantDigest:input.expectedGrantDigest,scopes},cookie);
         return {status:200,body:{grant:safeSummary(grant)}};
       }
@@ -76,7 +77,7 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
       let scopes:readonly AgentScope[];
       try {scopes=normalizeAgentScopes(input?.scopes);} catch {return fail(400,'INVALID_REQUEST');}
       if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/u.test(name) ||
-          (!businessScopes && scopes.some(scope=>scope.startsWith('organization:')))) return fail(400,'INVALID_REQUEST');
+          scopes.some(scope=>!issuerScopes(businessScopes).includes(scope))) return fail(400,'INVALID_REQUEST');
       let expiresIn: number;
       if (input && Object.hasOwn(input,'expiresInDays')) {
         const days=input.expiresInDays;
@@ -119,7 +120,7 @@ export function readSignedOwnerSession(header: string, secret: string): string |
 }
 
 export type KeyIssuerConfig = Readonly<{
-  businessScopes?:'organization-v1';
+  businessScopes?:'organization-v1'|'requirements-v1';
   socketPath:string; baseURL:string; databaseURL:string; databaseName:string;
   ownerId:string; ownerEmail:string; spaceId:string; sessionSecret:string; agentSecret:string;
 }>;
@@ -127,7 +128,7 @@ export type KeyIssuerConfig = Readonly<{
 export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
   const keys=['socketPath','baseURL','databaseURL','ownerId','ownerEmail','spaceId','sessionSecret','agentSecret'] as const;
   const values=fields(raw,keys)??fields(raw,[...keys,'businessScopes']);
-  if(values&&Object.hasOwn(values,'businessScopes')&&values.businessScopes!=='organization-v1')throw Error('Invalid issuer configuration');
+  if(values&&Object.hasOwn(values,'businessScopes')&&values.businessScopes!=='organization-v1'&&values.businessScopes!=='requirements-v1')throw Error('Invalid issuer configuration');
   if (!values || keys.some(key=>typeof values[key]!=='string')) throw Error('Invalid issuer configuration');
   const config=values as Omit<KeyIssuerConfig,'databaseName'>;
   const origin=new URL(config.baseURL);
@@ -180,6 +181,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
     if (!permissions||permissions.role!==role||permissions.database!==config.databaseName||
         Object.entries(permissions).some(([key,value])=>key!=='role'&&key!=='database'&&value!==true)) throw Error('Restricted issuer role required');
     if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
+    if(config.businessScopes==='requirements-v1')await verifyAgentRequirementsReadiness(pool);
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
       logger:{disabled:true},telemetry:{enabled:false},plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,
         keyExpiration:{minExpiresIn:0,maxExpiresIn:365},maximumNameLength:80,startingCharactersConfig:{shouldStore:false}})]});
@@ -188,6 +190,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
     const handle=createKeyIssuer({
       authenticate:async header=>{
         if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
+        if(config.businessScopes==='requirements-v1')await verifyAgentRequirementsReadiness(pool);
         const token=readSignedOwnerSession(header,config.sessionSecret);
         if (!token) return false;
         const {rows:[row]}=await pool.query('SELECT lifeos_agent.verify_management_session($1,$2,$3) AS allowed',[token,config.ownerId,config.ownerEmail]);

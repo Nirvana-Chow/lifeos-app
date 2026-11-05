@@ -1,3 +1,4 @@
+import {RequirementsService} from '../requirements-candidate/service.ts';
 import {lockPersonalRecords} from './personal-record-locks.ts';
 import {reminderSourceDigest} from '../import-preview/reminders.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
@@ -32,8 +33,8 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
  return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{})};
 }
 export class PersonalService{
- readonly config:PersonalConfig;private repository:PlatformRepository;
- constructor(repository:PlatformRepository,config:PersonalConfig){this.repository=repository;this.config=Object.freeze(structuredClone(config));}
+ readonly config:PersonalConfig;readonly requirements:RequirementsService;private repository:PlatformRepository;
+ constructor(repository:PlatformRepository,config:PersonalConfig){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);}
  private enabled(type:PersonalType){if(!this.config.allowedTypes.includes(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
  private matches(entry:StoredEntry|null,owner:string,type?:PersonalType,id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.config.allowedTypes.includes(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}

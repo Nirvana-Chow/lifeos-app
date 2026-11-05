@@ -1,3 +1,4 @@
+import {handleRequirementsRequest} from '../requirements-candidate/http.ts';
 import type {AuthorityService} from '../agent-authority/service.ts';
 import type {ClassificationService} from './classification-service.ts';
 import {handleOwnerClassificationRequest} from './classification-http.ts';
@@ -12,7 +13,7 @@ import {handlePersonalRequest} from './http.ts';
 export const personalPermitPath='/run/lifeos-platform/write-gate/permit.json';
 /** No password, URL credentials, API secret or owner content participates in this digest. */
 export function personalPermitBinding(config:PersonalConfig,sourceSha:string):WritePermitBinding{
- const configDigest=createHash('sha256').update(JSON.stringify({ownerId:config.ownerId,ownerEmail:config.ownerEmail,spaceId:config.spaceId,databaseName:config.databaseName,baseURL:config.baseURL,allowedTypes:config.allowedTypes,...(config.transport?{transport:config.transport}:{}),...(config.readonlyLoginApproved?{readonlyLoginApproved:true}:{}),...(config.businessWriteMode?{businessWriteMode:config.businessWriteMode}:{})})).digest('hex');
+ const configDigest=createHash('sha256').update(JSON.stringify({ownerId:config.ownerId,ownerEmail:config.ownerEmail,spaceId:config.spaceId,databaseName:config.databaseName,baseURL:config.baseURL,allowedTypes:config.allowedTypes,...(config.transport?{transport:config.transport}:{}),...(config.readonlyLoginApproved?{readonlyLoginApproved:true}:{}),...(config.requirementsEnabled?{requirementsEnabled:true}:{}),...(config.businessWriteMode?{businessWriteMode:config.businessWriteMode}:{})})).digest('hex');
  return{sourceSha,spaceId:config.spaceId,configDigest};
 }
 export function requirePersonalWritePermit(config:PersonalConfig,sourceSha:string):void{
@@ -46,7 +47,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status'){
     if(request.method!=='GET'||url.search)return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此状态仅可读取。'}},405);
     let writable=false;try{await options.assertWritable();writable=true;}catch{/* Only this capability is unavailable; never leak the permit path or contents. */}
-    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,writable,aiEnabled:false,userAccepted:false});
+    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,writable,aiEnabled:false,userAccepted:false});
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
@@ -57,6 +58,8 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     if(!actor)throw new PlatformError(403,'OWNER_ONLY','需要当前本人 MFA 会话。');
     return (await handleOwnerClassificationRequest(request,actor,options.classification.service,{baseURL:options.config.baseURL,assertOwner,assertWritable:options.assertWritable}))!;
    }
+   const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable});
+   if(requirementResponse)return requirementResponse;
    const response=await handlePersonalRequest(request,options.config.ownerId,options.config.baseURL,service,{assertOwner,assertWritable:options.assertWritable});
    return response??respond({error:{code:'NOT_FOUND',message:'此本人空间接口未开放。'}},404);
   }catch(error){return error instanceof PlatformError?respond({error:{code:error.code,message:error.message}},error.status):respond({error:{code:'PERSONAL_UNAVAILABLE',message:'本人空间暂不可用，保存结果未确认。'}},503);}

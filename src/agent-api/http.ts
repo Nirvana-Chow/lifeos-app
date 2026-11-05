@@ -58,6 +58,7 @@ export function createAgentHandler(options: Options) {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentOperations.find(entry => entry.id === id);
     if (operation?.module === 'classification' && (!modules.classification || !modules.organization || !options.classification || options.fenceWrites !== true)) return false;
+    if (operation?.module === 'requirements' && (!modules.requirements || !config.requirementsEnabled || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
     if (operation?.module === 'organization' && (!modules.organization || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
     if (!operation || options.mountPath && operation.method !== 'GET' && options.fenceWrites !== true) return false;
     try {return await options.operationAvailable?.(id) === true;} catch {return false;}
@@ -67,12 +68,14 @@ export function createAgentHandler(options: Options) {
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
+    const requirementRoute=/^\/v1\/requirements\/(LO-[A-Z]+-\d{3}|[a-f0-9-]{36})$/.exec(route);
+    const requirementId=requirementRoute?.[1];
     const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
     const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
     const organizationId=organizationRoute?.[2];
-    const template=organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const template=requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
     const operation = agentOperations.find(entry => entry.method === request.method && entry.path === template);
-    if (options.enabled !== true || !operation || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || path.search) return respond(404, {error: 'NOT_FOUND'});
+    if (options.enabled !== true || !operation || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
       const token = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization') ?? '')?.[1];
@@ -95,6 +98,16 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if(operation.module==='requirements'){
+        const requirements=service.requirements;
+        if(operation.id==='snapshotRequirements')return respond(200,await requirements.snapshot(actor.ownerId));
+        if(operation.id==='getRequirement')return respond(200,{entry:await requirements.get(actor.ownerId,requirementId!)});
+        const updating=operation.id==='updateRequirement',input=object(await readJSONBody(request),updating?['fields','expectedRevision','baselineBinding']:['fields']);
+        const result=await requirements.mutate(actor.ownerId,requirementId??null,{...input,spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',async()=>{
+          if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await options.assertWritable(grant);
+        },tx=>assertAgentGrant(tx,actor,operation.requiredScopes));
+        return respond(!updating&&!result.duplicate?201:200,result);
+      }
       if (operation.module === 'classification') {
         if(!options.classification)return respond(503,{error:'AGENT_OPERATION_UNAVAILABLE'});
         const adapter=createClassificationAdapter(options.classification(authority)),input=await readJSONBody(request);

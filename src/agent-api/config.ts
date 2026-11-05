@@ -6,6 +6,7 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_API_DATABASE_URL',
   'LIFEOS_AGENT_API_SECRET',
   'LIFEOS_AGENT_ORGANIZATION',
+  'LIFEOS_AGENT_REQUIREMENTS',
   'LIFEOS_AGENT_CLASSIFICATION',
 ] as const;
 
@@ -38,9 +39,10 @@ export function readAgentRuntimeConfig(
   return Object.freeze({databaseURL, secret});
 }
 
-export type AgentModules = Readonly<{organization:boolean;classification:boolean}>;
+export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean}>;
 export function readAgentBusinessModules(env: Record<string,string|undefined>, personal: PersonalConfig|null): AgentModules {
+  const requirement=env.LIFEOS_AGENT_REQUIREMENTS;if(requirement!==undefined&&requirement!=='requirements-v1'||requirement&&personal?.requirementsEnabled!==true)throw Error('Agent requirements configuration unavailable');
   const org = env.LIFEOS_AGENT_ORGANIZATION; const classification = env.LIFEOS_AGENT_CLASSIFICATION;
   if (org !== undefined && org !== 'organization-v1' || classification !== undefined && classification !== 'todo-classification-v1' || classification && !org || org && !personal) throw Error('Agent business configuration unavailable');
-  return Object.freeze({organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
+  return Object.freeze({...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
 }

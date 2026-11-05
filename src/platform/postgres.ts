@@ -76,7 +76,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
-   ...(this.businessFeatures?.organization?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
+   lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
+   ...(this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
     if(grant.ownerId!==owner)return false;
     const result=await client.query('SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes]);
     return result.rows[0]?.allowed===true;

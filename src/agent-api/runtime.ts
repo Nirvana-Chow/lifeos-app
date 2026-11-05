@@ -48,6 +48,7 @@ export function agentOperationAvailable(id:string, personal:PersonalConfig, fenc
   const operation = agentOperations.find(entry => entry.id === id);
   if (!operation || operation.module === 'catalog') return false;
   if (operation.module === 'todo' && !personal.allowedTypes.includes('todo')) return false;
+  if(operation.module==='requirements'&&(!modules.requirements||!personal.requirementsEnabled||!fenceReady))return false;
   if (operation.module === 'organization' && (!modules.organization || !fenceReady || !organizationTypes.every(type=>personal.allowedTypes.includes(type)))) return false;
   if(operation.module==='classification'){
     if(!modules.classification||!modules.organization||!fenceReady||!['todo',...organizationTypes].every(type=>personal.allowedTypes.includes(type as typeof personal.allowedTypes[number])))return false;
@@ -98,6 +99,24 @@ export async function verifyAgentBusinessReadiness(pool:{query:(sql:string)=>Pro
       FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass) AS key_rls`);
   if(rows.length!==1||Object.values(rows[0]).some(value=>value!==true))
     throw new PlatformError(503,'AGENT_API_UNAVAILABLE','业务授权检查暂不可用。');
+}
+
+/** Optional0014 readiness never activates scopes merely because the TypeScript codec knows them. */
+export async function verifyAgentRequirementsReadiness(pool:{query:(sql:string)=>Promise<{rows:Record<string,unknown>[]} >}):Promise<void>{
+ await verifyAgentBusinessReadiness(pool);
+ const {rows}=await pool.query(`SELECT
+  lifeos_agent.requirements_permission_version()='requirements-v1' AS version,
+  lifeos_agent.valid_business_permissions('{"requirements":["read","write"]}'::jsonb) AND
+  NOT lifeos_agent.valid_business_permissions('{"requirements":["write"]}'::jsonb) AND
+  NOT lifeos_agent.valid_business_permissions('{"requirements":["read"],"unknown":["read"]}'::jsonb) AS language,
+  p.proowner=(SELECT relowner FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass)
+   AND NOT p.prosecdef AND p.proconfig=ARRAY['search_path=pg_catalog, pg_temp']::text[]
+   AND has_function_privilege('lifeos_platform_candidate_runtime',p.oid,'EXECUTE')
+   AND has_function_privilege('lifeos_agent_key_manager',p.oid,'EXECUTE')
+   AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+    WHERE a.privilege_type='EXECUTE' AND (a.is_grantable AND a.grantee<>p.proowner OR a.grantee NOT IN (p.proowner,(SELECT oid FROM pg_roles WHERE rolname='lifeos_platform_candidate_runtime'),(SELECT oid FROM pg_roles WHERE rolname='lifeos_agent_key_manager')))) AS marker_safe
+  FROM pg_proc p WHERE p.oid=to_regprocedure('lifeos_agent.requirements_permission_version()')`);
+ if(rows.length!==1||Object.values(rows[0]).some(value=>value!==true))throw new PlatformError(503,'AGENT_REQUIREMENTS_UNAVAILABLE','需求授权尚未配置。');
 }
 
 async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<AgentRuntime> {
@@ -180,6 +199,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
+        if(agentOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
         if(agentOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
         return true;
       },

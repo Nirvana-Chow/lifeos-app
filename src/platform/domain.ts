@@ -1,3 +1,4 @@
+import {validateRequirementMetadata,type RequirementMetadata} from '../requirements-candidate/domain.ts';
 import {validatePersonalRelations,validatePersonalObject,type PersonalRelations,type PersonalObject} from '../personal-candidate/business.ts';
 import {validateRecordMetadata} from '../records-candidate/domain.ts';
 import type {RecordMetadata} from '../records-candidate/contracts.ts';
@@ -64,13 +65,14 @@ export function validateFinance(input:unknown):FinanceDraft {
  return {kind:o.kind as FinanceDraft['kind'],amountMinor:o.amountMinor,currency:'CNY',occurredOn:date(o.occurredOn)!,category:o.category===undefined||o.category===null?null:text(o.category,80).trim(),fromAccountRef:from,toAccountRef:to,originalEntryId:o.kind==='refund'?validateId(o.originalEntryId):null,notes:text(o.notes===undefined?'':o.notes,16384,true)};
 }
 
-export type InboxDraft={title:string;text:string;occurredOn:string|null;disposition:'pending'|'reference'|'no_action';record?:RecordMetadata;personal?:PersonalObject};
-export const inboxKeys=['title','text','occurredOn','disposition','record','personal'] as const;
+export type InboxDraft={title:string;text:string;occurredOn:string|null;disposition:'pending'|'reference'|'no_action';record?:RecordMetadata;personal?:PersonalObject;requirement?:RequirementMetadata};
+export const inboxKeys=['title','text','occurredOn','disposition','record','personal','requirement'] as const;
 export function validateInbox(input:unknown):InboxDraft{
  const o=object(input,inboxKeys),base=validateTodo({title:o.title,notes:o.text,dueOn:o.occurredOn}),disposition=o.disposition===undefined?'pending':o.disposition;
  if(!['pending','reference','no_action'].includes(disposition as string))throw new PlatformError(400,'INVALID_DISPOSITION','选择待处理、仅资料或无需行动。');
  const record='record' in o?validateRecordMetadata(o.record):undefined;
  if(record&&disposition!=='reference')throw new PlatformError(400,'INVALID_RECORD_DISPOSITION','类别记录只能作为资料保存。');
+ if('requirement'in o&&(record||'personal'in o||disposition!=='reference'))throw new PlatformError(400,'INVALID_REQUIREMENT_FIELDS','需求不能混用其他记录类别。');
  if('personal'in o&&(record||disposition!=='reference'))throw new PlatformError(400,'INVALID_PERSONAL_FIELDS','本人对象不能混用合成记录。');
- return{...('personal'in o?{personal:validatePersonalObject(o.personal)}:{}),title:base.title,text:base.notes,occurredOn:base.dueOn,disposition:disposition as InboxDraft['disposition'],...(record?{record}:{})};
+ return{...('requirement'in o?{requirement:validateRequirementMetadata(o.requirement)}:{}),...('personal'in o?{personal:validatePersonalObject(o.personal)}:{}),title:base.title,text:base.notes,occurredOn:base.dueOn,disposition:disposition as InboxDraft['disposition'],...(record?{record}:{})};
 }

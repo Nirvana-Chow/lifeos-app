@@ -6,6 +6,10 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 
 | ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
+| `snapshotRequirements` | `GET` | `/v1/requirements/snapshot` | `requirements:read` | Read the complete server-composed public and own private requirement pool, exact baseline bindings and revisions, or fail without a partial inventory. |
+| `getRequirement` | `GET` | `/v1/requirements/{id}` | `requirements:read` | Read one stable public LO-ID or private UUID, full editable fields and its baseline binding. |
+| `createRequirement` | `POST` | `/v1/requirements` | `requirements:read, requirements:write` | Create one private requirement with complete fields and an idempotency key; evidence and acceptance remain authoritative. |
+| `updateRequirement` | `PATCH` | `/v1/requirements/{id}` | `requirements:read, requirements:write` | Update full requirement fields with expectedRevision, exact baselineBinding and an idempotency key. Public first edit uses revision 0; baseline changes conflict. |
 | `previewTodoClassification` | `POST` | `/v1/todo-classifications/preview` | `todo:read, organization:read` | Preview one immutable classification of 1 to 100 todos without business writes; owner review is required. |
 | `commitTodoClassification` | `POST` | `/v1/todo-classifications/commit` | `todo:read, todo:write, organization:read` | Atomically commit an owner-approved plan with its digest and an idempotency key; preserve the same key and body for unknown-result recovery. |
 | `discoverV2` | `GET` | `/v2/capabilities` | `valid grant` | Discover operations permitted for the current grant. |
