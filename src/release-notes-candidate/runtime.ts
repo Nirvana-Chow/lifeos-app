@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import {constants,openSync,closeSync,fstatSync,readFileSync} from 'node:fs';
 import {basename,dirname,resolve} from 'node:path';
 import {candidateBuildDirectory} from '../platform/build-directory.ts';
-import {publicReleaseRecords} from './records.ts';
+import {currentReleaseSummary,publicReleaseRecords} from './records.ts';
 export type ReleaseArtifact={sourceSha:string;sourceTreeDigest:string;buildId:string};
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function validateReleaseArtifact(proof:unknown,buildId:string,expectedSha:string|undefined):ReleaseArtifact|null{
@@ -20,4 +20,10 @@ function boundedFile(path:string,max:number):string{
 export function readReleaseArtifact(cwd=process.cwd(),expectedSha=process.env.LIFEOS_REVIEW_GIT_SHA):ReleaseArtifact|null{
  try{const dist=candidateBuildDirectory(),standalone=basename(cwd)==='standalone'&&basename(dirname(cwd))===dist;return validateReleaseArtifact(JSON.parse(boundedFile(resolve(cwd,standalone?'../../.image-source-proof.json':'.image-source-proof.json'),2*1024*1024)),boundedFile(resolve(cwd,dist,'BUILD_ID'),128).trim(),expectedSha);}catch{return null;}
 }
-export function releaseNotes(artifact:ReleaseArtifact|null){return{scope:'public-source-records' as const,current:artifact,records:publicReleaseRecords.map(record=>({...record,sourceURL:'https://github.com/Nirvana-Chow/lifeos-app/commit/'+record.sourceSha,runningExactSource:artifact?.sourceSha===record.sourceSha})),ownerAccepted:false as const,visualQualification:'not-attested' as const};}
+export function releaseNotes(artifact:ReleaseArtifact|null){
+ const records=publicReleaseRecords.map(record=>({...record,sourceURL:'https://github.com/Nirvana-Chow/lifeos-app/commit/'+record.sourceSha,runningExactSource:artifact?.sourceSha===record.sourceSha}));
+ // An exact historical record already describes its source; otherwise the image-local
+ // descriptor is current only when the existing image proof reader supplies identity.
+ if(artifact&&!records.some(record=>record.runningExactSource))records.unshift({...currentReleaseSummary,sourceSha:artifact.sourceSha,sourceURL:'https://github.com/Nirvana-Chow/lifeos-app/commit/'+artifact.sourceSha,runningExactSource:true});
+ return{scope:'public-source-records' as const,current:artifact,records,ownerAccepted:false as const,visualQualification:'not-attested' as const};
+}
