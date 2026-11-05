@@ -26,7 +26,7 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);validatePersonalBody(type,null,original.input,spaceId);validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal)||type!=='journal'&&draft.personal?.type!==type)return null;}return type;}catch{return null;}
+ try{object(original,['marker','spaceId','type','input']);validatePersonalBody(type,null,original.input,spaceId);validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
  const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);
@@ -37,7 +37,7 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
  constructor(repository:PlatformRepository,config:PersonalConfig,options:{currentSourceSha?:()=>string|null}={}){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);this.requirementSupport=new RequirementSupportService(repository,this.config,this.requirements,options);}
- private allows(type:PersonalType){return type==='calendar'?this.config.calendarEnabled===true:this.config.allowedTypes.includes(type);}
+ private allows(type:PersonalType){return type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
  private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
  private matches(entry:StoredEntry|null,owner:string,type?:PersonalType|'person',id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.allows(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
@@ -55,7 +55,7 @@ export class PersonalService{
  }
  async list(owner:string,type?:PersonalType,limit=50){return this.page(owner,'current',limit,type);}
  async history(owner:string,type:PersonalType,id:string,limit=50){
-  const current=await this.get(owner,type,id);if(type!=='calendar')return this.page(owner,'history',limit,type,id);
+  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person'].includes(type))return this.page(owner,'history',limit,type,id);
   if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   const rows=await this.repository.history(owner,'inbox',id);
   if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,'CALENDAR_HISTORY_UNAVAILABLE','日程历史读取无效。');

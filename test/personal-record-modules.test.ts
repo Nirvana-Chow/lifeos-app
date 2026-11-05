@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {MemoryPort} from './helpers/platform.ts';
+import {PersonalService,personalEntryType} from '../src/personal-candidate/service.ts';
+import type {PersonalConfig} from '../src/personal-candidate/config.ts';
+import {emptyPersonPersonal} from '../src/personal-people/model.ts';
+import {emptyHealthFields} from '../src/personal-health/presentation.ts';
+import {handlePersonalRequest} from '../src/personal-candidate/http.ts';
+const config:PersonalConfig={ownerId:'synthetic-record-owner',ownerEmail:'record@example.invalid',spaceId:'synthetic-record-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:'https://records.example.invalid',peopleEnabled:true,healthEnabled:true};
+const setup=()=>{const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>[...repo.rows.values()].filter(row=>row.ownerId===owner).map(row=>structuredClone(row));return{repo,service:new PersonalService(repo,config)};};
+const body=(fields:unknown)=>({spaceId:config.spaceId,confirmed:true,fields});
+test('new personal modules persist through the owner writer while their gates remain separate',async()=>{
+ const{repo,service}=setup();
+ const person=await service.mutate(config.ownerId,'person',null,body({title:'Synthetic person',text:'',occurredOn:null,personal:emptyPersonPersonal()}),'record-person-001');
+ const health=await service.mutate(config.ownerId,'health',null,body({title:'Synthetic body',text:'',occurredOn:null,personal:emptyHealthFields('body','Asia/Shanghai').personal}),'record-health-001');
+ assert.equal(personalEntryType(person.entry,config.spaceId),'person');assert.equal(personalEntryType(health.entry,config.spaceId),'health');
+ assert.equal((await service.get(config.ownerId,'person',person.entry.id)).id,person.entry.id);
+ assert.equal((await service.currentSnapshot(config.ownerId)).length,2);
+ const closed=new PersonalService(repo,{...config,peopleEnabled:undefined,healthEnabled:undefined});
+ await assert.rejects(closed.get(config.ownerId,'person',person.entry.id),{code:'PERSONAL_TYPE_DENIED'});
+ assert.equal((await closed.currentSnapshot(config.ownerId)).length,0);assert.deepEqual(config.allowedTypes,['todo','journal','project','domain','topic']);
+});
+test('journal links pin real person revisions and retain legacy journals',async()=>{
+ const{repo,service}=setup(),owner=config.ownerId;
+ const fields={title:'Synthetic friend',text:'',occurredOn:null,personal:emptyPersonPersonal()};
+ const p=(await service.mutate(owner,'person',null,body(fields),'record-person-002')).entry;
+ const j={title:'Synthetic day',text:'Synthetic journal',occurredOn:null,personal:{type:'journal',links:{project:null,domain:null,topics:[],people:[{id:p.id,sourceId:p.source.id,revision:1}]}}};
+ const saved=await service.mutate(owner,'journal',null,body(j),'record-journal-001');assert.equal(personalEntryType(saved.entry,config.spaceId),'journal');
+ assert.equal((await service.mutate(owner,'journal',null,body(j),'record-journal-001')).duplicate,true);
+ await service.mutate(owner,'person',p.id,{...body(fields),expectedRevision:1},'record-person-edit');
+ await assert.rejects(service.mutate(owner,'journal',null,body(j),'record-journal-stale'),{code:'REFERENCE_CONFLICT'});
+ await service.mutate(owner,'journal',null,body({title:'Legacy',text:'Legacy text',occurredOn:null}),'record-journal-old');
+ assert.equal(repo.rows.size,3);assert.equal(repo.historyRows.length,4);
+ await assert.rejects(service.get('another-owner','journal',saved.entry.id),{code:'OWNER_ONLY'});
+});
+test('owner record snapshot is complete and independently guarded after reads',async()=>{
+ const{service}=setup();await service.mutate(config.ownerId,'person',null,body({title:'Synthetic person',text:'',occurredOn:null,personal:emptyPersonPersonal()}),'record-person-003');
+ let guards=0;const options={assertOwner:async()=>{guards++;},assertWritable:async()=>{}};
+ const response=await handlePersonalRequest(new Request(config.baseURL+'/api/platform/personal/person/snapshot',{headers:{host:'records.example.invalid'}}),config.ownerId,config.baseURL,service,options);
+ assert.equal(response?.status,200);const data=await response!.json();assert.equal(data.total,1);assert.equal(data.truncated,false);assert.equal(guards,2);
+});
