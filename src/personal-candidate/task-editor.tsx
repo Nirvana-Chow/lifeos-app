@@ -1,4 +1,5 @@
 'use client';
+import {PlanningInputs} from './planning-inputs';
 import{useEffect,useRef,useState}from'react';
 import{Dialog,DialogContent,DialogTitle,DialogDescription}from'../ui-review/ui/dialog';
 import type{PublicEntry}from'../platform/contracts';
@@ -90,6 +91,7 @@ export function TaskEditor({
     <h3>{shown.title}</h3>
     <p className={styles.detailText}>{shown.text||'暂无正文'}</p>
     <dl>
+     <div><dt>计划开始</dt><dd>{shown.plannedStartOn||'未设置'}</dd></div><div><dt>计划结束</dt><dd>{shown.plannedEndOn||'未设置'}</dd></div>
      <div><dt>到期日</dt><dd>{shown.date||'未设置'}</dd></div>
      <div><dt>状态</dt><dd>{taskStatusLabels[shown.status]}</dd></div>
      <div><dt>领域</dt><dd>{relationName('domain',relation.domain)}</dd></div>
@@ -102,6 +104,7 @@ export function TaskEditor({
     <label>标题<input autoFocus required maxLength={240} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
     <label>正文<textarea rows={6} maxLength={16384} value={fields.text} onChange={e=>setFields({...fields,text:e.target.value})}/></label>
     <div className={styles.row}><label>到期日<input type="date" value={fields.date} onChange={e=>setFields({...fields,date:e.target.value})}/></label><label>状态<select value={fields.status} onChange={e=>setFields({...fields,status:e.target.value as PersonalEditorFields['status']})}>{Object.entries(taskStatusLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>
+    <PlanningInputs className={styles.row} value={{plannedStartOn:fields.plannedStartOn||null,plannedEndOn:fields.plannedEndOn||null}} onChange={(field,value)=>setFields({...fields,[field]:value??''})}/>
     <div className={styles.row}>{(['domain','project'] as const).map(type=><label key={type}>{type==='domain'?'领域':'项目'}<select value={relation[type]?.id??''} onChange={e=>{const entry=relations[type]?.find(v=>v.id===e.target.value);setRelation({[type]:entry?reference(entry):null});}}><option value="">不分类</option>{relation[type]&&!relations[type]?.some(v=>v.id===relation[type]?.id)&&<option value={relation[type]!.id}>原关联（待核对）</option>}{relations[type]?.map(v=><option key={v.id} value={v.id}>{'title'in v.draft?v.draft.title:''}{relation[type]?.id===v.id&&relation[type]?.revision!==v.revision?'（版本已变化，重新选择核对）':''}</option>)}</select></label>)}
      </div>{target.mode!=='create'&&<details><summary>标签（可选）</summary><fieldset><legend>标签</legend>{!relations.topic?.length&&<p>暂无可选标签</p>}{relation.topics.filter(t=>!relations.topic?.some(v=>v.id===t.id)).map(t=><label className={styles.topic} key={t.id}><input type="checkbox" checked onChange={e=>{if(!e.target.checked)setRelation({topics:relation.topics.filter(v=>v.id!==t.id)});}}/>不可用标签（取消勾选以移除）</label>)}{relations.topic?.map(v=><label className={styles.topic} key={v.id}><input type="checkbox" checked={relation.topics.some(t=>t.id===v.id)} onChange={e=>setRelation({topics:e.target.checked?[...relation.topics.filter(t=>t.id!==v.id),reference(v)]:relation.topics.filter(t=>t.id!==v.id)})}/>{'title'in v.draft?v.draft.title:''}</label>)}</fieldset></details>}
    </fieldset></div>

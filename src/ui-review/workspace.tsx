@@ -44,6 +44,7 @@ import {
   visibleWorkspaceState,
 } from "./selectors";
 import { TaskTable, statusLabels } from "./task-table";
+import {TaskProjectGantt} from './task-project-gantt';
 import {TaskBoard} from "./task-board";
 import { TaskTitleField } from "./task-grid";
 import { OverviewChart } from "./overview-chart";
@@ -485,7 +486,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   function taskContent() {
     if (state.status !== "ready")
       return <DataState state={state} onRefresh={onRefresh} />;
-    if (view === "gantt") return <UnscheduledGantt label="待办" count={rows.length} partial={data?.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setView('table');}}/>;
+    if (view === "gantt") return <TaskProjectGantt label="待办" rows={rows} renderTitle={task=><button type="button" aria-label={`查看待办 ${task.title}`} onClick={event=>openTask(task,event.currentTarget)}>{task.title}</button>} partial={data?.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setView('table');}}/>;
     if (view === "table")
       return (
         <TaskTable
@@ -916,7 +917,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {(page === "projects" || page === "areas") &&
             (state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> :
               <>{page==='projects'&&<div className="lo-task-toolbar"><div className="lo-view-switch" role="group" aria-label="项目视图">{(['table','gantt'] as const).map(id=><Button key={id} variant="ghost" className={projectView===id?"is-active":""} aria-pressed={projectView===id} onClick={()=>{if(projectView!==id&&props.onBeforeNavigate?.()===false)return;setProjectView(id);}}>{id==='table'?<Table2 size={17}/>:<ChartNoAxesGantt size={17}/>}<span>{id==='table'?'表格':'甘特'}</span></Button>)}</div></div>}
-              {page==='projects'&&projectView==='gantt'?<UnscheduledGantt label="项目" count={data!.projects.length} partial={data!.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setProjectView('table');}}/>:<CategoryGrid key={page} kind={page} areas={data!.areas} projects={data!.projects} tasks={tasks}
+              {page==='projects'&&projectView==='gantt'?<TaskProjectGantt label="项目" rows={data!.projects} renderTitle={project=><a href={`/personal/edit?type=project&id=${encodeURIComponent(project.id)}`}>{project.title}</a>} partial={data!.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setProjectView('table');}}/>:<CategoryGrid key={page} kind={page} areas={data!.areas} projects={data!.projects} tasks={tasks}
                 coverage={data!.coverage} writable={canWrite && access.allowedTypes?.includes(page === "projects" ? "project" : "domain") === true}
                 onViewTasks={(areaId,projectId) => navigate("tasks",areaId,projectId)}/>}</>
             )}
@@ -1064,9 +1065,4 @@ export function UIReview() {
       access={{ authenticated: null, writable: null, loginAllowed: null }}
     />
   );
-}
-
-/** Current task/project records have no explicit start/end pair. Never infer one from dueOn or stage. */
-function UnscheduledGantt({label,count,partial,onShowTable}:{label:string;count:number;partial:boolean;onShowTable:()=>void}){
- return <section className="lo-empty" aria-label={`${label}甘特`}><ChartNoAxesGantt size={28} aria-hidden="true"/><h2>尚无完整排期</h2><p>甘特仅显示有计划开始和结束日期的{label}，不会用到期日或阶段推算日期。</p><p>{partial?'当前已加载范围内':'当前'} {count} 项{label}未完整排期，可在表格中查看。</p><Button variant="outline" onClick={onShowTable}>查看{label}表格</Button></section>;
 }

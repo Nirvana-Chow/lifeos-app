@@ -1,3 +1,4 @@
+import type {PersonalPlanningFields} from '../personal-candidate/planning';
 import type{TaskCellDraftMemory}from"../personal-candidate/task-cell-draft";
 import type {PersonalEditorFields} from "../personal-candidate/editor";
 import type {PublicEntry} from "../platform/contracts";
@@ -6,7 +7,7 @@ import type {PersonalType} from "../personal-candidate/config";
 
 export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
 export type ReferenceLabel = { id: string; title: string };
-export type TaskRow = {
+export type TaskRow = PersonalPlanningFields & {
   id: string;
   revision: number;
   title: string;
@@ -23,7 +24,7 @@ export type TaskRow = {
   referenceChanged?: boolean;
 };
 export type AreaRow = ReferenceLabel & { revision: number };
-export type ProjectRow = ReferenceLabel & {
+export type ProjectRow = ReferenceLabel & PersonalPlanningFields & {
   revision: number;
   area: ReferenceLabel | null;
   stage: string | null;

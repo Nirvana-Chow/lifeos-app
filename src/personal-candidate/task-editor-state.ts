@@ -1,4 +1,4 @@
-import{editorFromEntry,type PersonalEditorFields}from'./editor.ts';
+import{editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
 import type{WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
 import{validateTodo}from'../platform/domain.ts';
@@ -23,7 +23,7 @@ export function taskCellFields(fields:PersonalEditorFields,field:'title'|'status
  if(field==='title')next.title=value;
  if(field==='due')next.date=value;
  if(field==='status'){const status=Object.entries(taskStatusLabels).find(([key,label])=>key===value||label===value)?.[0];if(!status)throw Error('状态无效。');next.status=status as PersonalEditorFields['status'];}
- validateTodo({title:next.title,notes:next.text,dueOn:next.date||null,status:next.status,...(next.personal?{personal:next.personal}:{})});return next;
+ todoDraftFromEditor(next);return next;
 }
 /** Only the popup's own submitted content can dismiss its retained draft after shared-session recovery. */
 export function taskReceiptMatchesSubmission(target:TaskTarget,fields:PersonalEditorFields|null,receipt:PublicEntry,spaceId:string|null):boolean{
@@ -31,7 +31,7 @@ export function taskReceiptMatchesSubmission(target:TaskTarget,fields:PersonalEd
  if(target.mode==='edit'&&(receipt.id!==target.task.id||receipt.revision!==target.task.revision+1)||target.mode==='create'&&receipt.revision!==1)return false;
  try{
   if(editorFromEntry(receipt,spaceId).type!=='todo')return false;
-  const expected=validateTodo({title:fields.title,notes:fields.text,dueOn:fields.date||null,status:fields.status,...(fields.personal?{personal:fields.personal}:{})});
+  const expected=todoDraftFromEditor(fields);
   return JSON.stringify(validateTodo(receipt.draft))===JSON.stringify(expected);
  }catch{return false;}
 }

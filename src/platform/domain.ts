@@ -1,3 +1,4 @@
+import {validatePlanningFields,type PersonalPlanningFields} from '../personal-candidate/planning.ts';
 import {validateRequirementMetadata,type RequirementMetadata} from '../requirements-candidate/domain.ts';
 import {validateRequirementSupportMetadata,type RequirementSupportMetadata} from '../requirement-support-candidate/domain.ts';
 import {validatePersonalRelations,validatePersonalObject,type PersonalRelations,type PersonalObject} from '../personal-candidate/business.ts';
@@ -37,12 +38,13 @@ export function validateIdempotencyKey(value:unknown):string {
  if(typeof value!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/.test(value))return invalid('INVALID_COMMAND_KEY','需要有效的请求标识。');
  return value;
 }
-export type TodoDraft={title:string;notes:string;dueOn:string|null;status:'open'|'in_progress'|'done'|'cancelled';personal?:PersonalRelations};
-export const todoKeys=['title','notes','dueOn','status','personal'] as const;
+export type TodoDraft=PersonalPlanningFields&{title:string;notes:string;dueOn:string|null;status:'open'|'in_progress'|'done'|'cancelled';personal?:PersonalRelations};
+export const todoRequiredKeys=['title','notes','dueOn','status','personal'] as const;
+export const todoKeys=[...todoRequiredKeys,'plannedStartOn','plannedEndOn'] as const;
 export function validateTodo(input:unknown):TodoDraft {
  const o=object(input,todoKeys),status=o.status===undefined?'open':o.status;
  if(!['open','in_progress','done','cancelled'].includes(status as string))return invalid('INVALID_STATUS','待办状态无效。');
- return {title:text(o.title,240).trim(),notes:text(o.notes===undefined?'':o.notes,16384,true),dueOn:date(o.dueOn,true),status:status as TodoDraft['status'],...('personal'in o?{personal:validatePersonalRelations(o.personal)}:{})};
+ return {...validatePlanningFields(o),title:text(o.title,240).trim(),notes:text(o.notes===undefined?'':o.notes,16384,true),dueOn:date(o.dueOn,true),status:status as TodoDraft['status'],...('personal'in o?{personal:validatePersonalRelations(o.personal)}:{})};
 }
 export type FinanceDraft={kind:'expense'|'income'|'refund'|'transfer'|'repayment';amountMinor:number;currency:'CNY';occurredOn:string;category:string|null;fromAccountRef:string|null;toAccountRef:string|null;originalEntryId:string|null;notes:string};
 export const financeKeys=['kind','amountMinor','currency','occurredOn','category','fromAccountRef','toAccountRef','originalEntryId','notes'] as const;

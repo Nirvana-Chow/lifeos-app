@@ -1,6 +1,6 @@
 import {ClassificationService,createClassificationAdapter} from '../personal-candidate/classification-service.ts';
 import type {PlatformRepository, PublicEntry} from '../platform/contracts.ts';
-import {object, PlatformError, todoKeys} from '../platform/domain.ts';
+import {object, PlatformError, todoKeys, todoRequiredKeys} from '../platform/domain.ts';
 import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {PersonalService, personalEntryType} from '../personal-candidate/service.ts';
@@ -43,7 +43,7 @@ function detail(entry: PublicEntry) {
 
 function updateFields(value: unknown) {
   const fields = object(value, todoKeys);
-  if (todoKeys.some(key => !Object.hasOwn(fields, key)))
+  if (todoRequiredKeys.some(key => !Object.hasOwn(fields, key)))
     throw new PlatformError(400, 'COMPLETE_TODO_REQUIRED', '更新需要完整待办字段。');
   if (fields.personal === null) delete fields.personal;
   return fields;

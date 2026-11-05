@@ -15,6 +15,8 @@ For installation, sharing and safe credential setup, read [the credential-runtim
 4. If the result is unknown, read back when possible. Retry only the exact original payload with the same key. On a revision conflict, reread and review the changed record before submitting a new command. On `429`, respect `Retry-After` when supplied, with a bounded retry within the user's request. Stop on authorization failure.
 5. Report the confirmed record type, ID, revision and applicable status. Distinguish verified changes from rejections and unknown results.
 
+`plannedStartOn` and `plannedEndOn` are optional ISO calendar dates or null on todo fields and inside project `personal` metadata. They are separate from a todo deadline or project record date. Include dates from the individual read when editing; legacy payloads omitting these keys preserve saved dates, while explicit null clears the corresponding endpoint. Validate real calendar dates and start <= end when both are set. A missing endpoint stays unscheduled; never infer either endpoint from `dueOn`, stage or record order. After a write, individually reread the same record and compare dates, source identity and revision with the receipt; report newer edits or failed readback separately. Domain and topic metadata do not support planning dates.
+
 The MCP server is not implemented. Use only the advertised HTTP operations; downloading this Skill does not enable any integration or permission.
 
 ## Owner-reviewed todo classification

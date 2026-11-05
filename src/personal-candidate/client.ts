@@ -1,3 +1,4 @@
+import {preserveOmittedPlanning} from './planning.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {personalTypes,normalizePersonalFields} from './business.ts';
 import {object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox} from '../platform/domain.ts';
@@ -30,7 +31,7 @@ export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id
 function matches(command:PersonalCommand,value:unknown):value is PublicEntry{
  if(!obj(value)||!obj(value.source)||!obj(value.source.original)||!obj(value.draft)||'ownerId'in value)return false;
  const original=value.source.original;if(original.marker!=='personal-manual-v1'&&!(command.id&&command.type==='todo'&&original.marker===appleOriginMarker)||original.spaceId!==command.spaceId||original.type!==command.type||value.kind!==(command.type==='todo'?'todo':'inbox')||value.syncState!=='draft'||value.externalStatus!==null||value.source.externalId!==value.id||value.source.system!=='website'||value.source.version!==1)return false;
- try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else object(original,['marker','spaceId','type','input']);validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
+ try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else object(original,['marker','spaceId','type','input']);validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
 }
 const unknown='保存结果尚未确认。请保留原请求，恢复当前本人身份后重试同一内容。';
 export class PersonalMutationSession{
