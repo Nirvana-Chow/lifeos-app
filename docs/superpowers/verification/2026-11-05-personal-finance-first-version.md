@@ -29,3 +29,19 @@ Continues [LO-FIN-001 / Issue 11](https://github.com/Nirvana-Chow/lifeos-app/iss
 ## Remaining gates
 
 No real record was read or written; no credentials, real API, Keychain, source migration, SQL activation, push or production action occurred. Restricted PostgreSQL restart/readback/role/grant-race qualification, root Agent/discovery/Skill parity, independent review, exact-SHA CI, module activation, actual deployed-site readback and owner experience acceptance remain separate. The existing Qianji source migration and authoritative as-of account/category/debt snapshots remain incomplete; this manual slice does not switch the finance authority or satisfy the whole6.4 checkbox.
+
+## Independent-review correction — definite rejection recovery
+
+Fixed implementation SHA: `3007afccb4d2cc0d2d6bc38679d0cea11d775381`, based on `eedbf82a30da26d49709e56623085118672ce617`. Public author/committer identity is retained. This is the first scoped correction for the independent reviewer's P2 finding; scoped reviewer recheck and root integration remain pending.
+
+Reproduced using the actual service/HTTP/client and component lifecycle: a refund form selected an expense, another window changed that expense to income, and POST returned definite400 `INVALID_REFUND_SOURCE`. The original page retained a locked command with no edit/discard exit. A recovered rejected create had the same problem. The client also allowed its public clear operation to remove an uncertain command. The corrected RED run had three corresponding failing behavioral tests before production changes; the linked-refund PATCH and failed-readback safety cases already passed and were retained as regressions.
+
+The client now distinguishes successful receipt/readback cleanup from owner-requested release: the latter requires the exact persisted command to be in `rejected` phase. A command that has ever been unknown, including a committed receipt whose independent GET failed, cannot be released even after a later definite4xx. Initial definite4xx preflight refusals with no earlier uncertainty are also recorded as rejected. The workbench restores this persisted distinction after refresh/recovery, labels definite rejection as not saved, and offers explicit continue-edit/latest-version-recheck and abandon actions. Editing preserves the entered fields and amount; discarding only clears the uncommitted request. A corrected save creates a fresh key after rejection release. Existing CAS recheck behavior is retained, and PATCH `LINKED_REFUNDS`409 is covered through that same explicit latest-version path. Real writer/refund validation, source markers and transaction guards are unchanged.
+
+Verification on the fixed source:
+
+- `node --test test/personal-finance-client.test.ts test/personal-finance-service.test.ts test/personal-finance-workbench.test.ts` —24 passed,0 failed,0 skipped. Five added tests cover definite400 refund correction/new key; rejected-create recovery/abandon restoring workspace controls; linked-refund409 recovery with preserved input; failed GET followed by400 across component/browser-state restoration retaining the identical key/body and no edit/discard actions; and the client-level rejection/unknown release boundary.
+- `npm run typecheck` — passed.
+- `git diff --check` and staged diff check — passed.
+
+No repeated full suite, production build or four-case Chrome matrix was run for this narrow correction, as requested. No push, host action, credentials, SQL or real data were used. Prior browser evidence remains evidence for the first-version source, while this correction's new rejection controls are covered by the scoped lifecycle tests and await independent review/root delivery qualification.
