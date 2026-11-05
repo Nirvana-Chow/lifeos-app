@@ -19,7 +19,7 @@ test('missing private handoff fails before trust launch or body access',async()=
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{
  assert.equal(fixture.privateCaptureCases.length,96);
  const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,96);
- const workflow=readFileSync('.github/workflows/ci.yml','utf8');
+ const workflow=readFileSync('.github/workflows/qualification.yml','utf8');
  const uploaded=Array.from(workflow.matchAll(/owner-personal-browser-screenshots\/(\S+\.png)/g),m=>m[1]);
  assert.equal(uploaded.length,112);assert.equal(new Set(uploaded).size,112);
  assert.deepEqual(uploaded.filter(name=>name.startsWith('private-')).sort(),[...expected].sort());
