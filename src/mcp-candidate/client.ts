@@ -17,7 +17,7 @@ const supported=(operation:Operation)=>policyOperationScopes(operation)!==null&&
  /^\/v1\/todos(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/organization\/(?:snapshot|\{type\}(?:\/\{id\})?)$/.test(operation.path)||
  /^\/v1\/requirements(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
- /^\/v1\/records\/(?:journal|calendar|health|person|finance)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
+ /^\/v1\/records\/(?:journal|calendar|health|person|finance|media|career|portfolio)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/feedback(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/todo-classifications\/(?:preview|commit)$/.test(operation.path));
 type FrozenRequest={requestId:string;operationId:string;argsJSON:string;path:string;encoded:string;key:string};

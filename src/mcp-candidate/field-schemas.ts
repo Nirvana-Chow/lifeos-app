@@ -6,6 +6,9 @@ import {z} from 'zod';
 import {circumferenceSites} from '../personal-health/domain.ts';
 import {requirementWorkflowStates} from '../requirements-candidate/domain.ts';
 import type {FinanceDraft} from '../platform/domain.ts';
+import {mediaKinds,mediaStates,mediaProviders,type MediaPersonal} from '../personal-media/domain.ts';
+import {applicationStates,type CareerPersonal} from '../personal-career/domain.ts';
+import {accountTypes,assetTypes,portfolioCurrencies,type PortfolioCurrency,type PortfolioPersonal} from '../personal-portfolio/model.ts';
 
 const text=(max:number,nonempty=false)=>z.string().max(max).min(nonempty?1:0).regex(/^[^\0]*$/).describe(nonempty?'Nonblank text; no NUL.':'Text; no NUL.');
 export const recordId=z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i).meta({examples:['00000000-0000-4000-8000-000000000001']});
@@ -45,6 +48,39 @@ const health=z.xor([
  z.strictObject({...healthBase,healthKind:z.literal('sleep'),startedAt:instant.nullable(),endedAt:instant.nullable().describe('Later than startedAt when both are known.'),asleepMinutes:nonnegative().nullable().describe('Minutes, no more than the known elapsed interval.'),quality:z.enum(['poor','fair','good']).nullable()}),
  z.strictObject({...healthBase,healthKind:z.literal('training'),activity:z.enum(['strength','cardio','other']),state:z.enum(['planned','completed']),startedAt:instant.nullable(),durationMinutes:nonnegative().nullable().describe('Minutes or null.'),distance:quantity(['km','mi'])}),
 ]);
+const address=text(2048).regex(/^https?:\/\//i).nullable().describe('HTTP(S) URL without username/password; this is record data, never an MCP request target. No automatic fetch.');
+const media=z.xor(mediaKinds.map(kind=>z.strictObject({
+ type:z.literal('media'),schemaVersion:z.literal(1),mediaKind:z.literal(kind),state:z.enum(mediaStates),creators:z.array(text(240)).max(20).describe('Distinct creators ignoring case; blank names normalize away.'),
+ isbn:kind==='book'?text(40).nullable().describe('Valid ISBN-10 or ISBN-13 including checksum; spaces/hyphens are normalized.'):z.null(),
+ external:z.strictObject({provider:z.enum(mediaProviders.filter(provider=>kind==='book'?provider!=='tmdb'&&provider!=='imdb':provider!=='openlibrary')),id:text(120).nullable(),url:address}).describe('Manual, OpenLibrary (book), TMDB/IMDb (film/series), or Douban. Native validation checks provider ID, official hostname/path, media kind and matching URL; external providers require HTTPS without port.'),
+ startedOn:optionalDate,finishedOn:optionalDate.describe('Cannot precede startedOn.'),rating:z.number().min(0).max(10).nullable(),
+ progress:z.xor([
+  z.strictObject({current:z.null(),total:z.null(),unit:z.null()}),
+  z.strictObject({current:z.number().min(0).max(100).nullable(),total:z.literal(100).nullable(),unit:z.literal('percent')}),
+  ...(kind==='film'?[]:[z.strictObject({current:z.number().int().min(0).max(10_000_000).nullable(),total:z.number().int().min(1).max(10_000_000).nullable(),unit:z.literal(kind==='book'?'page':'episode')})]),
+ ]).describe('Known current cannot exceed known total. Null unit requires both values null; percent total is 100 or null.'),links:completeRelations,
+}))) satisfies z.ZodType<MediaPersonal>;
+const careerDate=z.string().regex(/^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-\d{2})?)?$/).nullable().describe('Real YYYY, YYYY-MM or YYYY-MM-DD; preserve known precision, never invent month/day. Year must be positive.');
+const period=z.strictObject({startOn:careerDate,endOn:careerDate,status:z.enum(['unknown','current','ended'])}).describe('Current periods require null endOn; end cannot be definitely earlier than start.');
+const careerPins=z.array(pin).max(60).describe('Distinct current owner career fact pins; target kinds limited to education, employment or achievement.');
+const evidence=z.strictObject({label:text(240,true),url:address,reference:z.strictObject({type:z.enum(['project','domain','topic','career']),link:pin}).nullable()}).describe('Requires a nonblank label and at least a URL or current typed reference; career references must be education/employment/achievement facts.');
+const careerBase={type:z.literal('career'),schemaVersion:z.literal(1),source:z.strictObject({kind:z.literal('manual'),label:text(240).nullable(),url:address}),links:completeRelations};
+const careerFacts={highlights:z.array(text(2000)).max(60),evidence:z.array(evidence).max(30)};
+const career=z.xor([
+ z.strictObject({...careerBase,careerKind:z.literal('education'),organization:text(240).nullable(),qualification:text(240).nullable(),fieldOfStudy:text(240).nullable(),period,...careerFacts}),
+ z.strictObject({...careerBase,careerKind:z.literal('employment'),organization:text(240).nullable(),jobTitle:text(240).nullable(),period,...careerFacts}),
+ z.strictObject({...careerBase,careerKind:z.literal('achievement'),organization:text(240).nullable(),achievedOn:careerDate,...careerFacts}),
+ z.strictObject({...careerBase,careerKind:z.literal('resume'),targetRole:text(240).nullable(),facts:careerPins}),
+ z.strictObject({...careerBase,careerKind:z.literal('opportunity'),company:text(240).nullable(),role:text(240).nullable(),direction:text(240).nullable(),applicationState:z.enum(applicationStates),nextStep:text(4000).nullable(),nextStepOn:optionalDate,requirements:z.array(z.strictObject({requirement:text(2000,true),facts:careerPins,gap:text(4000).nullable(),nextAction:text(4000).nullable()})).max(40)}),
+]) satisfies z.ZodType<CareerPersonal>;
+const currency=z.enum(Object.keys(portfolioCurrencies) as [PortfolioCurrency,...PortfolioCurrency[]]).describe('Exact minor-unit decimal precision by currency: '+JSON.stringify(portfolioCurrencies)+'. No conversion or implicit rounding.');
+const minor=z.string().regex(/^(0|[1-9][0-9]{0,29})$/).nullable().describe('Exact nonnegative integer string in currency minor units, at most 30 digits. Null means unknown, never zero; known amounts require their date.');
+const portfolioBase={type:z.literal('portfolio'),schemaVersion:z.literal(1),currency,links:completeRelations};
+const portfolio=z.xor([
+ z.strictObject({...portfolioBase,portfolioKind:z.literal('account'),accountType:z.enum(accountTypes),balanceMinor:z.string().regex(/^(0|-?[1-9][0-9]{0,29})$/).nullable().describe('Exact signed minor-unit integer string, at most 30 digits. No -0. Null is unknown; known balance requires asOf.'),asOf:optionalDate}),
+ z.strictObject({...portfolioBase,portfolioKind:z.literal('asset'),assetType:z.enum(assetTypes),valuationMinor:minor,valuationOn:optionalDate,account:pin.nullable().describe('Current owner portfolio account pin, or null.')}),
+ z.strictObject({...portfolioBase,portfolioKind:z.literal('investment'),symbol:text(80).nullable(),name:text(240).nullable(),quantity:z.string().max(80).regex(/^\d+(?:\.\d+)?$/).nullable().describe('Exact nonnegative decimal string; no exponent or rounding.'),costMinor:minor,valuationMinor:minor,asOf:optionalDate,account:pin.nullable().describe('Current owner portfolio account pin, or null.'),asset:pin.nullable().describe('Current owner portfolio asset pin, or null; cannot be the same ID as account.')}),
+]) satisfies z.ZodType<PortfolioPersonal>;
 const record=(personal:z.ZodType,occurredOn:z.ZodType=optionalDate)=>z.strictObject({title:text(240,true),text:text(16384),occurredOn,personal});
 const account=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/).meta({examples:['synthetic-account']});
 const financeBase={amountMinor:z.number().int().min(1).max(1_000_000_000_000).describe('Positive integer minor units: CNY 分 (fen); 100 = CNY 1.00. No implicit conversion.'),currency:z.literal('CNY'),occurredOn:date,category:text(80,true).nullable(),notes:text(16384)};
@@ -63,6 +99,9 @@ export function writeFieldsSchema(module:string,patch:boolean):z.ZodType{
   case 'calendar':return record(calendar,z.null());
   case 'health':return record(health).describe('Complete manual health record; occurredOn must match measuredAt/startedAt in the selected zone when both are known.');
   case 'person':return record(person);
+  case 'media':return record(media);
+  case 'career':return record(career);
+  case 'portfolio':return record(portfolio);
   case 'todo':{
    const base={title:text(240,true),notes:text(16384),dueOn:optionalDate,status:z.enum(['open','in_progress','done','cancelled']),personal:relations.nullable()};
    return patch?z.strictObject({...base,...planning}):z.strictObject({...base,notes:base.notes.optional(),dueOn:base.dueOn.optional(),status:base.status.optional(),personal:base.personal.optional(),...planning});

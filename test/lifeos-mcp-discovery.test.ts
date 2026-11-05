@@ -32,18 +32,21 @@ function fromSchema(schema:Schema):any{
  assert.equal(schema.type,'string','discovery must describe a usable value');
  return 'Synthetic';
 }
-async function fixture(){
+async function fixture({readOnly=false,legacy=false,disabledTypes=[] as string[]}={}){
+ let revoked=false,loseWrite=false;
  const repository=new MemoryPort();repository.readCurrentSnapshot=async()=>structuredClone([...repository.rows.values()]);
  const transaction=repository.transaction.bind(repository);repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>true}));
- const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:[...new Set(agentOperations.flatMap(op=>op.requiredScopes))],businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:agentOperations.filter(op=>op.module!=='catalog').map(op=>op.id)};
- const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,baseURL:origin},verify:async()=>grant,readCurrentGrant:async()=>grant,operationAvailable:()=>true,assertWritable:async()=>{}});
+ const operations=agentOperations.filter(op=>op.module!=='catalog'&&(!readOnly||op.method==='GET'));
+ const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:legacy?['todo:read','todo:write'] as const:[...new Set(operations.flatMap(op=>op.requiredScopes))],...(!legacy?{businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:operations.map(op=>op.id)}:{})};
+ const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,...(!disabledTypes.includes('media')?{mediaEnabled:true}:{}),...(!disabledTypes.includes('career')?{careerEnabled:true}:{}),...(!disabledTypes.includes('portfolio')?{portfolioEnabled:true}:{}),baseURL:origin},verify:async()=>revoked?null:grant,readCurrentGrant:async()=>revoked?null:grant,operationAvailable:()=>true,assertWritable:async()=>{}});
  const requests:string[]=[];
- const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-injected-key'},async(input,init)=>{const request=new Request(input,init);requests.push(request.method+' '+new URL(request.url).pathname);request.headers.set('host',new URL(request.url).host);return handler(request);});
+ const writes:{path:string;body:string;key:string|null}[]=[];
+ const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-injected-key'},async(input,init)=>{const request=new Request(input,init);requests.push(request.method+' '+new URL(request.url).pathname);request.headers.set('host',new URL(request.url).host);if(request.method!=='GET')writes.push({path:new URL(request.url).pathname,body:await request.clone().text(),key:request.headers.get('idempotency-key')});const response=await handler(request);if(loseWrite&&request.method!=='GET'){loseWrite=false;throw Error('Synthetic lost response after commit');}return response;});
  const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-schema-consumer',version:'1'});
  const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  const discover=await client.callTool({name:'lifeos_discover',arguments:{}});assert.equal(discover.isError,false);
  const descriptors=(discover.structuredContent as {operations:Descriptor[]}).operations;
- return{client,descriptors,requests,close:async()=>{await client.close();await server.close();}};
+ return{client,descriptors,requests,writes,loseNextWrite:()=>{loseWrite=true;},revoke:()=>{revoked=true;},close:async()=>{await client.close();await server.close();}};
 }
 // Removing concrete properties/required or the operation/arguments association
 // prevents constructing any of these writes from advertised schemas alone.
@@ -51,7 +54,7 @@ test('discovery schemas construct native full POST/PATCH bodies and independent 
  const f=await fixture();try{
   const tools=await f.client.listTools(),callSchema=tools.tools.find(t=>t.name==='lifeos_call')!.inputSchema as Schema;
   assert.ok(callSchema.oneOf,'tools/list must pair each operation ID with its arguments');
-  for(const suffix of ['Finance','Journal','Calendar','Health','Person','Organization','Requirement','Todo']){
+  for(const suffix of ['Finance','Journal','Calendar','Health','Person','Organization','Requirement','Todo','Media','Career','Portfolio']){
    const create=f.descriptors.find(op=>op.id==='create'+suffix)!;
    const args=fromSchema(create.inputSchema);args.idempotencyKey='synthetic-create-'+suffix;
    assertMatches(create.inputSchema,args);assertMatches(callSchema,{operationId:create.id,arguments:args});
@@ -142,7 +145,99 @@ test('record discovery exposes discriminated metadata, nullable dates, pins and 
   const pin=byId('createPerson').properties.fields.properties.personal.properties.links.properties.project.anyOf[0];
   assert.deepEqual(pin.required,['id','sourceId','revision']);assert.equal(pin.properties.revision.minimum,1);assert.equal(pin.additionalProperties,false);
   assert.match(byId('updateJournal').description,/complete|完整/);assert.match(byId('updateJournal').properties.expectedRevision.description,/CAS/);assert.match(byId('updateJournal').properties.idempotencyKey.description,/same|原/);
-  for(const op of f.descriptors)assert.equal(/Media|Career|Portfolio/.test(op.id),false);
+  assert.equal(f.descriptors.filter(op=>/Media|Career|Portfolio/.test(op.id)).length,12);
+ }finally{await f.close();}
+});
+
+test('new record alternatives construct complete writes from their advertised schema',async()=>{
+ const f=await fixture();try{
+  for(const [suffix,discriminator,want] of [['Media','mediaKind',['book','film','series']],['Career','careerKind',['education','employment','achievement','resume','opportunity']],['Portfolio','portfolioKind',['account','asset','investment']]] as const){
+   const descriptor=f.descriptors.find(op=>op.id==='create'+suffix)!;assert.ok(descriptor,'new type must be advertised');
+   const branches=descriptor.inputSchema.properties.fields.properties.personal.oneOf;
+   assert.deepEqual(branches.map((s:Schema)=>s.properties[discriminator].const),want);
+   for(const branch of branches){const args=fromSchema(descriptor.inputSchema);args.fields.personal=fromSchema(branch);args.idempotencyKey='synthetic-new-'+args.fields.personal[discriminator];assertMatches(descriptor.inputSchema,args);const result=await f.client.callTool({name:'lifeos_call',arguments:{operationId:descriptor.id,arguments:args}});assert.equal(result.isError,false,JSON.stringify(result));assert.equal((result.structuredContent as any).readback.ok,true);}
+  }
+ }finally{await f.close();}
+});
+
+test('new modules stay absent for old grants, readonly writes and disabled native types',async()=>{
+ for(const options of [{legacy:true},{readOnly:true},{disabledTypes:['media','career','portfolio']}]){
+  const f=await fixture(options);try{
+   const descriptors=f.descriptors.filter(op=>/Media|Career|Portfolio/.test(op.id));assert.equal(descriptors.length,options.readOnly?6:0);
+   const list=await f.client.listTools();const advertised=JSON.stringify(list.tools.find(t=>t.name==='lifeos_call')?.inputSchema);
+   for(const suffix of ['Media','Career','Portfolio']){assert.equal(advertised.includes('create'+suffix),false);assert.equal(advertised.includes('update'+suffix),false);const denied=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'create'+suffix,arguments:{fields:{},idempotencyKey:'synthetic-closed'}}});assert.equal((denied.structuredContent as any).error,'OPERATION_UNAVAILABLE');}
+   assert.equal(f.writes.length,0);
+  }finally{await f.close();}
+ }
+});
+
+test('new module PATCH uses current CAS and frozen unknown-result retry without a second revision',async()=>{
+ for(const suffix of ['Media','Career','Portfolio']){
+  const f=await fixture();try{
+   const create=f.descriptors.find(op=>op.id==='create'+suffix)!;assert.ok(create);
+   const args=fromSchema(create.inputSchema);args.idempotencyKey='synthetic-retry-create-'+suffix;
+   const created=await f.client.callTool({name:'lifeos_call',arguments:{operationId:create.id,arguments:args}}),entry=(created.structuredContent as any).data.entry;
+   const update=f.descriptors.find(op=>op.id==='update'+suffix)!;const patch={id:entry.id,fields:{...entry.fields,text:'Original synthetic command'},expectedRevision:entry.revision,idempotencyKey:'synthetic-retry-update-'+suffix};assertMatches(update.inputSchema,patch);
+   f.loseNextWrite();const result=await f.client.callTool({name:'lifeos_call',arguments:{operationId:update.id,arguments:patch}}),unknown=result.structuredContent as any;assert.equal(unknown.outcome,'unknown');assert.equal(unknown.readback.data.entry.revision,2);
+   patch.fields.text='Caller changed object';const replay=await f.client.callTool({name:'lifeos_retry',arguments:{requestId:unknown.recovery.requestId}});const confirmed=replay.structuredContent as any;assert.equal(confirmed.ok,true);assert.equal(confirmed.data.duplicate,true);assert.equal(confirmed.readback.data.entry.revision,2);assert.equal(confirmed.readback.data.entry.fields.text,'Original synthetic command');assert.deepEqual(f.writes[2],f.writes[1]);
+   const stale=await f.client.callTool({name:'lifeos_call',arguments:{operationId:update.id,arguments:{...patch,idempotencyKey:'synthetic-stale-'+suffix}}});assert.equal((stale.structuredContent as any).status,409);
+   patch.expectedRevision=2;patch.idempotencyKey='synthetic-revoke-'+suffix;f.loseNextWrite();const pending=await f.client.callTool({name:'lifeos_call',arguments:{operationId:update.id,arguments:patch}});const before=f.writes.length;f.revoke();const denied=await f.client.callTool({name:'lifeos_retry',arguments:{requestId:(pending.structuredContent as any).recovery.requestId}});assert.equal((denied.structuredContent as any).status,401);assert.equal(f.writes.length,before);
+  }finally{await f.close();}
+ }
+});
+
+test('new module source pins use current owner records and reject stale or wrong-subtype references',async()=>{
+ const f=await fixture();try{
+  const schema=(id:string)=>f.descriptors.find(op=>op.id===id)!.inputSchema;
+  let command=0;
+  const send=async(id:string,args:any)=>{args.idempotencyKey='synthetic-pin-command-'+String(++command);assertMatches(schema(id),args);return(await f.client.callTool({name:'lifeos_call',arguments:{operationId:id,arguments:args}})).structuredContent as any;};
+  const save=async(id:string,args:any)=>{const result=await send(id,args);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.readback.ok,true);return result.readback.data.entry??result.readback.data;};
+  const pin=(entry:any)=>({id:entry.id,sourceId:entry.sourceId,revision:entry.revision});
+  const project=await save('createOrganization',fromSchema(schema('createOrganization'))),records:Record<string,any>={};
+  for(const suffix of ['Media','Career','Portfolio']){
+   const args=fromSchema(schema('create'+suffix));args.fields.personal.links.project=pin(project);records[suffix]=await save('create'+suffix,args);
+   const stale={...args,fields:{...args.fields,personal:{...args.fields.personal,links:{...args.fields.personal.links,project:{...pin(project),revision:2}}}}};
+   const denied=await send('create'+suffix,stale);assert.equal(denied.status,409);assert.equal(denied.error,'REFERENCE_CONFLICT');
+  }
+  const career=schema('createCareer'),resume=fromSchema(career);resume.fields.personal=fromSchema(career.properties.fields.properties.personal.oneOf.find((s:Schema)=>s.properties.careerKind.const==='resume'));resume.fields.personal.facts=[pin(records.Career)];const savedResume=await save('createCareer',resume);
+  const wrongResume={...resume,fields:{...resume.fields,personal:{...resume.fields.personal,facts:[pin(savedResume)]}}};assert.equal((await send('createCareer',wrongResume)).error,'REFERENCE_CONFLICT');
+  const portfolio=schema('createPortfolio'),asset=fromSchema(portfolio);asset.fields.personal=fromSchema(portfolio.properties.fields.properties.personal.oneOf.find((s:Schema)=>s.properties.portfolioKind.const==='asset'));asset.fields.personal.account=pin(records.Portfolio);const savedAsset=await save('createPortfolio',asset);
+  const investment=fromSchema(portfolio);investment.fields.personal=fromSchema(portfolio.properties.fields.properties.personal.oneOf.find((s:Schema)=>s.properties.portfolioKind.const==='investment'));investment.fields.personal.account=pin(records.Portfolio);investment.fields.personal.asset=pin(savedAsset);investment.fields.personal.currency='KWD';investment.fields.personal.costMinor='123456789012345678901234567890';investment.fields.personal.quantity='0.00000000000000000001';investment.fields.personal.asOf='2026-11-06';const savedInvestment=await save('createPortfolio',investment);assert.equal(savedInvestment.fields.personal.costMinor,'123456789012345678901234567890');assert.equal(savedInvestment.fields.personal.quantity,'0.00000000000000000001');
+  const wrongInvestment={...investment,fields:{...investment.fields,personal:{...investment.fields.personal,account:pin(savedAsset),asset:null}}};assert.equal((await send('createPortfolio',wrongInvestment)).error,'REFERENCE_CONFLICT');
+  const edit=await save('updateOrganization',{type:'project',id:project.id,fields:project.fields,expectedRevision:project.revision});assert.equal(edit.revision,2);
+  for(const suffix of ['Media','Career','Portfolio']){const args=fromSchema(schema('create'+suffix));args.fields.personal.links.project=pin(project);assert.equal((await send('create'+suffix,args)).error,'REFERENCE_CONFLICT');}
+ }finally{await f.close();}
+});
+
+test('full current catalog pairs all 50 reviewed operations and rejects altered new-operation scopes',async()=>{
+ const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:agentOperations}));
+ const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-full-catalog',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
+ try{
+  const discovery=await client.callTool({name:'lifeos_discover',arguments:{}}),descriptors=(discovery.structuredContent as {operations:Descriptor[]}).operations;
+  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,50);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
+  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,50);
+  for(const descriptor of descriptors){const branch=call.oneOf.find((s:Schema)=>s.properties.operationId.const===descriptor.id);assert.deepEqual(branch.properties.arguments,descriptor.inputSchema);}
+  assertMatches(call,{operationId:'createMedia',arguments:fromSchema(descriptors.find(op=>op.id==='createMedia')!.inputSchema)});
+ }finally{await client.close();await server.close();}
+ for(const suffix of ['Media','Career','Portfolio']){
+  const operation=agentOperations.find(op=>op.id==='create'+suffix)!;
+  for(const altered of [{...operation,requiredScopes:['todo:read','todo:write']},{...operation,path:'/v1/records/unreviewed'},{...operation,requiredScopes:[suffix.toLowerCase()+':write']}, {...operation,id:'createUnreviewed'}]){
+   const client=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:[altered]}));assert.deepEqual((await client.discover()).operations,[]);assert.equal((await client.execute(operation.id,{})).error,'OPERATION_UNAVAILABLE');
+  }
+ }
+});
+
+test('new record discovery keeps native normalizers authoritative for semantic constraints before any write',async()=>{
+ const f=await fixture();try{
+  for(const suffix of ['Media','Career','Portfolio']){
+   const schema=f.descriptors.find(op=>op.id==='create'+suffix)!.inputSchema,args=fromSchema(schema);args.idempotencyKey='synthetic-invalid-'+suffix;
+   if(suffix==='Media')args.fields.personal.isbn='9780000000000';
+   if(suffix==='Career')args.fields.personal.period={startOn:'2020',endOn:'2021',status:'current'};
+   if(suffix==='Portfolio')args.fields.personal.balanceMinor='123';
+   assertMatches(schema,args);const before=f.writes.length,result=await f.client.callTool({name:'lifeos_call',arguments:{operationId:'create'+suffix,arguments:args}});assert.equal((result.structuredContent as any).status,400);assert.equal(f.writes.length,before);
+  }
+  const schema=f.descriptors.find(op=>op.id==='createPortfolio')!.inputSchema,args=fromSchema(schema);args.fields.personal.balanceMinor=1.25;assert.equal(validator.getValidator(schema)(args).valid,false);
+  const media=f.descriptors.find(op=>op.id==='createMedia')!.inputSchema,input=fromSchema(media);input.fields.personal=fromSchema(media.properties.fields.properties.personal.oneOf[1]);input.fields.personal.progress={unit:'episode',current:1,total:10};assert.equal(validator.getValidator(media)(input).valid,false);
  }finally{await f.close();}
 });
 
