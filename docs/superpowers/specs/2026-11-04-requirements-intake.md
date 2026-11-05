@@ -53,3 +53,7 @@ The resulting source baseline has34 IDs. Journal/calendar/health/finance refinem
 ## Delivery boundaries
 
 The current UI slice adds a complete todo snapshot operation within the existing todo:read scope using the existing bounded full-current reader. It does not introduce organization or business write scopes. Current key grants, real source authorization, proposed SQL, import preview/commit and owner experience remain separate gates. Integration designs must include operations, discovery, Skill and actual source readback together.
+
+### 2026-11-05 owner addition — portable Skill update channel
+
+LO-AGENT-001 / Issue35 retains its original identity. Add pre-use trusted Skill update checks and discovery of newly available API contracts; generic documentation updates must preserve private local runtime/config and require compatible reviewed executable support. The key's broader personal-business/future-module authorization policy is a separate authority slice. The source now implements fixed-publisher pre-use download/validation, seq anti-rollback and recoverable atomic normal activation; synthetic source tests are not installed host automation or owner acceptance. Candidate: [bounded update channel](2026-11-05-skill-update-channel.md); execution remains personal-agent-foundation7.2/8.2, both open.

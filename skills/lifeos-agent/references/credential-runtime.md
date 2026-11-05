@@ -15,3 +15,22 @@ Prefer `GET /v2/capabilities` with catalog version `2`. Only a `404` permits dis
 The owner may explicitly change a current key's module read/write permissions on the website after verification. Write requires read in the same module. Every holder of the same key receives the changed permissions; the key bytes and expiry remain unchanged. The Skill must not call the account management API, use SQL, or acquire cookies to change permissions. An unavailable website control or missing operation is unavailable, not consent to bypass it.
 
 For a complete organization inventory, use the separately advertised `snapshotOrganization` for projects, domains and topics. It shares the website business writer; operation availability still depends on the target site's enabled and qualified capabilities. No MCP transport is available in this package.
+
+
+## On-demand documentation updates
+
+A separately reviewed POSIX local host adapter (owner/mode checks, same-filesystem symlink rename and directory fsync) may run before every Skill use:
+
+```sh
+node /absolute/path/to/reviewed/lifeos-app/scripts/lifeos-skill-before-use.ts /absolute/path/to/installed/lifeos-agent /absolute/path/to/private/skill-update-state
+```
+
+The script and its imported source are installed/reviewed local code, not downloaded package contents. An integrating host uses `withUpdatedLifeOSSkill` and loads the returned immutable version before proceeding. No cron, background process or business API/key access is involved. This package does not silently install that adapter or register a host hook; report whether the actual host has configured it.
+
+The exact publisher origin and manifest path are fixed in the trusted adapter. HTTPS/TLS and that pre-authorized publisher are the documentation trust root. Hashes verify archive/file integrity, not an independent publisher signature. The server's same-origin compromise can therefore publish malicious documentation; it still cannot change the adapter's URL allowlist, local binary, ACL, credentials or granted authority. No record or remote manifest can substitute the publisher root.
+
+Each publish increments the source release sequence when package bytes change. The private local high-water mark rejects older sequences and different manifests at the same sequence, including after a failed activation. An already installed matching version is still checked for local document modifications. A stale first-ever installation has no prior high-water evidence; no signed freshness/transparency guarantee is claimed. The HTTPS manifest is fetched without cache; a mid-release archive404 fails closed and can be checked again on the next explicit use.
+
+Only LICENSE, SKILL.md, references/credential-runtime.md and references/operations.md may come from the package. Host-specific runtime restriction and adoption references remain byte-preserved, and a fixed local restriction header is prepended to the installed Skill. Nonsecret runtime JSON and all credentials remain outside the package and are never read or replaced. Unknown files or modified managed documents stop automatic overwrite. Version directories and update state remain private and preserve previous releases; do not clean them as part of an update.
+
+The first transition from a real directory to the managed symlink has a short journaled recoverable gap; business use waits for it to finish. Later updates atomically replace the symlink only after file validation/fsync. Interrupted bootstrap/activation is recovered before new work; readback or a trusted host validation failure restores the old pointer. Concurrent updates fail closed, and a live updater lock is never stolen. A second crash while repairing a dead updater lock leaves a recovery-lock requiring trusted operator inspection; no unchecked lock deletion is prescribed. This source workflow does not claim actual host installation or production deployment.
