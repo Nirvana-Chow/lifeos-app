@@ -199,7 +199,7 @@
     },
     {
       "id": "LO-OPS-001",
-      "version": 2,
+      "version": 3,
       "title": "独立验证",
       "description": "以锁定源码和合成环境执行适用验证。",
       "status": "in_progress",
@@ -233,8 +233,8 @@
         "phaseId": "qualification",
         "priority": "P0",
         "implementation": "partial",
-        "summary": "自动 CI 已有；公开主线到生产的完整自动发布尚未接通，现为优先交付项。",
-        "nextStep": "接通主线 CI 合格后的自动构建、受控发布与版本读回，并验证失败保留旧版本、恢复路径和可定位日志。",
+        "summary": "主线自动 CI 与受信生产发布连接已启用；首轮合格提交的自动发布读回仍待验证。",
+        "nextStep": "跟踪首轮主线 CI、自动构建发布及版本读回；原生构建或发布失败后的受控恢复继续保留为未完成项。",
         "issueRefs": [],
         "prRefs": [],
         "specTaskRefs": [
