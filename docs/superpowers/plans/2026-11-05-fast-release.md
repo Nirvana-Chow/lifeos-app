@@ -40,6 +40,8 @@
 - [x] Reuse twenty existing synthetic worker tests against the actual candidate module.
 - [x] Root validated the existing8ccc image offline:44 checks, exact build, no runtime/network mounts.
 - [x] Add automatic verified-full-green manifest/receipt advancement and four bounded synthetic failure/reuse cases.
-- [ ] Independent focused review; root integrates source and reads the new workflow ID/full-green evidence.
-- [ ] Root binds the final source/workflows/policy/adapter/baseline manifests and current controller/config CAS in one reviewed installation package.
-- [ ] Root installs once, runs finite check/readback, then verifies one native build and actual startup/version publication. Failure keeps the existing live version; no forced green or manual state deletion.
+- [x] Independent focused review; root integrates source and reads the new workflow ID/full-green evidence.
+- [x] Root binds the final source/workflows/policy/adapter/baseline manifests and current controller/config CAS in one reviewed installation package.
+- [x] Root installs once, runs finite check/readback, then verifies one native build and actual startup/version publication. Pre-native failure left the previous version unchanged and the bounded automatic retry succeeded; no forced green or manual state deletion. Post-native recovery remains unqualified.
+
+Actual source, CI, automatic publication, startup/version readback and remaining visual/recovery acceptance are recorded in [the delivery record](../../verification/2026-11-05-unified-ui-qualification.md#automatic-delivery-on-2026-11-05). Routine-path publication is the final follow-up observation. The owner's subsequent request resumes business-feature delivery after this check; it does not authorize new live permissions, migrations or background services.

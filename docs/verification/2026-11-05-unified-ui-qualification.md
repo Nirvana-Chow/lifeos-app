@@ -37,3 +37,28 @@ Task 3.2 remains open. Production is last verified at `44ce13d`, not a newly dep
 The [top-level design](../superpowers/specs/2026-11-05-personal-agent-design.md) selects LangGraph with PostgreSQL and a mature worker direction; runtime is not installed/enabled by this source evidence. The [foundation plan](../superpowers/plans/2026-11-05-personal-agent-foundation.md) follows unified tools → classification review → traceable context/durable Agent. Existing source includes [organization operations](../../src/agent-api/organization.ts), [scopes](../../src/agent-api/scopes.ts), [capability registry](../../src/agent-api/capabilities.ts) and [portable Skill](../../skills/lifeos-agent/SKILL.md). Native TOTP → compiled Next PATCH → socket → restricted PostgreSQL and organization leaf cases passed in the separate fixed-source CI. Existing issued keys retain only their explicit grants.
 
 Organization SQL, live scope expansion, private runtime configuration and real classification were not executed under the fixed QA sources above. Those historical QA sources did not contain classification review. The later [atomic classification qualification](2026-11-05-atomic-classification-qualification.md) records its own source, independent tests and delivery gates; earlier separate-source runs do not qualify that later source automatically. Model/worker/RAG/MCP, broader personal data connections and real owner review remain unfinished.
+
+## Automatic delivery on 2026-11-05
+
+Earlier production observations in this document are historical. The existing private production publisher automatically delivered public main source `e83e8133fe014afd36ba154927572bd51a7e2aca` at **16:29:53 Asia/Shanghai**. No operator invocation of the build or publish service was used for this release.
+
+### Verified release
+
+- Source tree: `19aadd2d65039de64d35628d8c596f13aba52fe4`.
+- [Release CI 41991249397, attempt 1](https://github.com/Nirvana-Chow/lifeos-app/actions/runs/41991249397): both required jobs succeeded.
+- [Required qualification 41991249279, attempt 1](https://github.com/Nirvana-Chow/lifeos-app/actions/runs/41991249279): all three declared security/data jobs succeeded, including isolated PostgreSQL, authentication, recovery/MFA and applicable owner HTTP/browser cases.
+- The existing server timer detected the qualified source. An incomplete source download failed before native state changed; its bounded automatic retry succeeded. Both attempts remain recorded.
+- The native publisher built one production image, checked that same image with the compiled-platform guard, published it and completed its health/version readback. The image check passed; it does not claim HTTP, browser, database or user acceptance.
+- Running source, source approval, completed build/publish receipts and container build agree: build `tkYBIWtsEUcvCjtIqlEL3`, image `sha256:8d2510ae843b2990e77f38249d4646cfa9876431054e7048cb79cf132e6a7c33`.
+- Fresh readback confirmed a running container, successful publisher exit and an active waiting timer. The website's login response contains the same build. Anonymous owner-requirements and Agent discovery requests return `401` with `private, no-store`.
+- Startup verification confirms owner requirements enabled, the original five allowed business types unchanged and the new Agent module flags absent. This release did not expand existing keys or migrate personal records.
+
+### Ongoing path and timing
+
+Public CI has read-only permissions and no production credentials. The existing private timer polls every three minutes with jitter, independently verifies source and CI evidence, then builds and publishes. Ordinary descendants use cumulative changes from the verified qualification baseline; reviewed routine paths can use the short release path. Unknown or sensitive changes require the declared complete security/data qualification. A normal source update does not require another server configuration change.
+
+For this first sensitive-source release, required CI took about 18 minutes. The successful server attempt took 5 minutes 32 seconds from qualification detection to health/version completion, including source preparation; native build/publish took 4 minutes 15 seconds. The Next.js build step took about 70 seconds. These are observed timings, not a one-minute delivery guarantee. The next documentation-only update verifies the routine path separately.
+
+### Remaining acceptance
+
+[Independent visual qualification 41991249579](https://github.com/Nirvana-Chow/lifeos-app/actions/runs/41991249579) failed its visual matrix/browser step. Its full capture/history work remains open; release eligibility does not imply visual acceptance. The owner has not accepted the real-account interface. Post-native failure recovery has not been qualified by this successful release. Business work was paused for this CI/CD task; the owner subsequently requested continued feature delivery after routine-path verification.
