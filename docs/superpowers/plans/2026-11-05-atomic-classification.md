@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 保留原 `LO-TASK-001`/#5、`LO-PROJECT-001`/#7、`LO-AGENT-001`/#35 和 identity/privacy 原需求；不改原 UI 五任务/2/5 或冒充其未完成验收已关闭。
+- 保留原 `LO-TASK-001`/#5、`LO-PROJECT-001`/#7、`LO-AGENT-001`/#35 和 identity/privacy 原需求；原 UI 五个任务 ID、继承2/5和后续唯一清单的资格状态保留，未完成运行/本人验收不代签。
 - A1 已提供完整组织 snapshot、明列 scopes、原 v1/v2 catalog 合同和 `(kind,id)` 记录锁 helper；直接复用，不重复实现 todo sourceId 或重开 scope 设计。
 - 已入池范围内普通编码、迭代设计和工程交付自主推进；真实 SQL/角色、现 key 写 scope、私有配置、真实分类清单及数据迁移须具体固定包授权，只暂停受影响动作。
 - 分类只改 `personal` 关系，不改 title/notes/status/dueOn/source/createdAt，不删/合并/自动裁决重复，不上游回写。
@@ -66,6 +66,7 @@ type ClassificationPlan = Readonly<{
  schemaVersion:1;proposalRevision:1;ownerId:string;spaceId:string;
  grantId:string|null;producerAuthorizationRevision:string|null;policyRevision:string;
  runProvenance?:Readonly<{runId:string;capabilityRef:string}>;
+ referenceObservationDigest?:string; // A2.3a: new previews require hex64; absent legacy stays strict
  createdAt:string;preview:ClassificationPreview;
 }>;
 type ClassificationApproval = Readonly<{
@@ -79,7 +80,7 @@ type ClassificationReceipt = Readonly<{
 }>;
 type ClassificationReview = Readonly<{
  preview:ClassificationPreview;approval:ClassificationApproval|null;
- committed:boolean;stale:boolean;
+ committed:boolean;stale:boolean;receipt:ClassificationResult|null;
  labels:Readonly<{
   todos:readonly Readonly<{id:string;sourceId:string;revision:number;title:string}>[];
   organization:readonly Readonly<{type:OrganizationType;id:string;sourceId:string;revision:number;title:string}>[];
@@ -98,6 +99,7 @@ interface ClassificationTransaction extends Transaction {
  saveClassificationApproval(approval:ClassificationApproval):Promise<void>;
  classificationReceipt():Promise<ClassificationReceipt|null>;
  classificationPlanCommitted(planId:string):Promise<boolean>;
+ classificationPlanReceipt(planId:string):Promise<ClassificationReceipt|null>; // ninth DAO added in A2.3a
  saveClassificationReceipt(receipt:ClassificationReceipt):Promise<void>;
 }
 interface ClassificationRepository extends PlatformRepository {
@@ -106,11 +108,12 @@ interface ClassificationRepository extends PlatformRepository {
 }
 declare class ClassificationService {
  constructor(repository:ClassificationRepository,config:PersonalConfig,
-  authority:AuthorityService,clock?:()=>number); // default Date.now
- preview(actor:TrustedActor,input:unknown,guard:PersonalGuard):Promise<ClassificationPreview>;
- review(actor:TrustedActor,planId:string,guard:PersonalGuard):Promise<ClassificationReview>;
- approve(actor:TrustedOwnerActor,input:unknown,guard:PersonalGuard):Promise<ClassificationApproval>;
- commit(actor:TrustedActor,input:unknown,key:string,guard:PersonalGuard):Promise<ClassificationResult>;
+  options:{authority:AuthorityService;assertReady:()=>Promise<void>;assertWritable:()=>Promise<void>;policyRevision:()=>string;now?:()=>number});
+ preview(actor:TrustedActor,input:unknown):Promise<ClassificationPreview>;
+ review(actor:TrustedActor,planId:string):Promise<ClassificationReview>;
+ previewSelection(actor:TrustedActor,basePlanId:string,input:unknown):Promise<ClassificationPreview>;
+ approve(actor:TrustedActor,input:unknown):Promise<ClassificationApproval>;
+ commit(actor:TrustedActor,input:unknown,key:string):Promise<ClassificationResult>;
 }
 ```
 
@@ -154,17 +157,37 @@ approve 和 commit 均在运行时再次判别 actor，类型约束不是鉴权�
 - [ ] **Step 4: GREEN 与真实 PG 并发/恢复资格。** 跑 Step2，及 `RUN_CLASSIFICATION_POSTGRES_TESTS=1 LIFEOS_FIXTURE_FRESH=approved-isolated-fixture node --test --test-isolation=none --test-concurrency=1 test/classification-postgres.integration.test.ts`。fixture 在 A1 已隔离服务上显式 apply0012，不读真实配置。read-only grant preview→owner批准/commit成功且grant字节/scopes/expiry未变；该grant的APIcommit403；撤销/失去producer read scope先赢时ownercommit403零写，preview read fence先赢可先完成。另验证API提交者丢write拒绝，但owner不因producer本来无write被拒。固定 A/Z barrier 覆盖交叉 batch、project PATCH、todo PATCH；不同 key 同 plan 全no-op一200一409；同 key同body一提交一duplicate、改body409；最后一条冲突零写；maintenance排他等待；commit先持grant SHARE则可先完成而撤销等待。producer撤销/丢read后新commit及receipt恢复拒绝，不能声称中断已授权锁事务。断连后同payload/key恢复、后续编辑/过期后历史receipt恢复、当前仍具所需权限的API与owner网页同key恢复，都没有第二次record/history写入。enabled零skip。
 - [ ] **Step 5: 独立代码/安全 review 后提交。** `git commit -m 'feat: atomically commit owner-reviewed todo relations'`。原 single writer、授权边界及 publicCI 只读保持；module/readiness不合格不宣告preview/commit。普通实现继续到网页，不停在只有API的候选。
 
-### Task 3: [A2.3] 可见 diff 审核、unknown 恢复和同片交付
+### Task 3: [A2.3a] 审核安全、只读回执和受约束部分选择
+
+**Files:** Modify `src/personal-candidate/classification-{contracts,service,postgres,http}.ts`、`src/platform/contracts.ts`、`test/helpers/classification-memory.ts`、`db/0012_todo_classification.proposed.sql` 及对应 contracts/service/http/PG tests；仅必要时改同client composition/runtime owner operation allowlist。没有新表、角色、依赖、writer 或 Agent operation。
+
+**Interfaces:** 新 `ClassificationPlan.referenceObservationDigest?:string`（内部hex64）、`ClassificationReview.receipt:ClassificationResult|null`、第九DAO `classificationPlanReceipt(planId)`；owner-only `previewSelection(actor,basePlanId,input)` 与 `POST /api/platform/personal/todo-classifications/{basePlanId}/preview`，exact body `{selectedTodoIds}`。全套合同见本计划 ignored ledger `task-3-preflight-review.md`；唯一memory实验已证明历史before引用在target正常更新后卡死。该报告的精确canonical输入/物理排序/复验点纳入本任务，不复制服务端算法到客户端。
+
+- [ ] **Step 1: 写并运行 RED。** 新preview允许真实历史before@1在目标@2时刷新、移除、换关联；after旧版/ahead/错source/type/foreign/missing仍拒。preview后before-only target变化使approve/commit409且零业务写；legacy缺观察值保持strict，篡改观察或plan digest拒。运行 contracts/service/http 焦点并保存实际RED；不能改真实before或先单条写todo规避。
+- [ ] **Step 2: 实现观察绑定。** 新preview锁全部直接todo与before/after targets，todo exact before/source/revision；before同owner/space/type/source且revision≤current，after exact current。复用 `personalRecordLockOrder`，hash输入固定 `{version:'classification-reference-observation-v1',ownerId,spaceId,records:[{kind,id,type,sourceId,revision}]}`。新preview必填；approve/无receipt新commit/review锁后重算，legacy走原strict；只比较pre-write map，不能对递增todo自冲突。plan digest自然绑定观察。proposed0012仅classification_valid plan分支optional key及hex校验；不改表/ACL/trigger，不静默更新fixture hash。
+- [ ] **Step 3: 实现receipt/selection并 GREEN。** DAO按owner/space/plan，decodeReceipt+assertReceiptMatchesPlan，service再次验证；review.committed由validated receipt决定。GET当前MFA+producer read fence，写关闭、到期/后来编辑/policy变化仍可读历史，不调用write guard；撤销/失read/MFA失效403。subset严格distinct1..100 UUID且均是base成员，原序；producer fence→base advisory→拒approved/consumed/run provenance→current(base)→全base物理/观察验证→current+owner再验→selected新plan。保留原producer/grant/policy和expiresAt，新ID/digest/selected观察、无approval，不调用generic owner preview。未选记录stale也拒；旧新plan独立，不承诺撤销。测试边界/extra字段/乱序/全base stale/批准或到期先赢/锁等待MFA变化，零额外业务/history。原receipt replay和逐次write前授权保留。
+- [ ] **Step 4: 启用 PG 资格。** 先报告旧/新SQL和函数候选差异；root唯一fixture lifecycle与controlled amendment writer。仅root exact-target/hash/marker/0client/oldfunction/readback/metadataCAS追加证据链后更新未发布隔离validator，不reset/drop/改业务。完整 enabled PG测试新增新旧validator/DAO隔离、target编辑与approve/commit、subset与approval竞态、GET等待MFA变化；保留原ACL/锁/receipt/no-op，叶零skip。补focused/type/full，保存provenance。
+- [ ] **Step 5: 提交并独立 review。** `git commit -m 'fix: bind classification observations and recover reviewed results'`；报告RED/GREEN、actualPG和未运行项。本内部子任务不勾canonical2.3，网页/整片CI仍必须完成。
+
+### Task 4: [A2.3b] 可见 diff Dialog、unknown 恢复和 Skill
 
 **Files:** Create classification-review.tsx/.module.css 与 browser test；Modify 原 workspace 的 finite plan 入口、generic Skill、reference/artifact generator、CI和既有 requirements/Issue映射。
 
-**Interfaces:** `ClassificationReview({planId,onClose}:{planId:string;onClose:()=>void})` 只接 UUID planId，不接 key/actor/外部URL。review 返回当前可见 labels及stale/approval/committed；当前标题不是历史快照，source/revision变更使stale=true并禁止提交，commit锁后仍最终裁决。没有 plan 列表或后台执行器；owner 原生操作及 Agent 返回的 plan 可打开同一网页审核入口。
+**Interfaces:** `ClassificationReview({planId,onClose}:{planId:string;onClose:()=>void})`只接UUID，不接key/actor/URL，必要时增加host close guard/container/onPlanChange窄回调。finite `modal=classification&planId=<UUID>`保留canonical背景；type-only import DTO，不能把node:crypto带进client。review返回receipt/当前labels；当前标题不是历史快照。Web Crypto key=`cls-`+SHA256(JSON.stringify([planId,digest]))共68字符，满足现8..96界限；body固定 `{digest,confirmed:true}`，route注入planId。刷新只GET；approval/commit未知不自动POST。
 
-- [ ] **Step 1: 写真实浏览器 RED。** 在360/1365px双主题显示 todo/目标名称、ID/版本、before→after、条数/no-op/到期和影响；非关系字段只读。取消零approve/commit；“确认这批关系并提交”串行approve→commit各一次；审批失败不commit。unknown 冻结原command/body/key，刷新后读receipt与实际记录；409保留差异并要求新preview，不能自动追新revision提交。编辑或选部分条目生成新plan并撤销旧UI批准；expired/revoked/stale/MFA丢失真实不可用。busy/unknown、Escape、焦点、导航guard及刷新恢复不丢请求。
+- [ ] **Step 1: 写真实浏览器 RED。** 在360/1365px双主题显示todo/目标名称、before→after、条数/no-op/到期和影响，ID/版本等细节折叠，非关系字段只读。取消零POST；确认串行approve→commit各一次，审批失败不commit。unknown冻结原command/body/key，刷新GET receipt再逐条GET实际记录，显式同key重试；409不追新revision。仅approval前允许subset，成功读到新plan才切URL，approved/unknown锁选择，关闭不撤销服务器批准。receipt优先于stale，后续变化只报告；401/403隐藏diff并保留显式重新登录恢复位置。busy/unknown、Escape/outside、焦点、背景草稿/scroll、back-forward及跨导航guard均核验，不能把用户永久困在unknown。
 - [ ] **Step 2: 运行 RED。** `RUN_CLASSIFICATION_BROWSER_TESTS=1 node --test --test-concurrency=1 test/classification-review-browser.integration.test.ts`，使用现有实际 Chrome（可由 `LIFEOS_TEST_CHROMIUM_PATH` 提供）；缺新UI/flow应失败。现 synthetic Next browser fixture 可以证明UI，但不能替 A2.2 的 native MFA/真实PG身份与事务验收。
-- [ ] **Step 3: 实现现组件组合与 Skill。** 用 Radix Dialog+固定ReUI只读diff、同一 entity/detail链接和原导航保护，不造另一 writer。Skill顺序固定：完整 todo/组织读取→目录建议→具体授权后建目录并读回→真实ID preview→owner网页审核receipt→精确commit→逐条GET核source/revision/关系。后续编辑只报告，不补写覆盖。新Skill遵 A1 v2 catalog，unknown只重试同body/key，未经支持的merge/delete停在候选。生成 operations/artifact；未实现 MCPtransport不宣告工具可用，未来MCP复用同registry/service，不取得approve。
-- [ ] **Step 4: 验证、独立 review 和固定 SHA CI。** A2.1/2焦点、实际PG、四组真实Chrome以及下方共同门禁全部执行；独立审实际 diff/交互、authority/receipt/锁序/隐私/许可，保留原 TLS/recovery/Auth 与 UI performance 门禁。记录fail/skip/unavailable，不以截图或HTTP200当业务读回。CI完整通过后依已有流程继续常规集成/已授权发布读回。
-- [ ] **Step 5: 提交并准备具体启用包。** `git commit -m 'feat: add owner classification review and recovery'`。固定包列源码/制品、0011/0012 SQLhash与全文摘要、目标/ACL、非秘密 grant/current scopes/expiry/digest、加密/独立恢复/rollback、目录精确清单、planId/digest/全部before→after与逐条读回。真实启用和该清单执行须对应授权；其它已授权代码/资格继续。本人只在实际HTTPS网页检查真实结果，不以合成演示代签体验验收。
+- [ ] **Step 3: 实现现组件组合与 Skill。** 复用Radix Dialog/ReUI/theme portal、原workspace history/nav/anchor/settings切换保护，不增竞争popstate监听，modal精确判别且classification不误开settings。空闲outside/Escape关闭、全屏展开，busy/unknown挡意外dismiss；只有URL持久化planId，无正文/凭据storage。Skill顺序：完整todo/组织读取→目录建议→具体授权建目录并读回→真实ID preview→owner网页审核链接→精确commit→逐条GET source/revision/关系。read-only producer可建议，批准不扩权，Agent commit仍需write。unknown同body/key或owner GET恢复，subset同expiry/全basecurrent/旧新独立。owner-private接口不进Agent/MCPcatalog，生成operations/artifact并跑原sync/download；MCP/worker不冒充已启用。
+- [ ] **Step 4: GREEN、提交与独立 UI review。** 四布局真实Chrome、现organization/key/settings smoke、导航/type/focused与Skill同步；保存精确日志/有限内部合成captures，MemoryUI不替native auth/PG。`git commit -m 'feat: add owner classification review dialog and recovery'`；actual vs未验证分开，canonical2.3留给Task5。
+
+### Task 5: [A2.3c] 整片资格、CI与具体启用候选
+
+**Files:** `.github/workflows/ci.yml`及现CI fixture helpers/tests窄接线、原public requirements evidence/verification doc、ignored `.release-local/`固定包。沿同一canonical2.3，不开新需求池。
+
+- [ ] **Step 1: 接 enabled PG/Chrome门禁。** 复用固定隔离目标/role/readiness，分类leaf/parent/capture数按实际执行断言。保留全部organization/nativeMFA/TLS/recovery/五组118/performance/三回执与只读CI权限；default skip不算acceptance。MemoryNextUI与nativePG分开披露，未跑mounted native分类HTTP不宣称。
+- [ ] **Step 2: 共同验证、独立整片 review 与fixedSHA CI。** 运行下方full/type/defaultclosedwebpack/same-output/OpenSpec/Skill/lock，nativePG和四布局Chrome；most-capable审整分支权限/观察/receipt/锁/隐私/许可和实际交互，修复后窄复审。固定head完整CI通过才普通PR/merge，沿已授权分支保护。公共进度仅基于真实证据，保留全部需求ID/验收；早期QA“不含分类”改成历史固定source范围而非移动branch断言。
+- [ ] **Step 3: 固定启用包。** 列源码/制品、0011/0012 SQLhash/摘要、精确target/ACL、非秘密grant/scopes/expiry/digest、加密与独立restore/rollback、issuer lifecycle/privateoverlay变化、目录精确清单、真实plan/digest/全before→after/逐条GET。未满足项NO-GO，不执行真实SQL/权限/配置/数据来填证据。只执行已具体授权且包合格发布部分，HTTPS版本/主流程真实回读；owner体验不代签，独立工程继续。
+- [ ] **Step 4: canonical与continuity收口。** Task3–5实际source门禁均完成才勾原2.3；运行启用、真实迁移、本人验收分别开放，不关闭更大PersonalAgent目标。
 
 ## A2 共同验证与交付 GO
 

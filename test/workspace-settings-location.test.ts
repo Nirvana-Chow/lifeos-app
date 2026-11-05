@@ -18,3 +18,11 @@ test('all personal sidebar adapters use the matters label while canonical todo I
  assert.equal(nav.privateNavigation.find(item=>item.id==='todos')?.title,'事项');
  assert.equal(nav.privateHrefs.todos,'/personal?page=tasks');
 });
+
+test('classification location accepts only a finite UUID and preserves the background',()=>{
+ const id='11111111-1111-4111-8111-111111111111';
+ const location=nav.readWorkspaceLocation({page:'tasks',modal:'classification',planId:id});
+ assert.deepEqual(location,{page:'tasks',modal:'classification',planId:id});
+ assert.equal(nav.workspaceLocationHref(location),'/personal?page=tasks&modal=classification&planId='+id);
+ for(const planId of [undefined,['11111111-1111-4111-8111-111111111111'],'/login','https://example.org','not-a-uuid'])assert.deepEqual(nav.readWorkspaceLocation({page:'tasks',modal:'classification',planId}),{page:'tasks'});
+});

@@ -137,6 +137,16 @@ jobs:
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Organization PG skip or failure is not acceptance'
           print('PASS: 19 organization PG leaf cases; zero skips, source/run-bound independent service.')
           PY_ORGANIZATION_PG
+      - name: Qualify enabled atomic classification on the source-bound organization PostgreSQL service
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+          RUN_CLASSIFICATION_POSTGRES_TESTS: '1'
+        run: |
+          set -euo pipefail
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-pg.xml" test/classification-postgres.integration.test.ts
+          python3 scripts/check-classification-junit.py postgres "$RUNNER_TEMP/classification-pg.xml"
       - name: Prepare the empty runner-local synthetic PostgreSQL fixture
         run: |
           node --input-type=module <<'JS'
@@ -284,7 +294,7 @@ jobs:
   recovery-pg:
     name: Isolated PostgreSQL recovery and native MFA
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
@@ -415,6 +425,14 @@ jobs:
           command -v google-chrome >/dev/null
           command -v certutil >/dev/null
           google-chrome --version
+      - name: Qualify enabled classification review in isolated desktop and mobile Chrome
+        env:
+          RUN_CLASSIFICATION_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-browser.xml" test/classification-review-browser.integration.test.ts
+          python3 scripts/check-classification-junit.py browser "$RUNNER_TEMP/classification-browser.xml"
       - name: Exercise key dialogs, settings and requirements in isolated desktop and mobile Chrome
         env:
           RUN_AGENT_KEY_BROWSER_TESTS: '1'

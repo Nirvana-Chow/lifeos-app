@@ -1,3 +1,6 @@
+import {classificationDigest} from '../personal-candidate/classification-contracts.ts';
+import {ClassificationService,classificationPolicyRevision} from '../personal-candidate/classification-service.ts';
+import {verifyClassificationPool} from '../personal-candidate/classification-postgres.ts';
 import {readPersonalConfig, type PersonalConfig} from '../personal-candidate/config.ts';
 import {requirePersonalBusinessWrite} from '../personal-candidate/runtime-http.ts';
 import {readPlatformConfig, type PlatformConfig} from '../platform/config.ts';
@@ -13,7 +16,8 @@ import {agentOperations} from './capabilities.ts';
 type AgentConfig = NonNullable<ReturnType<typeof readAgentRuntimeConfig>>;
 type Handler = ReturnType<typeof createAgentHandler>;
 
-let pending: Promise<Handler> | undefined;
+type AgentRuntime={handler:Handler;readCurrentGrant:(id:string)=>ReturnType<typeof readCurrentAgentGrant>};
+let pending: Promise<AgentRuntime> | undefined;
 
 function failure(status: 403 | 404 | 503, code: string): Response {
   return Response.json({error: code}, {status, headers: {
@@ -35,7 +39,7 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string) {
     if (row.id !== id || typeof row.referenceId !== 'string' || !row.referenceId || !metadata || typeof metadata !== 'object' ||
         typeof metadata.spaceId !== 'string' || !metadata.spaceId || row.enabled !== true && row.enabled !== null ||
         expires !== null && (!Number.isFinite(expires) || expires <= Date.now()) || !scopes) return null;
-    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes};
+    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString()})};
   } catch {return null;}
 }
 
@@ -45,6 +49,10 @@ export function agentOperationAvailable(id:string, personal:PersonalConfig, fenc
   if (!operation || operation.module === 'catalog') return false;
   if (operation.module === 'todo' && !personal.allowedTypes.includes('todo')) return false;
   if (operation.module === 'organization' && (!modules.organization || !fenceReady || !organizationTypes.every(type=>personal.allowedTypes.includes(type)))) return false;
+  if(operation.module==='classification'){
+    if(!modules.classification||!modules.organization||!fenceReady||!['todo',...organizationTypes].every(type=>personal.allowedTypes.includes(type as typeof personal.allowedTypes[number])))return false;
+    if(id==='previewTodoClassification')return true;
+  }
   if (operation.method === 'GET') return true;
   if (!fenceReady) return false;
   try {requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''); return true;} catch {return false;}
@@ -92,7 +100,7 @@ export async function verifyAgentBusinessReadiness(pool:{query:(sql:string)=>Pro
     throw new PlatformError(503,'AGENT_API_UNAVAILABLE','业务授权检查暂不可用。');
 }
 
-async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<Handler> {
+async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<AgentRuntime> {
   const [{Pool}, {betterAuth}, {apiKey}] = await Promise.all([
     import('pg'), import('better-auth'), import('@better-auth/api-key'),
   ]);
@@ -149,13 +157,16 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
     });
     await auth.$context;
 
+    const repository=new PostgresPlatformRepository(business as SqlPool,true,true,modules);
+    const classificationReady=async()=>{await verifyAgentBusinessReadiness(business);await verifyClassificationPool(business as SqlPool);};
     const handler=createAgentHandler({
       enabled: true,
       modules,
       fenceWrites: true,
       mountPath: '/api/platform/agent',
       config: personal,
-      repository: new PostgresPlatformRepository(business as SqlPool, true, true, modules),
+      repository,
+      ...(modules.classification?{classification:(authority:import('../agent-authority/service.ts').AuthorityService)=>new ClassificationService(repository,personal,{authority,assertReady:classificationReady,assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''),policyRevision:()=>classificationPolicyRevision(personal)})}:{}),
       verify: async token => {
         const result = await auth.api.verifyApiKey({body: {key: token}});
         if (result.error?.code === 'RATE_LIMITED') throw new PlatformError(429, 'RATE_LIMITED', '请求过于频繁。');
@@ -167,10 +178,14 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         return {grantId: key.id, ownerId: key.referenceId, spaceId, scopes};
       },
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id),
-      operationAvailable: id => agentOperationAvailable(id, personal, fenceReady,modules),
+      operationAvailable: async id => {
+        if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
+        if(agentOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
+        return true;
+      },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
-    return modules.organization?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler;
+    return{handler:modules.organization?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id)};
   } catch (error) {
     await Promise.allSettled([business.end(), verifier.end()]);
     throw error;
@@ -192,9 +207,19 @@ export async function handleAgentRequest(request: Request): Promise<Response> {
       pending = undefined;
       throw error;
     });
-    return await (await pending)(request);
+    return await (await pending).handler(request);
   } catch (error) {
     if (error instanceof PlatformError && error.code === 'ORIGIN_DENIED') return failure(403, 'ORIGIN_DENIED');
     return failure(503, 'AGENT_API_UNAVAILABLE');
   }
+}
+
+/** Reuse the existing verifier pool lazily; owner-origin plans never call this reader. */
+export async function getAgentGrantReader():Promise<AgentRuntime['readCurrentGrant']|null>{
+ if(process.env.LIFEOS_AGENT_CLASSIFICATION!=='todo-classification-v1')return null;
+ const platform=readPlatformConfig(process.env),personal=platform?readPersonalConfig(process.env,platform):null;
+ const config=platform?readAgentRuntimeConfig(process.env,platform,personal):null;
+ if(!platform||!personal||!config||!readAgentBusinessModules(process.env,personal).classification)return null;
+ pending??=initialize(platform,personal,config).catch(error=>{pending=undefined;throw error;});
+ return (await pending).readCurrentGrant;
 }

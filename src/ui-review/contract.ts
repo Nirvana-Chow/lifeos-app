@@ -62,7 +62,7 @@ export type WorkspacePage =
   | "settings"
   | "requirements";
 export type SettingsPanel = "general" | "topics" | "security" | "api-keys";
-export type WorkspaceLocation = {page: Exclude<WorkspacePage,"settings">; modal?: "settings"; panel?: SettingsPanel};
+export type WorkspaceLocation = {page: Exclude<WorkspacePage,"settings">} & ({modal?: undefined; panel?: never; planId?: never}|{modal:"settings"; panel?: SettingsPanel; planId?: never}|{modal:"classification"; planId:string; panel?: never});
 export type TaskView = "list" | "table" | "board";
 export type TaskFilter = {
   query: string;
@@ -77,7 +77,10 @@ export type LifeOSWorkspaceProps = {
   access: WorkspaceAccess;
   initialPage?: WorkspacePage;
   initialView?: TaskView;
-  initialModal?: "settings";
+  initialModal?: "settings" | "classification";
+  initialClassificationPlanId?: string;
+  classificationCloseGuard?: {current: (() => boolean) | null};
+  renderClassification?: (planId: string, close: () => void, changePlan: (id: string) => void, container: HTMLElement | null) => ReactNode;
   initialSettingsPanel?: SettingsPanel;
   onBeforeSettingsChange?: () => boolean;
   settingsCloseGuard?: {current: (() => boolean) | null};

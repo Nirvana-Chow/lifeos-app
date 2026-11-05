@@ -3,6 +3,8 @@ export type {AgentScope} from './scopes.ts';
 export const agentApiVersion = '1';
 
 export const agentOperations = [
+  {id:'previewTodoClassification',method:'POST',path:'/v1/todo-classifications/preview',module:'classification',requiredScopes:['todo:read','organization:read'] as readonly AgentScope[],description:'Preview one immutable classification of 1 to 100 todos without business writes; owner review is required.'},
+  {id:'commitTodoClassification',method:'POST',path:'/v1/todo-classifications/commit',module:'classification',requiredScopes:['todo:read','todo:write','organization:read'] as readonly AgentScope[],description:'Atomically commit an owner-approved plan with its digest and an idempotency key; preserve the same key and body for unknown-result recovery.'},
   {id:'discoverV2', method:'GET', path:'/v2/capabilities', module:'catalog', requiredScopes:[] as readonly AgentScope[], description:'Discover operations permitted for the current grant.'},
   {id: 'discover', method: 'GET', path: '/v1/capabilities', scope: 'todo:read', module: 'todo', requiredScopes: ['todo:read'] as readonly AgentScope[], description: 'Discover operations permitted for the current grant.'},
   {id: 'listTodos', method: 'GET', path: '/v1/todos', scope: 'todo:read', module: 'todo', requiredScopes: ['todo:read'] as readonly AgentScope[], description: 'Read a bounded list of todo summaries.'},
