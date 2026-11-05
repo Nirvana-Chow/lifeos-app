@@ -1,8 +1,9 @@
+import {normalizeOperationGrantScopes} from '../agent-api/business-policy.ts';
+import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
 import {agentOperations} from '../agent-api/capabilities.ts';
-import {normalizeAgentScopes, type AgentScope} from '../agent-api/scopes.ts';
 import type {AuthoritySourceRef,TrustedActor,TrustedAgentActor,TrustedOwnerActor} from './contracts.ts';
 type Owner = Readonly<{ownerId:string;spaceId:string;sessionRef:string}>;
-type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly AgentScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
+type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly OperationScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
 type Deps = Readonly<{ownerId:string;spaceId:string;verifyOwner:(headers:Headers)=>Promise<Owner|null>;verifyAgent:(key:string)=>Promise<Agent|null>;readCurrentAgent?:(grantId:string)=>Promise<Agent|null>}>;
 export class AuthorityService {
   private readonly issued = new WeakMap<object, () => Promise<Owner|Agent|null>>();
@@ -20,8 +21,8 @@ export class AuthorityService {
   async resolveAgentActor(key: string): Promise<TrustedAgentActor|null> {
     const grant = await this.deps.verifyAgent(key);
     if (!this.bound(grant) || !grant?.grantId) return null;
-    let scopes: readonly AgentScope[];
-    try {scopes = normalizeAgentScopes(grant.scopes);} catch {return null;}
+    let scopes: readonly OperationScope[];
+    try {scopes = normalizeOperationGrantScopes(grant);} catch {return null;}
     const actor = Object.freeze({kind:'agent-grant',ownerId:grant.ownerId,spaceId:grant.spaceId,grantId:grant.grantId,scopes,...(grant.businessDataPolicy?{businessDataPolicy:grant.businessDataPolicy,allowedOperationIds:Object.freeze([...(grant.allowedOperationIds??[])])}:{})}) as TrustedAgentActor;
     this.issued.set(actor, () => this.deps.readCurrentAgent?.(grant.grantId) ?? Promise.resolve(null)); return actor;
   }
@@ -40,7 +41,7 @@ export class AuthorityService {
     const check = this.issued.get(actor);
     // Server-owned policy only; private owner review/approval never enters Agent discovery.
     const operation = actor.kind === 'owner-session' && ['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)
-      ? {requiredScopes:[] as readonly AgentScope[]} : agentOperations.find(entry => entry.id === operationId);
+      ? {requiredScopes:[] as readonly OperationScope[]} : agentOperations.find(entry => entry.id === operationId);
     if (!check || !operation || sourceRefs.length) throw Error('Authority unavailable');
     const current = await check();
     if (!this.bound(current)) throw Error('Authority unavailable');
@@ -48,8 +49,8 @@ export class AuthorityService {
       if (!current || !('sessionRef' in current) || current.sessionRef !== actor.sessionRef) throw Error('Authority unavailable');
     } else if (actor.kind === 'agent-grant') {
       if (!current || !('grantId' in current) || current.grantId !== actor.grantId) throw Error('Authority unavailable');
-      let scopes: readonly AgentScope[];
-      try {scopes = normalizeAgentScopes(current.scopes);} catch {throw Error('Authority unavailable');}
+      let scopes: readonly OperationScope[];
+      try {scopes = normalizeOperationGrantScopes(current);} catch {throw Error('Authority unavailable');}
       if (current.businessDataPolicy!==actor.businessDataPolicy || current.businessDataPolicy && operationId!=='discoverV2' && operationId!=='discover' && (!current.allowedOperationIds?.includes(operationId)||!actor.allowedOperationIds?.includes(operationId)) || scopes.join(',') !== actor.scopes.join(',') || !operation.requiredScopes.every(scope => scopes.includes(scope))) throw Error('Authority unavailable');
     } else throw Error('Authority unavailable');
   }

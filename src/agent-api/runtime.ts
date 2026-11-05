@@ -1,3 +1,5 @@
+import {isRecordModule,personalRecordModuleEnabled} from './personal-records.ts';
+import type {OperationScope} from './personal-operation-registry.ts';
 import {classificationDigest} from '../personal-candidate/classification-contracts.ts';
 import {ClassificationService,classificationPolicyRevision} from '../personal-candidate/classification-service.ts';
 import {verifyClassificationPool} from '../personal-candidate/classification-postgres.ts';
@@ -8,7 +10,7 @@ import {PlatformError} from '../platform/domain.ts';
 import {PostgresPlatformRepository, verifyRestrictedPool, type SqlPool} from '../platform/postgres.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules,type AgentModules} from './config.ts';
-import {decodeAgentPermissions,type AgentScope} from './scopes.ts';
+import {decodeAgentPermissions} from './scopes.ts';
 import {resolveBusinessPolicyGrant,type PolicyResolutionOptions,type PolicyGrantRow} from './business-policy.ts';
 import {readBusinessPolicyCatalog} from './business-policy-postgres.ts';
 import {createAgentHandler} from './http.ts';
@@ -48,7 +50,7 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
       if(!policyGrant)return null;
     }
     const policy=policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,allowedOperationIds:policyGrant.allowedOperationIds}:{};
-    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly AgentScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
+    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly OperationScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
   } catch {return null;}
 }
 
@@ -56,6 +58,7 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
 export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean, modules:AgentModules={organization:false,classification:false}):boolean {
   const operation = agentOperations.find(entry => entry.id === id);
   if (!operation || operation.module === 'catalog') return false;
+  if(isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,personal,modules)||!fenceReady))return false;
   if (operation.module === 'todo' && !personal.allowedTypes.includes('todo')) return false;
   if(operation.module==='requirements'&&(!modules.requirements||!personal.requirementsEnabled||!fenceReady))return false;
   if (operation.module === 'organization' && (!modules.organization || !fenceReady || !organizationTypes.every(type=>personal.allowedTypes.includes(type)))) return false;
@@ -224,6 +227,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
         if(agentOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
         if(agentOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
+        if(isRecordModule(agentOperations.find(op=>op.id===id)?.module??'')){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
         return true;
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),

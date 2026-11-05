@@ -1,8 +1,10 @@
+import {personalRecordOperations,feedbackOperations} from './personal-operation-registry.ts';
 import type {AgentScope} from './scopes.ts';
 export type {AgentScope} from './scopes.ts';
 export const agentApiVersion = '1';
 
 export const agentOperations = [
+  ...personalRecordOperations,...feedbackOperations,
   {id:'snapshotRequirements',method:'GET',path:'/v1/requirements/snapshot',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read the complete server-composed public and own private requirement pool, exact baseline bindings and revisions, or fail without a partial inventory.'},
   {id:'getRequirement',method:'GET',path:'/v1/requirements/{id}',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read one stable public LO-ID or private UUID, full editable fields and its baseline binding.'},
   {id:'createRequirement',method:'POST',path:'/v1/requirements',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read','requirements:write'] as readonly AgentScope[],description:'Create one private requirement with complete fields and an idempotency key; evidence and acceptance remain authoritative.'},

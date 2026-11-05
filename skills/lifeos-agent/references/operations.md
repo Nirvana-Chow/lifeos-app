@@ -6,6 +6,29 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 
 | ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
+| `snapshotJournal` | `GET` | `/v1/records/journal/snapshot` | `journal:read` | Read the complete current journal snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getJournal` | `GET` | `/v1/records/journal/{id}` | `journal:read` | Read one owner journal record with complete fields and its current revision. |
+| `createJournal` | `POST` | `/v1/records/journal` | `journal:read, journal:write` | Create one journal record through the native owner writer with complete fields and an idempotency key. |
+| `updateJournal` | `PATCH` | `/v1/records/journal/{id}` | `journal:read, journal:write` | Update one journal record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotCalendar` | `GET` | `/v1/records/calendar/snapshot` | `calendar:read` | Read the complete current calendar snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getCalendar` | `GET` | `/v1/records/calendar/{id}` | `calendar:read` | Read one owner calendar record with complete fields and its current revision. |
+| `createCalendar` | `POST` | `/v1/records/calendar` | `calendar:read, calendar:write` | Create one calendar record through the native owner writer with complete fields and an idempotency key. |
+| `updateCalendar` | `PATCH` | `/v1/records/calendar/{id}` | `calendar:read, calendar:write` | Update one calendar record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotHealth` | `GET` | `/v1/records/health/snapshot` | `health:read` | Read the complete current health snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getHealth` | `GET` | `/v1/records/health/{id}` | `health:read` | Read one owner health record with complete fields and its current revision. |
+| `createHealth` | `POST` | `/v1/records/health` | `health:read, health:write` | Create one health record through the native owner writer with complete fields and an idempotency key. |
+| `updateHealth` | `PATCH` | `/v1/records/health/{id}` | `health:read, health:write` | Update one health record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotPerson` | `GET` | `/v1/records/person/snapshot` | `person:read` | Read the complete current person snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getPerson` | `GET` | `/v1/records/person/{id}` | `person:read` | Read one owner person record with complete fields and its current revision. |
+| `createPerson` | `POST` | `/v1/records/person` | `person:read, person:write` | Create one person record through the native owner writer with complete fields and an idempotency key. |
+| `updatePerson` | `PATCH` | `/v1/records/person/{id}` | `person:read, person:write` | Update one person record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotFinance` | `GET` | `/v1/records/finance/snapshot` | `finance:read` | Read the complete current finance snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getFinance` | `GET` | `/v1/records/finance/{id}` | `finance:read` | Read one owner finance record with complete fields and its current revision. |
+| `createFinance` | `POST` | `/v1/records/finance` | `finance:read, finance:write` | Create one finance record through the native owner writer with complete fields and an idempotency key. |
+| `updateFinance` | `PATCH` | `/v1/records/finance/{id}` | `finance:read, finance:write` | Update one finance record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotFeedback` | `GET` | `/v1/feedback/snapshot` | `feedback:read` | Read the complete owner feedback snapshot with explicit source channels and revisions. |
+| `getFeedback` | `GET` | `/v1/feedback/{id}` | `feedback:read` | Read one owner feedback record to verify the result and its revision. |
+| `createFeedback` | `POST` | `/v1/feedback` | `feedback:read, feedback:write` | Create feedback with the server-owned agent-feedback channel and an idempotency key; this does not approve or convert a requirement. |
 | `snapshotRequirements` | `GET` | `/v1/requirements/snapshot` | `requirements:read` | Read the complete server-composed public and own private requirement pool, exact baseline bindings and revisions, or fail without a partial inventory. |
 | `getRequirement` | `GET` | `/v1/requirements/{id}` | `requirements:read` | Read one stable public LO-ID or private UUID, full editable fields and its baseline binding. |
 | `createRequirement` | `POST` | `/v1/requirements` | `requirements:read, requirements:write` | Create one private requirement with complete fields and an idempotency key; evidence and acceptance remain authoritative. |

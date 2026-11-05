@@ -1,3 +1,6 @@
+import {agentOperations} from './capabilities.ts';
+import {normalizeAgentScopes,agentScopes} from './scopes.ts';
+import type {OperationScope} from './personal-operation-registry.ts';
 import {decodeAgentPermissions} from './scopes.ts';
 
 export const allPersonalBusinessPolicy = 'all-personal-business-v1' as const;
@@ -35,4 +38,15 @@ export function resolveBusinessPolicyGrant(row:PolicyGrantRow,options:PolicyReso
   const operations=options.registry.filter(op=>policyOperationScopes(op)!==null&&options.operationAvailable(op.id));
   return {businessDataPolicy:allPersonalBusinessPolicy,scopes:[...new Set(operations.flatMap(op=>policyAuthorizationScopes(op)!))],allowedOperationIds:operations.map(op=>op.id)};
  }catch{return null;}
+}
+
+/** New effective scopes can only originate from reviewed, explicitly allowed server operations. */
+export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[]}):readonly OperationScope[]{
+ if(!grant.businessDataPolicy)return normalizeAgentScopes(grant.scopes);
+ if(grant.businessDataPolicy!==allPersonalBusinessPolicy||!Array.isArray(grant.scopes)||new Set(grant.scopes).size!==grant.scopes.length||!Array.isArray(grant.allowedOperationIds)||new Set(grant.allowedOperationIds).size!==grant.allowedOperationIds.length)throw Error('Invalid policy grant');
+ const allowed=grant.allowedOperationIds.map(id=>{const operation=agentOperations.find(op=>op.id===id);if(!operation||policyAuthorizationScopes(operation)===null)throw Error('Invalid policy operation');return operation;});
+ const known=new Set<string>([...agentScopes,...allowed.flatMap(op=>policyAuthorizationScopes(op)!)]);
+ if(grant.scopes.some(scope=>!known.has(scope)))throw Error('Invalid policy scopes');
+ for(const scope of grant.scopes)if(scope.endsWith(':write')&&!grant.scopes.includes(scope.replace(/:write$/,':read')))throw Error('Invalid policy scopes');
+ return Object.freeze([...grant.scopes].sort()) as readonly OperationScope[];
 }

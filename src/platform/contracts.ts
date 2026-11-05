@@ -1,4 +1,4 @@
-import type {AgentScope} from '../agent-api/scopes.ts';
+import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
 import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import type {TodoDraft,FinanceDraft,InboxDraft} from './domain.ts';
@@ -12,7 +12,7 @@ export type Receipt={digest:string;result:MutationResult};
 export interface Transaction {
  /** Serialize deterministic identities even before the first record exists. */
  lockRecordIdentity?(kind:Kind,id:string):Promise<void>;
- lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[]):Promise<boolean>;
+ lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
  /** Agent-only capability, held until this same transaction ends. */
  lockAgentTodoWriteGrant?(grant: Readonly<{grantId:string;ownerId:string;spaceId:string}>):Promise<boolean>;
  /** Nonlocking discovery on this transaction's connection. Decisions must use

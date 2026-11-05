@@ -1,3 +1,7 @@
+import {PersonalFinanceService} from '../personal-finance/service.ts';
+import {financeKeys} from '../platform/domain.ts';
+import type {OperationScope,AgentRecordType} from './personal-operation-registry.ts';
+import {isRecordModule,personalRecordModuleEnabled,completeRecordFields,personalRecordDetail,personalRecordSnapshot,fencedRecordRepository} from './personal-records.ts';
 import {ClassificationService,createClassificationAdapter} from '../personal-candidate/classification-service.ts';
 import type {PlatformRepository, PublicEntry} from '../platform/contracts.ts';
 import {object, PlatformError, todoKeys, todoRequiredKeys} from '../platform/domain.ts';
@@ -5,14 +9,14 @@ import {assertLocalRequest, readJSONBody} from '../platform/request-boundary.ts'
 import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {PersonalService, personalEntryType} from '../personal-candidate/service.ts';
 import {assertAgentGrant,assertAgentTodoWriteGrant} from './grant-fence.ts';
-import {agentApiVersion, agentOperations, type AgentScope} from './capabilities.ts';
+import {agentApiVersion, agentOperations} from './capabilities.ts';
 import {AuthorityService} from '../agent-authority/service.ts';
 
 import type {AgentModules} from './config.ts';
 import type {OrganizationType} from '../personal-candidate/business.ts';
 import {organizationDetail,organizationSnapshot,completeOrganizationFields} from './organization.ts';
 
-type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly AgentScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
+type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
 type Options = {
   enabled?: boolean;
   modules?: AgentModules;
@@ -57,6 +61,8 @@ export function createAgentHandler(options: Options) {
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentOperations.find(entry => entry.id === id);
+    if(operation&&isRecordModule(operation.module)&&operation.id.startsWith('snapshot')&&!options.repository.readCurrentSnapshot)return false;
+    if(operation&&isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,config,modules as AgentModules)||options.fenceWrites!==true))return false;
     if (operation?.module === 'classification' && (!modules.classification || !modules.organization || !options.classification || options.fenceWrites !== true)) return false;
     if (operation?.module === 'requirements' && (!modules.requirements || !config.requirementsEnabled || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
     if (operation?.module === 'organization' && (!modules.organization || operation.method !== 'GET' && options.fenceWrites !== true)) return false;
@@ -67,15 +73,18 @@ export function createAgentHandler(options: Options) {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
+    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
+    const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
+    const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
     const requirementRoute=/^\/v1\/requirements\/(LO-[A-Z]+-\d{3}|[a-f0-9-]{36})$/.exec(route);
     const requirementId=requirementRoute?.[1];
     const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
     const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
     const organizationId=organizationRoute?.[2];
-    const template=requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const template=personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
     const operation = agentOperations.find(entry => entry.method === request.method && entry.path === template);
-    if (options.enabled !== true || !operation || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
+    if (options.enabled !== true || !operation || isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
       const token = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization') ?? '')?.[1];
@@ -98,6 +107,39 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if(isRecordModule(operation.module)){
+        if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
+        const current=async()=>{try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');};
+        const read=async<T>(run:()=>Promise<T>)=>{await current();const result=await run();await current();return result;};
+        const guard=async()=>{if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await current();await options.assertWritable(grant);};
+        const txGuard=(tx:import('../platform/contracts.ts').Transaction)=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id);
+        const records=new PersonalService(fencedRecordRepository(options.repository,txGuard),config);
+        if(operation.module==='feedback'){
+          if(operation.id==='snapshotFeedback')return respond(200,await read(()=>records.requirementSupport.snapshot(actor.ownerId)));
+          if(operation.id==='getFeedback')return respond(200,{entry:await read(()=>records.requirementSupport.feedback(actor.ownerId,feedbackId!))});
+          const input=object(await readJSONBody(request),['fields']);
+          const result=await records.requirementSupport.createFeedback(actor.ownerId,{...input,spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',guard,txGuard,'agent-feedback');
+          return respond(result.duplicate?200:201,result);
+        }
+        if(personalType==='finance'){
+          const finance=new PersonalFinanceService(options.repository,{ownerId:actor.ownerId,spaceId:actor.spaceId,enabled:config.financeEnabled,writable:true});
+          const entry=(value:Awaited<ReturnType<PersonalFinanceService['get']>>)=>({type:'finance',id:value.id,sourceId:value.source.id,revision:value.revision,fields:value.fields});
+          if(operation.method==='GET'){
+            if(personalId)return respond(200,{entry:entry(await read(()=>finance.get(actor.ownerId,personalId)))});
+            const snapshot=await read(()=>finance.snapshot(actor.ownerId));const{entries,...rest}=snapshot;
+            return respond(200,{...rest,scope:'full-current-finance-snapshot',items:entries.map(entry),truncated:false});
+          }
+          const updating=operation.method==='PATCH',input=object(await readJSONBody(request),updating?['fields','expectedRevision']:['fields']),fields=object(input.fields,financeKeys);
+          if(financeKeys.some(key=>!Object.hasOwn(fields,key)))throw new PlatformError(400,'COMPLETE_RECORD_REQUIRED','保存需要完整财务字段。');
+          const result=await finance.mutate(actor.ownerId,personalId??null,{...input,fields,spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',{assertActor:guard,transactionGuard:txGuard});
+          return respond(!updating&&!result.duplicate?201:200,{entry:entry(result.entry),duplicate:result.duplicate});
+        }
+        if(!personalType)return respond(404,{error:'NOT_FOUND'});
+        if(operation.method==='GET')return respond(200,personalId?{entry:await read(async()=>personalRecordDetail(await records.get(actor.ownerId,personalType,personalId),actor.spaceId))}:await read(()=>personalRecordSnapshot(records,actor.ownerId,personalType)));
+        const updating=operation.method==='PATCH',input=object(await readJSONBody(request),updating?['fields','expectedRevision']:['fields']);
+        const result=await records.mutate(actor.ownerId,personalType,personalId??null,{...input,fields:completeRecordFields(input.fields,personalType),spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',guard,txGuard);
+        return respond(!updating&&!result.duplicate?201:200,{entry:personalRecordDetail(result.entry,actor.spaceId),duplicate:result.duplicate});
+      }
       if(operation.module==='requirements'){
         const requirements=service.requirements;
         if(operation.id==='snapshotRequirements')return respond(200,await requirements.snapshot(actor.ownerId));
@@ -150,8 +192,6 @@ export function createAgentHandler(options: Options) {
           truncated: false, observedAt: new Date().toISOString()});
       }
       if (operation.id !== 'createTodo' && operation.id !== 'updateTodo') {
-        const unimplemented: never = operation;
-        void unimplemented;
         return respond(404, {error: 'NOT_FOUND'});
       }
 

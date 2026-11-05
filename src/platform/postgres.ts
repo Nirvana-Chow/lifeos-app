@@ -1,6 +1,6 @@
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
-import type {AgentScope} from '../agent-api/scopes.ts';
+import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
 import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
@@ -77,7 +77,7 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
-   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly AgentScope[])=>{
+   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
     if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
     const result=await client.query(this.businessFeatures?.businessDataPolicy?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(this.businessFeatures?.businessDataPolicy?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);
     return result.rows[0]?.allowed===true;
