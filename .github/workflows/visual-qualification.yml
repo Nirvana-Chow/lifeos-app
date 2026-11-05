@@ -1,0 +1,856 @@
+# Reuses reviewed platform checks and isolated recovery/MFA fixtures.
+# Public source and isolated synthetic TLS/browser qualification only; no production authority.
+# Fixture passwords below are synthetic and apply only to disposable loopback services.
+name: LifeOS visual and historical qualification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**/*.tsx'
+      - 'app/**/*.css'
+      - 'components/**'
+      - 'src/**/*.tsx'
+      - 'src/**/*.css'
+      - 'test/**/*browser*'
+      - 'test/helpers/personal-*.ts'
+      - 'test/helpers/task-grid-performance-fixture.ts'
+      - 'test/helpers/auth-theme-fixture-lifecycle.ts'
+      - 'scripts/synthetic-rendered-qualification.ts'
+      - 'scripts/client-bundle-evidence.mjs'
+      - 'scripts/attach-vtable-benchmark.py'
+      - '.github/workflows/visual-qualification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**/*.tsx'
+      - 'app/**/*.css'
+      - 'components/**'
+      - 'src/**/*.tsx'
+      - 'src/**/*.css'
+      - 'test/**/*browser*'
+      - 'test/helpers/personal-*.ts'
+      - 'test/helpers/task-grid-performance-fixture.ts'
+      - 'test/helpers/auth-theme-fixture-lifecycle.ts'
+      - 'scripts/synthetic-rendered-qualification.ts'
+      - 'scripts/client-bundle-evidence.mjs'
+      - 'scripts/attach-vtable-benchmark.py'
+      - '.github/workflows/visual-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lifeos-visual-qualification-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  CI_EVENT_SHA: ${{ github.sha }}
+  CI_WORKFLOW_SHA: ${{ github.workflow_sha }}
+  CI_SOURCE_REPOSITORY: ${{ github.repository }}
+
+jobs:
+  policy:
+    name: Visual qualification scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      profile: ${{ steps.policy.outputs.profile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - id: policy
+        name: Classify cumulative changes from the verified full-green ancestor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: printf 'profile=full\n' >> "$GITHUB_OUTPUT"
+  checks:
+    needs: policy
+    if: needs.policy.outputs.profile == 'full'
+    name: Visual source and isolated fixture prerequisites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        # Official library/postgres index resolved 2026-10-31. Ephemeral fixtures only.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      organization-postgres:
+        # Independent organization service; never resets the legacy/recovery fixtures.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55440:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      requirements-postgres:
+        # Independent source/run-bound requirements fixture; no existing service reset.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55452:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - name: Check out the exact source head, without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          persist-credentials: false
+      - name: Confirm source identity and the single npm lock
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-files '*lock.json' '*lock.yaml' '*lock.yml' yarn.lock npm-shrinkwrap.json | wc -l)" -eq 1
+          git ls-files --error-unmatch package-lock.json >/dev/null
+          printf 'source=%s\nevent=%s\nworkflow=%s\n' "$SOURCE_SHA" "$CI_EVENT_SHA" "$CI_WORKFLOW_SHA"
+      - name: Set up the reviewed Node release with lock-bound npm download cache
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install the committed dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Unit and contract tests (opt-in integration skips are not acceptance)
+        run: npm test
+      - name: Type check
+        run: npm run typecheck
+      - name: Locked dependency security audit
+        run: npm audit --audit-level=high
+      - name: Build the default-closed application with webpack
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '0'
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run build -- --webpack
+      - name: Verify compiled default-closed routes (in process, not HTTP)
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '0'
+        run: node scripts/check-built-platform.mjs
+      - name: Qualify native MFA same-key scopes through mounted Next PATCH and real issuer socket
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+          RUN_ORGANIZATION_NETWORK_TESTS: '1'
+        run: |
+          set -euo pipefail
+          test ! -e /run/lifeos-agent-issuer
+          sudo mkdir -m 0700 /run/lifeos-agent-issuer
+          sudo chown "$(id -u):$(id -g)" /run/lifeos-agent-issuer
+          cleanup_issuer_fixture() {
+            local original_status=$? cleanup_status=0
+            sudo rmdir /run/lifeos-agent-issuer || cleanup_status=$?
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo '::error::Exact issuer fixture directory cleanup failed' >&2
+            fi
+            if [ "$original_status" -ne 0 ]; then exit "$original_status"; fi
+            exit "$cleanup_status"
+          }
+          trap cleanup_issuer_fixture EXIT
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-network.xml" test/organization-key-network.integration.test.ts
+          python3 - <<'PY_ORGANIZATION_HTTP'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'organization-network.xml')).getroot().iter('testcase'))
+          assert len(cases) == 1, f'Expected one native MFA/Next/socket lifecycle, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Native scope HTTP skip or failure is not acceptance'
+          print('PASS: 1 native TOTP + mounted Next PATCH + real issuer socket lifecycle; zero skips. Synthetic HTTP backend only, no new TLS/browser/production acceptance.')
+          PY_ORGANIZATION_HTTP
+      - name: Qualify organization SQL scope CAS producer fences ordered locks and ACL readiness
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/organization-pg.xml" test/organization-agent-postgres.integration.test.ts
+          python3 - <<'PY_ORGANIZATION_PG'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'organization-pg.xml')).getroot().iter('testcase'))
+          assert len(cases) == 19, f'Expected 19 organization PG leaf cases, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Organization PG skip or failure is not acceptance'
+          print('PASS: 19 organization PG leaf cases; zero skips, source/run-bound independent service.')
+          PY_ORGANIZATION_PG
+      - name: Qualify enabled atomic classification on the source-bound organization PostgreSQL service
+        env:
+          LIFEOS_ORGANIZATION_FIXTURE_CONTEXT: github-actions
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          RUN_ORGANIZATION_POSTGRES_TESTS: '1'
+          RUN_CLASSIFICATION_POSTGRES_TESTS: '1'
+        run: |
+          set -euo pipefail
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-pg.xml" test/classification-postgres.integration.test.ts
+          python3 scripts/check-classification-junit.py postgres "$RUNNER_TEMP/classification-pg.xml"
+      - name: Qualify isolated requirements persistence and Agent grants without skips
+        env:
+          RUN_REQUIREMENTS_POSTGRES_TESTS: '1'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          LIFEOS_REQUIREMENTS_FIXTURE_CONTEXT: github-actions
+          LIFEOS_REQUIREMENTS_FIXTURE_ID: requirements-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/requirements-pg.xml" test/requirements-postgres.integration.test.ts
+          python3 - <<'PY_REQUIREMENTS_PG'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'requirements-pg.xml')).getroot().iter('testcase'))
+          expected = {
+            'concurrent first overlays lock one deterministic identity and second different key sees CAS conflict',
+            'create restart readback update history and lost committed response recover exact command',
+            'new issuer mode has independently verified native scopes and fence rejects revoked requirements grants',
+          }
+          assert len(cases) == len(expected) and {c.get('name') for c in cases} == expected, 'Expected the three named requirements PostgreSQL leaf cases'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Requirements PostgreSQL skip or failure is not acceptance'
+          print('PASS: three named isolated requirements persistence/grant leaf cases, zero skips; production SQL and grants unchanged.')
+          PY_REQUIREMENTS_PG
+      - name: Prepare the empty runner-local synthetic PostgreSQL fixture
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {Pool} from 'pg';
+          const pool = new Pool({host:'127.0.0.1',port:55432,user:'postgres',password:'fixture-ci-admin-never-live',database:'lifeos_platform_test_local',max:1});
+          try {
+            const target = (await pool.query('SELECT current_database() AS db, current_user AS role, version() AS version')).rows[0];
+            if (target.db !== 'lifeos_platform_test_local' || target.role !== 'postgres' || !target.version.startsWith('PostgreSQL 17.11 ')) throw Error('Unexpected CI fixture');
+            if ((await pool.query("SELECT to_regnamespace('lifeos_platform') AS schema")).rows[0].schema !== null) throw Error('CI fixture must be empty');
+            await pool.query("CREATE ROLE lifeos_platform_candidate_runtime LOGIN PASSWORD 'fixture-ci-runtime-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("CREATE ROLE lifeos_platform_candidate_bootstrap LOGIN PASSWORD 'fixture-ci-bootstrap-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
+            await pool.query('REVOKE CONNECT, CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
+            await pool.query('GRANT CONNECT ON DATABASE lifeos_platform_test_local TO lifeos_platform_candidate_runtime, lifeos_platform_candidate_bootstrap');
+            await pool.query("SET lifeos.calendar_migration_approved = '1'");
+            await pool.query("SET lifeos.chat_migration_approved = '1'");
+            for (const file of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql']) {
+              await pool.query(readFileSync('db/' + file, 'utf8'));
+            }
+            await pool.query("CREATE ROLE lifeos_agent_verifier LOGIN PASSWORD 'fixture-agent-verifier-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            await pool.query("CREATE ROLE lifeos_agent_issuer LOGIN PASSWORD 'fixture-agent-issuer-never-live' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS");
+            // Mirror the native MFA session column that can precede Agent installation.
+            await pool.query('ALTER TABLE lifeos_platform.platform_session ADD COLUMN "mfaVerified" boolean NOT NULL DEFAULT false');
+            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
+            await pool.query(readFileSync('db/0006_agent_api.proposed.sql', 'utf8'));
+            console.log('Empty CI fixture migrated; runtime/bootstrap have no ownership or administrative grants. No live target used.');
+          } finally { await pool.end(); }
+          JS
+      - name: Bootstrap synthetic identities with FD3 and independent readback
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_BOOTSTRAP: synthetic-test-only
+          LIFEOS_PLATFORM_BOOTSTRAP_APPROVAL: approved-isolated-fixtures
+          LIFEOS_PLATFORM_BOOTSTRAP_DATABASE_URL: postgresql://lifeos_platform_candidate_bootstrap:fixture-ci-bootstrap-never-live@127.0.0.1:55432/lifeos_platform_test_local
+        run: |
+          node scripts/platform-synthetic-bootstrap.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+      - name: Run actual Auth and core/AI/calendar PostgreSQL tests with no skipped cases
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_CALENDAR_CANDIDATE: '1'
+          RUN_PLATFORM_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_AUTH_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_AI_SETTINGS_POSTGRES_TESTS: '1'
+          RUN_PLATFORM_CALENDAR_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/auth-pg.xml" test/platform-postgres.integration.test.ts test/platform-auth-postgres.integration.test.ts test/ai-settings-postgres.integration.test.ts test/calendar-candidate-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'auth-pg.xml')).getroot()
+          cases = list(root.iter('testcase'))
+          assert len(cases) == 5, f'Expected 5 explicit PG/auth tests, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG/auth skip or failure is not acceptance'
+          print('PASS: 5 explicit PG/auth tests, zero skips. No HTTP/browser/restart/restore acceptance claimed.')
+          PY
+      - name: Verify machine grants, revocation and todo writes on synthetic PostgreSQL
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_verifier:fixture-agent-verifier-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_ISSUER_DATABASE_URL: postgresql://lifeos_agent_issuer:fixture-agent-issuer-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          RUN_AGENT_API_POSTGRES_TESTS: '1'
+        run: |
+          node --input-type=module <<'JS'
+          import {Pool} from 'pg';
+          const pool = new Pool({host:'127.0.0.1',port:55432,user:'postgres',password:'fixture-ci-admin-never-live',database:'lifeos_platform_test_local',max:1});
+          try {
+            await pool.query('INSERT INTO lifeos_platform.platform_user (id,name,email) VALUES ($1,$2,$3)', ['agent-runtime-owner','Synthetic Agent Runtime','agent-runtime@example.test']);
+          } finally { await pool.end(); }
+          JS
+          node --test --test-isolation=none --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/agent-pg.xml" test/agent-api-postgres.integration.test.ts
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'agent-pg.xml')).getroot()
+          cases = list(root.iter('testcase'))
+          assert cases, 'Expected explicit machine authorization test'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Agent PG skip or failure is not acceptance'
+          print(f'PASS: {len(cases)} explicit Agent PG tests, zero skips.')
+          PY
+      - name: Run actual Next HTTP, login, ownership, rate-limit and capture tests
+        env:
+          LIFEOS_PLATFORM_CANDIDATE: '1'
+          LIFEOS_PLATFORM_TARGET: isolated-test
+          LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+          LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+          LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+          LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LIFEOS_CHAT_CANDIDATE: '1'
+          RUN_PLATFORM_NETWORK_TESTS: '1'
+          RUN_PLATFORM_CAPTURE_NETWORK_TESTS: '1'
+        run: |
+          node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3190 > "$RUNNER_TEMP/next-fixture.log" 2>&1 &
+          next_pid=$!
+          trap 'kill "$next_pid" 2>/dev/null || true' EXIT
+          status=000
+          for attempt in {1..40}; do
+            status="$(curl --max-time 2 --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3190/api/platform/todos || true)"
+            if test "$status" = 401; then break; fi
+            kill -0 "$next_pid"
+            sleep 1
+          done
+          test "$status" = 401
+          # Auth+PG has exercised this same synthetic owner's limiter. Preserve its
+          # state and wait its natural window; never delete counters to make CI pass.
+          python3 -c 'import time; time.sleep(61)'
+          # Run files in explicit process order: the Node runner may sort files.
+          # Network owns the 1st/4th-attempt limiter assertion and natural recovery;
+          # capture may log in only after that test has recovered successfully.
+          RUN_PLATFORM_CAPTURE_NETWORK_TESTS=0 node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/network.xml" test/platform-network.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          RUN_PLATFORM_NETWORK_TESTS=0 node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/capture-network.xml" test/platform-capture-network.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          for report in ('network.xml', 'capture-network.xml'):
+              cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], report)).getroot().iter('testcase'))
+              assert len(cases) == 1, f'{report}: expected 1 actual HTTP test, found {len(cases)}'
+              assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), f'{report}: HTTP skip or failure is not acceptance'
+              print(f'PASS: {report}, 1 actual HTTP test, zero skips.')
+          print('PASS: actual Next+Auth+PG and capture HTTP, zero skips. No browser/restart/restore acceptance claimed.')
+          PY
+      - name: Confirm installation and verification preserved the committed lock
+        run: git diff --exit-code -- package.json package-lock.json
+
+  recovery-pg:
+    needs: policy
+    if: needs.policy.outputs.profile == 'full'
+    name: Visual matrix and historical renderer benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      rendered-postgres:
+        # Independent disposable rendered fixture; never reset the 55439 recovery service.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      LIFEOS_PLATFORM_CANDIDATE: '1'
+      LIFEOS_PLATFORM_TARGET: isolated-test
+      LIFEOS_PLATFORM_BASE_URL: http://127.0.0.1:3190
+      LIFEOS_PLATFORM_OWNER_ID: fixture-owner-a
+      LIFEOS_PLATFORM_OWNER_EMAIL: fixture@example.invalid
+      LIFEOS_PLATFORM_SECRET: fixture-ci-session-key-never-live-00000000
+      LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55439/lifeos_platform_test_local
+      LIFEOS_PLATFORM_TEST_APPROVAL: approved-isolated-fixtures
+    steps:
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+          persist-credentials: false
+      - name: Confirm exact source identity
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - name: Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
+        run: |
+          set -euo pipefail
+          # Official Ubuntu noble; SIL-1.1 font, GPL-3+ packaging. No product font bundle.
+          sudo -n apt-get update -qq
+          sudo -n apt-get install -y --no-install-recommends 'fonts-noto-cjk=1:20230817+repack1-3'
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          test -s /usr/share/doc/fonts-noto-cjk/copyright
+          fc-cache -f
+          cjk_family="$(fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
+          case "$cjk_family" in *'Noto Sans CJK'*) ;; *) exit 1 ;; esac
+          command -v google-chrome >/dev/null
+          command -v certutil >/dev/null
+          google-chrome --version
+      - name: Check changed UI contracts early with native Chrome
+        timeout-minutes: 8
+        env:
+          RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS: '1'
+          RUN_UI_DENSITY_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_CRUD_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          node --test --test-name-pattern='OPT-IN public auth theme oracle' test/owner-recovery-browser.integration.test.ts
+          node --test --test-concurrency=1 test/ui-density-browser.integration.test.ts test/ui-density-board-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts test/requirements-crud-browser.integration.test.ts
+      - name: Create restricted synthetic fixture and failure injection triggers
+        env:
+          LIFEOS_FIXTURE_PORT: '55439'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: node test/helpers/owner-recovery-pg-setup.mjs
+      - name: Bootstrap fixture identities
+        env:
+          LIFEOS_PLATFORM_BOOTSTRAP: synthetic-test-only
+          LIFEOS_PLATFORM_BOOTSTRAP_APPROVAL: approved-isolated-fixtures
+          LIFEOS_PLATFORM_BOOTSTRAP_DATABASE_URL: postgresql://lifeos_platform_candidate_bootstrap:fixture-ci-bootstrap-never-live@127.0.0.1:55439/lifeos_platform_test_local
+        run: node scripts/platform-synthetic-bootstrap.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+      - name: Run real PG recovery checks without skips
+        env:
+          RUN_OWNER_RECOVERY_POSTGRES_TESTS: '1'
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/recovery-pg.xml" test/owner-recovery-postgres.integration.test.ts 3<<<'{"ownerA":"fixture-ci-owner-a-password","ownerB":"fixture-ci-owner-b-password"}'
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          cases=list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'],'recovery-pg.xml')).getroot().iter('testcase'))
+          assert len(cases)==1, f'Expected one real PG recovery test, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'PG test not passed'
+          print('PASS: isolated synthetic PG recovery test, no skips')
+          PY
+      - name: Run isolated native MFA PostgreSQL acceptance
+        env:
+          RUN_OWNER_MFA_POSTGRES_TESTS: '1'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: |
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/mfa-pg.xml" test/owner-mfa-postgres.integration.test.ts
+          python3 - <<'PY_MFA'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'mfa-pg.xml')).getroot().iter('testcase'))
+          assert len(cases) == 1, f'Expected one real native MFA test, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'MFA skip or failure is not acceptance'
+          print('PASS: one isolated native MFA PostgreSQL test, zero skips; no browser/TLS/production acceptance claimed.')
+          PY_MFA
+      - name: Verify isolated Agent key management after native MFA provisioning
+        env:
+          RUN_AGENT_KEY_MANAGEMENT_POSTGRES_TESTS: '1'
+          LIFEOS_AGENT_TEST_KEY_DATABASE_URL: postgresql://lifeos_agent_verifier:fixture-agent-verifier-never-live@127.0.0.1:55439/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_MANAGER_DATABASE_URL: postgresql://lifeos_agent_key_manager:fixture-agent-manager-never-live@127.0.0.1:55439/lifeos_platform_test_local
+          LIFEOS_AGENT_TEST_ADMIN_DATABASE_URL: postgresql://postgres:fixture-ci-admin-never-live@127.0.0.1:55439/lifeos_platform_test_local
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {Pool} from 'pg';
+          const pool = new Pool({connectionString:process.env.LIFEOS_AGENT_TEST_ADMIN_DATABASE_URL,max:1});
+          try {
+            for (const [role, password] of [
+              ['lifeos_agent_verifier','fixture-agent-verifier-never-live'],
+              ['lifeos_agent_issuer','fixture-agent-issuer-never-live'],
+              ['lifeos_agent_key_manager','fixture-agent-manager-never-live'],
+            ]) {
+              await pool.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`);
+            }
+            await pool.query("SET lifeos.agent_migration_approved = '1'; SET lifeos.agent_key_management_approved = '1'; SET lifeos.agent_key_manager_owner = 'agent-management-owner'; SET lifeos.agent_key_manager_space = 'synthetic-agent-management-space'; SET lifeos.agent_expected_database = 'lifeos_platform_test_local'");
+            for (const file of ['0006_agent_api.proposed.sql','0010_agent_key_management.proposed.sql']) {
+              await pool.query(readFileSync('db/' + file, 'utf8'));
+            }
+          } finally { await pool.end(); }
+          JS
+          node --test --test-isolation=none --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/agent-key-pg.xml" test/agent-key-issuer-postgres.integration.test.ts
+          python3 - <<'PY_AGENT_KEY'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'agent-key-pg.xml')).getroot().iter('testcase'))
+          assert cases and not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Agent key management fixture did not pass'
+          print(f'PASS: {len(cases)} isolated Agent key management tests, no skips')
+          PY_AGENT_KEY
+      - name: Qualify enabled classification review in isolated desktop and mobile Chrome
+        env:
+          RUN_CLASSIFICATION_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-browser.xml" test/classification-review-browser.integration.test.ts
+          python3 scripts/check-classification-junit.py browser "$RUNNER_TEMP/classification-browser.xml"
+      - name: Exercise key dialogs, settings and requirements in isolated desktop and mobile Chrome
+        env:
+          RUN_AGENT_KEY_BROWSER_TESTS: '1'
+          RUN_SETTINGS_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: node --test --test-concurrency=1 test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts test/workspace-settings-browser.integration.test.ts test/account-password-browser.integration.test.ts
+      - name: Build the exact public source image and read back its source proof
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          docker build --pull --build-arg SOURCE_COMMIT="$SOURCE_SHA" --file Dockerfile.platform-review --tag "lifeos-synthetic:$SOURCE_SHA" .
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "lifeos-synthetic:$SOURCE_SHA")" = "$SOURCE_SHA"
+          test "$(docker image inspect --format '{{.Config.User}}' "lifeos-synthetic:$SOURCE_SHA")" = node
+          docker create --name recovery-image-proof "lifeos-synthetic:$SOURCE_SHA" >/dev/null
+          trap 'docker rm -f recovery-image-proof >/dev/null 2>&1 || true' EXIT
+          mkdir -p .next
+          docker cp recovery-image-proof:/app/.image-source-proof.json .image-source-proof.json
+          docker cp recovery-image-proof:/app/.next/BUILD_ID .next/BUILD_ID
+          mkdir -p "$RUNNER_TEMP/current-bundle/.next"
+          cp .image-source-proof.json "$RUNNER_TEMP/current-bundle/.image-source-proof.json"
+          cp .next/BUILD_ID "$RUNNER_TEMP/current-bundle/.next/BUILD_ID"
+          docker cp recovery-image-proof:/app/package-lock.json "$RUNNER_TEMP/current-bundle/package-lock.json"
+          cmp package-lock.json "$RUNNER_TEMP/current-bundle/package-lock.json"
+          docker cp recovery-image-proof:/app/.next/static "$RUNNER_TEMP/current-bundle/.next/static"
+          node scripts/client-bundle-evidence.mjs "$RUNNER_TEMP/current-bundle" "$SOURCE_SHA"
+          node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(".image-source-proof.json"));if(p.sourceSha!==process.env.SOURCE_SHA)throw Error("Image source mismatch");'
+      - name: Run fresh synthetic TLS recovery permit and five browser groups
+        id: rendered-qualification
+        env:
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          LIFEOS_FIXTURE_PORT: '55432'
+          LIFEOS_PLATFORM_TEST_DATABASE_URL: postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local
+          LIFEOS_REVIEW_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_OWNER_RECOVERY_HTTPS_TESTS: '1'
+          RUN_OWNER_PERMIT_HTTPS_TESTS: '1'
+          RUN_OWNER_RECOVERY_BROWSER_TESTS: '1'
+          LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE: visual
+          LIFEOS_SYNTHETIC_GRID_ROWS: 'both'
+        run: |
+          set -euo pipefail
+          run_scenario() (
+            export OWNER_HTTPS_SCENARIO="$1"
+            fixture_root=${2:-$PWD}
+            image_sha=${3:-$SOURCE_SHA}
+            test ! -e /run/lifeos-platform
+            sudo mkdir -m 0700 /run/lifeos-platform
+            sudo chown "$(id -u):$(id -g)" /run/lifeos-platform
+            mkdir -m 0700 "$RUNNER_TEMP/recovery-tls"
+            cleanup() {
+              original_status=$?
+              trap - EXIT
+              set +e
+              cleanup_status=0
+              node test/helpers/owner-recovery-browser-fixture.ts cleanup-nss || cleanup_status=1
+              for container in recovery-caddy-fixture recovery-next-fixture; do
+                if docker inspect "$container" >/dev/null 2>&1; then docker rm -f "$container" >/dev/null || cleanup_status=1; fi
+              done
+              if test -L /run/lifeos-platform/write-gate; then
+                cleanup_status=1
+              elif test -d /run/lifeos-platform/write-gate; then
+                rm -f /run/lifeos-platform/write-gate/permit.json || cleanup_status=1
+                rmdir /run/lifeos-platform/write-gate || cleanup_status=1
+              fi
+              rm -f /run/lifeos-platform/runtime.json /run/lifeos-platform/runtime.json.next || cleanup_status=1
+              sudo rmdir /run/lifeos-platform || cleanup_status=1
+              rm -rf "$RUNNER_TEMP/recovery-tls" || cleanup_status=1
+              if test "$original_status" -ne 0; then exit "$original_status"; fi
+              exit "$cleanup_status"
+            }
+            trap cleanup EXIT
+            node test/helpers/owner-recovery-https-setup.ts reset-disposable-schema
+            node test/helpers/owner-recovery-pg-setup.mjs
+            case "$OWNER_HTTPS_SCENARIO" in
+              recovery) mode=runtime; test_file=test/owner-recovery-https.integration.test.ts ;;
+              permit) mode=runtime-permit; test_file=test/owner-permit-https.integration.test.ts ;;
+              browser) mode=runtime-workspace; test_file=test/owner-recovery-browser.integration.test.ts ;;
+              journal) mode=runtime-workspace; test_file=test/owner-journal-browser.integration.test.ts ;;
+              *) exit 1 ;;
+            esac
+            node test/helpers/owner-recovery-https-setup.ts "$mode"
+            node test/helpers/owner-recovery-https-setup.ts bootstrap
+            if test "$OWNER_HTTPS_SCENARIO" = recovery; then node test/helpers/owner-recovery-https-setup.ts bootstrap-foreign; fi
+            openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=isolated fixture CA' -keyout "$RUNNER_TEMP/recovery-tls/ca.key" -out "$RUNNER_TEMP/recovery-tls/ca.crt" >/dev/null 2>&1
+            openssl req -newkey rsa:2048 -nodes -subj '/CN=review.example.test' -keyout "$RUNNER_TEMP/recovery-tls/server.key" -out "$RUNNER_TEMP/recovery-tls/server.csr" >/dev/null 2>&1
+            printf 'subjectAltName=DNS:review.example.test\nextendedKeyUsage=serverAuth\n' > "$RUNNER_TEMP/recovery-tls/extensions"
+            openssl x509 -req -in "$RUNNER_TEMP/recovery-tls/server.csr" -CA "$RUNNER_TEMP/recovery-tls/ca.crt" -CAkey "$RUNNER_TEMP/recovery-tls/ca.key" -CAcreateserial -days 1 -extfile "$RUNNER_TEMP/recovery-tls/extensions" -out "$RUNNER_TEMP/recovery-tls/server.crt" >/dev/null 2>&1
+            node test/helpers/owner-recovery-https-setup.ts caddy
+            if test "$OWNER_HTTPS_SCENARIO" = browser || test "$OWNER_HTTPS_SCENARIO" = journal; then
+              python3 - <<'PY_TLS'
+          import os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'recovery-tls/Caddyfile'
+          data=path.read_text()
+          old='https://review.example.test:14443 {'
+          assert data.count(old)==1 and data.count(' bind 127.0.0.1\n')==1
+          path.write_text(data.replace(old,'https://review.example.test:443 {'))
+          PY_TLS
+            fi
+            docker run -d --name recovery-next-fixture --network host --read-only --cap-drop ALL --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp --mount type=bind,src=/run/lifeos-platform,dst=/run/lifeos-platform,readonly "lifeos-synthetic:$image_sha" >/dev/null
+            docker run -d --name recovery-caddy-fixture --network host --read-only --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --user "$(id -u):$(id -g)" --tmpfs /tmp -e XDG_CONFIG_HOME=/tmp/config -e XDG_DATA_HOME=/tmp/data --mount "type=bind,src=$RUNNER_TEMP/recovery-tls,dst=/fixture,readonly" --entrypoint caddy docker.io/library/caddy@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5 run --config /fixture/Caddyfile --adapter caddyfile >/dev/null
+            if test "$OWNER_HTTPS_SCENARIO" = browser || test "$OWNER_HTTPS_SCENARIO" = journal; then
+              node test/helpers/owner-recovery-browser-fixture.ts wait-https
+            else
+              node test/helpers/owner-recovery-https-setup.ts wait
+            fi
+            (cd "$fixture_root" && node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/rendered-$OWNER_HTTPS_SCENARIO.xml" "$test_file")
+          )
+          run_scenario recovery
+          run_scenario permit
+          run_scenario browser
+          run_scenario journal
+          (
+            export RUNNER_TEMP="$RUNNER_TEMP/vtable-baseline"
+            mkdir -m 0700 "$RUNNER_TEMP"
+            baseline=0371234b6b472790a4b1bc78a5869a2251fda68e
+            git fetch --no-tags --depth=1 origin "$baseline"
+            test "$(git rev-parse FETCH_HEAD)" = "$baseline"
+            fixture_root="$RUNNER_TEMP/source"
+            mkdir "$fixture_root"
+            # The pinned Git tree supplies all application bytes. Only the packaging recipe is shared.
+            git archive "$baseline" | tar -xf - -C "$fixture_root"
+            if test -f "$fixture_root/.env.example"; then
+              mkdir -p "$fixture_root/docs"
+              mv "$fixture_root/.env.example" "$fixture_root/docs/benchmark-environment-example.txt"
+            fi
+            cp Dockerfile.platform-review .dockerignore "$fixture_root/"
+            docker build --pull --build-arg SOURCE_COMMIT="$baseline" --file "$fixture_root/Dockerfile.platform-review" --tag "lifeos-synthetic:$baseline" "$fixture_root"
+            test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "lifeos-synthetic:$baseline")" = "$baseline"
+            docker create --name baseline-image-proof "lifeos-synthetic:$baseline" >/dev/null
+            trap 'docker rm -f baseline-image-proof >/dev/null 2>&1 || true' EXIT
+            mkdir "$fixture_root/.next"
+            docker cp baseline-image-proof:/app/.image-source-proof.json "$fixture_root/.image-source-proof.json"
+            docker cp baseline-image-proof:/app/.next/BUILD_ID "$fixture_root/.next/BUILD_ID"
+            docker cp baseline-image-proof:/app/package-lock.json "$RUNNER_TEMP/baseline-image-lock.json"
+            cmp "$fixture_root/package-lock.json" "$RUNNER_TEMP/baseline-image-lock.json"
+            docker cp baseline-image-proof:/app/.next/static "$fixture_root/.next/static"
+            node scripts/client-bundle-evidence.mjs "$fixture_root" "$baseline"
+            node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(process.argv[1]));if(p.sourceSha!==process.argv[2])throw Error("Baseline image source mismatch");' "$fixture_root/.image-source-proof.json" "$baseline"
+            python3 scripts/attach-vtable-benchmark.py "$fixture_root" "$PWD"
+            (cd "$fixture_root" && npm ci --ignore-scripts --no-audit --no-fund)
+            export LIFEOS_REVIEW_GIT_SHA="$baseline"
+            run_scenario browser "$fixture_root" "$baseline"
+          )
+      - name: Verify every enabled case and the finite synthetic capture manifest
+        id: capture-guard
+        env:
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+        run: |
+          python3 - <<'PY_GUARD'
+          import os, json, hashlib, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])
+          expected={
+              'recovery':{'isolated real Next, Caddy TLS and PostgreSQL recovery'},
+              'permit':{'isolated Next permits logout after a previously valid business permit is revoked'},
+              'journal':{'isolated synthetic journal receipt and refresh readback'},
+              'browser':{'no-JS page lifecycle finishes and closes before the next page opens',
+                         'isolated browser owner recovery and password flow',
+                         'isolated private business route boundaries',
+                         'isolated private appearance and draft lifecycle',
+                         'isolated private business presentation matrix'},
+          }
+          for group,names in expected.items():
+              cases=list(ET.parse(root/f'rendered-{group}.xml').getroot().iter('testcase'))
+              assert len(cases)==len(names) and {c.get('name') for c in cases}==names, 'Unexpected enabled case set'
+              assert not any(c.find(tag) is not None for c in cases for tag in ('skipped','failure','error')), 'Skipped or failed fixture is not acceptance'
+          manifest=json.loads((root/'synthetic-rendered-qualification.json').read_text())
+          assert set(manifest)=={'version','kind','repository','repositoryId','sourceSha','runId','runAttempt','buildId','captureGuard','images'}
+          assert manifest['version']==1 and manifest['kind']=='synthetic-rendered-qualification'
+          assert manifest['repository']=='Nirvana-Chow/lifeos-app' and manifest['repositoryId']=='1443243170'
+          assert manifest['sourceSha']==os.environ['SOURCE_SHA']==os.environ['CI_HEAD_SHA']
+          assert manifest['runId']==os.environ['GITHUB_RUN_ID'] and manifest['runAttempt']==os.environ['GITHUB_RUN_ATTEMPT']
+          assert manifest['buildId']==Path('.next/BUILD_ID').read_text().strip()
+          assert manifest['captureGuard']=='finite-source-and-synthetic-content-v1'
+          assert len(manifest['images'])==118 and len({row['name'] for row in manifest['images']})==118
+          for row in manifest['images']:
+              assert set(row)=={'name','directory','route','viewport','theme','sha256','bytes','image'}
+              assert set(row['viewport'])=={'width','height'} and set(row['image'])=={'width','height'}
+              assert row['theme'] in ('light','dark') and row['viewport']['width'] in (1365,360,390,430)
+              assert row['route'].startswith('/personal') or row['route'] in ('/','/login','/account/recover')
+              assert row['directory'] in ('owner-recovery-browser-screenshots','owner-personal-browser-screenshots')
+              assert '/' not in row['name'] and row['name'].endswith('.png')
+              path=root/row['directory']/row['name']
+              assert path.is_file() and not path.is_symlink()
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==row['sha256'] and path.stat().st_size==row['bytes']
+          assert not Path('/run/lifeos-platform').exists() and not (root/'recovery-tls').exists() and not (root/'owner-recovery-browser-nss.json').exists(), 'Fixture cleanup did not finish'
+          print('PASS: recovery + permit + all five browser groups, zero skips; 118 guarded synthetic PNGs, cleanup complete.')
+          PY_GUARD
+      - name: Upload only named synthetic images and their finite manifest
+        if: success() && steps.rendered-qualification.outcome == 'success' && steps.capture-guard.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 official
+        with:
+          name: synthetic-rendered-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 6
+          path: |
+            ${{ runner.temp }}/synthetic-rendered-qualification.json
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/recovery-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/recovery-mobile.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/login-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/login-mobile.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/mfa-login-desktop.png
+            ${{ runner.temp }}/owner-recovery-browser-screenshots/mfa-login-mobile.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/workspace-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/editor-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-home-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-projects-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-areas-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-journal-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-finance-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-health-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-workflows-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-tools-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-data-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-390-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-390-dark.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-430-light.png
+            ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-430-dark.png
+      - name: Confirm verification preserved the committed lock
+        run: git diff --exit-code -- package.json package-lock.json
+

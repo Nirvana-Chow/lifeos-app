@@ -25,6 +25,8 @@ import {recordSyntheticCapture,publishSyntheticCaptureManifest,assertFixtureComp
 async function safeScreenshot(page:Page,name:string){await guardedAuthScreenshot(page,name);recordSyntheticCapture({name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});}
 let completedHandoff:PrivateBrowserHandoff|undefined;
 const enabled=process.env.RUN_OWNER_RECOVERY_BROWSER_TESTS==='1';
+const qualificationMode=process.env.LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE??'full';
+if(!['full','visual','release'].includes(qualificationMode))throw Error('BROWSER_QUALIFICATION_MODE_INVALID');
 const origin='https://review.example.test',target='postgresql://lifeos_platform_candidate_runtime:fixture-ci-runtime-never-live@127.0.0.1:55432/lifeos_platform_test_local';
 const args=['--no-proxy-server','--disable-background-networking','--host-resolver-rules=MAP review.example.test 127.0.0.1, MAP * ~NOTFOUND'];
 const must=(ok:unknown,stage:string)=>{if(!ok)throw Error(stage);};
@@ -173,7 +175,10 @@ const privateGroups=[
  ['isolated private appearance and draft lifecycle',90000,verifyPrivateAppearanceAndDrafts],
  ['isolated private business presentation matrix',180000,verifyPrivatePresentationMatrix],
 ] as const;
-for(const [name,timeout,run] of privateGroups)test(name,{skip:!enabled?'isolated browser CI not requested':false,concurrency:false,timeout},async(t)=>{
+// Release retains the original safety/data assertions. The separate visual run
+// retains the entire original matrix and its guarded screenshots/benchmarks.
+const selectedPrivateGroups=privateGroups.filter(([name])=>qualificationMode!=='release'||name!=='isolated private business presentation matrix');
+for(const [name,timeout,run] of selectedPrivateGroups)test(name,{skip:!enabled?'isolated browser CI not requested':false,concurrency:false,timeout},async(t)=>{
  const start=performance.now();let passed=false;
  try{
   const matrix=name==='isolated private business presentation matrix';
@@ -191,5 +196,5 @@ for(const [name,timeout,run] of privateGroups)test(name,{skip:!enabled?'isolated
   passed=true;
  }
  catch(error){completedHandoff=undefined;const allowed=['PRIVATE_CAPTURE_DENIED','PRIVATE_SNAPSHOT_DENIED','PRIVATE_FIRST_VISIBLE_THEME','BROWSER_PRIVATE_HANDOFF_UNAVAILABLE','BROWSER_FIXTURE_UNAVAILABLE','BROWSER_FIXTURE_CLEANUP_FAILED'];const reason=error instanceof Error&&allowed.includes(error.message)?error.message:error instanceof Error&&error.name==='TimeoutError'?'timeout':error instanceof Error&&error.name==='AssertionError'?'assertion':'other';console.log('PRIVATE_BROWSER_FAILURE '+JSON.stringify({group:name,reason}));throw Error('PRIVATE_BROWSER_GROUP_FAILED_'+name.replaceAll(' ','_'));}
- finally{if(!passed||name==='isolated private business presentation matrix')completedHandoff=undefined;console.log('PRIVATE_BROWSER_GROUP '+JSON.stringify({group:name,elapsedMs:Math.round(performance.now()-start),passed}));}
+ finally{if(!passed||name===selectedPrivateGroups.at(-1)?.[0])completedHandoff=undefined;console.log('PRIVATE_BROWSER_GROUP '+JSON.stringify({group:name,elapsedMs:Math.round(performance.now()-start),passed}));}
 });

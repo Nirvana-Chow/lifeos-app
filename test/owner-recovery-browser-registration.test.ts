@@ -31,3 +31,12 @@ test('early explicit auth mode still registers and enables its actual standalone
 test('full owner mode registers exactly the original five cases with no extra skipped oracle',()=>{
  const rows=declarations({RUN_OWNER_RECOVERY_BROWSER_TESTS:'1'});assert.deepEqual(rows.map(r=>r.name),full);assert.equal(rows.some(r=>r.skip),false);
 });
+test('explicit visual mode preserves every original five-case declaration without skips',()=>{
+ const rows=declarations({RUN_OWNER_RECOVERY_BROWSER_TESTS:'1',LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE:'visual'});assert.deepEqual(rows.map(r=>r.name),full);assert.equal(rows.some(r=>r.skip),false);
+});
+test('required release mode registers exactly four original safety and data cases without a skipped matrix',()=>{
+ const rows=declarations({RUN_OWNER_RECOVERY_BROWSER_TESTS:'1',LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE:'release'});assert.deepEqual(rows.map(r=>r.name),full.slice(0,4));assert.equal(rows.some(r=>r.skip),false);
+});
+test('unknown browser qualification modes reject rather than silently dropping a case',()=>{
+ assert.throws(()=>declarations({RUN_OWNER_RECOVERY_BROWSER_TESTS:'1',LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE:'typo'}),/BROWSER_QUALIFICATION_MODE_INVALID/);
+});
