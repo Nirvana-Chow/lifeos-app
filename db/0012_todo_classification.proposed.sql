@@ -1,22 +1,30 @@
 -- Proposed only: never executed at application startup. Explicit exact-target
 -- approval plus qualified 0011/schema2 and an independent migration owner.
 -- No roles, credentials, current key scope changes, or business record migration.
+-- The auth owner creates the SECURITY DEFINER producer check. Independently
+-- pin the reviewed existing platform owner; never change ownership to qualify.
 BEGIN;
 SET LOCAL search_path = pg_catalog, pg_temp;
 DO $$
+DECLARE platform_owner oid;
 BEGIN
  IF current_user IN ('lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_issuer','lifeos_agent_verifier','lifeos_agent_key_manager')
     OR current_setting('lifeos.todo_classification_approved',true) IS DISTINCT FROM '1'
     OR current_setting('lifeos.agent_expected_database',true) IS DISTINCT FROM current_database() THEN
   RAISE EXCEPTION 'Explicit exact-target approval and independent migration owner required';
  END IF;
+ SELECT oid INTO platform_owner FROM pg_roles
+  WHERE rolname=current_setting('lifeos.todo_classification_expected_platform_owner',true)
+   AND rolname NOT IN ('lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_issuer','lifeos_agent_verifier','lifeos_agent_key_manager');
  IF to_regprocedure('lifeos_agent.assert_business_grant(text,text,text,text[])') IS NULL
     OR to_regprocedure('lifeos_agent.set_managed_grant_scopes(text,text,text,jsonb)') IS NULL
     OR to_regclass('lifeos_agent.key_management_binding') IS NULL
     OR to_regclass('lifeos_platform.platform_two_factor') IS NULL
     OR (SELECT version FROM lifeos_platform.platform_meta) IS DISTINCT FROM 2
     OR (SELECT relowner FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass) IS DISTINCT FROM (SELECT oid FROM pg_roles WHERE rolname=current_user)
-    OR (SELECT relowner FROM pg_class WHERE oid='lifeos_platform.platform_record'::regclass) IS DISTINCT FROM (SELECT oid FROM pg_roles WHERE rolname=current_user)
+    OR platform_owner IS NULL
+    OR (SELECT nspowner FROM pg_namespace WHERE nspname='lifeos_platform') IS DISTINCT FROM platform_owner
+    OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='lifeos_platform' AND c.relname IN ('platform_meta','platform_source','platform_record','platform_history','platform_command') AND c.relkind='r' AND c.relowner=platform_owner)<>5
     OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='lifeos_platform' AND c.relname IN ('platform_source','platform_record','platform_history','platform_command') AND c.relrowsecurity AND c.relforcerowsecurity)<>4
     OR (SELECT count(*) FROM pg_roles WHERE rolname IN ('lifeos_platform_candidate_runtime','lifeos_agent_verifier','lifeos_agent_key_manager'))<>3
     OR EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname IN ('lifeos_platform_candidate_runtime','lifeos_agent_verifier','lifeos_agent_key_manager') AND (r.rolsuper OR r.rolbypassrls OR r.rolcreatedb OR r.rolcreaterole OR r.rolinherit OR r.rolreplication OR EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid))) THEN
