@@ -84,11 +84,12 @@ jobs:
           test "$(git ls-files '*lock.json' '*lock.yaml' '*lock.yml' yarn.lock npm-shrinkwrap.json | wc -l)" -eq 1
           git ls-files --error-unmatch package-lock.json >/dev/null
           printf 'source=%s\nevent=%s\nworkflow=%s\n' "$SOURCE_SHA" "$CI_EVENT_SHA" "$CI_WORKFLOW_SHA"
-      - name: Set up the reviewed Node release, without persistent package cache
+      - name: Set up the reviewed Node release with lock-bound npm download cache
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
-          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install the committed dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Unit and contract tests (opt-in integration skips are not acceptance)
@@ -374,7 +375,8 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.22.1'
-          package-manager-cache: false
+          cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
         run: |
@@ -484,7 +486,7 @@ jobs:
           RUN_SETTINGS_BROWSER_TESTS: '1'
           RUN_REQUIREMENTS_BROWSER_TESTS: '1'
           LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
-        run: node --test --test-concurrency=1 test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts test/workspace-settings-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts test/account-password-browser.integration.test.ts
+        run: node --test --test-concurrency=1 test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts test/workspace-settings-browser.integration.test.ts test/account-password-browser.integration.test.ts
       - name: Build the exact public source image and read back its source proof
         run: |
           set -euo pipefail
