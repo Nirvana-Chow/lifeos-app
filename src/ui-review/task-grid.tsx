@@ -213,7 +213,7 @@ export function TaskGrid(props: TaskGridProps) {
   const [error, setError] = useState<string | null>(null);
   const [layoutState,setLayoutState]=useState<{scope:string|null;value:GridLayout}>({scope:null,value:defaultLayout()});
   const [rowEstimate,setRowEstimate]=useState(52);
-  useEffect(()=>{const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
