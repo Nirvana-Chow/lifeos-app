@@ -1131,7 +1131,11 @@ function DataGridTableBase({ children }: { children: ReactNode }) {
             key={column.id}
             style={
               props.tableLayout?.columnsResizable
-                ? { width: `calc(var(--col-${column.id}-size) * 1px)` }
+                ? {
+                    width: column.columnDef.meta?.fillWidth
+                      ? "auto"
+                      : `calc(var(--col-${column.id}-size) * 1px)`,
+                  }
                 : props.tableLayout?.width === "fixed"
                   ? { width: column.getSize() }
                   : undefined
@@ -1144,7 +1148,11 @@ function DataGridTableBase({ children }: { children: ReactNode }) {
             key={column.id}
             style={
               props.tableLayout?.columnsResizable
-                ? { width: `calc(var(--col-${column.id}-size) * 1px)` }
+                ? {
+                    width: column.columnDef.meta?.fillWidth
+                      ? "auto"
+                      : `calc(var(--col-${column.id}-size) * 1px)`,
+                  }
                 : props.tableLayout?.width === "fixed"
                   ? { width: column.getSize() }
                   : undefined
@@ -1447,7 +1455,12 @@ function DataGridTableHeadRowCell<TData extends object>({
         // the cell itself.
         ...(props.tableLayout?.headerSticky && isPinned && { top: 0 }),
         ...(props.tableLayout?.columnsResizable && {
-          width: getDataGridHeadCellSizeVar(header, coveredHeaders),
+          // Fixed table layout gives an unsized column the remaining width.
+          // Leave BOTH its col and first-row cell unsized so the title owns
+          // surplus before hydration, instead of stretching every metadata col.
+          width: column.columnDef.meta?.fillWidth
+            ? "auto"
+            : getDataGridHeadCellSizeVar(header, coveredHeaders),
         }),
         ...(dndStyle ? dndStyle : null),
       }}

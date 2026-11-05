@@ -31,6 +31,21 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const baseline=requirements(), allIds=baseline.requirements.map(r=>r.id).sort();
  const screenshots=join(source,'.review-results');await mkdir(screenshots,{recursive:true});
+ await t.test('full-width title owns surplus before hydration without stretching metadata',async()=>{
+  const page=await browser.newPage({viewport:{width:1920,height:900},javaScriptEnabled:false});
+  try{
+   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+   const geometry=await page.locator('[data-requirements-grid="reui"]').evaluate(node=>({
+    viewport:node.querySelector('[data-slot="data-grid-table-viewport"]')!.clientWidth,
+    cols:[...node.querySelectorAll('col')].map(c=>({style:c.getAttribute('style'),width:getComputedStyle(c).width})),
+    widths:[...node.querySelectorAll('thead th')].map(cell=>cell.getBoundingClientRect().width),
+   }));
+   t.diagnostic(JSON.stringify({beforeHydration:geometry}));
+   for(const [index,width] of [[1,180],[2,100],[3,140],[4,170],[5,240]])assert.ok(Math.abs(geometry.widths[index]!-width!)<1,`Metadata column ${index} should retain its ${width}px model width before hydration, got ${geometry.widths[index]}`);
+   assert.ok(Math.abs(geometry.widths[0]!-(geometry.viewport-830))<2,'Title owns all workspace surplus before hydration');
+   assert.ok(geometry.widths[6]!<=1,'No empty fill strip before hydration');
+  }finally{await page.close();}
+ });
  for(const [width,theme] of [[1920,'light'],[1920,'dark'],[1365,'light'],[1365,'dark'],[390,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme});page.setDefaultTimeout(8000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
