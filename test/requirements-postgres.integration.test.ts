@@ -18,7 +18,7 @@ test('OPT-IN independent native requirements schema2 persistence and grants',{sk
  try{
   await verifyRestrictedPool(business as SqlPool);await verifyAgentRequirementsReadiness(business);
   await t.test('concurrent first overlays lock one deterministic identity and second different key sees CAS conflict',async()=>{
-   const id=requirements().requirements[0].id,command={...body,expectedRevision:0,baselineBinding:requirementBinding(requirements(),id)};
+   const id=(await service.snapshot(fixture.ownerId)).items.find(item=>item.id.startsWith('LO-')&&item.revision===0)!.id,command={...body,expectedRevision:0,baselineBinding:requirementBinding(requirements(),id)};
    const outcomes=await Promise.allSettled([service.mutate(fixture.ownerId,id,command,randomUUID()),service.mutate(fixture.ownerId,id,command,randomUUID())]);
    assert.equal(outcomes.filter(r=>r.status==='fulfilled').length,1);assert.equal((outcomes.find(r=>r.status==='rejected') as PromiseRejectedResult).reason.code,'REVISION_CONFLICT');
    const counts=(await admin.query('SELECT count(*)::int AS records,(SELECT count(*)::int FROM lifeos_platform.platform_history WHERE record_id=$1) AS history FROM lifeos_platform.platform_record WHERE id=$1',[requirementIdentity(fixture.ownerId,fixture.spaceId,id)])).rows[0];assert.deepEqual(counts,{records:1,history:1});

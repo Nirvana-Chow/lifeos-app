@@ -1,0 +1,49 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {chromium,expect} from '@playwright/test';
+import {MemoryPort} from './helpers/platform.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+
+// Actual components + same owner HTTP/service, synthetic in-memory persistence only.
+// Independent native PostgreSQL evidence lives in requirements-postgres.integration.test.ts.
+test('OPT-IN requirement editor persists create/edit/readback, preserves dirty/unknown drafts and displays actual dates',{
+ skip:process.env.RUN_REQUIREMENTS_CRUD_BROWSER_TESTS!=='1'&&'Requires actual Chrome and isolated Next fixture',timeout:180000,
+},async t=>{
+ const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-requirements-crud-'));
+ await mkdir(join(root,'app'),{recursive:true});
+ await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+ await writeFile(join(root,'app/page.tsx'),`'use client';import{useRef,useState}from'react';import{RequirementsPage}from'../src/ui-review/requirements-page';export default function Page(){const guard=useRef<(()=>boolean)|null>(null),[container,setContainer]=useState<HTMLElement|null>(null),[left,setLeft]=useState(false);return <div data-lifeos-surface style={{height:'100dvh',display:'flex'}}><aside style={{width:100,flexShrink:0}}><button onClick={()=>{if(!guard.current||guard.current())setLeft(true);}}>离开需求</button></aside><main id="requirement-fixture-content" ref={setContainer} style={{padding:16,flex:1,minWidth:0,minHeight:0,display:'flex',overflow:'hidden'}}>{left?<p>已离开需求</p>:<RequirementsPage container={container} navigationGuard={guard}/>}</main></div>}`);
+ const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']}),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
+ const config={ownerId:'requirements-browser-owner',ownerEmail:'fixture@example.test',spaceId:'requirements-browser-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
+ const repo=new MemoryPort(),native=repo.transaction.bind(repo);repo.transaction=(owner,key,fn)=>native(owner,key,tx=>fn({...tx,lockRecordIdentity:async()=>{}}));repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
+ let account=config.ownerId as string,writable=true,loseNext=false;const handler=createPersonalPlatformHandler({config,repository:repo,storageVerified:true,sessions:{read:async()=>({userId:account,email:config.ownerEmail})},assertWritable:async()=>{if(!writable)throw Error('closed');}});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ for(const width of [1366,390])await t.test(`actual editor ${width}`,async()=>{
+  const page=await browser.newPage({viewport:{width,height:768},colorScheme:width===1366?'light':'dark'});page.setDefaultTimeout(10000);t.after(()=>page.close());const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/api/platform/personal/**',async route=>{const req=route.request(),response=await handler(new Request(req.url(),{method:req.method(),headers:{...req.headers(),host:new URL(origin).host},...(req.postData()?{body:req.postData()!}:{})}));if(loseNext&&req.method()!=='GET'){loseNext=false;await route.abort();return;}await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
+  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});await expect(page.getByRole('button',{name:'新增需求',exact:true})).toBeEnabled();await page.getByRole('button',{name:'新增需求',exact:true}).click();
+  const dialog=page.getByRole('dialog');await dialog.getByLabel('需求标题',{exact:true}).fill('Synthetic requirement '+width);await dialog.getByLabel('需求描述',{exact:true}).fill('Long synthetic description\n<script>never execute</script>\n'+('长文本'.repeat(1500)));await dialog.getByLabel('优先级',{exact:true}).selectOption('P3');await dialog.getByLabel('阶段',{exact:true}).selectOption('workspace');await dialog.getByLabel('计划开始日期',{exact:true}).fill('2026-11-07');await dialog.getByLabel('计划结束日期',{exact:true}).fill('2026-11-12');
+  await Promise.all([page.waitForEvent('dialog').then(d=>d.dismiss()),dialog.getByRole('button',{name:'关闭',exact:true}).click()]);await expect(dialog).toBeVisible();await expect(dialog.getByLabel('需求标题',{exact:true})).toHaveValue('Synthetic requirement '+width);
+  await dialog.getByRole('button',{name:'保存需求',exact:true}).click();await expect(dialog.getByText('修改仅影响需求内容与计划',{exact:true})).toBeVisible();const row=[...repo.rows.values()].find(row=>'title'in row.draft&&row.draft.title==='Synthetic requirement '+width)!;assert.equal(row.revision,1);
+  await dialog.getByRole('button',{name:'关闭',exact:true}).click();await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:new RegExp('查看需求 '+row.id)}).click();await expect(dialog.getByLabel('需求标题',{exact:true})).toHaveValue('Synthetic requirement '+width);
+  await dialog.getByLabel('需求标题',{exact:true}).fill('Edited requirement '+width);await dialog.getByLabel('优先级',{exact:true}).selectOption('P1');loseNext=true;await dialog.getByRole('button',{name:'保存需求',exact:true}).click();await expect(dialog.getByRole('button',{name:'重试原请求并回读',exact:true})).toBeVisible();assert.equal(repo.rows.get(row.id)!.revision,2);
+  await dialog.getByRole('button',{name:'关闭',exact:true}).click();await expect(dialog).toHaveCount(0);await page.getByRole('button',{name:'查看原请求',exact:true}).click();await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'重试原请求并回读',exact:true}).click();await expect(dialog.getByText('修改仅影响需求内容与计划',{exact:true})).toBeVisible();assert.equal(repo.rows.get(row.id)!.revision,2);
+  await dialog.getByRole('button',{name:'展开到内容区',exact:true}).click();await expect.poll(async()=>{const box=await dialog.boundingBox(),content=await page.locator('#requirement-fixture-content').boundingBox();return !!(box&&content&&Math.abs(box.x-content.x)<2&&Math.abs(box.width-content.width)<2);}).toBe(true);
+  await dialog.getByRole('button',{name:'关闭',exact:true}).click();await page.getByRole('button',{name:'甘特视图',exact:true}).click();await expect(page.getByRole('img',{name:'计划 2026-11-07 至 2026-11-12'}).last()).toBeVisible();await expect(page.getByRole('button',{name:new RegExp('查看需求 '+row.id)})).toBeVisible();await expect(page.locator('[data-requirement-id="'+row.id+'"] button>span').last()).toBeVisible();
+  await page.getByRole('button',{name:new RegExp('查看需求 '+row.id)}).click();assert.equal(await dialog.locator('script').count(),0);await expect(dialog.getByLabel('需求描述',{exact:true})).toHaveValue(/never execute/);await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+  assert.deepEqual(errors,[]);await mkdir(join(source,'.review-results'),{recursive:true});await page.screenshot({path:join(source,'.review-results','requirements-crud-'+width+'.png')});
+ });
+ await t.test('current foreign account clears private rows and editor instead of keeping a cached pool',async()=>{
+  const page=await browser.newPage({viewport:{width:1366,height:768}});t.after(()=>page.close());
+  await page.route('**/api/platform/personal/**',async route=>{const req=route.request(),res=await handler(new Request(req.url(),{method:req.method(),headers:{...req.headers(),host:new URL(origin).host}}));await route.fulfill({status:res.status,headers:Object.fromEntries(res.headers),body:await res.text()});});
+  await page.goto(origin,{waitUntil:'networkidle'});await expect(page.getByRole('button',{name:'新增需求',exact:true})).toBeEnabled();const saved=[...repo.rows.values()][0];await page.getByRole('button',{name:new RegExp('查看需求 '+saved.id)}).click();await expect(page.getByRole('dialog').getByLabel('需求标题',{exact:true})).toBeVisible();account='foreign-requirements-owner';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('[data-requirement-id]')).toHaveCount(0);await expect(page.getByText('当前账号不能读取本人需求，请恢复本人登录。',{exact:true})).toBeVisible();
+ });
+
+});

@@ -101,14 +101,16 @@ export async function verifyAgentBusinessReadiness(pool:{query:(sql:string)=>Pro
     throw new PlatformError(503,'AGENT_API_UNAVAILABLE','业务授权检查暂不可用。');
 }
 
+/** SHA256 of the exact proposed0014 function bodies. A source-parity test binds these to SQL. */
+export const requirementsGrantSourceDigests={permissions:'9b2d655ce17ae1ed2947e1348d3c78da4415cef0ed6e2c1120bdf3b6cda3cdd7',fence:'7c4d741a533ecebbeddee2bea78ca266b047049bbbe658530b3a6f23b5de25c2'} as const;
 /** Optional0014 readiness never activates scopes merely because the TypeScript codec knows them. */
 export async function verifyAgentRequirementsReadiness(pool:{query:(sql:string)=>Promise<{rows:Record<string,unknown>[]} >}):Promise<void>{
  await verifyAgentBusinessReadiness(pool);
  const {rows}=await pool.query(`SELECT
   lifeos_agent.requirements_permission_version()='requirements-v1' AS version,
-  lifeos_agent.valid_business_permissions('{"requirements":["read","write"]}'::jsonb) AND
-  NOT lifeos_agent.valid_business_permissions('{"requirements":["write"]}'::jsonb) AND
-  NOT lifeos_agent.valid_business_permissions('{"requirements":["read"],"unknown":["read"]}'::jsonb) AS language,
+  (SELECT encode(sha256(convert_to(prosrc,'UTF8')),'hex')='${requirementsGrantSourceDigests.permissions}' FROM pg_proc WHERE oid=to_regprocedure('lifeos_agent.valid_business_permissions(jsonb)')) AS language_source,
+  (SELECT encode(sha256(convert_to(prosrc,'UTF8')),'hex')='${requirementsGrantSourceDigests.fence}' FROM pg_proc WHERE oid=to_regprocedure('lifeos_agent.assert_business_grant(text,text,text,text[])')) AS fence_source,
+  has_function_privilege(current_user,'lifeos_agent.valid_business_permissions(jsonb)','EXECUTE') AS can_validate,
   p.proowner=(SELECT relowner FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass)
    AND NOT p.prosecdef AND p.proconfig=ARRAY['search_path=pg_catalog, pg_temp']::text[]
    AND has_function_privilege('lifeos_platform_candidate_runtime',p.oid,'EXECUTE')
@@ -116,7 +118,10 @@ export async function verifyAgentRequirementsReadiness(pool:{query:(sql:string)=
    AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
     WHERE a.privilege_type='EXECUTE' AND (a.is_grantable AND a.grantee<>p.proowner OR a.grantee NOT IN (p.proowner,(SELECT oid FROM pg_roles WHERE rolname='lifeos_platform_candidate_runtime'),(SELECT oid FROM pg_roles WHERE rolname='lifeos_agent_key_manager')))) AS marker_safe
   FROM pg_proc p WHERE p.oid=to_regprocedure('lifeos_agent.requirements_permission_version()')`);
- if(rows.length!==1||Object.values(rows[0]).some(value=>value!==true))throw new PlatformError(503,'AGENT_REQUIREMENTS_UNAVAILABLE','需求授权尚未配置。');
+ if(rows.length!==1||typeof rows[0].can_validate!=='boolean'||['version','language_source','fence_source','marker_safe'].some(key=>rows[0][key]!==true))throw new PlatformError(503,'AGENT_REQUIREMENTS_UNAVAILABLE','需求授权尚未配置。');
+ // The native0011 ACL intentionally gives this pure validator only to the manager.
+ // Runtime verifies the owning migration marker without requesting more authority.
+ if(rows[0].can_validate){const {rows:language}=await pool.query(`SELECT lifeos_agent.valid_business_permissions('{"requirements":["read","write"]}'::jsonb) AND NOT lifeos_agent.valid_business_permissions('{"requirements":["write"]}'::jsonb) AND NOT lifeos_agent.valid_business_permissions('{"requirements":["read"],"unknown":["read"]}'::jsonb) AS valid`);if(language.length!==1||language[0].valid!==true)throw new PlatformError(503,'AGENT_REQUIREMENTS_UNAVAILABLE','需求权限语言无效。');}
 }
 
 async function initialize(platform: PlatformConfig, personal: PersonalConfig, config: AgentConfig): Promise<AgentRuntime> {

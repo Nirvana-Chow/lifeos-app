@@ -75,3 +75,9 @@ test('known corrupted requirement rows fail full snapshot closed; missing identi
  let checks=0;await assert.rejects(service.mutate(config.ownerId,null,create,'requirements-late-revoke',async()=>{if(++checks===3)throw Error('owner session changed');}));assert.equal(repo.rows.size,1);assert.equal(repo.historyRows.length,1);
  const original=repo.transaction.bind(repo);repo.transaction=(owner,key,fn)=>original(owner,key,tx=>{const{lockRecordIdentity,...without}=tx;void lockRecordIdentity;return fn(without);});await assert.rejects(service.mutate(config.ownerId,null,create,'requirements-no-native-lock'),{code:'REQUIREMENTS_IDENTITY_LOCK_UNAVAILABLE'});assert.equal(repo.rows.size,1);
 });
+
+test('existing personal overview and task snapshots ignore typed requirement inbox rows without new allowedTypes',async()=>{
+ const {PersonalService}=await import('../src/personal-candidate/service.ts'),{service,repo}=setup();await service.mutate(config.ownerId,null,create,'requirements-overview-private');const personal=new PersonalService(repo,config);
+ await personal.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic existing task',notes:'',dueOn:null,status:'open'}},'requirements-overview-todo');
+ assert.equal((await personal.currentSnapshot(config.ownerId)).length,1);const overview=await personal.overview(config.ownerId,'2026-11-05');assert.equal(overview.total,1);assert.equal(overview.counts.open,1);assert.equal((await service.snapshot(config.ownerId)).total,35);
+});

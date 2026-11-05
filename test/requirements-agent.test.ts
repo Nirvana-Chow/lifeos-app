@@ -53,7 +53,7 @@ test('requirements runtime flags and native readiness are independent of legacy 
  assert.equal(agentOperationAvailable('snapshotRequirements',config,false,{organization:false,classification:false,requirements:true}),false);
  assert.equal(agentOperationAvailable('snapshotRequirements',config,true,{organization:false,classification:false,requirements:true}),true);
  for(const marker of [{version:false,language:true,marker_safe:true},{version:true,language:false,marker_safe:true},{version:true,language:true,marker_safe:false}]){
-  let calls=0;await assert.rejects(verifyAgentRequirementsReadiness({query:async()=>({rows:[++calls===1?{all:true}:marker]})}),{code:'AGENT_REQUIREMENTS_UNAVAILABLE'});
+  let calls=0;await assert.rejects(verifyAgentRequirementsReadiness({query:async()=>({rows:[++calls===1?{all:true}:{...marker,can_validate:false}]})}),{code:'AGENT_REQUIREMENTS_UNAVAILABLE'});
  }
 });
 test('new issuer mode explicitly advertises and issues requirements scopes without granting anything implicitly',async()=>{
@@ -61,4 +61,14 @@ test('new issuer mode explicitly advertises and issues requirements scopes witho
  const issuer=createKeyIssuer({authenticate:async()=>true,list:async()=>({keys:[]}),issue:async input=>{received=input;return{key:'synthetic-only',grant:{id:'synthetic-grant',name:input.name,scopes:input.scopes,createdAt:new Date().toISOString(),expiresAt:null,status:'active'}};},revoke:async()=>true},Date.now,'requirements-v1');
  assert.equal(JSON.stringify((await issuer('list','synthetic-cookie',{})).body).includes('requirements:read'),true);
  const result=await issuer('create','synthetic-cookie',{name:'Synthetic',scopes:['requirements:read'],expiresInDays:7});assert.equal(result.status,201);assert.deepEqual((received as {scopes:string[]}).scopes,['requirements:read']);
+});
+
+test('readiness exact function digests match proposed0014 while runtime receives no validator EXECUTE',async()=>{
+ const {readFile}=await import('node:fs/promises'),{createHash}=await import('node:crypto'),{requirementsGrantSourceDigests,verifyAgentRequirementsReadiness}=await import('../src/agent-api/runtime.ts');
+ const sql=await readFile('db/0014_requirements_agent_grants.proposed.sql','utf8');
+ for(const [fn,expected]of [['valid_business_permissions',requirementsGrantSourceDigests.permissions],['assert_business_grant',requirementsGrantSourceDigests.fence]]){
+  const body=new RegExp('CREATE OR REPLACE FUNCTION lifeos_agent\\.'+fn+'\\(.*?AS \\$\\$(.*?)\\$\\$;','s').exec(sql)![1];assert.equal(createHash('sha256').update(body).digest('hex'),expected);
+ }
+ let calls=0;await verifyAgentRequirementsReadiness({query:async()=>({rows:[++calls===1?{all:true}:{version:true,language_source:true,fence_source:true,marker_safe:true,can_validate:false}]})});assert.equal(calls,2);
+ for(const key of ['language_source','fence_source']){let count=0;await assert.rejects(verifyAgentRequirementsReadiness({query:async()=>({rows:[++count===1?{all:true}:{version:true,language_source:true,fence_source:true,marker_safe:true,can_validate:false,[key]:false}]})}),{code:'AGENT_REQUIREMENTS_UNAVAILABLE'});}
 });

@@ -7,6 +7,7 @@ import {DataGrid,DataGridContainer,dataGridFeatures} from './reui/data-grid';
 import {DataGridTable} from './reui/data-grid-table';
 import {Badge} from './ui/badge';
 import {Button} from './ui/button';
+import {requirementSchedule,type PlannedDates} from '../requirements-candidate/planning';
 import styles from './requirements-page.module.css';
 
 export const implementationLabels:Record<ImplementationStatus,string>={not_started:'未开始',partial:'部分实现',implemented:'源码已实现'};
@@ -22,7 +23,7 @@ function RequirementHeader({column}:HeaderContext<typeof requirementFeatures,Req
  return <Button variant="ghost" className={styles.sort} onClick={column.getToggleSortingHandler()} aria-label={`按${label}排序`}>{label}<span aria-hidden="true">{direction==='asc'?'↑':direction==='desc'?'↓':'↕'}</span></Button>;
 }
 function RequirementTitle({item,onOpen}:{item:Requirement;onOpen:OpenRequirement}){
- return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id}>{item.id}</span><span>{item.title}</span></button></div>;
+ return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id} title={item.id}>{item.id.startsWith('LO-')?item.id:'私有 · '+item.id.slice(0,8)}</span><span>{item.title}</span></button></div>;
 }
 export function RequirementsTable({rows,phases,onOpen}:ViewProps){
  const columns=useMemo<ColumnDef<typeof requirementFeatures,Requirement>[]>(()=>{
@@ -48,8 +49,11 @@ export function RequirementsBoard({rows,phases,onOpen}:ViewProps){
   return <section key={phase.id} data-phase-tone={phaseColor(phase.id)} className={styles.column} aria-label={phase.title}><header className={styles.columnHeader}><h3>{phase.title}</h3><span>{items.length}</span></header><div className={styles.cards}>{items.map(item=><article className={styles.card} key={item.id}><RequirementTitle item={item} onOpen={onOpen}/><div className={styles.badges}><Badge variant="outline" data-priority={item.roadmap?.priority}>{item.roadmap?.priority??'待定'}</Badge><Badge variant="secondary">{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</Badge><span>{acceptanceLabels[item.status]}</span></div></article>)}{items.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
  })}</div>;
 }
-/** There are no planning dates in this baseline. Phase order never becomes a date interval. */
-export function RequirementsGantt({rows,phases=[],onOpen}:Pick<ViewProps,'rows'|'onOpen'>&{phases?:RoadmapPhase[]}){
- const groups=[...phases.map(phase=>({id:phase.id,title:phase.title,items:rows.filter(item=>item.roadmap?.phaseId===phase.id)})),{id:'unassigned',title:'未排阶段',items:rows.filter(item=>!phases.some(phase=>phase.id===item.roadmap?.phaseId))}].filter(group=>group.items.length);
- return <section className={styles.gantt} aria-label="需求甘特"><header className={styles.ganttHeader}><h3>未排期（{rows.length}）</h3><p>尚未设置计划日期</p></header><div className={styles.unscheduled}>{groups.map(group=><section key={group.id} data-phase-tone={phaseColor(group.id)}><h4 className={styles.unscheduledPhase}>{group.title} · {group.items.length}</h4>{group.items.map(item=><article className={styles.unscheduledRow} key={item.id}><RequirementTitle item={item} onOpen={onOpen}/><div className={styles.badges}><Badge variant="outline" data-priority={item.roadmap?.priority}>{item.roadmap?.priority??'待定'}</Badge><span>未排期</span></div></article>)}</section>)}{rows.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
+/** Date positions come from persistent fields; phase order never invents dates. */
+export function RequirementsGantt({rows,phases=[],planning=new Map(),onOpen}:Pick<ViewProps,'rows'|'onOpen'>&{phases?:RoadmapPhase[];planning?:ReadonlyMap<string,PlannedDates>}){
+ const schedule=requirementSchedule(rows,planning),unscheduled=schedule.unscheduled;
+ const groups=[...phases.map(phase=>({id:phase.id,title:phase.title,items:unscheduled.filter(item=>item.roadmap?.phaseId===phase.id)})),{id:'unassigned',title:'未排阶段',items:unscheduled.filter(item=>!phases.some(phase=>phase.id===item.roadmap?.phaseId))}].filter(group=>group.items.length);
+ return <section className={styles.gantt} aria-label="需求甘特"><header className={styles.ganttHeader}><h3>{schedule.scheduled.length?'计划日期 · '+schedule.scheduled.length+' 项':'未排期（'+rows.length+'）'}</h3><p>{schedule.scheduled.length?'仅展示已保存日期，未排期需求保留在下方':'尚未设置计划日期'}</p></header><div className={styles.unscheduled}>
+ {schedule.scheduled.length?<section className={styles.timeline} aria-label="已排期需求"><div className={styles.timelineScale}><span>{schedule.minOn}</span><span>{schedule.maxOn}</span></div>{schedule.scheduled.map(row=><article className={styles.timelineRow} key={row.item.id}><RequirementTitle item={row.item} onOpen={onOpen}/><div className={styles.timelineTrack} role="img" aria-label={row.kind==='range'?`计划 ${row.startOn} 至 ${row.endOn}`:row.kind==='start'?`计划开始 ${row.startOn}`:`计划结束 ${row.endOn}`}><span className={row.kind==='range'?styles.timelineBar:styles.timelinePoint} style={{left:`${row.left}%`,width:row.kind==='range'?`max(4px,${row.width}%)`:undefined}}/><span className={styles.timelineDate}>{row.kind==='range'?`${row.startOn} — ${row.endOn}`:row.kind==='start'?`${row.startOn} 开始`:`${row.endOn} 结束`}</span></div></article>)}</section>:null}
+ {schedule.scheduled.length?<h3 className={styles.unscheduledPhase}>未排期（{unscheduled.length}）</h3>:null}{groups.map(group=><section key={group.id} data-phase-tone={phaseColor(group.id)}><h4 className={styles.unscheduledPhase}>{group.title} · {group.items.length}</h4>{group.items.map(item=><article className={styles.unscheduledRow} key={item.id}><RequirementTitle item={item} onOpen={onOpen}/><div className={styles.badges}><Badge variant="outline" data-priority={item.roadmap?.priority}>{item.roadmap?.priority??'待定'}</Badge><span>未排期</span></div></article>)}</section>)}{rows.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
 }

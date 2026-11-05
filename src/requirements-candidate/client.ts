@@ -6,7 +6,7 @@ export type RequirementCommand={ownerId:string;spaceId:string;id:string|null;key
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>;
 type Fetch=(url:string,init?:RequestInit)=>Promise<Response>;
 export type RequirementMutationState={phase:'idle'|'saving'|'uncertain'|'saved'|'rejected';pending:RequirementCommand|null;saved:RequirementItem|null;observed:RequirementItem|null;error:string};
-const freeze=<T>(v:T):T=>{if(v&&typeof v==='object'){Object.values(v).forEach(freeze);Object.freeze(v);}return v;};
+const freeze=<T,>(v:T):T=>{if(v&&typeof v==='object'){Object.values(v).forEach(freeze);Object.freeze(v);}return v;};
 const canonical=(v:unknown):string=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).sort(([a],[b])=>a.localeCompare(b,'en')).map(([k,x])=>JSON.stringify(k)+':'+canonical(x)).join(',')+'}':JSON.stringify(v);
 function checked(value:unknown,binding:RequirementBinding):RequirementCommand{
  const v=object(value,['ownerId','spaceId','id','key','method','body']);

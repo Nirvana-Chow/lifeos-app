@@ -30,7 +30,7 @@ async function readGrantPage(response: Response) {
   return {grants: data.keys, nextCursor: data.nextCursor, availableScopes: data.availableScopes === undefined ? undefined : normalizeAgentScopes(data.availableScopes)};
 }
 
-const scopeModules = [{id: 'todo', label: '待办'}, {id: 'organization', label: '项目、领域和主题'}] as const;
+const scopeModules = [{id: 'todo', label: '待办'}, {id: 'organization', label: '项目、领域和主题'}, {id:'requirements',label:'需求'}] as const;
 const describeScopes = (scopes: readonly AgentScope[]) => scopeModules.filter(module => scopes.includes(`${module.id}:read`))
   .map(module => `${module.label}：${scopes.includes(`${module.id}:write`) ? '读取和写入' : '仅读取'}`).join('；') || '未选择权限';
 const sameScopes = (a: readonly AgentScope[], b: readonly AgentScope[]) => a.length === b.length && a.every(scope => b.includes(scope));
@@ -41,7 +41,7 @@ function ScopeFields({available, value, onChange, disabled=false}: {available: r
   onChange: (value: readonly AgentScope[]) => void; disabled?: boolean}) {
   function change(scope: AgentScope, checked: boolean) {
     const next = new Set(value);
-    const [module, action] = scope.split(':') as ['todo' | 'organization', 'read' | 'write'];
+    const [module, action] = scope.split(':') as ['todo' | 'organization' | 'requirements', 'read' | 'write'];
     if (checked) {next.add(scope); if (action === 'write') next.add(`${module}:read`);}
     else {next.delete(scope); if (action === 'read') next.delete(`${module}:write`);}
     onChange(agentScopes.filter(item => next.has(item)));
