@@ -1,6 +1,11 @@
 import test from 'node:test';
 import {readFileSync,writeFileSync,renameSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
+import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {renderedContrast} from './helpers/personal-contrast.ts';
 import {chromium,type Browser,type BrowserContext,type Page,type Request as BrowserRequest} from '@playwright/test';
 import {Pool} from 'pg';
 import {readReviewConfig} from '../src/platform/private-config.ts';
@@ -33,11 +38,14 @@ async function assertAuthTheme(page:Page,theme:'light'|'dark'){
   const style=(node:Element|null)=>{if(!node)throw Error('THEME_ELEMENT_MISSING');const s=getComputedStyle(node);return {background:s.backgroundColor,color:s.color,colorScheme:s.colorScheme};};
   return {theme:document.documentElement.dataset.lifeosTheme,root:style(document.documentElement),body:style(document.body),page:style(document.querySelector('main')),input:style(document.querySelector('form input')),button:style(document.querySelector('form button'))};
  });
- const paper=theme==='dark'?'rgb(31, 31, 31)':'rgb(255, 255, 255)',ink=theme==='dark'?'rgb(204, 204, 204)':'rgb(31, 31, 31)';
- const buttonInk='rgb(255, 255, 255)',buttonPaper='rgb(0, 95, 184)';
+ // Approved Radix3 slate/indigo default in app/theme.css; literal expectations stay
+ // independent of computed styles. Auth input maps to card, not root background.
+ const paper=theme==='dark'?'rgb(17, 17, 19)':'rgb(252, 252, 253)',ink=theme==='dark'?'rgb(237, 238, 240)':'rgb(28, 32, 36)';
+ const inputPaper=theme==='dark'?'rgb(17, 17, 19)':'rgb(252, 252, 253)';
+ const buttonInk='rgb(255, 255, 255)',buttonPaper='rgb(62, 99, 221)';
  must(facts.theme===theme&&facts.root.colorScheme===theme,'theme-resolved');
  for(const part of ['root','body','page'] as const)must(facts[part].background===paper&&facts[part].color===ink,'theme-'+part);
- must(facts.input.background===paper&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===buttonPaper&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
+ must(facts.input.background===inputPaper&&facts.input.color===ink&&facts.input.colorScheme===theme,'theme-input');must(facts.button.background===buttonPaper&&facts.button.color===buttonInk&&facts.button.colorScheme===theme,'theme-button');
 }
 async function assertAuthPresentation(page:Page,system:'light'|'dark'){
  await assertAuthTheme(page,system);const preference=system==='dark'?'light':'dark',sibling=await page.context().newPage();
@@ -53,6 +61,35 @@ async function assertPublicChineseHeading(page:Page,heading:'main h1'|'main h2')
   must(used.length>0,'cjk-heading-glyphs');console.log('PUBLIC_FORM_CJK '+JSON.stringify({form:heading==='main h2'?'login':'recovery',fonts:used.map(font=>({family:font.familyName,glyphCount:font.glyphCount}))}));
  }finally{await session.detach();}
 }
+
+// Real public components and shared styles; synthetic form only, no runtime/PG or submissions.
+test('OPT-IN public auth theme oracle follows approved shared palette',{
+ skip:process.env.RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS!=='1',timeout:120000,
+},async t=>{
+ const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'app','recover'),{recursive:true});
+ await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+ await writeFile(join(root,'app','page.tsx'),`import {LoginPage} from '../src/personal-candidate/login';export default function Page(){return <LoginPage capability={{mode:'synthetic',enabled:true}}/>}`);
+ await writeFile(join(root,'app','recover','page.tsx'),`import {OwnerRecoveryFinishPanel} from '../../src/personal-candidate/owner-recovery-finish-panel';export default function Page(){return <OwnerRecoveryFinishPanel enabled/>}`);
+ const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+ const stopped=once(server,'exit');t.after(async()=>{server.kill('SIGTERM');await stopped;});
+ const base=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('AUTH_THEME_FIXTURE_STARTUP')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('AUTH_THEME_FIXTURE_EXIT'));});server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ for(const width of [1365,390])for(const theme of ['light','dark'] as const){
+  const context=await browser.newContext({viewport:{width,height:900},colorScheme:theme,hasTouch:width===390,isMobile:width===390});
+  try{const page=await context.newPage();const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+   for(const route of ['/','/recover']){
+    await page.goto(base+route,{waitUntil:'networkidle'});await page.waitForFunction(()=>!!document.querySelector('form button:not(:disabled)'));
+    await assertAuthTheme(page,theme);await assertPublicLayout(page,{expectFits:true});
+    const facts=await page.locator('form input').first().evaluate(node=>{const style=getComputedStyle(node);return {font:parseFloat(style.fontSize),height:node.getBoundingClientRect().height,ink:style.color,paper:style.backgroundColor};});
+    must(facts.font>=16&&facts.height>=44,'auth-input-geometry');must(renderedContrast(facts.ink,[{backgroundColor:facts.paper}]).contrast>=4.5,'auth-input-contrast');
+    const button=await page.locator('form button').evaluate(node=>{const style=getComputedStyle(node);return {height:node.getBoundingClientRect().height,ink:style.color,paper:style.backgroundColor};});
+    must(button.height>=44&&renderedContrast(button.ink,[{backgroundColor:button.paper}]).contrast>=4.5,'auth-button-contrast');
+   }must(errors.length===0,'auth-page-errors');
+  }finally{await context.close();}
+ }
+});
 
 test('no-JS page lifecycle finishes and closes before the next page opens',{timeout:1000},async()=>{
  const events:string[]=[],outcomes:unknown[]=[];
