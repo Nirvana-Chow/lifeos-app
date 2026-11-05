@@ -112,3 +112,10 @@
 @media(max-width:600px){.viewBar{flex-wrap:wrap;gap:8px}.planningFields{grid-template-columns:1fr 1fr}.editorActions{bottom:-16px}.editorActions>span{flex-basis:100%}}
 
 .descriptionField{display:grid;gap:5px;min-width:0}
+
+.timelineRow[data-phase-tone="0"] .timelineBar{background:var(--lo-phase-0)}
+.timelineRow[data-phase-tone="1"] .timelineBar{background:var(--lo-phase-1)}
+.timelineRow[data-phase-tone="2"] .timelineBar{background:var(--lo-phase-2)}
+.timelineRow[data-phase-tone="3"] .timelineBar{background:var(--lo-phase-3)}
+.timelineRow[data-phase-tone="4"] .timelineBar{background:var(--lo-phase-4)}
+.timelineRow[data-phase-tone="5"] .timelineBar{background:var(--lo-phase-5)}

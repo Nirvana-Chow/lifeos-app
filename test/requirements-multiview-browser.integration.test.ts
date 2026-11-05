@@ -58,7 +58,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?14:16)),true);
   assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?12:14))),true,'Board metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-board-${width}-${theme}.png`)});
-  await page.getByRole('button',{name:'甘特视图',exact:true}).click();assert.deepEqual(await visibleIds(),allIds);
+  await page.getByRole('button',{name:'甘特视图',exact:true}).click();assert.deepEqual(await visibleIds(),[]);
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
   await page.locator('[data-requirements-filters] summary').click();await page.getByLabel('阶段',{exact:true}).selectOption('workspace');
   await page.getByLabel('优先级',{exact:true}).selectOption('P0');
@@ -67,13 +67,12 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   const expected=selectRequirements(baseline,{phase:'workspace',priority:'P0',implementation:'partial',acceptance:'in_progress'}).map(r=>r.id).sort();
   assert.ok(expected.length>0);assert.deepEqual(await visibleIds(),expected);
   await page.getByRole('button',{name:'甘特视图',exact:true}).click();
-  assert.deepEqual(await visibleIds(),expected);
+  assert.deepEqual(await visibleIds(),[]);
   await expect(page.getByRole('heading',{name:`未排期（${expected.length}）`,exact:true})).toBeVisible();
-  await expect(page.getByText('尚未设置计划日期',{exact:true})).toBeVisible();
+  await expect(page.getByText('尚无完整排期；设置计划开始和结束日期后显示甘特条',{exact:true})).toBeVisible();
   await expect(page.locator('[data-gantt-bar],time')).toHaveCount(0);
-  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?14:16)),true);
-  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?12:14))),true,'Gantt metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-gantt-${width}-${theme}.png`)});
+  await page.getByRole('button',{name:'查看需求表格',exact:true}).click();assert.deepEqual(await visibleIds(),expected);
   const trigger=page.locator(`[data-requirement-id="${expected[0]}"] button`);await trigger.click();
   const dialog=page.getByRole('dialog'),title=dialog.getByRole('heading',{level:2});
   await expect(dialog).toBeVisible();await expect(title).toBeFocused();

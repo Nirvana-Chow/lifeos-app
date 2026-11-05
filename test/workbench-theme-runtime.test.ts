@@ -24,7 +24,7 @@ function harness({saved='system',palette='slate-indigo',dark=false,denied=false,
   render();state.mount();
   return{render,buttons,notifications:state.notifications,click(){const [button]=buttons();assert.ok(button&&!button.props.disabled);button.props.onClick();},preference:()=>buttons()[0]?.props['data-theme-preference'],dispose:()=>state.dispose()};
  }
- return{setPalette:(value:string)=>load('src/workbench/theme-store.ts').themeStore.setPalette(value),snapshot:()=>load('src/workbench/theme-store.ts').themeStore.getSnapshot(),control,root,writes,listeners,mediaListeners,hasRuntime:!!runtime,start:()=>runtimeHooks.mount(),system(value:boolean){media.matches=value;mediaListeners.forEach(fn=>fn({matches:value}));},storage(value:string|null,key:string|null='lifeos-ui-theme'){if(key==='lifeos-ui-palette')palette=value??'slate-indigo';else saved=value??'system';listeners.get('storage')?.forEach(fn=>fn({key,newValue:value,storageArea:storage}));},dispose:()=>runtimeHooks.dispose()};
+ return{appearance(){current=hooks();return switchModule.AppearanceSettings();},setPalette:(value:string)=>load('src/workbench/theme-store.ts').themeStore.setPalette(value),snapshot:()=>load('src/workbench/theme-store.ts').themeStore.getSnapshot(),control,root,writes,listeners,mediaListeners,hasRuntime:!!runtime,start:()=>runtimeHooks.mount(),system(value:boolean){media.matches=value;mediaListeners.forEach(fn=>fn({matches:value}));},storage(value:string|null,key:string|null='lifeos-ui-theme'){if(key==='lifeos-ui-palette')palette=value??'slate-indigo';else saved=value??'system';listeners.get('storage')?.forEach(fn=>fn({key,newValue:value,storageArea:storage}));},dispose:()=>runtimeHooks.dispose()};
 }
 test('a saved preference is never presented as system while the root store is still uninitialized',()=>{
  const h=harness({saved:'dark',deferRuntime:true}),control=h.control();
@@ -81,4 +81,13 @@ test('paired palettes restore and synchronize without changing the light/dark pr
 test('storage-denied palette choice remains visible with an honest shared notice',()=>{
  const h=harness({denied:true});h.setPalette('sage-teal');assert.equal(h.root.dataset.lifeosPalette,'sage-teal');
  assert.match(h.snapshot().notice,/未允许保存/);h.system(true);assert.equal(h.root.dataset.lifeosPalette,'sage-teal');h.dispose();
+});
+
+test('visible native palette presets share the existing preference writer and restore the selected radio',()=>{
+ const h=harness({palette:'sage-teal',saved:'dark'});
+ const radios=()=>nodes(h.appearance(),n=>n.type==='input'&&n.props.type==='radio');
+ assert.equal(radios().length,3);assert.deepEqual(radios().filter(n=>n.props.checked).map(n=>n.props.value),['sage-teal']);
+ radios().find(n=>n.props.value==='mauve-violet')!.props.onChange();
+ assert.deepEqual(radios().filter(n=>n.props.checked).map(n=>n.props.value),['mauve-violet']);
+ assert.deepEqual(h.writes,[['lifeos-ui-palette','mauve-violet']]);assert.equal(h.root.dataset.lifeosTheme,'dark');h.dispose();
 });
