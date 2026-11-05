@@ -33,3 +33,13 @@ test('Escape and browser-only card arrangement never create a status command',()
  const f=fixture();let native=f.start();native.onDragCancel();assert.equal(f.render().value.open.length,1);assert.equal(f.writes.length,0);
  native=f.start();native.onValueCommit(native.value,f.meta({overContainer:'open'}));assert.equal(f.writes.length,0);assert.equal(f.render().value.open.length,1);
 });
+test('scope change hides the previous drag preview on the first render before cleanup and cannot write',()=>{
+ const f=fixture();f.update({scope:'synthetic-owner:one'});const previous=f.start();
+ const replacement=[{id:'new-scope-task',revision:1,title:'另一作用域的合成任务',status:'open',dueOn:null}];
+ const changed=f.update({scope:'synthetic-owner:two',tasks:replacement});
+ assert.deepEqual(Object.values(changed.value).flat().map((task:any)=>task.id),['new-scope-task']);
+ assert.equal(JSON.stringify(changed.children).includes('synthetic-task'),false,'rendered cards must share the scope-bound native value');
+ previous.onValueChange(previous.value);
+ assert.deepEqual(Object.values(f.render().value).flat().map((task:any)=>task.id),['new-scope-task'],'late old-scope preview callbacks stay hidden');
+ previous.onValueCommit(previous.value,f.meta());assert.deepEqual(f.writes,[]);
+});

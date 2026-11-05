@@ -29,8 +29,9 @@ export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,o
  const [arrangementState,setArrangementState]=useState<{scope:string|null;value:Arrangement}>({scope:null,value:defaults()});
  const arrangement=arrangementState.scope===scope?arrangementState.value:defaults();
  const authoritative=useMemo(()=>groupTasks(tasks,arrangement),[tasks,arrangement]);
- const [preview,setPreview]=useState<Record<string,TaskRow[]>|null>(null),[notice,setNotice]=useState('');
+ const [preview,setPreview]=useState<{scope:string|null;columns:Record<string,TaskRow[]>}|null>(null),[notice,setNotice]=useState('');
  const dragging=useRef<{scope:string|null;task:{id:string;revision:number;status:TaskStatus}|null}|null>(null);
+ const visibleColumns=preview&&preview.scope===scope?preview.columns:authoritative;
  const latest=useRef({tasks,writable,blocked,pendingTaskIds,scope,onSetTaskStatus});latest.current={tasks,writable,blocked,pendingTaskIds,scope,onSetTaskStatus};
  const finish=()=>{dragging.current=null;setPreview(null);};
  useEffect(()=>{setArrangementState({scope,value:readArrangement(scope)});finish();setNotice('');},[scope]);
@@ -52,11 +53,11 @@ export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,o
  }
  return <div className="lo-native-board" data-task-board="reui">
   <p className="lo-board-view-note">排列仅用于当前浏览器，状态以保存回执为准。{notice&&<span role="status">{notice}</span>}</p>
-  <Kanban value={preview??authoritative} onValueChange={value=>{if(dragging.current&&!latest.current.blocked)setPreview(value);}} getItemValue={task=>task.id} restoreOnCancel
+  <Kanban value={visibleColumns} onValueChange={value=>{if(dragging.current&&dragging.current.scope===latest.current.scope&&!latest.current.blocked)setPreview({scope:dragging.current.scope,columns:value});}} getItemValue={task=>task.id} restoreOnCancel
    onDragStart={event=>{const task=latest.current.tasks.find(row=>row.id===event.active.id);dragging.current={scope,task:task?{id:task.id,revision:task.revision,status:task.status}:null};}}
    onValueCommit={commit} onDragCancel={finish} onDragEnd={()=>{queueMicrotask(finish);}}
    accessibility={{screenReaderInstructions:{draggable:'空格开始拖动，方向键移动，空格放下，Escape 取消。也可以使用移动到菜单。'}}}>
-   <KanbanBoard className="lo-board">{Object.entries(preview??authoritative).map(([status,items])=><KanbanColumn key={status} value={status} className="lo-board-column" disabled={blocked} data-kanban-status={status}>
+   <KanbanBoard className="lo-board">{Object.entries(visibleColumns).map(([status,items])=><KanbanColumn key={status} value={status} className="lo-board-column" disabled={blocked} data-kanban-status={status}>
     <h2><KanbanColumnHandle asChild><button type="button" className="lo-column-drag" aria-label={`排列${taskStatusLabels[status as TaskStatus]}栏目`} disabled={blocked}><GripVertical size={16} aria-hidden="true"/>{taskStatusLabels[status as TaskStatus]}</button></KanbanColumnHandle><span>{items.length}</span></h2>
     <KanbanColumnContent value={status} className="lo-board-cards">{items.map(task=><KanbanItem key={task.id} value={task.id} className="lo-kanban-card" data-kanban-task={task.id} disabled={blocked||!writable||pendingTaskIds.includes(task.id)}>
      <div className="lo-board-card-tools"><KanbanItemHandle asChild><Button variant="ghost" className="lo-card-drag" aria-label={`拖动：${task.title}`} disabled={blocked||!writable||pendingTaskIds.includes(task.id)}><GripVertical size={16} aria-hidden="true"/></Button></KanbanItemHandle><label className="lo-board-move">移动到<select aria-label="移动到" value={task.status} disabled={blocked||!writable||!onSetTaskStatus||pendingTaskIds.includes(task.id)} onChange={event=>move(task,event.target.value as TaskStatus)}>{statuses.map(status=><option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select></label></div>
