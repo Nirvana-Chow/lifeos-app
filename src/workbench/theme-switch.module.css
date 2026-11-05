@@ -41,3 +41,8 @@
   font-size: 14px;
   line-height: 1.6;
 }
+.settings { display:grid; gap:16px; margin-bottom:24px; }
+.settings h2 { margin:0; }
+.settings label { display:grid; gap:6px; }
+.settings select { width:100%; min-height:44px; border:1px solid var(--input); border-radius:var(--lo-radius-control); background:var(--card); color:var(--foreground); padding:8px 12px; font:inherit; }
+@media(min-width:1024px){.control button.toggle{width:32px;height:32px;min-width:32px;min-height:32px}.settings select{min-height:32px;padding:4px 8px}.settings{gap:12px}}

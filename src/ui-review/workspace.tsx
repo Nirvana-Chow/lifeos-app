@@ -17,7 +17,6 @@ import {
   ChevronRight,
   ArrowUpRight,
   RefreshCw,
-  HelpCircle,
   X,
   Check,
   Clock,
@@ -57,7 +56,7 @@ import type {
   TaskView,
 } from "./contract";
 import "./review.css";
-import {ThemeSwitch} from "../workbench/theme-switch";
+import {ThemeSwitch,AppearanceSettings} from "../workbench/theme-switch";
 import {CategoryGrid} from "./category-grid";
 import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
@@ -156,14 +155,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     [mobileOpen, setMobileOpen] = useState(false),
     [filtersOpen, setFiltersOpen] = useState(false);
   const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
-  const [detailId, setDetailId] = useState<string | null>(null),
-    [helpOpen, setHelpOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null,
   );
   const returnFocus = useRef<HTMLButtonElement | null>(null),
     menuButton = useRef<HTMLButtonElement | null>(null),
-    helpButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
@@ -485,6 +482,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     if (view === "table")
       return (
         <TaskTable
+          viewPreferenceScope={props.viewPreferenceScope}
           tasks={rows}
           writable={canWrite}
           blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain}
@@ -606,16 +604,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
           )}
-          <Button
-            variant="ghost"
-            className="lo-icon-button lo-header-help"
-            aria-label="帮助"
-            ref={helpButton}
-            title="帮助"
-            onClick={() => setHelpOpen(true)}
-          >
-            <HelpCircle size={19} />
-          </Button>
+
         </div>
       </header>
       <div className="lo-body">
@@ -971,13 +960,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <DialogTitle id="lo-settings-title" tabIndex={-1}>设置</DialogTitle>
           <div className="lo-settings-layout">
             <nav aria-label="设置分类" className="lo-settings-panels">
-              {([{id:'general',label:'通用'},{id:'topics',label:'管理主题'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'}] as const)
+              {([{id:'general',label:'通用'},{id:'topics',label:'业务标签'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'}] as const)
                 .filter(item=>item.id==='general'||item.id==='topics'&&access.allowedTypes?.includes('topic')||props.availableSettingsPanels?.includes(item.id))
                 .map(item=><Button variant="ghost" key={item.id} aria-pressed={settingsPanel===item.id} onClick={()=>selectSettingsPanel(item.id)}>{item.label}</Button>)}
             </nav>
             <div className="lo-settings-panel" data-settings-panel={settingsPanel}>
           {settingsPanel === "general" && (
             <div className="lo-settings">
+              <AppearanceSettings/>
               {access.authenticated === true && props.settingsContent}
               {access.authenticated === false &&
                 access.loginAllowed === true &&
@@ -995,10 +985,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
           )}
-              {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="管理主题">
-                <h2>管理主题</h2>
+              {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="业务标签">
+                <h2>业务标签</h2>
           {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : <>
-            <label className="lo-topic-search">搜索主题<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按主题名称搜索"/></label>
+            <label className="lo-topic-search">搜索业务标签<Input value={topicQuery} onChange={event=>setTopicQuery(event.target.value)} placeholder="按主题名称搜索"/></label>
             {data?.topics === undefined ? <p role="status">主题列表暂不可用，请重新读取。</p> : <>
               <ul className="lo-topic-list">{data.topics.filter(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())).map(topic =>
                 <li key={topic.id}><strong>{topic.title}</strong><span>版本 {topic.revision}</span>
@@ -1006,7 +996,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 </li>)}</ul>
               {!data.topics.some(topic=>topic.title.toLocaleLowerCase().includes(topicQuery.trim().toLocaleLowerCase())) && <p>{topicQuery.trim()?"没有符合条件的主题。":"暂无主题。"}</p>}
             </>}
-            {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建主题</a>}
+            {canWrite && <a className="lo-topic-create" href="/personal/edit?type=topic"><Plus size={16}/>新建业务标签</a>}
           </>}
               </section>}
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
@@ -1081,24 +1071,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <p className="lo-detail-notes">{detail?.notes || "暂无备注"}</p>
         </DialogContent>
       </Dialog>
-      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent
-          container={portalContainer}
-          className="lo-detail"
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            helpButton.current?.focus();
-          }}
-        >
-          <DialogTitle>帮助</DialogTitle>
-          <DialogDescription>待办使用方式</DialogDescription>
-          <ol className="lo-help-steps">
-            <li>表格中双击标题、日期或状态，直接修改这个字段。</li>
-            <li>点展开，查看并修改完整待办。</li>
-            <li>点击列标题排序，拖动列边界调整宽度。</li>
-          </ol>
-        </DialogContent>
-      </Dialog>
+
     </div>
   );
 }

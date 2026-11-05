@@ -15,10 +15,20 @@ import styles from './task-grid.module.css';
 type CellEdit = TaskCellDraft & { writeDraft: (draft: TaskCellDraft | null) => void };
 type FieldAccess = Pick<TaskGridProps, 'writable' | 'blocked' | 'onSave' | 'getTaskFields' | 'draftMemory'>;
 const editableFields: readonly TaskCellField[] = ['title', 'status', 'due'];
-const columnLabels = ['待办', '状态', '到期日', '项目', '领域', '详情', '完成'];
-const columnIds = ['title', 'status', 'due', 'project', 'area', 'detail', 'complete'];
-const columnWidths = [284, 176, 176, 150, 130, 114, 72];
-const columnMinWidths = [140, 112, 144, 90, 90, 80, 68];
+const columnIds = ['complete','title','status','due','project','area','detail'];
+const columnLabels:Record<string,string>={complete:'完成',title:'待办',status:'状态',due:'到期日',project:'项目',area:'领域',detail:'详情'};
+const columnWidths:Record<string,number>={complete:64,title:284,status:154,due:154,project:150,area:130,detail:100};
+const columnMinWidths:Record<string,number>={complete:56,title:140,status:112,due:130,project:90,area:90,detail:80};
+type GridLayout={order:string[];visibility:Record<string,boolean>};
+const defaultLayout=():GridLayout=>({order:[...columnIds],visibility:{}});
+function readLayout(scope:string|null|undefined):GridLayout{
+ if(!scope)return defaultLayout();
+ try{const value=JSON.parse(window.localStorage.getItem('lifeos.task-columns.v1:'+scope)??'null');
+  if(!value||!Array.isArray(value.order)||value.order.length!==columnIds.length||new Set(value.order).size!==columnIds.length||!value.order.every((id:unknown)=>typeof id==='string'&&columnIds.includes(id)))return defaultLayout();
+  const visibility:Record<string,boolean>={};for(const id of columnIds)if(id!=='complete'&&id!=='title'&&value.visibility?.[id]===false)visibility[id]=false;
+  return {order:value.order,visibility};
+ }catch{return defaultLayout();}
+}
 const valueOf = (task: TaskRow, field: TaskCellField) =>
   field === 'title' ? task.title : field === 'due' ? task.dueOn ?? '' : taskStatusLabels[task.status];
 const canWrite = (props: FieldAccess) =>
@@ -64,7 +74,7 @@ function TaskGridInput({ edit, latest, close, advance, onError }: {
     };
   }, [edit, latest, close, advance, onError]);
   useEffect(() => { bridge.current?.refreshAccess(); });
-  const label = `编辑${columnLabels[editableFields.indexOf(edit.field)]}`;
+  const label = `编辑${columnLabels[edit.field]}`;
   if (edit.field === 'status') {
     return (
       <select ref={node => { input.current = node; }} className={styles.input} aria-label={label} defaultValue={restored?.value ?? edit.value}>
@@ -159,7 +169,6 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
   const state = useContext(GridCellContext);
   if (!state) throw Error('Task cell requires its workspace context.');
   const { edit, latest, open, close, advance, onError } = state;
-  const index = columnIds.indexOf(column.id);
   if (column.id === 'complete') {
     const task = row.original;
     const allowed = () => !!latest.current.writable && !latest.current.blocked && !!latest.current.onSetTaskStatus;
@@ -171,25 +180,24 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
       }}
     ><span aria-hidden="true">{task.status === 'done' ? '✓' : '○'}</span></Button>;
   }
-  if (index >= 3) {
+  if (!editableFields.includes(column.id as TaskCellField)) {
     return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
-      aria-label={index === 5 ? `打开任务：${row.original.title}` : `${columnLabels[index]}：${String(getValue())}，打开任务：${row.original.title}`}
+      aria-label={column.id === 'detail' ? `打开任务：${row.original.title}` : `${columnLabels[column.id]}：${String(getValue())}，打开任务：${row.original.title}`}
       onClick={event => latest.current.onOpen(row.original, event.currentTarget)}><span>{String(getValue())}</span></Button>;
   }
   if (edit?.task.id === row.id && edit.field === column.id) {
     return <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError} />;
   }
   const value = column.id === 'status' ? taskStatusLabels[row.original.status] : String(getValue());
-  return <span className={styles.cell} onDoubleClick={() => open(row.id, editableFields[index])}>{value || '—'}</span>;
+  return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>{value || '—'}</span>;
 }
 
 function TaskGridColumnHeader({ column }: HeaderContext<typeof dataGridFeatures, TaskRow, unknown>) {
-  const index = columnIds.indexOf(column.id);
-  if (index >= 5) return columnLabels[index];
+  if (column.id === 'complete'||column.id === 'detail') return columnLabels[column.id];
   const direction = column.getIsSorted();
   return <Button variant="ghost" className={styles.sort} data-sorted={direction || undefined}
-    onClick={column.getToggleSortingHandler()} aria-label={`按${columnLabels[index]}排序`}>
-    {columnLabels[index]}<span className={styles.sortIndicator} aria-hidden="true">{direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '↕'}</span>
+    onClick={column.getToggleSortingHandler()} aria-label={`按${columnLabels[column.id]}排序`}>
+    {columnLabels[column.id]}<span className={styles.sortIndicator} aria-hidden="true">{direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '↕'}</span>
   </Button>;
 }
 
@@ -203,6 +211,15 @@ export function TaskGrid(props: TaskGridProps) {
   const currentEdit = useRef<CellEdit | null>(null);
   const [edit, setEdit] = useState<CellEdit | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [layoutState,setLayoutState]=useState<{scope:string|null;value:GridLayout}>({scope:null,value:defaultLayout()});
+  const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
+  const scope=props.viewPreferenceScope??null;
+  const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
+  useEffect(()=>{setLayoutState({scope,value:readLayout(scope)});setColumnsOpen(false);setLayoutNotice('');},[scope]);
+  function changeLayout(value:GridLayout){
+   setLayoutState({scope,value});
+   if(scope){try{window.localStorage.setItem('lifeos.task-columns.v1:'+scope,JSON.stringify(value));setLayoutNotice('');}catch{setLayoutNotice('浏览器未允许保存，列设置仅用于本次视图。');}}
+  }
   currentEdit.current = edit;
   const close = useCallback(() => {
     const previous = currentEdit.current;
@@ -237,24 +254,25 @@ export function TaskGrid(props: TaskGridProps) {
     const rows = tableRef.current?.getRowModel().rows;
     if (!previous || !rows) return;
     const index = rows.findIndex(row => row.id === previous.task.id);
-    const position = index * columnIds.length + editableFields.indexOf(previous.field) + (direction === 'next' ? 1 : -1);
-    if (position < 0 || position >= rows.length * columnIds.length) return;
-    const row = rows[Math.floor(position / columnIds.length)];
-    focusApi.current?.focusCell(row.id, columnIds[position % columnIds.length]);
+    const visibleIds=tableRef.current?.getVisibleLeafColumns().map(column=>column.id)??columnIds;
+    const position = index * visibleIds.length + visibleIds.indexOf(previous.field) + (direction === 'next' ? 1 : -1);
+    if (position < 0 || position >= rows.length * visibleIds.length) return;
+    const row = rows[Math.floor(position / visibleIds.length)];
+    focusApi.current?.focusCell(row.id, visibleIds[position % visibleIds.length]);
   }, []);
   const onError = useCallback((message: string) => setError(message), []);
   const columns = useMemo<ColumnDef<typeof dataGridFeatures, TaskRow>[]>(() =>
-    columnIds.map((id, index) => ({
+    columnIds.map(id => ({
       id,
-      size: columnWidths[index],
-      minSize: columnMinWidths[index],
-      accessorFn: task => index === 1 ? task.status : index < 3 ? valueOf(task, editableFields[index]) : index === 3 ? task.project?.title ?? '—' : index === 4 ? task.area?.title ?? '—' : '查看详情',
+      size: columnWidths[id],
+      minSize: columnMinWidths[id],
+      accessorFn: task => id === 'status' ? task.status : id === 'title'||id === 'due' ? valueOf(task,id) : id === 'project' ? task.project?.title ?? '—' : id === 'area' ? task.area?.title ?? '—' : id === 'complete' ? task.status === 'done' : '查看详情',
       header: TaskGridColumnHeader,
-      enableSorting: index < 5,
+      enableSorting: id!=='complete'&&id!=='detail',
       meta: {
-        headerTitle: columnLabels[index],
+        headerTitle: columnLabels[id],
         cellClassName: styles.tableCell,
-        ...(index < 3 ? { cellEdit: { editable: () => canWrite(latest.current) } } : {}),
+        ...(editableFields.includes(id as TaskCellField) ? { cellEdit: { editable: () => canWrite(latest.current) } } : {}),
       },
       cell: TaskGridValueCell,
     })), [latest]);
@@ -265,7 +283,7 @@ export function TaskGrid(props: TaskGridProps) {
     columns,
     getRowId: row => row.id,
     initialState: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) } },
-    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) } },
+    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) },columnOrder:layout.order,columnVisibility:layout.visibility },
     enableRowSelection: false,
     autoResetPageIndex: false,
   });
@@ -285,6 +303,13 @@ export function TaskGrid(props: TaskGridProps) {
   return (
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
     <div ref={host} className={styles.root} aria-label="待办表格" data-task-grid="reui">
+      <div className={styles.columnToolbar}><Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
+       {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>浏览器视图设置，不改变任务排序。</p>{layout.order.map((id,index)=><div className={styles.columnSetting} key={id}>
+        <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={layout.visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
+        <Button variant="ghost" disabled={props.blocked||!!edit||index===0} aria-label={`向前移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index-1],order[index]]=[order[index],order[index-1]];changeLayout({...layout,order});}}>↑</Button>
+        <Button variant="ghost" disabled={props.blocked||!!edit||index===layout.order.length-1} aria-label={`向后移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index+1],order[index]]=[order[index],order[index+1]];changeLayout({...layout,order});}}>↓</Button>
+       </div>)}<Button variant="outline" onClick={()=>changeLayout(defaultLayout())}>恢复默认列</Button>{layoutNotice&&<p role="status">{layoutNotice}</p>}</div>}
+      </div>
       <DataGridContainer>
         <DataGrid table={table} recordCount={props.tasks.length}
           onCellEditRequest={request => {

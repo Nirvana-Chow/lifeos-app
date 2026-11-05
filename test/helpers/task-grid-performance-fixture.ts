@@ -75,7 +75,7 @@ export async function measureTaskGrid({browser,context,page,entries}:PrivateFixt
           await search.fill(prefix);
           const elapsed=await tab.evaluate(async()=>await (window as Window & {syntheticGridElapsed?:Promise<number>}).syntheticGridElapsed);
           assert.ok(typeof elapsed==="number"&&Number.isFinite(elapsed)&&elapsed>=0);
-          const firstTitle=taskGridRoot(tab).locator('tbody td[aria-colindex="1"]').first();
+          const firstTitle=taskGridRoot(tab).locator('tbody td[data-col-id="title"]').first();
           await expect(firstTitle).toHaveText(/^合成性能待办 \d{4}$/);
           await requireTaskGrid(tab,(await firstTitle.innerText()).trim(),rows);
           raw[mode].push(Math.round(elapsed*100)/100);

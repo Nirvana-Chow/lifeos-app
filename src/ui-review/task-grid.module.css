@@ -26,3 +26,8 @@
 .root { display:flex; flex-direction:column; min-height:0; flex:1; height:100%; }
 .root > :global([data-slot="data-grid"]) { flex:1; min-height:0; }
 .root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior:contain; scroll-padding-top:48px; }
+
+.columnToolbar{position:relative;flex:none;display:flex;justify-content:flex-end;border-bottom:1px solid var(--border);padding:2px 8px;background:var(--muted)}
+.columnSettings{position:absolute;top:100%;right:8px;z-index:45;width:min(340px,calc(100vw - 48px));max-height:55dvh;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--popover);color:var(--popover-foreground);box-shadow:0 8px 24px #0002}
+.columnSettings p{margin-bottom:8px;font-size:var(--lo-font-meta)}.columnSetting{display:flex;align-items:center;gap:8px}.columnSetting label{display:flex;align-items:center;gap:8px;flex:1;min-height:44px}.columnSetting label input{width:18px;height:18px;min-height:18px}.columnSetting button{min-width:44px}
+@media(min-width:1024px){.root .table,.tableCell,.header th{font-size:14px}.header,.header th{height:36px}.row,.tableCell{height:40px}.cell,.sort,.open{min-height:32px}.input{height:32px;font-size:14px;padding:0 8px}.complete{min-width:32px;min-height:32px;font-size:20px}.columnSetting label{min-height:32px}.columnSetting button{min-width:32px}}

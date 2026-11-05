@@ -7,11 +7,11 @@ import ts from 'typescript';
 type Node={type:any;props:Record<string,any>};
 function nodes(node:any,predicate:(n:Node)=>boolean):Node[]{if(!node||typeof node!=='object')return [];if(Array.isArray(node))return node.flatMap(n=>nodes(n,predicate));return [...(predicate(node)?[node]:[]),...nodes(node.props?.children,predicate)];}
 /** Runs real switch/store/runtime; only React's hook scheduler and browser host are simulated. */
-function harness({saved='system',dark=false,denied=false,missingMedia=false,deferRuntime=false}={}){
+function harness({saved='system',palette='slate-indigo',dark=false,denied=false,missingMedia=false,deferRuntime=false}={}){
  const listeners=new Map<string,Set<Function>>(),mediaListeners=new Set<Function>(),writes:string[][]=[];
  const root={dataset:{} as Record<string,string>,style:{} as Record<string,string>};
  const media={matches:dark,addEventListener:(_:string,fn:Function)=>mediaListeners.add(fn),removeEventListener:(_:string,fn:Function)=>mediaListeners.delete(fn)};
- const storage={getItem:()=>{if(denied)throw Error('denied');return saved;},setItem:(key:string,value:string)=>{if(denied)throw Error('denied');saved=value;writes.push([key,value]);}};
+ const storage={getItem:(key:string)=>{if(denied)throw Error('denied');return key==='lifeos-ui-palette'?palette:saved;},setItem:(key:string,value:string)=>{if(denied)throw Error('denied');if(key==='lifeos-ui-palette')palette=value;else saved=value;writes.push([key,value]);}};
  const window={matchMedia:()=>{if(missingMedia)throw Error('unavailable');return media;},get localStorage(){if(denied)throw Error('denied');return storage;},addEventListener:(name:string,fn:Function)=>{if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name)!.add(fn);},removeEventListener:(name:string,fn:Function)=>listeners.get(name)?.delete(fn)};
  let current:any;function hooks(){let at=0,notifications=0;const values:any[]=[],effects:(()=>void|(()=>void))[]=[],cleanups:Function[]=[];return {notifications:()=>notifications,reset(){at=0;},react:{useRef:(v:any)=>{const i=at++;return values[i]??(values[i]={current:v});},useState:(v:any)=>{const i=at++;if(!(i in values))values[i]=typeof v==='function'?v():v;return[values[i],(n:any)=>values[i]=typeof n==='function'?n(values[i]):n];},useEffect:(fn:()=>void|(()=>void))=>effects.push(fn),useSyncExternalStore:(subscribe:(fn:()=>void)=>()=>void,get:()=>any)=>{const i=at++;if(!(i in values)){values[i]=true;effects.push(()=>subscribe(()=>{notifications++;}));}return get();},useId:()=>'theme-'+at++},mount(){for(const fn of effects){const cleanup=fn();if(cleanup)cleanups.push(cleanup);}effects.length=0;},dispose(){cleanups.forEach(fn=>fn());}};}
  const jsx={jsx:(type:any,props:any)=>({type,props}),jsxs:(type:any,props:any)=>({type,props}),Fragment:'fragment'},cache=new Map<string,any>();
@@ -24,7 +24,7 @@ function harness({saved='system',dark=false,denied=false,missingMedia=false,defe
   render();state.mount();
   return{render,buttons,notifications:state.notifications,click(){const [button]=buttons();assert.ok(button&&!button.props.disabled);button.props.onClick();},preference:()=>buttons()[0]?.props['data-theme-preference'],dispose:()=>state.dispose()};
  }
- return{control,root,writes,listeners,mediaListeners,hasRuntime:!!runtime,start:()=>runtimeHooks.mount(),system(value:boolean){media.matches=value;mediaListeners.forEach(fn=>fn({matches:value}));},storage(value:string|null,key:string|null='lifeos-ui-theme'){saved=value??'system';listeners.get('storage')?.forEach(fn=>fn({key,newValue:value,storageArea:storage}));},dispose:()=>runtimeHooks.dispose()};
+ return{setPalette:(value:string)=>load('src/workbench/theme-store.ts').themeStore.setPalette(value),snapshot:()=>load('src/workbench/theme-store.ts').themeStore.getSnapshot(),control,root,writes,listeners,mediaListeners,hasRuntime:!!runtime,start:()=>runtimeHooks.mount(),system(value:boolean){media.matches=value;mediaListeners.forEach(fn=>fn({matches:value}));},storage(value:string|null,key:string|null='lifeos-ui-theme'){if(key==='lifeos-ui-palette')palette=value??'slate-indigo';else saved=value??'system';listeners.get('storage')?.forEach(fn=>fn({key,newValue:value,storageArea:storage}));},dispose:()=>runtimeHooks.dispose()};
 }
 test('a saved preference is never presented as system while the root store is still uninitialized',()=>{
  const h=harness({saved:'dark',deferRuntime:true}),control=h.control();
@@ -68,4 +68,17 @@ test('mounted appearance controls receive real store notifications and unsubscri
  b.dispose();a.click();assert.equal(a.notifications(),2);assert.equal(b.notifications(),1,'disposed control must no longer be notified');
  h.storage('system');assert.equal(a.notifications(),3);assert.equal(b.notifications(),1);
  a.dispose();h.system(true);assert.equal(a.notifications(),3);assert.equal(h.root.dataset.lifeosTheme,'dark');h.dispose();
+});
+
+// Changing the palette must share the existing first-paint/document lifecycle, not fork a second theme writer.
+test('paired palettes restore and synchronize without changing the light/dark preference',()=>{
+ const h=harness({saved:'dark',palette:'sage-teal'});assert.equal(h.root.dataset.lifeosPalette,'sage-teal');
+ h.setPalette('mauve-violet');assert.equal(h.root.dataset.lifeosPalette,'mauve-violet');assert.equal(h.root.dataset.lifeosTheme,'dark');
+ assert.deepEqual(h.writes,[['lifeos-ui-palette','mauve-violet']]);
+ h.storage('slate-indigo','lifeos-ui-palette');assert.equal(h.root.dataset.lifeosPalette,'slate-indigo');assert.equal(h.root.dataset.lifeosTheme,'dark');
+ h.storage('untrusted','lifeos-ui-palette');assert.equal(h.root.dataset.lifeosPalette,'slate-indigo');h.dispose();
+});
+test('storage-denied palette choice remains visible with an honest shared notice',()=>{
+ const h=harness({denied:true});h.setPalette('sage-teal');assert.equal(h.root.dataset.lifeosPalette,'sage-teal');
+ assert.match(h.snapshot().notice,/未允许保存/);h.system(true);assert.equal(h.root.dataset.lifeosPalette,'sage-teal');h.dispose();
 });

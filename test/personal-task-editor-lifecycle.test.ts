@@ -186,3 +186,11 @@ test('denied command storage blocks direct save and status callbacks even when t
   assert.equal(f.writes.length,0);
  }finally{h.dispose();}
 });
+
+test('new task exposes optional project and domain directly and hides business label editing',async()=>{
+ const f=fixture(),h=harness(f);try{h.render();await flush();h.render();h.actions().onCreateTask();const tree=h.render();
+ assert.ok(find(tree,n=>n.type==='label'&&text(n).startsWith('领域')&&!!find(n,x=>x.type==='select')));
+ assert.ok(find(tree,n=>n.type==='label'&&text(n).startsWith('项目')&&!!find(n,x=>x.type==='select')));
+ assert.equal(find(tree,n=>n.type==='details'),undefined);assert.equal(find(tree,n=>n.type==='legend'&&text(n)==='主题'),undefined);
+ }finally{h.dispose();}
+});

@@ -73,6 +73,8 @@ export type TaskFilter = {
   due?: "all" | "today" | "overdue";
 };
 export type LifeOSWorkspaceProps = {
+  /** Verified owner+space scope for browser-only layout preferences; absent disables persistence. */
+  viewPreferenceScope?: string | null;
   state: WorkspaceState;
   access: WorkspaceAccess;
   initialPage?: WorkspacePage;
@@ -118,6 +120,7 @@ export type LifeOSWorkspaceProps = {
 
 /** Shared ordinary-grid boundary; the existing controller remains the only business writer. */
 export type TaskGridProps = {
+  viewPreferenceScope?: string | null;
   draftMemory?: TaskCellDraftMemory;
   tasks: readonly TaskRow[];
   onOpen: (task: TaskRow, trigger?: HTMLButtonElement) => void;

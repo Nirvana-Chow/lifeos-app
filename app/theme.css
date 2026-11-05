@@ -1,30 +1,33 @@
-/* LifeOS semantic colors informed by VS Code Modern and Obsidian Minimal.
- * See unified-business-ui/design.md for the source references and role mapping. */
+/* Curated semantic roles from @radix-ui/colors 3.0.0 (MIT).
+ * Source, exact hashes and adaptations: third-party/radix-colors/provenance.json.
+ * Text uses scale 11/12; selected/hover use 5/4. Teal solid uses light 11 for WCAG white text. */
 :root{
- --background:#ffffff;--foreground:#1f1f1f;--card:#ffffff;--card-foreground:#1f1f1f;
- --popover:#f8f8f8;--popover-foreground:#1f1f1f;--primary:#005fb8;--primary-foreground:#ffffff;
- --secondary:#f8f8f8;--secondary-foreground:#1f1f1f;--muted:#f8f8f8;--muted-foreground:#616161;
- --accent:#ededed;--accent-foreground:#1f1f1f;--border:#e5e5e5;--input:#8a8a8a;--ring:#005fb8;
- --lo-chrome:#f8f8f8;--lo-link:#005fb8;
- --danger:#991b1b;--danger-background:#fef2f2;--danger-border:#fca5a5;color-scheme:light;
+ --background:#fcfcfd; --foreground:#1c2024; --card:#fcfcfd; --card-foreground:#1c2024; --popover:#f9f9fb; --popover-foreground:#1c2024; --primary:#3e63dd; --primary-foreground:#ffffff; --secondary:#f0f0f3; --secondary-foreground:#1c2024; --muted:#f9f9fb; --muted-foreground:#60646c; --accent:#e1e9ff; --accent-foreground:#1c2024; --border:#d9d9e0; --input:#8b8d98; --ring:#3a5bc7; --lo-chrome:#f9f9fb; --lo-link:#3a5bc7; --lo-selected:#d2deff; --lo-selected-foreground:#1f2d5c; --lo-hover:#e1e9ff; --danger:#ce2c31; --danger-background:#fff7f7; --danger-border:#f4a9aa;color-scheme:light;
 }
-:root[data-lifeos-theme=dark]{
- --background:#1f1f1f;--foreground:#cccccc;--card:#1f1f1f;--card-foreground:#cccccc;
- --popover:#2b2b2b;--popover-foreground:#cccccc;--primary:#005fb8;--primary-foreground:#ffffff;
- --secondary:#2b2b2b;--secondary-foreground:#cccccc;--muted:#2b2b2b;--muted-foreground:#9d9d9d;
- --accent:#2b2b2b;--accent-foreground:#cccccc;--border:#383838;--input:#6c6c6c;--ring:#4daafc;
- --lo-chrome:#181818;--lo-link:#4daafc;
- --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
+:root[data-lifeos-palette=slate-indigo][data-lifeos-theme=dark],:root:not([data-lifeos-palette])[data-lifeos-theme=dark]{
+ --background:#111113; --foreground:#edeef0; --card:#111113; --card-foreground:#edeef0; --popover:#18191b; --popover-foreground:#edeef0; --primary:#3e63dd; --primary-foreground:#ffffff; --secondary:#212225; --secondary-foreground:#edeef0; --muted:#18191b; --muted-foreground:#b0b4ba; --accent:#1d2e62; --accent-foreground:#edeef0; --border:#363a3f; --input:#696e77; --ring:#9eb1ff; --lo-chrome:#18191b; --lo-link:#9eb1ff; --lo-selected:#253974; --lo-selected-foreground:#d6e1ff; --lo-hover:#1d2e62; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
 }
-@media(prefers-color-scheme:dark){:root:not([data-lifeos-theme=light]){
- --background:#1f1f1f;--foreground:#cccccc;--card:#1f1f1f;--card-foreground:#cccccc;
- --popover:#2b2b2b;--popover-foreground:#cccccc;--primary:#005fb8;--primary-foreground:#ffffff;
- --secondary:#2b2b2b;--secondary-foreground:#cccccc;--muted:#2b2b2b;--muted-foreground:#9d9d9d;
- --accent:#2b2b2b;--accent-foreground:#cccccc;--border:#383838;--input:#6c6c6c;--ring:#4daafc;
- --lo-chrome:#181818;--lo-link:#4daafc;
- --danger:#fca5a5;--danger-background:#2f1518;--danger-border:#7f1d1d;color-scheme:dark;
+@media(prefers-color-scheme:dark){:root:not([data-lifeos-theme=light]):not([data-lifeos-theme=dark]){
+ --background:#111113; --foreground:#edeef0; --card:#111113; --card-foreground:#edeef0; --popover:#18191b; --popover-foreground:#edeef0; --primary:#3e63dd; --primary-foreground:#ffffff; --secondary:#212225; --secondary-foreground:#edeef0; --muted:#18191b; --muted-foreground:#b0b4ba; --accent:#1d2e62; --accent-foreground:#edeef0; --border:#363a3f; --input:#696e77; --ring:#9eb1ff; --lo-chrome:#18191b; --lo-link:#9eb1ff; --lo-selected:#253974; --lo-selected-foreground:#d6e1ff; --lo-hover:#1d2e62; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
 }}
-
+:root[data-lifeos-palette=sage-teal]{
+ --background:#fbfdfc; --foreground:#1a211e; --card:#fbfdfc; --card-foreground:#1a211e; --popover:#f7f9f8; --popover-foreground:#1a211e; --primary:#008573; --primary-foreground:#ffffff; --secondary:#eef1f0; --secondary-foreground:#1a211e; --muted:#f7f9f8; --muted-foreground:#5f6563; --accent:#ccf3ea; --accent-foreground:#1a211e; --border:#d7dad9; --input:#868e8b; --ring:#008573; --lo-chrome:#f7f9f8; --lo-link:#0d3d38; --lo-selected:#b8eae0; --lo-selected-foreground:#0d3d38; --lo-hover:#ccf3ea; --danger:#ce2c31; --danger-background:#fff7f7; --danger-border:#f4a9aa;color-scheme:light;
+}
+:root[data-lifeos-palette=sage-teal][data-lifeos-theme=dark]{
+ --background:#101211; --foreground:#eceeed; --card:#101211; --card-foreground:#eceeed; --popover:#171918; --popover-foreground:#eceeed; --primary:#008573; --primary-foreground:#ffffff; --secondary:#202221; --secondary-foreground:#eceeed; --muted:#171918; --muted-foreground:#adb5b2; --accent:#023b37; --accent-foreground:#eceeed; --border:#373b39; --input:#63706b; --ring:#0bd8b6; --lo-chrome:#171918; --lo-link:#0bd8b6; --lo-selected:#084843; --lo-selected-foreground:#adf0dd; --lo-hover:#023b37; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
+}
+@media(prefers-color-scheme:dark){:root[data-lifeos-palette=sage-teal]:not([data-lifeos-theme=light]):not([data-lifeos-theme=dark]){
+ --background:#101211; --foreground:#eceeed; --card:#101211; --card-foreground:#eceeed; --popover:#171918; --popover-foreground:#eceeed; --primary:#008573; --primary-foreground:#ffffff; --secondary:#202221; --secondary-foreground:#eceeed; --muted:#171918; --muted-foreground:#adb5b2; --accent:#023b37; --accent-foreground:#eceeed; --border:#373b39; --input:#63706b; --ring:#0bd8b6; --lo-chrome:#171918; --lo-link:#0bd8b6; --lo-selected:#084843; --lo-selected-foreground:#adf0dd; --lo-hover:#023b37; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
+}}
+:root[data-lifeos-palette=mauve-violet]{
+ --background:#fdfcfd; --foreground:#211f26; --card:#fdfcfd; --card-foreground:#211f26; --popover:#faf9fb; --popover-foreground:#211f26; --primary:#6e56cf; --primary-foreground:#ffffff; --secondary:#f2eff3; --secondary-foreground:#211f26; --muted:#faf9fb; --muted-foreground:#65636d; --accent:#ebe4ff; --accent-foreground:#211f26; --border:#dbd8e0; --input:#8e8c99; --ring:#6550b9; --lo-chrome:#faf9fb; --lo-link:#6550b9; --lo-selected:#e1d9ff; --lo-selected-foreground:#2f265f; --lo-hover:#ebe4ff; --danger:#ce2c31; --danger-background:#fff7f7; --danger-border:#f4a9aa;color-scheme:light;
+}
+:root[data-lifeos-palette=mauve-violet][data-lifeos-theme=dark]{
+ --background:#121113; --foreground:#eeeef0; --card:#121113; --card-foreground:#eeeef0; --popover:#1a191b; --popover-foreground:#eeeef0; --primary:#6e56cf; --primary-foreground:#ffffff; --secondary:#232225; --secondary-foreground:#eeeef0; --muted:#1a191b; --muted-foreground:#b5b2bc; --accent:#33255b; --accent-foreground:#eeeef0; --border:#3c393f; --input:#6f6d78; --ring:#baa7ff; --lo-chrome:#1a191b; --lo-link:#baa7ff; --lo-selected:#3c2e69; --lo-selected-foreground:#e2ddfe; --lo-hover:#33255b; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
+}
+@media(prefers-color-scheme:dark){:root[data-lifeos-palette=mauve-violet]:not([data-lifeos-theme=light]):not([data-lifeos-theme=dark]){
+ --background:#121113; --foreground:#eeeef0; --card:#121113; --card-foreground:#eeeef0; --popover:#1a191b; --popover-foreground:#eeeef0; --primary:#6e56cf; --primary-foreground:#ffffff; --secondary:#232225; --secondary-foreground:#eeeef0; --muted:#1a191b; --muted-foreground:#b5b2bc; --accent:#33255b; --accent-foreground:#eeeef0; --border:#3c393f; --input:#6f6d78; --ring:#baa7ff; --lo-chrome:#1a191b; --lo-link:#baa7ff; --lo-selected:#3c2e69; --lo-selected-foreground:#e2ddfe; --lo-hover:#33255b; --danger:#ff9592; --danger-background:#201314; --danger-border:#8c333a;color-scheme:dark;
+}}
 /* Shared Chinese business workspace geometry; palettes above remain semantic. */
 :root{
  --lo-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei UI","Noto Sans CJK SC","Hiragino Sans GB",sans-serif;
@@ -35,3 +38,8 @@
 }
 @media(max-width:1100px){:root{--lo-content-padding:24px}}
 @media(max-width:850px){:root{--lo-header-height:56px;--lo-content-padding:16px;--lo-font-title:24px}}
+
+/* Desktop density is independent from mobile touch/reading sizes and browser zoom. */
+@media(min-width:1024px){:root{--lo-font-body:400 14px/1.5 var(--lo-font-family);--lo-font-title:22px;--lo-font-section:16px;--lo-font-meta:12px;--lo-header-height:52px;--lo-sidebar-width:208px;--lo-content-padding:20px;--lo-control-height:32px}}
+*{scrollbar-width:thin;scrollbar-color:var(--input) transparent}
+*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-thumb{background:var(--input);border:2px solid var(--background);border-radius:8px}*::-webkit-scrollbar-track{background:transparent}

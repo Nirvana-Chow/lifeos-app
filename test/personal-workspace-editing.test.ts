@@ -102,7 +102,7 @@ test('personal navigation hides unfinished business and record management',()=>{
   const html=workspace({initialPage});
   assert.doesNotMatch(html,/href="\/personal\/(?:schedule|settings\/data|edit\?type=journal)"|更多业务|href="\/review\/admin/);
   assert.match(html,/aria-label="事项"/);
-  assert.match(html,/aria-label="帮助"/);
+  assert.doesNotMatch(html,/aria-label="帮助"/);
  }
 });
 function rawComponent(file:string,snapshot:Record<number,unknown>={}){

@@ -1,0 +1,14 @@
+{
+  "package": "@radix-ui/colors",
+  "version": "3.0.0",
+  "license": "MIT",
+  "source": "https://unpkg.com/@radix-ui/colors@3.0.0/index.mjs",
+  "sourceSha256": "35560544c86ca2c2fa79e5fdfba40d18312e11e21fd81d52af524b94c117294d",
+  "licenseSha256": "9c400881b9139571aa7acc3bd6e422a4f05223b4519169fb661298fb44bf228e",
+  "target": "app/theme.css",
+  "adaptations": [
+    "Only slate/indigo, sage/teal, mauve/violet and red light/dark hex scales copied into semantic roles; no runtime dependency.",
+    "Teal solid uses light teal11 for white text; input uses neutral9 for visible outlines; explicit light/dark/system lifecycle retained.",
+    "Light teal links use teal12 because measured teal11 on sage backgrounds is 4.47:1; text threshold remains 4.5:1."
+  ]
+}
