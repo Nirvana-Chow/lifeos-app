@@ -1,0 +1,32 @@
+# LO-SCHEDULE-001 / Issue12: owner calendar integration slice
+
+This continues `personal-agent-foundation`6.2, alongside the original6.1–6.4 business work. It does not complete6.2, real-source integration or owner acceptance. Owner requested visible initial modules after CI/CD; root dispatched an owner-only calendar extraction on2026-11-05, based on9a8fcae89532a0510c360876ebc9471f776a90fe. No duplicate requirement pool is created.
+
+## Existing implementation selected
+
+Reuse the reviewed calendar foundation/core at3ee7c0892d8bd59ddc279e2226d73046026da023: typed fields, native timezone/DST/all-day validation, bounded projections, ReUI table/month/life-stage views, exact-command recovery, owner facade and the owner hooks originally introduced in277ec66. Existing fixed package-lock and components are unchanged; no new dependencies. This slice excludes that branch's Agent issuer, registry/discovery/Skill/scope/grant changes, proposed0015 and all legacy synthetic-calendar storage changes. The original Agent parity requirement remains open and no calendar Agent capability is advertised.
+
+The new authenticated `/personal/schedule` route displays actual owner API responses. No records are seeded or substituted with synthetic content. The owner API supports status, bounded snapshot, reference options, get, create, update and history. Delete/restore/cancellation/occurrence exceptions are not implemented. External sources remain explicitly not connected. A record without complete dates stays unscheduled. Calendar person pins are rejected until a real typed person adapter exists.
+
+The shared `PersonalService` is the only writer: `calendar` is stored as inbox/reference metadata, with the existing immutable `personal-manual-v1` source, owner/space checks, reference source/revision pins, ordered locks, CAS, history, receipt and idempotency. Runtime receives the existing MFA-qualified owner principal and rechecks owner/write authority during writes; bearer credentials cannot use this owner route. Each save is one record/transaction, followed by separate individual readback.
+
+## Schema2 and restricted role evidence
+
+- `db/0002_platform_inbox.sql` permits kind inbox with title/text/disposition and does not constrain personal metadata to the old five types. Schema remains2.
+- `db/0001_platform_candidate.sql` grants existing runtime SELECT/INSERT on source/record/history/command and column UPDATE on draft/revision/updated_at/original_entry_id. The calendar writer needs no new table or role. Source/history/receipt mutation privileges are not added.
+- `verifyRestrictedPool` still checks schema2, restricted runtime identity, no membership/object ownership/CREATE authority, and all four forced owner-RLS tables before the existing runtime constructs this service.
+- New opt-in `test/personal-calendar-owner-postgres.integration.test.ts` reuses the existing explicitly approved pre-migrated synthetic target. It checks required/forbidden ACLs, native persistence of full text and source, concurrent idempotency/CAS, a fresh-pool readback/history, RLS and denied DDL. It creates no role/schema/grant and executes no SQL migration. Native PostgreSQL execution is still required; default skip is not acceptance.
+
+## Minimal fixed activation checklist for root
+
+1. Integrate/review this owner source and the single navigation hook below; bind the resulting exact main SHA and unchanged lock to normal CI/CD. Run the opt-in owner PG test on an approved synthetic schema2 target with the existing acceptance environment and `RUN_PERSONAL_CALENDAR_OWNER_POSTGRES_TESTS=1 node --test --test-isolation=none test/personal-calendar-owner-postgres.integration.test.ts`. This does not imply the qualification ran here. Preserve fixed-SHA CI, normal release gates and actual runtime readback.
+2. Keep the existing owner, space, MFA, database, role, business-write policy and five-element generic `LIFEOS_PERSONAL_ALLOWED_TYPES` unchanged. The only proposed owner module switch is `LIFEOS_PERSONAL_CALENDAR=personal-calendar-v1`; absence stays closed, all other values fail. Do not enable the separate old `LIFEOS_CALENDAR_CANDIDATE` or any Agent calendar switch.
+3. Activation is a separately reviewed private runtime configuration change. Read back `/api/platform/personal/calendar/status` under the current owner MFA session; verify exact owner/space and writable policy. Where the deployment still uses an ephemeral write permit, its source/config digest must be regenerated for the final SHA/calendar flag; never reuse an old permit. No existing business-write policy is changed by this slice.
+4. Before real writes, verify the existing backup/recovery boundary. Then use only an explicitly authorized owner record; confirm its receipt and independent get/history/refresh. Do not import Apple calendars, address books, subscriptions or historic records to populate the page. No model/external-service egress or background synchronization is enabled.
+5. Roll back the owner flag/source through the existing deployment path if qualification/readback fails. Disabling hides calendar records without deleting their source/history; retain all database bytes. SQL and data rollback are not needed for this source-only slice and have not been tested as a real restore.
+
+The sidebar file `src/ui-review/workspace.tsx` is owned concurrently by the theme/Gantt agent. Root must add one normal owner navigation link to `/personal/schedule` after serial integration, using the existing Clock icon and `data-workspace-nav` anchor conventions. No navigation/theme/Gantt code is overwritten here. The direct route already resolves.
+
+## Verification checkpoint
+
+Baseline:7 personal/business/calendar-domain tests passed before extraction. The core integration tests then failed on the expected type/route/config boundaries before the shared hooks were applied. After integration,24 focused tests and typecheck passed. Final focused run:32 tests,31 passed,1 explicitly skipped native PostgreSQL test,0 failures; typecheck and diff whitespace checks passed. Added integration regressions cover overview compatibility, unverified-storage closure, bearer rejection and transaction-time authority revocation. Native owner PostgreSQL and fresh integrated browser checks have not run in this checkout; prior frozen-candidate browser evidence is useful reuse evidence, not qualification of this source. No real database, flag, key, grant, external API or host was read or changed.

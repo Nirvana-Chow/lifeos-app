@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-const module=await import('../src/calendar-candidate/personal-domain.ts').catch(()=>null);
+import * as module from '../src/calendar-candidate/personal-domain.ts';
 const normalize=(value:unknown)=>{assert.ok(module,'calendar personal domain is not implemented');return module.normalizeCalendarPersonalFields(value);};
 const ref={id:'11111111-1111-4111-8111-111111111111',sourceId:'22222222-2222-4222-8222-222222222222',revision:2};
 const fields=(personal:unknown)=>({title:'  合成日程  ',text:'保留原文',occurredOn:null,personal:{type:'calendar',schemaVersion:1,links:{project:null,domain:null,people:[]},...personal as object}});
@@ -21,4 +21,10 @@ test('calendar refs are exact source/revision pins and duplicate or over-limit p
  assert.deepEqual(module!.calendarPersonalReferences(normalized.personal).map(r=>r.type),['project','person']);
  assert.throws(()=>normalize(fields({...value.personal,links:{project:null,domain:null,people:[ref,ref]}})));
  assert.throws(()=>normalize(fields({...value.personal,links:{project:null,domain:null,people:Array.from({length:21},()=>ref)}})));
+});
+test('complete calendar fields cannot silently clear body, relations or dates by omission',()=>{
+ const base=fields({calendarKind:'event',schedule:null});
+ for(const key of ['text','occurredOn','personal']){const value={...base};delete (value as any)[key];assert.throws(()=>normalize(value),key);}
+ for(const key of ['schedule','links']){const value=structuredClone(base);delete (value.personal as any)[key];assert.throws(()=>normalize(value),key);}
+ const value=structuredClone(base);delete (value.personal.links as any).people;assert.throws(()=>normalize(value),'people');
 });

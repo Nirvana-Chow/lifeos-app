@@ -35,9 +35,10 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;private repository:PlatformRepository;
  constructor(repository:PlatformRepository,config:PersonalConfig){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);}
- private enabled(type:PersonalType){if(!this.config.allowedTypes.includes(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
+ private allows(type:PersonalType){return type==='calendar'?this.config.calendarEnabled===true:this.config.allowedTypes.includes(type);}
+ private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
- private matches(entry:StoredEntry|null,owner:string,type?:PersonalType,id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.config.allowedTypes.includes(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
+ private matches(entry:StoredEntry|null,owner:string,type?:PersonalType|'person',id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.allows(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
  async get(owner:string,type:PersonalType,id:string):Promise<PublicEntry>{this.owner(owner);this.enabled(type);id=validateId(id);const entry=await this.repository.get(owner,type==='todo'?'todo':'inbox',id);if(!this.matches(entry,owner,type,id))return missing();return publicEntry(entry);}
  private async page(owner:string,mode:'current'|'history',limit:number,type?:PersonalType,id?:string):Promise<PersonalPage>{
   this.owner(owner);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
@@ -51,7 +52,14 @@ export class PersonalService{
   const scanned=rows.slice(0,limit);return{items:scanned.filter(row=>this.matches(row.entry,owner,type,id)).map(row=>publicEntry(row.entry)),truncated:rows.length>limit,scanned:scanned.length,limit,scope:'bounded-window',total:null};
  }
  async list(owner:string,type?:PersonalType,limit=50){return this.page(owner,'current',limit,type);}
- async history(owner:string,type:PersonalType,id:string,limit=50){await this.get(owner,type,id);return this.page(owner,'history',limit,type,id);}
+ async history(owner:string,type:PersonalType,id:string,limit=50){
+  const current=await this.get(owner,type,id);if(type!=='calendar')return this.page(owner,'history',limit,type,id);
+  if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
+  const rows=await this.repository.history(owner,'inbox',id);
+  if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,'CALENDAR_HISTORY_UNAVAILABLE','日程历史读取无效。');
+  return{items:rows.slice(0,limit).map(publicEntry),truncated:rows.length>limit||rows.length===100&&rows.at(-1)!.revision>1,scope:'bounded-record-history' as const,scanned:rows.length,limit,total:null};
+ }
+
  async exportSnapshot(owner:string,limit=50){const [entries,history]=await Promise.all([this.page(owner,'current',limit),this.page(owner,'history',limit)]);return{format:'lifeos.personal.manual.export.v1',spaceId:this.config.spaceId,entries:entries.items,history:history.items,truncated:entries.truncated||history.truncated,windows:{entries,history},backupOrRestoreVerified:false};}
  async currentSnapshot(owner:string){this.owner(owner);if(!this.repository.readCurrentSnapshot)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询未配置，不能计算总数。');const rows=await this.repository.readCurrentSnapshot!(owner);if(!Array.isArray(rows)||rows.length>10000||rows.some(r=>!r||r.ownerId!==owner)||new Set(rows.map(r=>r.id)).size!==rows.length)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询超过安全上限或响应无效，未返回部分统计。');return rows.filter(r=>this.matches(r,owner)).map(publicEntry);}
  async overview(owner:string,today:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(today)||Number.isNaN(Date.parse(today+'T00:00:00Z'))||new Date(today+'T00:00:00Z').toISOString().slice(0,10)!==today)fail(400,'INVALID_DATE','需要有效日期。');const items=await this.currentSnapshot(owner),drafts=items.filter(e=>personalEntryType(e,this.config.spaceId)==='todo').map(e=>e.draft as TodoDraft);return{items,scope:'full-current-snapshot' as const,total:items.length,truncated:false,observedAt:new Date().toISOString(),today,counts:{open:drafts.filter(d=>d.status==='open'||d.status==='in_progress').length,done:drafts.filter(d=>d.status==='done').length,cancelled:drafts.filter(d=>d.status==='cancelled').length,overdue:drafts.filter(d=>(d.status==='open'||d.status==='in_progress')&&d.dueOn&&d.dueOn<today).length},projects:items.filter(e=>personalEntryType(e,this.config.spaceId)==='project'),domains:items.filter(e=>personalEntryType(e,this.config.spaceId)==='domain')};}
