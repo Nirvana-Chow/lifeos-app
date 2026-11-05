@@ -1,3 +1,5 @@
+import {PersonalFinanceService} from '../personal-finance/service.ts';
+import {handlePersonalFinance} from '../personal-finance/http.ts';
 import {PersonalCalendarService} from '../calendar-candidate/personal-service.ts';
 import {handlePersonalCalendar} from '../calendar-candidate/personal-http.ts';
 import {handleRequirementsRequest} from '../requirements-candidate/http.ts';
@@ -70,6 +72,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     const response=await handlePersonalCalendar(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:calendar,guard:async()=>{if(request.signal.aborted)throw new PlatformError(409,'REQUEST_CANCELLED','请求已取消，保存结果未确认。');await assertOwner();await options.assertWritable();}});
     await assertOwner();return response!;
    }
+   if(url.pathname==='/api/platform/personal/finance'||url.pathname.startsWith('/api/platform/personal/finance/')){let writable=false;try{await options.assertWritable();writable=true;}catch{}const finance=options.config.financeEnabled&&options.storageVerified?new PersonalFinanceService(options.repository,{ownerId:options.config.ownerId,spaceId:options.config.spaceId,enabled:true,writable}):undefined;return (await handlePersonalFinance(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:finance,assertOwner,guard:options.assertWritable}))!;}
    const supportResponse=await handleRequirementSupportRequest(request,options.config.ownerId,service.requirementSupport,{assertOwner,assertWritable:options.assertWritable},artifact);
    if(supportResponse)return supportResponse;
    const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable});

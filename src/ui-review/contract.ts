@@ -111,7 +111,7 @@ export type LifeOSWorkspaceProps = {
   pendingTaskIds?: readonly string[];
   mutationError?: string | null;
   settingsContent?: ReactNode;
-  contentPage?: {title: string; content: ReactNode};
+  contentPage?: {title: string; content: ReactNode;wide?:boolean};
   onNavigatePage?: (page: WorkspacePage) => void;
   syncUrl?: boolean;
   unavailablePage?: {title: string; message: string};

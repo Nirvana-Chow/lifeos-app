@@ -22,7 +22,7 @@ export async function handlePersonalRequest(request:Request,owner:string,baseURL
  const queries=[...url.searchParams.keys()];if(queries.some(key=>key!=='limit')||url.searchParams.getAll('limit').length>1)throw new PlatformError(400,'INVALID_QUERY','读取参数无效。');const text=url.searchParams.get('limit'),limit=text===null?50:/^[1-9]\d{0,2}$/.test(text)?Number(text):NaN;
  if(type==='export'){if(id||history)throw new PlatformError(404,'NOT_FOUND','无此本人空间操作。');return respond(await service.exportSnapshot(owner,limit));}
  const personalType=type as PersonalType;
- if(request.method==='GET'){if(history&&id)return respond(await service.history(owner,personalType,id,limit));return respond(id?{entry:await service.get(owner,personalType,id)}:await service.list(owner,personalType,limit));}
+ if(request.method==='GET'){const value=history&&id?await service.history(owner,personalType,id,limit):id?{entry:await service.get(owner,personalType,id)}:await service.list(owner,personalType,limit);await guard();return respond(value);}
  if(request.headers.get('origin')!==new URL(baseURL).origin)throw new PlatformError(403,'ORIGIN_DENIED','本人空间保存需要相同来源。');
  await guard(true);const input=await readJSONBody(request),key=request.headers.get('idempotency-key')??'';
  const result=await service.mutate(owner,personalType,id,input,key,()=>guard(true));return respond(result,!id&&!result.duplicate?201:200);

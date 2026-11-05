@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {CalendarDays,Map as MapIcon,MessageSquare,History} from 'lucide-react';
+import {CalendarDays,NotebookPen,HeartPulse,Users,Wallet,Map as MapIcon,MessageSquare,History} from 'lucide-react';
 import {ownerModules,verifiedModuleScope,type OwnerModuleLink} from './owner-modules';
 import {supportJSON} from './requirement-support-hooks';
-const icons={calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
+const icons={journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
 /** Status composes existing owner capabilities; it grants no write authority. */
 export function useOwnerModules(enabled:boolean,scope:string|null){
  const [value,setValue]=useState<unknown>(null),[path,setPath]=useState('');
