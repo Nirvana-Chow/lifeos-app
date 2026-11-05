@@ -51,6 +51,8 @@ This is the sole execution checklist for the new PersonalAgent intent. The exist
 - [ ] 7.3 Add evidence-backed insight candidates and explicit owner-entry or approved event triggers; verify fresh source/goal/producer policy, duplicate/noise suppression, limits and no unattended commit, then deliver the insight website with real Chrome.
 - [ ] 7.4 Add versioned correction/evaluation feedback and controlled prompt/retrieval comparisons; verify source-disjoint held-out cases, factual lineage and privacy, publishing measured quality/cost limits without automatic preference promotion, model training or synthetic owner acceptance.
 
+2026-11-05 LO-AGENT-001/Issue35 addition under7.2/8.2: [Skill update channel candidate](../../../docs/superpowers/specs/2026-11-05-skill-update-channel.md) now includes fixed existing-HTTPS-publisher trust, source manifest/content-addressed download routes, bounded pre-use transport, seq anti-rollback and recoverable local doc activation/rollback tested on synthetic directories. Actual deployment/host registration/layout adoption and runtime/owner acceptance remain open; documentation does not grant key scopes or binary support.
+
 ## 8. Cross-slice delivery and continuity
 
 - [ ] 8.1 Verify each changed slice through focused/full tests, types, exact default-closed webpack and same-output compiled checks, strict OpenSpec, generated contract/artifact drift, enabled PG/Chrome and independent security/code/privacy/license review; retain every failed, skipped and unavailable gate explicitly.
