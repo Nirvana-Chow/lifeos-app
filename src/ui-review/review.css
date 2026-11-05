@@ -1343,7 +1343,7 @@
 }
 
 /* Owner-reviewed desktop density; mobile keeps its 16px inputs and 44px targets. */
-@media(min-width:1024px){
+@media(min-width:1024px) and (pointer:fine){
  .lo-shell button:not([data-slot]),.lo-shell [data-slot="button"],.lo-shell input:not([type="radio"]):not([type="checkbox"]),.lo-shell select{min-height:32px;min-width:32px;font-size:14px;padding:4px 10px}
  .lo-shell h2,.lo-shell h3{font-size:16px}
  .lo-header{gap:14px;padding-inline:20px}

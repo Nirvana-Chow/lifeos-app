@@ -40,6 +40,6 @@
 @media(max-width:850px){:root{--lo-header-height:56px;--lo-content-padding:16px;--lo-font-title:24px}}
 
 /* Desktop density is independent from mobile touch/reading sizes and browser zoom. */
-@media(min-width:1024px){:root{--lo-font-body:400 14px/1.5 var(--lo-font-family);--lo-font-title:22px;--lo-font-section:16px;--lo-font-meta:12px;--lo-header-height:52px;--lo-sidebar-width:208px;--lo-content-padding:20px;--lo-control-height:32px}}
+@media(min-width:1024px) and (pointer:fine){:root{--lo-font-body:400 14px/1.5 var(--lo-font-family);--lo-font-title:22px;--lo-font-section:16px;--lo-font-meta:12px;--lo-header-height:52px;--lo-sidebar-width:208px;--lo-content-padding:20px;--lo-control-height:32px}}
 *{scrollbar-width:thin;scrollbar-color:var(--input) transparent}
 *::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-thumb{background:var(--input);border:2px solid var(--background);border-radius:8px}*::-webkit-scrollbar-track{background:transparent}

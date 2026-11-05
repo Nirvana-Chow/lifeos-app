@@ -212,6 +212,8 @@ export function TaskGrid(props: TaskGridProps) {
   const [edit, setEdit] = useState<CellEdit | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [layoutState,setLayoutState]=useState<{scope:string|null;value:GridLayout}>({scope:null,value:defaultLayout()});
+  const [rowEstimate,setRowEstimate]=useState(52);
+  useEffect(()=>{const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
@@ -318,7 +320,7 @@ export function TaskGrid(props: TaskGridProps) {
           i18n={{ labels: { empty: '没有符合条件的待办', loading: '正在加载表格…', allRowsLoaded: '已显示全部待办' } }}
           tableLayout={{ headerSticky: true, width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
           tableClassNames={{ base: styles.table, headerRow: styles.header, bodyRow: styles.row }}>
-          <DataGridTableVirtual height="100%" estimateSize={52} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
+          <DataGridTableVirtual height="100%" estimateSize={rowEstimate} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
           <DataGridCellSelection apiRef={focusApi} clipboard={false} />
         </DataGrid>
       </DataGridContainer>
