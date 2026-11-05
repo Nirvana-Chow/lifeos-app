@@ -43,3 +43,8 @@
 @media(min-width:1024px) and (pointer:fine){:root{--lo-font-body:400 14px/1.5 var(--lo-font-family);--lo-font-title:22px;--lo-font-section:16px;--lo-font-meta:12px;--lo-header-height:52px;--lo-sidebar-width:208px;--lo-content-padding:20px;--lo-control-height:32px}}
 *{scrollbar-width:thin;scrollbar-color:var(--input) transparent}
 *::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-thumb{background:var(--input);border:2px solid var(--background);border-radius:8px}*::-webkit-scrollbar-track{background:transparent}
+
+/* Semantic phase/priority stripes retain text; separate from appearance family. */
+:root{--lo-phase-0:#60646c;--lo-phase-1:#0d74ce;--lo-phase-2:#6550b9;--lo-phase-3:#008573;--lo-phase-4:#ab6400;--lo-phase-5:#cb1d63;--lo-priority-p2:#ab6400;}
+:root[data-lifeos-theme=dark]{--lo-phase-0:#b0b4ba;--lo-phase-1:#70b8ff;--lo-phase-2:#baa7ff;--lo-phase-3:#0bd8b6;--lo-phase-4:#ffca16;--lo-phase-5:#ff92ad;--lo-priority-p2:#ffca16;}
+@media(prefers-color-scheme:dark){:root:not([data-lifeos-theme=light]):not([data-lifeos-theme=dark]){--lo-phase-0:#b0b4ba;--lo-phase-1:#70b8ff;--lo-phase-2:#baa7ff;--lo-phase-3:#0bd8b6;--lo-phase-4:#ffca16;--lo-phase-5:#ff92ad;--lo-priority-p2:#ffca16;}}

@@ -4,7 +4,7 @@ export type ImplementationStatus = 'not_started' | 'partial' | 'implemented';
 export type RoadmapPhase = {id: string; order: number; title: string; goal: string};
 export type RequirementRoadmap = {
  phaseId: string;
- priority: 'P0' | 'P1' | 'P2';
+ priority: 'P0' | 'P1' | 'P2' | 'P3';
  implementation: ImplementationStatus;
  summary: string;
  nextStep: string;
@@ -54,7 +54,7 @@ export function validateRequirementBaseline(input: unknown): RequirementBaseline
   if (r.status === 'accepted' && (!r.acceptance || r.acceptance.by !== 'user' || r.acceptance.baselineVersion !== b.baselineVersion || !nonempty(r.acceptance.ref))) throw Error('User acceptance evidence for this baseline is required.');
   if (r.roadmap !== undefined) {
    const m = r.roadmap;
-   if (!m || !phases.has(m.phaseId) || !['P0', 'P1', 'P2'].includes(m.priority) || !['not_started', 'partial', 'implemented'].includes(m.implementation) || !nonempty(m.summary) || !nonempty(m.nextStep) || !refs(m.issueRefs, publicIssue) || !refs(m.prRefs, publicPR) || !refs(m.specTaskRefs, specTask)) throw Error('Invalid requirement roadmap metadata.');
+   if (!m || !phases.has(m.phaseId) || !['P0', 'P1', 'P2', 'P3'].includes(m.priority) || !['not_started', 'partial', 'implemented'].includes(m.implementation) || !nonempty(m.summary) || !nonempty(m.nextStep) || !refs(m.issueRefs, publicIssue) || !refs(m.prRefs, publicPR) || !refs(m.specTaskRefs, specTask)) throw Error('Invalid requirement roadmap metadata.');
    if (m.implementation !== 'not_started' && !r.evidence.some(e => e.scope === 'source')) throw Error('Roadmap implementation requires source evidence.');
   }
  }

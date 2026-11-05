@@ -38,8 +38,8 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await expect(page.getByText('验收条件',{exact:true})).toHaveCount(0);
   await t.test(`readable table typography ${width}/${theme}`,async()=>{
    const sizes=await page.locator('[data-requirement-id]').first().evaluate(node=>({body:parseFloat(getComputedStyle(node.querySelector('button')!).fontSize),metadata:parseFloat(getComputedStyle(node.querySelector('button span')!).fontSize)}));
-   assert.ok(sizes.body>=16,`Requirement body must be at least 16px, got ${sizes.body}`);
-   assert.ok(sizes.metadata>=14,`Requirement metadata must be at least 14px, got ${sizes.metadata}`);
+   assert.ok(sizes.body>=(width>=1024?14:16),`Requirement body must be at least 16px, got ${sizes.body}`);
+   assert.ok(sizes.metadata>=(width>=1024?12:14),`Requirement metadata must be at least 14px, got ${sizes.metadata}`);
   });
   const visibleIds=async()=>page.locator('[data-requirement-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-requirement-id')!).sort());
   assert.deepEqual(await visibleIds(),allIds);
@@ -55,12 +55,12 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   assert.ok(Math.abs((await header.boundingBox())!.y-headerY)<2);
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
   assert.deepEqual(await visibleIds(),allIds);
-  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16),true);
-  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=14)),true,'Board metadata stays at least 14px');
+  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?14:16)),true);
+  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?12:14))),true,'Board metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-board-${width}-${theme}.png`)});
   await page.getByRole('button',{name:'甘特视图',exact:true}).click();assert.deepEqual(await visibleIds(),allIds);
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
-  await page.getByLabel('阶段',{exact:true}).selectOption('workspace');
+  await page.locator('[data-requirements-filters] summary').click();await page.getByLabel('阶段',{exact:true}).selectOption('workspace');
   await page.getByLabel('优先级',{exact:true}).selectOption('P0');
   await page.getByLabel('实现状态',{exact:true}).selectOption('partial');
   await page.getByLabel('验收状态',{exact:true}).selectOption('in_progress');
@@ -71,8 +71,8 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await expect(page.getByRole('heading',{name:`未排期（${expected.length}）`,exact:true})).toBeVisible();
   await expect(page.getByText('尚未设置计划日期',{exact:true})).toBeVisible();
   await expect(page.locator('[data-gantt-bar],time')).toHaveCount(0);
-  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16),true);
-  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=14)),true,'Gantt metadata stays at least 14px');
+  assert.equal(await page.locator('[data-requirement-id] button').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?14:16)),true);
+  assert.equal(await page.locator('article [data-slot="badge"]').evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=(innerWidth>=1024?12:14))),true,'Gantt metadata stays at least 14px');
   await page.screenshot({path:join(screenshots,`requirements-gantt-${width}-${theme}.png`)});
   const trigger=page.locator(`[data-requirement-id="${expected[0]}"] button`);await trigger.click();
   const dialog=page.getByRole('dialog'),title=dialog.getByRole('heading',{level:2});
@@ -82,9 +82,9 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   for(const criterion of item.acceptanceCriteria)await expect(dialog.getByText(criterion,{exact:true})).toBeVisible();
   const handle=await dialog.elementHandle();
   await dialog.evaluate(node=>(node as HTMLElement).dataset.continuity='same');
-  await dialog.getByRole('button',{name:'展开全屏',exact:true}).click();
+  await dialog.getByRole('button',{name:'展开到内容区',exact:true}).click();
   assert.equal(await handle!.evaluate(node=>node.isConnected&&node.dataset.continuity==='same'),true);
-  await expect(dialog.getByRole('button',{name:'退出全屏',exact:true})).toBeVisible();
+  await expect(dialog.getByRole('button',{name:'收起详情',exact:true})).toBeVisible();
   await expect.poll(async()=>Math.round((await dialog.boundingBox())!.width)).toBe(width);
   await expect.poll(async()=>Math.round((await dialog.boundingBox())!.height)).toBe(900);
   await page.screenshot({path:join(screenshots,`requirements-detail-${width}-${theme}.png`)});

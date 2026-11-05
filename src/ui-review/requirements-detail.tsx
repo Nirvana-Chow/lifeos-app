@@ -1,6 +1,6 @@
 'use client';
 
-import {useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {Requirement} from '../platform/requirements';
 import {Dialog,DialogContent,DialogTitle,DialogClose} from './ui/dialog';
 import {Button} from './ui/button';
@@ -43,10 +43,12 @@ function RequirementDetailBody({item}: {item: Requirement}) {
 }
 
 
-export function RequirementDetail({item,phaseTitle,expanded,onExpandedChange,onClose,returnFocus}:{item:Requirement|null;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void}){
+export function RequirementDetail({container,item,phaseTitle,expanded,onExpandedChange,onClose,returnFocus}:{container?:HTMLElement|null;item:Requirement|null;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void}){
  const title=useRef<HTMLHeadingElement>(null);
- return <Dialog open={item!==null} onOpenChange={open=>{if(!open)onClose();}}><DialogContent className={`${styles.dialog} ${expanded?styles.fullscreen:''}`} showCloseButton={false} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus();}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus();}}>
-  <header className={styles.dialogHeader}><div><span className={styles.id}>{item?.id}</span><DialogTitle ref={title} tabIndex={-1}>{item?.title}</DialogTitle></div><div className={styles.dialogActions}><Button variant="outline" onClick={onExpandedChange}>{expanded?'退出全屏':'展开全屏'}</Button><DialogClose asChild><Button variant="outline">关闭</Button></DialogClose></div></header>
+ const [bounds,setBounds]=useState<{left:number;top:number;width:number;height:number}|null>(null);
+ useEffect(()=>{if(!expanded||!container){setBounds(null);return;}const update=()=>{const r=container.getBoundingClientRect();setBounds({left:r.left,top:r.top,width:r.width,height:r.height});};update();const observer=new ResizeObserver(update);observer.observe(container);window.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);};},[expanded,container]);
+ return <Dialog open={item!==null} onOpenChange={open=>{if(!open)onClose();}}><DialogContent container={container} style={expanded&&bounds?{...bounds,maxWidth:bounds.width,maxHeight:bounds.height,transform:'none',translate:'none'}:undefined} className={`${styles.dialog} ${expanded?styles.fullscreen:''}`} showCloseButton={false} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus();}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus();}}>
+  <header className={styles.dialogHeader}><div><span className={styles.id}>{item?.id}</span><DialogTitle ref={title} tabIndex={-1}>{item?.title}</DialogTitle></div><div className={styles.dialogActions}><Button variant="outline" onClick={onExpandedChange}>{expanded?'收起详情':'展开到内容区'}</Button><DialogClose asChild><Button variant="outline">关闭</Button></DialogClose></div></header>
   <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span></div><p><strong>下一步：</strong>{item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}<RequirementDetailBody item={item}/></>:null}</div>
  </DialogContent></Dialog>;
 }

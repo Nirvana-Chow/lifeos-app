@@ -9,6 +9,7 @@
   "adaptations": [
     "Only slate/indigo, sage/teal, mauve/violet and red light/dark hex scales copied into semantic roles; no runtime dependency.",
     "Teal solid uses light teal11 for white text; input uses neutral9 for visible outlines; explicit light/dark/system lifecycle retained.",
-    "Light teal links use teal12 because measured teal11 on sage backgrounds is 4.47:1; text threshold remains 4.5:1."
+    "Light teal links use teal12 because measured teal11 on sage backgrounds is 4.47:1; text threshold remains 4.5:1.",
+    "Semantic phase stripes also copy scale11 from blue, amber and crimson (with existing slate/violet/teal), with visible phase/priority text."
   ]
 }

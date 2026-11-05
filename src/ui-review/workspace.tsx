@@ -163,6 +163,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const returnFocus = useRef<HTMLButtonElement | null>(null),
     menuButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
+  const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
@@ -245,7 +246,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
       const wantsCreate = isTaskLink ? !url.searchParams.has("id") : historyPage !== "requirements" && url.searchParams.get("create") === "todo";
       let allowed;
-      if (locationState.current.classificationPlanId && classificationCloseGuard?.current?.()===false) allowed=false;
+      if (locationState.current.page==='requirements'&&!sameBackground&&requirementNavigationGuard.current?.()===false) allowed=false;
+      else if (locationState.current.classificationPlanId && classificationCloseGuard?.current?.()===false) allowed=false;
       else if (overlayChange) allowed = saving||uncertain ? false :
         locationState.current.settingsOpen&&!closingApproved&&settingsCloseGuard?.current?.()===false ? false : onBeforeSettingsChange?.();
       else if (locationState.current.settingsOpen&&settingsCloseGuard?.current?.()===false) allowed=false;
@@ -337,7 +339,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     projectId: string | null = null,
   ) {
     if(next==="settings")return openSettings();
-    if (restoringHistory.current || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
+    if (restoringHistory.current || page==='requirements'&&next!==page&&requirementNavigationGuard.current?.()===false || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     if (props.onNavigatePage) {
       props.onNavigatePage(next);
       return true;
@@ -541,7 +543,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         const link = (event.target as Element).closest?.('a[href]');
         const href = link?.getAttribute("href");
         if (link?.hasAttribute?.('data-classification-reauth') || (!classificationPlanId && (link?.hasAttribute?.('download') || link?.getAttribute('target') === '_blank'))) return;
-        if (href && (props.saving || props.uncertain || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
+        if (href && (page==='requirements'&&requirementNavigationGuard.current?.()===false || props.saving || props.uncertain || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -913,7 +915,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 coverage={data!.coverage} writable={canWrite && access.allowedTypes?.includes(page === "projects" ? "project" : "domain") === true}
                 onViewTasks={(areaId,projectId) => navigate("tasks",areaId,projectId)}/>
             )}
-          {page === "requirements" && <RequirementsPage/>}
+          {page === "requirements" && <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>}
           </>}
           </div>
         </main>

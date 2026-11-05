@@ -145,3 +145,11 @@ test('settings downloads preserve background drafts and departing links respect 
  click(true);assert.equal(left,0,'downloading Skill does not leave the background');assert.equal(blocked,0);
  click(false);assert.equal(left,0,'pending settings panel guards before any destructive background leave');assert.equal(blocked,1);
 });
+
+test('requirement navigation guard blocks real departures and preserves settings overlays on the current background',()=>{
+ let departures=0,guards=0,overlays=0;const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
+ const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'requirements',onNavigatePage:()=>departures++,onBeforeSettingsChange:()=>{overlays++;return true;}});
+ const page=elements(tree,n=>n.type?.name==='RequirementsPage')[0];assert.ok(page);page.props.navigationGuard.current=()=>{guards++;return false;};
+ const nav=elements(tree,n=>n.props?.['aria-label']==='事项')[0];assert.equal(nav.props.onClick(),false);assert.equal(departures,0);assert.equal(guards,1);
+ elements(tree,n=>n.props?.['aria-label']==='设置')[0].props.onClick({currentTarget:null});assert.equal(overlays,1);assert.equal(guards,1);
+});
