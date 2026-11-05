@@ -1,0 +1,1 @@
+export {MediaBoard} from './board';
