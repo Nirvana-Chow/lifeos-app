@@ -45,7 +45,7 @@ function metadata(entry:PublicEntry|StoredEntry,space:string):RequirementMetadat
   return meta;
  }catch{return null;}
 }
-const fieldsFrom=(draft:InboxDraft):RequirementFields=>({title:draft.title,body:draft.text,phaseId:draft.requirement!.phaseId,priority:draft.requirement!.priority,plannedStartOn:draft.requirement!.plannedStartOn,plannedEndOn:draft.requirement!.plannedEndOn});
+const fieldsFrom=(draft:InboxDraft):RequirementFields=>({...(Object.hasOwn(draft.requirement!,'workflow')?{workflow:draft.requirement!.workflow}:{}),title:draft.title,body:draft.text,phaseId:draft.requirement!.phaseId,priority:draft.requirement!.priority,plannedStartOn:draft.requirement!.plannedStartOn,plannedEndOn:draft.requirement!.plannedEndOn});
 export class RequirementsService{
  private repository:PlatformRepository;readonly config:PersonalConfig;private baseline:()=>RequirementBaseline;
  constructor(repository:PlatformRepository,config:PersonalConfig,baseline:()=>RequirementBaseline=requirements){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.baseline=baseline;}
@@ -111,7 +111,7 @@ export class RequirementsService{
    if(id&&!old&&!stableId.startsWith('LO-'))return missing();
    const oldMeta=old?metadata(old,this.config.spaceId):null;
    if(oldMeta&&!same(oldMeta.baselineBinding,body.baselineBinding??null))fail(409,'BASELINE_CONFLICT','私有修改绑定的基线已变化，请保留内容并核对。');
-   const {title,body:text,...planning}=body.fields,meta:RequirementMetadata={schema:2,id:stableId,baselineBinding:body.baselineBinding??null,...planning};
+   const {title,body:text,...planning}=body.fields,meta:RequirementMetadata={schema:2,id:stableId,baselineBinding:body.baselineBinding??null,...planning,...(!Object.hasOwn(body.fields,'workflow')&&oldMeta&&Object.hasOwn(oldMeta,'workflow')?{workflow:oldMeta.workflow}:{})};
    const draft=validateInbox({title,text,occurredOn:null,disposition:'reference',requirement:meta}),now=new Date().toISOString();
    const entry:StoredEntry=old?{...old,draft,revision:old.revision+1,updatedAt:now}:{id:recordId,ownerId:owner,kind:'inbox',draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:requirementMarker,schema:2,type:'requirement',spaceId:this.config.spaceId,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};
    await guard();await tx.write(entry,raw,!old);const result:MutationResult={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest:commandDigest,result});return result;

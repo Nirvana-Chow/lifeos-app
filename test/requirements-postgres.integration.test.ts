@@ -24,12 +24,14 @@ test('OPT-IN independent native requirements schema2 persistence and grants',{sk
    const counts=(await admin.query('SELECT count(*)::int AS records,(SELECT count(*)::int FROM lifeos_platform.platform_history WHERE record_id=$1) AS history FROM lifeos_platform.platform_record WHERE id=$1',[requirementIdentity(fixture.ownerId,fixture.spaceId,id)])).rows[0];assert.deepEqual(counts,{records:1,history:1});
   });
   await t.test('create restart readback update history and lost committed response recover exact command',async()=>{
-   const key=randomUUID(),original=repo.transaction.bind(repo);let lost=true;
+   const workflow={state:'in_progress',purpose:'PostgreSQL business purpose',nextStep:'Verify JSONB restart readback'} as const,workflowBody={...body,fields:{...fields,workflow}},key=randomUUID(),original=repo.transaction.bind(repo);let lost=true;
    repo.transaction=async(owner,key,fn)=>{const value=await original(owner,key,fn);if(lost){lost=false;throw Error('synthetic lost committed response');}return value;};
-   await assert.rejects(service.mutate(fixture.ownerId,null,body,key));const replay=await service.mutate(fixture.ownerId,null,body,key);assert.equal(replay.duplicate,true);repo.transaction=original;
+   await assert.rejects(service.mutate(fixture.ownerId,null,workflowBody,key));const replay=await service.mutate(fixture.ownerId,null,workflowBody,key);assert.equal(replay.duplicate,true);repo.transaction=original;
    const reload=new PersonalService(new PostgresPlatformRepository(business as SqlPool,true),config).requirements;
-   assert.equal((await reload.get(fixture.ownerId,replay.entry.id)).fields.body.length,16384);
-   const updated=await reload.mutate(fixture.ownerId,replay.entry.id,{...body,fields:{...fields,priority:'P1'},expectedRevision:1,baselineBinding:null},randomUUID());assert.equal(updated.entry.revision,2);assert.equal((await reload.history(fixture.ownerId,replay.entry.id,1)).truncated,true);
+   assert.equal((await reload.get(fixture.ownerId,replay.entry.id)).fields.body.length,16384);assert.deepEqual((await reload.get(fixture.ownerId,replay.entry.id)).fields.workflow,workflow);
+   const updated=await reload.mutate(fixture.ownerId,replay.entry.id,{...body,fields:{...fields,priority:'P1'},expectedRevision:1,baselineBinding:null},randomUUID());assert.equal(updated.entry.revision,2);assert.deepEqual(updated.entry.fields.workflow,workflow);assert.equal((await reload.history(fixture.ownerId,replay.entry.id,1)).truncated,true);
+   const cleared=await reload.mutate(fixture.ownerId,replay.entry.id,{...body,fields:{...fields,workflow:null},expectedRevision:2,baselineBinding:null},randomUUID());assert.equal(cleared.entry.fields.workflow,null);assert.equal((await reload.get(fixture.ownerId,replay.entry.id)).fields.workflow,null);assert.deepEqual((await reload.history(fixture.ownerId,replay.entry.id)).items.map(item=>item.fields.workflow),[null,workflow,workflow]);
+   const historical=await service.mutate(fixture.ownerId,null,workflowBody,key);assert.deepEqual(historical.entry.fields.workflow,workflow);assert.equal(historical.entry.revision,1);assert.equal((await reload.get(fixture.ownerId,replay.entry.id)).revision,3);
   });
   await t.test('new issuer mode has independently verified native scopes and fence rejects revoked requirements grants',async()=>{
    const token=randomUUID().replaceAll('-','');await admin.query('INSERT INTO lifeos_platform.platform_session(id,token,"userId","expiresAt","mfaVerified") VALUES($1,$2,$3,clock_timestamp()+interval \'1 hour\',true)',[randomUUID(),token,fixture.ownerId]);

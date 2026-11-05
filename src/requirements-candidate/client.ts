@@ -26,6 +26,8 @@ export function readRequirementItem(value:unknown):RequirementItem{
  if(typeof v.baselineConflict!=='boolean'||v.revision===0&&v.sourceId!==null||v.revision!==0&&v.sourceId===null||String(v.id).startsWith('LO-')!==!!binding||!v.requirement||typeof v.requirement!=='object')throw Error('需求读取响应无效。');
  return structuredClone(v) as RequirementItem;
 }
+// Legacy PATCH replaces six required fields, leaving newly introduced optional workflow intact.
+const receiptMatches=(receipt:RequirementFields,command:RequirementCommand)=>{const compared={...receipt};if(command.method==='PATCH'&&!Object.hasOwn(command.body.fields,'workflow'))delete compared.workflow;return canonical(compared)===canonical(command.body.fields);};
 const unknown='保存结果尚未确认。请保留原请求，恢复当前本人身份后重试同一内容。';
 export class RequirementMutationSession{
  private state:RequirementMutationState=freeze({phase:'idle',pending:null,saved:null,observed:null,error:''});private readonly binding:RequirementBinding;private readonly storage?:Storage;private readonly fetcher:Fetch;private readonly assertBinding:()=>boolean;private readonly storageKey:string;private listeners=new Set<()=>void>();private uncertain=false;private invalidated=false;private controller:AbortController|null=null;private generation=0;
@@ -54,7 +56,7 @@ export class RequirementMutationSession{
    }
    if(!(response.status===200||command.method==='POST'&&response.status===201)||typeof value?.duplicate!=='boolean')throw Error();
    const receipt=readRequirementItem(value.entry),expected=command.id?command.body.expectedRevision!+1:1;
-   if(receipt.revision!==expected||command.id&&receipt.id!==command.id||canonical(receipt.fields)!==canonical(command.body.fields)||canonical(receipt.baselineBinding)!==canonical(command.body.baselineBinding??null))throw Error();
+   if(receipt.revision!==expected||command.id&&receipt.id!==command.id||!receiptMatches(receipt.fields,command)||canonical(receipt.baselineBinding)!==canonical(command.body.baselineBinding??null))throw Error();
    const read=await this.fetcher('/api/platform/personal/requirements/'+receipt.id,{method:'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal});
    if(!current())return;const observed=readRequirementItem((await read.json()).entry);
    if(!current())return;if(!this.active()||controller.signal.aborted||read.status!==200||observed.id!==receipt.id||observed.sourceId!==receipt.sourceId||observed.revision<receipt.revision||observed.revision===receipt.revision&&canonical(observed.fields)!==canonical(receipt.fields))throw Error();

@@ -4,8 +4,9 @@ import {useEffect,useRef,useState} from 'react';
 import type {RoadmapPhase,Requirement} from '../platform/requirements';
 import {Dialog,DialogContent,DialogTitle,DialogClose} from './ui/dialog';
 import {Button} from './ui/button';
-import {implementationLabels,acceptanceLabels} from './requirements-views';
-import type {RequirementFields} from '../requirements-candidate/domain';
+import {Input} from './ui/input';
+import {implementationLabels,acceptanceLabels,workflowLabels,RequirementWorkflowSummary} from './requirements-views';
+import type {RequirementFields,RequirementWorkflow} from '../requirements-candidate/domain';
 import styles from './requirements-page.module.css';
 
 const publicRoot = 'https://github.com/Nirvana-Chow/lifeos-app/';
@@ -50,7 +51,7 @@ export function RequirementDetail({container,item,phaseTitle,expanded,onExpanded
  useEffect(()=>{if(!expanded||!container){setBounds(null);return;}const update=()=>{const r=container.getBoundingClientRect();setBounds({left:r.left,top:r.top,width:r.width,height:r.height});};update();const observer=new ResizeObserver(update);observer.observe(container);window.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);};},[expanded,container]);
  return <Dialog open={item!==null} onOpenChange={open=>{if(!open)onClose();}}><DialogContent container={container} style={expanded&&bounds?{...bounds,maxWidth:bounds.width,maxHeight:bounds.height,transform:'none',translate:'none'}:undefined} className={`${styles.dialog} ${expanded?styles.fullscreen:''}`} showCloseButton={false} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus();}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus();}}>
   <header className={styles.dialogHeader}><div><span className={styles.id}>{item?.id}</span><DialogTitle ref={title} tabIndex={-1}>{item?.title}</DialogTitle></div><div className={styles.dialogActions}><Button variant="outline" onClick={onExpandedChange}>{expanded?'收起详情':'展开到内容区'}</Button><DialogClose asChild><Button variant="outline">关闭</Button></DialogClose></div></header>
-  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span></div><p><strong>下一步：</strong>{item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<><RequirementEditor key={editor.editorId} {...editor}/><details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} showDescription={false}/></details></>:<RequirementDetailBody item={item}/>}</>:null}</div>
+  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span></div><RequirementWorkflowSummary workflow={editor?.fields.workflow}/><p><strong>{editor?.fields.workflow?'推进下一步：':'工程下一步：'}</strong>{editor?.fields.workflow?.nextStep??item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<><RequirementEditor key={editor.editorId} {...editor}/><details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} showDescription={false}/></details></>:<RequirementDetailBody item={item}/>}</>:null}</div>
  </DialogContent></Dialog>;
 }
 
@@ -61,15 +62,22 @@ function RequirementEditor({fields,phases,writable,busy,unknown,conflict,error,o
  const dirty=JSON.stringify(draft)!==original.current;
  useEffect(()=>{onDirty(dirty);},[dirty,onDirty]);
  const change=(name:keyof RequirementFields,value:string|null)=>setDraft(previous=>({...previous,[name]:value}));
+ const changeWorkflow=(name:keyof RequirementWorkflow,value:string)=>setDraft(previous=>({...previous,workflow:{state:'planned',purpose:'',nextStep:'',...previous.workflow,[name]:value}}));
  const locked=busy||unknown||!writable||conflict;
  return <form className={styles.editor} aria-label="编辑需求" onSubmit={event=>{event.preventDefault();if(!locked)void onSave(draft);}}>
   {conflict?<p role="alert">公共需求基线已变化，私有修改已保留，请先核对来源与当前基线。</p>:null}
-  <label htmlFor="requirement-title">需求标题<input id="requirement-title" name="title" required maxLength={240} disabled={locked} value={draft.title} onChange={event=>change('title',event.target.value)}/></label>
+  <label htmlFor="requirement-title">需求标题<Input id="requirement-title" name="title" required maxLength={240} disabled={locked} value={draft.title} onChange={event=>change('title',event.target.value)}/></label>
   <div className={styles.descriptionField}><label htmlFor="requirement-body">需求描述</label><textarea id="requirement-body" name="body" aria-describedby="requirement-body-count" maxLength={16384} rows={8} disabled={locked} value={draft.body} onChange={event=>change('body',event.target.value)}/><span id="requirement-body-count" className={styles.fieldHint}>{draft.body.length} / 16384</span></div>
+  <details className={styles.workflowFields} open={!!draft.workflow}><summary>用途与推进</summary><div className={styles.workflowEditor}>
+   <div><label htmlFor="requirement-workflow-state">推进状态</label><select id="requirement-workflow-state" aria-label="推进状态" disabled={locked} value={draft.workflow?.state??''} onChange={event=>{if(event.target.value)changeWorkflow('state',event.target.value);else setDraft(previous=>({...previous,workflow:null}));}}><option value="">未设置</option>{Object.entries(workflowLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></div>
+   <div><label htmlFor="requirement-purpose">用途</label><textarea id="requirement-purpose" maxLength={4096} rows={2} disabled={locked} value={draft.workflow?.purpose??''} onChange={event=>changeWorkflow('purpose',event.target.value)}/></div>
+   <div><label htmlFor="requirement-next-step">推进下一步</label><textarea id="requirement-next-step" maxLength={4096} rows={2} disabled={locked} value={draft.workflow?.nextStep??''} onChange={event=>changeWorkflow('nextStep',event.target.value)}/></div>
+   <p className={styles.workflowHint}>推进状态是业务标记；工程依据与本人验收单独保留。</p>
+  </div></details>
   <div className={styles.planningFields}><label htmlFor="requirement-phase">阶段<select id="requirement-phase" name="phaseId" aria-label="阶段" disabled={locked} value={draft.phaseId} onChange={event=>change('phaseId',event.target.value)}>{phases.map(phase=><option key={phase.id} value={phase.id}>{phase.title}</option>)}</select></label>
   <label htmlFor="requirement-priority">优先级<select id="requirement-priority" name="priority" aria-label="优先级" disabled={locked} value={draft.priority} onChange={event=>change('priority',event.target.value)}>{['P0','P1','P2','P3'].map(priority=><option key={priority}>{priority}</option>)}</select></label>
-  <label htmlFor="requirement-start">计划开始日期<input id="requirement-start" name="plannedStartOn" type="date" disabled={locked} value={draft.plannedStartOn??''} max={draft.plannedEndOn??undefined} onChange={event=>change('plannedStartOn',event.target.value||null)}/></label>
-  <label htmlFor="requirement-end">计划结束日期<input id="requirement-end" name="plannedEndOn" type="date" disabled={locked} value={draft.plannedEndOn??''} min={draft.plannedStartOn??undefined} onChange={event=>change('plannedEndOn',event.target.value||null)}/></label></div>
+  <label htmlFor="requirement-start">计划开始日期<Input id="requirement-start" name="plannedStartOn" type="date" disabled={locked} value={draft.plannedStartOn??''} max={draft.plannedEndOn??undefined} onChange={event=>change('plannedStartOn',event.target.value||null)}/></label>
+  <label htmlFor="requirement-end">计划结束日期<Input id="requirement-end" name="plannedEndOn" type="date" disabled={locked} value={draft.plannedEndOn??''} min={draft.plannedStartOn??undefined} onChange={event=>change('plannedEndOn',event.target.value||null)}/></label></div>
   {error?<p role="status">{error}</p>:null}
   <div className={styles.editorActions}><Button type="submit" disabled={locked||!draft.title.trim()}>{busy?'正在保存…':'保存需求'}</Button><Button type="button" variant="outline" onClick={onRefresh} disabled={busy||unknown}>重新读取</Button>{unknown?<Button type="button" variant="outline" disabled={!writable} onClick={onRetry}>重试原请求并回读</Button>:null}<span>{dirty?'内容尚未保存':unknown?'保留原请求':'修改仅影响需求内容与计划'}</span></div>
  </form>;

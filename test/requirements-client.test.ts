@@ -34,3 +34,18 @@ test('recovery is scoped to owner and space; denied secondary storage prevents a
  await denied.submit(makeRequirementCommand(binding,null,fields,'requirements-denied-1'));assert.equal(calls,0);assert.equal(denied.getSnapshot().phase,'rejected');
  assert.throws(()=>makeRequirementCommand(binding,null,{...fields,evidence:[]} as typeof fields,'requirements-forged-1'));
 });
+
+test('old PATCH omission accepts preserved workflow and unknown retry rereads newer workflow without changing its command',async()=>{
+ const workflow={state:'in_progress',purpose:'保存业务用途',nextStep:'继续当前需求'},newer={...workflow,state:'blocked',nextStep:'等待资料'},storage=store(),calls:string[]=[];
+ const command=makeRequirementCommand(binding,id,fields,'requirements-workflow-old-patch',1,null);let lost=true;
+ const session=new RequirementMutationSession({binding,storage,fetcher:async(url,init)=>{if(init?.method==='PATCH'){calls.push(String(init.body));if(lost){lost=false;throw Error('lost after commit');}return response({entry:{...item(2),fields:{...fields,workflow}},duplicate:true});}return response({entry:{...item(3),fields:{...fields,workflow:newer}}});}});
+ await session.submit(command);assert.equal(session.getSnapshot().phase,'uncertain');await session.retry();assert.equal(session.getSnapshot().phase,'saved');assert.equal(calls[0],calls[1]);assert.equal(JSON.parse(calls[0]).fields.workflow,undefined);assert.equal(session.getSnapshot().observed!.fields.workflow?.state,'blocked');assert.equal(storage.values.size,0);
+});
+test('explicit workflow command survives retained recovery and requires exact workflow in its receipt and same-revision readback',async()=>{
+ const workflow={state:'planned',purpose:'保存用途',nextStep:'下一步'} as const,command=makeRequirementCommand(binding,null,{...fields,workflow},'requirements-workflow-new-command');
+ for(const mismatch of ['receipt','readback']){
+  const storage=store(),session=new RequirementMutationSession({binding,storage,fetcher:async(url)=>response(url.endsWith('/'+id)?{entry:{...item(),fields:{...fields,workflow:{...workflow,purpose:mismatch==='readback'?'wrong':workflow.purpose}}}}:{entry:{...item(),fields:{...fields,workflow:{...workflow,purpose:mismatch==='receipt'?'wrong':workflow.purpose}}},duplicate:false})});
+  await session.submit(command);assert.equal(session.getSnapshot().phase,'uncertain');assert.equal(storage.values.size,1);assert.deepEqual(new RequirementMutationSession({binding,storage}).getSnapshot().pending!.body.fields.workflow,workflow);
+  const resumed=new RequirementMutationSession({binding,storage,fetcher:async(url)=>response(url.endsWith('/'+id)?{entry:{...item(),fields:{...fields,workflow}}}:{entry:{...item(),fields:{...fields,workflow}},duplicate:true})});await resumed.retry();assert.equal(resumed.getSnapshot().phase,'saved');assert.deepEqual(resumed.getSnapshot().observed!.fields.workflow,workflow);assert.equal(storage.values.size,0);
+ }
+});

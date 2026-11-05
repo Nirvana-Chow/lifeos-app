@@ -122,3 +122,7 @@
 .timelineRow[data-phase-tone="3"] .timelineBar{background:var(--lo-phase-3)}
 .timelineRow[data-phase-tone="4"] .timelineBar{background:var(--lo-phase-4)}
 .timelineRow[data-phase-tone="5"] .timelineBar{background:var(--lo-phase-5)}
+
+/* Owner workflow is saved business data; engineering/acceptance columns stay separate. */
+.workflowSummary{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;line-height:1.5;font-size:var(--lo-font-meta);color:var(--muted-foreground)}.workflowSummary>:global([data-slot="badge"]){flex:none;font-size:inherit}.workflowSummary>span:last-child:not(:global([data-slot="badge"])){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.requirementTitle:has(.workflowSummary){padding-bottom:4px}.workflowFields>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:500}.workflowEditor{display:grid;gap:12px}.workflowEditor>div{display:grid;gap:5px;min-width:0}.workflowEditor textarea{min-height:72px}.workflowHint{font-size:var(--lo-font-meta);color:var(--muted-foreground)}.dialog .workflowSummary{margin-top:8px}
+@media(min-width:1024px) and (pointer:fine){.workflowFields>summary{min-height:32px}.workflowEditor{gap:10px}}

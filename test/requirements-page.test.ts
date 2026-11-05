@@ -60,3 +60,10 @@ test('P3 can be validated and filtered without changing other public requirement
  assert.equal(validateRequirementBaseline(baseline).requirements[0].roadmap!.priority,'P3');
  assert.deepEqual(selectRequirements(baseline,{priority:'P3'}).map(item=>item.id),[baseline.requirements[0].id]);
 });
+
+test('saved owner workflow shows a compact summary and owner next step without changing engineering or acceptance labels',()=>{
+ const baseline=requirements(),item=baseline.requirements[0],workflow=new Map([[item.id,{state:'done',purpose:'私人用途 <script> 数据',nextStep:'下一步原始业务内容'}]]);
+ const html=renderPage('requirements-views.tsx','RequirementsTable',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{},workflow});
+ assert.match(html,/推进：已完成（业务标记）/);assert.match(html,/私人用途 &lt;script&gt; 数据/);assert.match(html,/下一步原始业务内容/);assert.doesNotMatch(html,/<script/);assert.match(html,/本人验收|未验收|尚未验收|已验收/);
+ const untouched=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{}});assert.doesNotMatch(untouched,/data-requirement-workflow/);
+});

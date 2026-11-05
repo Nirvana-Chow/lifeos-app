@@ -72,3 +72,15 @@ test('readiness exact function digests match proposed0014 while runtime receives
  let calls=0;await verifyAgentRequirementsReadiness({query:async()=>({rows:[++calls===1?{all:true}:{version:true,language_source:true,fence_source:true,marker_safe:true,can_validate:false}]})});assert.equal(calls,2);
  for(const key of ['language_source','fence_source']){let count=0;await assert.rejects(verifyAgentRequirementsReadiness({query:async()=>({rows:[++count===1?{all:true}:{version:true,language_source:true,fence_source:true,marker_safe:true,can_validate:false,[key]:false}]})}),{code:'AGENT_REQUIREMENTS_UNAVAILABLE'});}
 });
+
+test('requirements scoped Agent writes and advertises workflow without allowing todo grants or mutable owner acceptance',async()=>{
+ const {send,repo,fences}=fixture(),workflow={state:'in_progress',purpose:'解释业务用途',nextStep:'核对真实入口'};
+ const created=await send('/v1/requirements','POST',{fields:{...fields,workflow}},'writer','requirements-agent-workflow-create');assert.equal(created.status,201);
+ const id=created.body.entry.id;assert.deepEqual((await send('/v1/requirements/'+id)).body.entry.fields.workflow,workflow);
+ const legacy=await send('/v1/requirements/'+id,'PATCH',{fields,expectedRevision:1,baselineBinding:null},'writer','requirements-agent-workflow-legacy');assert.equal(legacy.status,200);assert.deepEqual(legacy.body.entry.fields.workflow,workflow);
+ assert.equal((await send('/v1/requirements/'+id,'PATCH',{fields:{...fields,workflow:null},expectedRevision:2,baselineBinding:null},'todo','requirements-agent-workflow-denied')).status,403);
+ const done=await send('/v1/requirements/'+id,'PATCH',{fields:{...fields,workflow:{...workflow,state:'done'}},expectedRevision:2,baselineBinding:null},'writer','requirements-agent-workflow-done');assert.equal(done.status,200);assert.equal(done.body.entry.requirement.status,'not_started');assert.equal(done.body.entry.requirement.acceptance,undefined);
+ assert.equal((await send('/v1/requirements/'+id,'PATCH',{fields:{...fields,workflow:{...workflow,acceptance:{}}},expectedRevision:3,baselineBinding:null},'writer','requirements-agent-workflow-forged')).status,400);
+ const clear=await send('/v1/requirements/'+id,'PATCH',{fields:{...fields,workflow:null},expectedRevision:3,baselineBinding:null},'writer','requirements-agent-workflow-clear');assert.equal(clear.status,200);assert.equal((await send('/v1/requirements/'+id)).body.entry.fields.workflow,null);assert.equal(repo.rows.size,1);assert.ok(fences()>=4);
+ const catalog=(await send('/v2/capabilities')).body.operations.filter((operation:{module:string})=>operation.module==='requirements');assert.equal(catalog.length,4);for(const operation of catalog)assert.match(operation.description,/workflow/);
+});
