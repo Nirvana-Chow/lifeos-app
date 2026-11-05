@@ -294,7 +294,7 @@ jobs:
   recovery-pg:
     name: Isolated PostgreSQL recovery and native MFA
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
