@@ -59,6 +59,18 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      requirements-postgres:
+        # Independent source/run-bound requirements fixture; no existing service reset.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: lifeos_platform_test_local
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55452:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - name: Check out the exact source head, without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -147,6 +159,22 @@ jobs:
           set -euo pipefail
           node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-pg.xml" test/classification-postgres.integration.test.ts
           python3 scripts/check-classification-junit.py postgres "$RUNNER_TEMP/classification-pg.xml"
+      - name: Qualify isolated requirements persistence and Agent grants without skips
+        env:
+          RUN_REQUIREMENTS_POSTGRES_TESTS: '1'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          LIFEOS_REQUIREMENTS_FIXTURE_CONTEXT: github-actions
+          LIFEOS_REQUIREMENTS_FIXTURE_ID: requirements-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/requirements-pg.xml" test/requirements-postgres.integration.test.ts
+          python3 - <<'PY_REQUIREMENTS_PG'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'requirements-pg.xml')).getroot().iter('testcase'))
+          assert len(cases) == 4, f'Expected four requirements PostgreSQL cases, found {len(cases)}'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Requirements PostgreSQL skip or failure is not acceptance'
+          print('PASS: four isolated requirements persistence/grant cases, zero skips; production SQL and grants unchanged.')
+          PY_REQUIREMENTS_PG
       - name: Prepare the empty runner-local synthetic PostgreSQL fixture
         run: |
           node --input-type=module <<'JS'
@@ -343,6 +371,31 @@ jobs:
           node-version: '24.22.1'
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
+        run: |
+          set -euo pipefail
+          # Official Ubuntu noble; SIL-1.1 font, GPL-3+ packaging. No product font bundle.
+          sudo -n apt-get update -qq
+          sudo -n apt-get install -y --no-install-recommends 'fonts-noto-cjk=1:20230817+repack1-3'
+          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
+          test -s /usr/share/doc/fonts-noto-cjk/copyright
+          fc-cache -f
+          cjk_family="$(fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
+          case "$cjk_family" in *'Noto Sans CJK'*) ;; *) exit 1 ;; esac
+          command -v google-chrome >/dev/null
+          command -v certutil >/dev/null
+          google-chrome --version
+      - name: Check changed UI contracts early with native Chrome
+        env:
+          RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS: '1'
+          RUN_UI_DENSITY_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_CRUD_BROWSER_TESTS: '1'
+          LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          node --test --test-name-pattern='OPT-IN public auth theme oracle' test/owner-recovery-browser.integration.test.ts
+          node --test --test-concurrency=1 test/ui-density-browser.integration.test.ts test/ui-density-board-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts test/requirements-crud-browser.integration.test.ts
       - name: Create restricted synthetic fixture and failure injection triggers
         env:
           LIFEOS_FIXTURE_PORT: '55439'
@@ -411,20 +464,6 @@ jobs:
           assert cases and not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Agent key management fixture did not pass'
           print(f'PASS: {len(cases)} isolated Agent key management tests, no skips')
           PY_AGENT_KEY
-      - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
-        run: |
-          set -euo pipefail
-          # Official Ubuntu noble; SIL-1.1 font, GPL-3+ packaging. No product font bundle.
-          sudo -n apt-get update -qq
-          sudo -n apt-get install -y --no-install-recommends 'fonts-noto-cjk=1:20230817+repack1-3'
-          test "$(dpkg-query -W -f='${Version}' fonts-noto-cjk)" = '1:20230817+repack1-3'
-          test -s /usr/share/doc/fonts-noto-cjk/copyright
-          fc-cache -f
-          cjk_family="$(fc-match -f '%{family}' 'sans-serif:lang=zh-cn')"
-          case "$cjk_family" in *'Noto Sans CJK'*) ;; *) exit 1 ;; esac
-          command -v google-chrome >/dev/null
-          command -v certutil >/dev/null
-          google-chrome --version
       - name: Qualify enabled classification review in isolated desktop and mobile Chrome
         env:
           RUN_CLASSIFICATION_BROWSER_TESTS: '1'
