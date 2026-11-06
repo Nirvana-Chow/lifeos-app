@@ -94,7 +94,7 @@ export function PersonalFinanceWorkbench({navigationGuard}:{navigationGuard?:{cu
  const fields=shownEditor?.fields,expenses=shown?.entries.filter(entry=>entry.fields.kind==='expense'&&entry.id!==shownEditor?.record?.id)??[];
  const rejectedActions=shownPending&&shownRejected?<>{shownPending.method==='PATCH'?<Button type="button" variant="outline" disabled={busy} onClick={()=>void rebase()}>读取最新版本，保留输入</Button>:<Button type="button" variant="outline" disabled={busy} onClick={()=>void releaseRejected()}>继续编辑</Button>}<Button type="button" variant="outline" disabled={busy} onClick={()=>void releaseRejected(true)}>放弃本次保存</Button></>:null;
  return<section className={s.page} aria-label="财务记录">
-  <div className={s.top}><div><p className={s.eyebrow}>个人财务</p><h2>记录每一笔，清楚看收支</h2><p className={s.muted}>个人录入的流水单独保存，账户余额暂未接入。</p></div><div className={s.actions}><Button variant="outline" disabled={busy||dirty||!!shownPending} onClick={()=>void refresh()}>刷新</Button><Button disabled={!writable||locked} onClick={()=>void open(null)}>记一笔</Button></div></div>
+  <div className={s.top}><div><h2>记录每一笔，清楚看收支</h2><p className={s.description}>个人录入的流水单独保存，账户余额暂未接入。</p></div><div className={s.actions}><Button variant="outline" disabled={busy||dirty||!!shownPending} onClick={()=>void refresh()}>刷新</Button><Button disabled={!writable||locked} onClick={()=>void open(null)}>记一笔</Button></div></div>
   {error&&<p role="alert" className={s.error}>{error}</p>}{notice&&verified&&<p role="status" className={s.notice}>{notice}</p>}
   {!verified&&!error&&<p role="status" className={s.empty}>正在核对本人财务记录…</p>}
   {verified&&status&&!status.configured&&<div className={s.empty}><h3>财务记录尚未开放</h3><p>{status.reason}</p></div>}
