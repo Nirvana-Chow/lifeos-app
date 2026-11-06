@@ -126,3 +126,41 @@
 /* Owner workflow is saved business data; engineering/acceptance columns stay separate. */
 .workflowSummary{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;line-height:1.5;font-size:var(--lo-font-meta);color:var(--muted-foreground)}.workflowSummary>:global([data-slot="badge"]){flex:none;font-size:inherit}.workflowSummary>span:last-child:not(:global([data-slot="badge"])){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.requirementTitle:has(.workflowSummary){padding-bottom:4px}.workflowFields>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:500}.workflowEditor{display:grid;gap:12px}.workflowEditor>div{display:grid;gap:5px;min-width:0}.workflowEditor textarea{min-height:72px}.workflowHint{font-size:var(--lo-font-meta);color:var(--muted-foreground)}.dialog .workflowSummary{margin-top:8px}
 @media(min-width:1024px) and (pointer:fine){.workflowFields>summary{min-height:32px}.workflowEditor{gap:10px}}
+
+/* Requirements stay dense; hierarchy comes from text and semantic surfaces. */
+.intro { position:relative; display:flex; align-items:center; gap:16px; }
+.intro > p { flex:1; min-width:0; color:var(--muted-foreground); }
+.routeDisclosure { flex:none; min-width:0; max-width:48%; }
+.routeDisclosure > summary { display:flex; align-items:center; gap:8px; min-height:44px; padding:4px 0; font-size:14px; color:var(--muted-foreground); cursor:pointer; white-space:nowrap; }
+.routeDisclosure > summary::after { content:'⌄'; flex:none; }
+.routeDisclosure[open] > summary::after { content:'⌃'; }
+.routeDisclosure > summary > span { min-width:0; overflow:hidden; text-overflow:ellipsis; color:var(--foreground); }
+.routeDisclosure .route { position:absolute; z-index:46; inset-inline:0; top:100%; display:grid; gap:8px; margin-top:6px; padding:12px 16px; overflow:auto; white-space:normal; border:1px solid var(--border); border-radius:8px; background:var(--popover); box-shadow:0 8px 24px #0002; }
+.routeDisclosure .route > span { display:block; overflow:visible; white-space:normal; }
+.page .viewBar .primaryAction { border-color:var(--primary); background:var(--primary); color:var(--primary-foreground); }
+.tableContainer { --data-grid-border-color:var(--border); }
+.tableContainer :is(th,td) { border-width:0 0 1px; border-style:solid; border-color:var(--border); }
+.tableContainer .row:hover { background:var(--muted); }
+.tableContainer .phaseGroup { justify-content:flex-start; gap:10px; border-inline-start:0; color:var(--muted-foreground); }
+.phaseGroup strong { font-weight:500; color:var(--foreground); }
+.phaseGroup > span { font-weight:400; }
+.page .titleButton { border:0; background:transparent; box-shadow:none; padding-inline:0; }
+.page .titleButton .titleText { min-width:0; max-width:100%; font-weight:500; }
+.titleButton .id { font-weight:400; }
+.page .semanticBadge { --requirement-tone:var(--muted-foreground); display:inline-flex; align-items:center; width:fit-content; max-width:100%; padding:2px 7px; border:1px solid transparent; border-radius:5px; font-size:14px; font-weight:500; line-height:1.4; white-space:nowrap; color:color-mix(in srgb,var(--requirement-tone) 85%,var(--foreground)); background:color-mix(in srgb,var(--requirement-tone) 10%,var(--background)); }
+.page .semanticBadge[data-priority] { border:1px solid color-mix(in srgb,var(--requirement-tone) 35%,var(--background)); background:transparent; font-variant-numeric:tabular-nums; }
+.page .semanticBadge[data-priority="P0"],.page .semanticBadge[data-workflow="blocked"] { --requirement-tone:var(--danger); }
+.page .semanticBadge[data-priority="P1"],.page .semanticBadge[data-acceptance="in_progress"],.page .semanticBadge[data-workflow="in_progress"] { --requirement-tone:var(--lo-link); }
+.page .semanticBadge[data-priority="P2"],.page .semanticBadge[data-implementation="partial"] { --requirement-tone:var(--lo-priority-p2); }
+.page .semanticBadge[data-implementation="implemented"],.page .semanticBadge[data-acceptance="accepted"],.page .semanticBadge[data-workflow="done"] { --requirement-tone:var(--lo-phase-3); }
+.page .semanticBadge[data-acceptance="awaiting_acceptance"],.page .semanticBadge[data-workflow="awaiting_review"] { --requirement-tone:var(--lo-phase-2); }
+@media(min-width:1024px) and (pointer:fine) {
+ .routeDisclosure > summary { min-height:24px; font-size:12px; }
+ .page .semanticBadge { font-size:12px; }
+}
+@media(max-width:600px) {
+ .intro { gap:8px; }
+ .routeDisclosure { max-width:none; }
+ .routeDisclosure > summary > span { display:none; }
+ .routeDisclosure .route > span:last-child { display:block; }
+}
