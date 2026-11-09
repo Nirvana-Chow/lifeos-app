@@ -7,6 +7,7 @@ import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Button} from '../../ui-review/ui/button';
 import Chart,{type ChartTheme} from './chart';
 import {adaptTrainingRecords,trainingCalendarCells,trainingCalendarClickDate,trainingCalendarRange,trainingDayRecordIds,trainingMetricLabels,trainingMetricValue,type TrainingCalendarRecord,type TrainingMetric,type TrainingRow} from './adapter';
+import {TrainingAnalyticsPanel} from '../training-analytics/panel';
 import s from './calendar.module.css';
 
 export type TrainingCalendarProps = {records:readonly TrainingCalendarRecord[];onOpenRecord:(id:string)=>void};
@@ -59,6 +60,7 @@ export function TrainingCalendar({records,onOpenRecord}:TrainingCalendarProps) {
   return <section className={s.root} aria-label="运动日历与记录">
     <header className={s.header}><h2>运动日历</h2>{data.years.length > 0 && <label>查看范围<select value={currentRange} onChange={event => {setRange(event.target.value);setDrill(null);}}><option value="recent">最近90天</option>{data.years.map(year => <option key={year} value={year}>{year} 年</option>)}</select></label>}</header>
     <p className={s.hint}>已读 {data.n_sessions} 条完成记录 · {data.n_days} 个有日期的运动日 · {data.planned.length} 条计划单独保留{data.undated.length ? ` · ${data.undated.length} 条完成记录日期未知` : ''}。</p>
+    <TrainingAnalyticsPanel />
     {!data.n_sessions ? <p className={s.empty}>暂无已完成的运动记录。飞盘、跑步、力量训练等都可记录；已有计划不会当作完成。</p> : <>
       {dateRange ? <div className={s.panel}>
         <div className={s.metrics} aria-label="日历指标">{availableMetrics.map(m => <Button key={m} type="button" variant={currentMetric === m ? 'secondary' : 'ghost'} size="sm" aria-pressed={currentMetric === m} onClick={() => setMetric(m)}>{trainingMetricLabels[m]}</Button>)}</div>

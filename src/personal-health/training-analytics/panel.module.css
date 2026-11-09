@@ -1,0 +1,136 @@
+.root {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--card);
+  color: var(--foreground);
+  font: var(--lo-font-body);
+}
+
+.root h2, .root h3, .root p, .root dl, .root dd, .root ul, .root ol { margin: 0; }
+.root h2 { font-size: var(--lo-font-section); font-weight: 650; }
+.root h3 { font-size: 16px; font-weight: 650; }
+
+.header, .fileRow, .controls, .grains, .select {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.header { justify-content: space-between; }
+.header > div { min-width: 0; }
+.fileRow { align-items: flex-end; }
+.fileControl { display: grid; gap: 4px; width: min(100%, 320px); min-width: 0; }
+.fileControl input { box-sizing: border-box; width: 100%; min-width: 0; }
+.hint { color: var(--muted-foreground); font-size: var(--lo-font-meta); line-height: 1.55; overflow-wrap: anywhere; }
+.error { color: var(--danger); overflow-wrap: anywhere; }
+
+.fileControl input, .select select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--input);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 16px;
+}
+
+.fileControl input::file-selector-button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--lo-radius-control);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font: inherit;
+}
+
+.root :is(input,select,button):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.root :global(button[data-slot=button]) {
+  width: auto;
+  min-height: 44px;
+  touch-action: manipulation;
+  color: var(--foreground);
+}
+.root :global(button[data-variant=outline]) { background: var(--card); border-color: var(--border); }
+.root :global(button[data-variant=outline]:hover), .grains :global(button[data-variant=ghost]:hover) { background: var(--lo-hover); }
+
+.grains { gap: 4px; }
+.grains :global(button[aria-pressed=true]) {
+  color: var(--lo-selected-foreground);
+  background: var(--lo-selected);
+}
+
+.summary, .detail {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,136px),1fr));
+  gap: 6px 16px;
+}
+
+.stats div { min-width: 0; }
+.stats dt { color: var(--muted-foreground); font-size: var(--lo-font-meta); }
+.stats dd { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.muscles, .trend, .exercises { padding: 0; list-style: none; }
+.muscles { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.muscles li, .exercises li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.muscles strong, .exercises span { color: var(--muted-foreground); }
+.exercises li { justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.exercises strong { overflow-wrap: anywhere; }
+
+.trend { display: grid; gap: 2px; }
+.trend button {
+  display: grid;
+  grid-template-columns: minmax(0,224px) minmax(28px,1fr) minmax(60px,max-content) minmax(72px,max-content);
+  gap: 4px 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--lo-radius-control);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.trend button:hover { background: var(--lo-hover); }
+.trend button[aria-pressed=true] { background: var(--lo-selected); color: var(--lo-selected-foreground); }
+.trendDate, .measure { font-variant-numeric: tabular-nums; }
+.measure { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--border); }
+.track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+
+@media (min-width: 1024px) and (pointer: fine) {
+  .root :global(button[data-slot=button]), .trend button { min-height: 32px; font-size: 14px; }
+  .fileControl input, .select select { min-height: 32px; font-size: 14px; }
+}
+
+@media (max-width: 620px) {
+  .root { padding: 12px; }
+  .select { align-items: flex-start; flex-direction: column; }
+  .trend button { grid-template-columns: minmax(0,1fr) minmax(50px,max-content); padding-block: 8px; }
+  .trendDate { overflow-wrap: anywhere; }
+  .track { grid-area: 2 / 1; }
+  .measure { grid-area: 1 / 2; }
+  .trend small { grid-area: 2 / 2; text-align: right; }
+}

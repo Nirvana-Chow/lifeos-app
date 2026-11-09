@@ -3,7 +3,7 @@
 - Keep implementation, test results and user acceptance distinct.
 - Use Issue/PR and OpenSpec for multi-step work. Read applicable generated workflows; pin the CLI to 1.16.0 and set `OPENSPEC_TELEMETRY=0 DO_NOT_TRACK=1 CI=1` for automated execution.
 - Continue the approved interface work through the sole mapped [unified-business-ui checklist](openspec/changes/unified-business-ui/tasks.md); preserve its task IDs, inherited status and unfinished rendered/performance/delivery gates instead of opening a duplicate backlog.
-- Inspect existing code and native component capabilities before adding dependencies or abstractions. Prefer composition and small adapters.
+- Inspect existing code and native component capabilities before adding dependencies or abstractions. Reuse code when it fits the requested behavior without adding avoidable complexity. Write straightforward tables, analysis and transformations directly when the business rules are simpler than adapting another project. Keep proven authentication, authorization and other security-critical primitives behind their reviewed boundaries.
 - Keep one npm lock. Review version updates explicitly.
 - Keep credentials, runtime settings, personal records, exports, attachments and backups outside Git. Use explicit synthetic fixtures only.
 - Preserve closed defaults, ownership checks, restricted PostgreSQL roles and opt-in integration gates. A skipped integration test is not acceptance.
@@ -23,6 +23,8 @@
 
 ## Parallel delivery and early CI — owner clarification, 2026-11-05
 
+- Keep the owner conversation as the primary planning channel. The owner can add or revise several requirements there while work is in flight, or start another conversation at any time. Recover prior decisions and unfinished work from the existing issue, OpenSpec and verified release evidence when a new conversation resumes the project. The parent owns intent, boundaries, priorities, integration and delivery. Delegate independently implementable slices to subagents with separate worktrees, named file ownership and focused verification. Before starting work from a second conversation, check active chats, branches and worktrees for overlap. Assign one writer to a shared file, record or deployment and serialize shared dependencies and primary-branch integration.
+- A clear owner request for a routine feature starts implementation within the approved scope. Record it in the existing intake and acceptance trail as part of delivery and continue immediately into the next executable step. Read-only requests and explicit holds retain their scope.
 - For independent work, proactively delegate to subagents in isolated worktrees. Declare branch/base, file/interface ownership, dependencies and acceptance before dispatch; keep shared-state changes sequential. Preserve existing drafts and do not let two writers own the same file or Git index.
 - Push small reviewable code slices to Draft PRs early so the existing public CI can find problems. Do not wait for every feature or cosmetic detail to be perfect. Mark incomplete or failing checks honestly; early push is not permission to bypass review, fixed-SHA CI, branch protection or production gates.
 - While one PR's CI runs, continue the next independent task in its own worktree. Record stacked dependencies explicitly, keep one owner for a failing slice, and fix it without stopping unrelated authorized work. Track exact SHA/run/attempt rather than assuming an old green run applies.

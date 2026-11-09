@@ -39,6 +39,16 @@ LIFEOS_PLATFORM_CANDIDATE=0 node scripts/check-built-platform.mjs
 
 集成用例在普通 `npm test` 中可能显示 opt-in 跳过；CI 单独启用并要求对应报告零跳过。编译后检查是进程内验证，不代表真实 HTTP 或浏览器验收。公开 CI 不执行生产部署，也不证明真实数据、浏览器/TLS、生产恢复或使用体验已经验收。
 
+## 训记训练分析文件
+
+将训记 Skill 已授权读取的逐日 full JSON 放在 Git 外的私人目录。使用离线转换脚本生成分析文件：
+
+```bash
+python3 scripts/project-xunji-training-analytics.py --input-dir /path/to/xunji-full-days --output /path/to/training-analytics.json
+```
+
+在 LifeOS 的「健康 → 运动 → 训练日记分析」选择生成的文件。页面会在浏览器内计算结果，关闭页面后可重新选择文件。可传 `--start` 和 `--end` 缩小日期范围。原始和分析文件都应保留在 Git 外。
+
 ## 参与开发
 
 先通过 Issue 明确问题、行为与验收，再提交 PR。复用现有组件和原生能力，保留单一 `package-lock.json`；变更应包含适用测试及清晰的未完成项。

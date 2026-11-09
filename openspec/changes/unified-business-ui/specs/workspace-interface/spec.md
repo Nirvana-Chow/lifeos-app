@@ -220,3 +220,16 @@ The system SHALL provide a credential-free downloadable Skill and copyable insta
 - **WHEN** a user downloads or copies the Skill instructions
 - **THEN** they receive reviewed generic instructions without any account key or private record
 - **AND** discovery and the Skill describe the same actual scoped operations
+
+### Requirement: Training volume and coverage
+The health workspace SHALL display training volume and direct muscle coverage from an explicitly opened, versioned Xunji analytics snapshot. The selected file SHALL be processed in memory in the browser. The feature SHALL preserve the existing training calendar and record operations.
+
+#### Scenario: Compare periods and muscle groups
+- **WHEN** the owner opens a valid snapshot and chooses a day, week, month, quarter or year grain
+- **THEN** the interface groups completed work sets into the selected natural calendar periods and shows both total and selected muscle volume
+- **AND** the interface shows tracked direct muscle coverage, separately labeled known kilograms and pounds, and the source period and completeness
+
+#### Scenario: Distinguish incomplete history
+- **WHEN** a source date is missing or marked partial, a completed set has no safe external load, or an exercise has no muscle mapping
+- **THEN** the interface exposes the relevant gap and never imputes a zero, a unit, or a muscle attribution
+- **AND** it only reports zero completed work for a verified complete period with no matching work
