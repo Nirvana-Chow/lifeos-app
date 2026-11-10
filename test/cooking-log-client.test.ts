@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadCookingHistory, readCookingRecord } from '../src/cooking/log-client.ts';
-import { readCookingAccess } from '../src/cooking/log-access.ts';
+import { CookingScopeLost, cookingStatusPath, readCookingAccess, verifyCookingMutationAccess } from '../src/cooking/log-access.ts';
 
 const access = {
   scope:'personal-manual-candidate',
@@ -41,6 +41,22 @@ test('a verified read-only owner can read history but cannot create a record', a
   assert.deepEqual(await loadCookingHistory(async () => Response.json(payloads.shift()), abort),
     {access:{ownerId:access.ownerId,spaceId:access.spaceId,writable:false},rows:[]});
   assert.equal(await readCookingAccess(async () => Response.json({error:{}},{status:403}), abort), null);
+});
+
+test('mutation authorization loss is distinguished from an ordinary retryable response', async () => {
+  const recordPath = '/api/platform/personal/cooking';
+  for (const response of [new Response(null,{status:401}), new Response(null,{status:403}),
+    Response.json({error:{code:'PERSONAL_MODULE_UNAVAILABLE'}},{status:404})]) {
+    await assert.rejects(verifyCookingMutationAccess(response, recordPath, access), CookingScopeLost);
+  }
+  for (const status of [{...access,ownerId:'second-synthetic-owner'},{...access,spaceId:'second-synthetic-space'},
+    {...access,cookingEnabled:false},{...access,storageVerified:false}]) {
+    await assert.rejects(verifyCookingMutationAccess(Response.json(status), cookingStatusPath, access), CookingScopeLost);
+  }
+  await assert.rejects(verifyCookingMutationAccess(Response.json({...access,cookingEnabled:undefined}), cookingStatusPath, access),
+    failure => failure instanceof Error && !(failure instanceof CookingScopeLost));
+  await verifyCookingMutationAccess(new Response(null,{status:503}), recordPath, access);
+  await verifyCookingMutationAccess(Response.json({...access,writable:false}), cookingStatusPath, access);
 });
 
 const id = '7c020000-0000-4000-8000-000000000001';

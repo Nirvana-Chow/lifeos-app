@@ -6,7 +6,7 @@ import { makePersonalCommand, PersonalMutationSession, type PersonalState } from
 import { Button } from '../ui-review/ui/button';
 import type { CookingFields } from './log-domain';
 import { CookingFrame } from './frame';
-import { cookingStatusPath, parseCookingAccess, sameCookingBinding, type CookingAccess } from './log-access';
+import { CookingScopeLost, sameCookingBinding, verifyCookingMutationAccess, type CookingAccess } from './log-access';
 import { cookingLogRow, loadCookingHistory, readCookingRecord, sortCookingRows, type CookingLogRow } from './log-client';
 import styles from './log-workbench.module.css';
 
@@ -114,7 +114,7 @@ function CookingLogWorkbench({ recipe, navigation }: {
       const loaded = await loadCookingHistory(fetch, controller.signal);
       if (request.current !== controller || controller.signal.aborted) return;
       const verified = loaded.access;
-      const session = new PersonalMutationSession({
+      const session: PersonalMutationSession = new PersonalMutationSession({
         binding:{ownerId:verified.ownerId,spaceId:verified.spaceId},
         storage:window.localStorage,
         verifyReadback:true,
@@ -122,9 +122,15 @@ function CookingLogWorkbench({ recipe, navigation }: {
           && document.visibilityState !== 'hidden',
         fetcher:async (input, init) => {
           const response = await fetch(input, init);
-          if (input === cookingStatusPath && response.ok
-            && !sameCookingBinding(parseCookingAccess(await response.clone().json()), verified)) {
-            throw Error('记录能力或本人身份已变化。');
+          try {
+            await verifyCookingMutationAccess(response, input, verified);
+          } catch (failure) {
+            if (failure instanceof CookingScopeLost && active.current?.session === session && !init?.signal?.aborted) {
+              clearScope(false);
+              setBusy(false);
+              setError(failure.message);
+            }
+            throw failure;
           }
           return response;
         },
