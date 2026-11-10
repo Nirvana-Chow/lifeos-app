@@ -149,3 +149,41 @@ test('closed or unverified cooking stays out of native and aggregate reads, and 
   assert.equal((await send('cooking/' + id)).status, 401);
   assert.equal(f.repo.rows.size, 1);
 });
+
+test('aggregate reads withhold cooking records if the owner session expires during storage access', async t => {
+  for (const path of ['overview?today=2024-02-29', 'search?q=合成菜名', 'export']) {
+    await t.test(path, async () => {
+      const f = fixture(), send = f.start();
+      const created = await send('cooking', 'POST', command);
+      assert.equal(created.status, 201);
+      const id = created.body.entry.id;
+      const initial = await send(path);
+      assert.equal(initial.status, 200);
+      assert.ok(JSON.stringify(initial.body).includes(id));
+
+      let expiredAfterRead = false;
+      const expire = () => { expiredAfterRead = true; f.setActor(null); };
+      if (path === 'export') {
+        const readWindow = f.repo.readWindow.bind(f.repo);
+        f.repo.readWindow = async (...args) => {
+          const rows = await readWindow(...args);
+          if (rows.some(row => row.entry.id === id)) expire();
+          return rows;
+        };
+      } else {
+        const readSnapshot = f.repo.readCurrentSnapshot!;
+        f.repo.readCurrentSnapshot = async owner => {
+          const rows = await readSnapshot(owner);
+          if (rows.some(row => row.id === id)) expire();
+          return rows;
+        };
+      }
+
+      const denied = await send(path);
+      assert.equal(expiredAfterRead, true);
+      assert.equal(denied.status, 401);
+      assert.equal(denied.body.error.code, 'LOGIN_REQUIRED');
+      assert.equal(JSON.stringify(denied.body).includes(id), false);
+    });
+  }
+});
