@@ -233,3 +233,20 @@ The health workspace SHALL display training volume and direct muscle coverage fr
 - **WHEN** a source date is missing or marked partial, a completed set has no safe external load, or an exercise has no muscle mapping
 - **THEN** the interface exposes the relevant gap and never imputes a zero, a unit, or a muscle attribution
 - **AND** it only reports zero completed work for a verified complete period with no matching work
+
+### Requirement: Cooking workspace
+
+The signed-in workspace SHALL offer category and ingredient-based selection from a pinned Chinese recipe catalog and show the selected recipe's ingredient and preparation information, steps and source. Unknown recipe values SHALL remain unknown.
+
+#### Scenario: Decide what to cook
+
+- **WHEN** the owner opens the cooking workspace and enters ingredients or chooses a category
+- **THEN** it presents a small set of matching suggestions, an action to see different matches where available and access to the entire filtered catalog
+- **AND** the owner can open a recipe and read its ingredients and instructions on a narrow display
+
+#### Scenario: Revisit a completed meal
+
+- **WHEN** the owner saves a completed cooking record with an optional photo
+- **THEN** the date, linked recipe, notes and any attached photo can be reread by the same owner after refresh
+- **AND** the site does not claim that unavailable or failed persistence succeeded
+- **AND** the record and attachment are inaccessible to other accounts, with scoped API capability and Skill available for implemented record operations

@@ -122,3 +122,11 @@ The owner approved implementation and ordinary main deployment on 2026-11-09. Co
 - [x] Project verified completed groups and explicit date coverage from the full source export, preserving unknown and partial data.
 - [x] Display day, week, month, quarter and year volume and direct muscle coverage, with per-muscle filtering and period drilldown.
 - [ ] Verify mapping gaps, incomplete periods, units, mobile interactions, fixed-SHA CI and production revision independently.
+
+## 做饭工作台（LO-COOK-001，Issue #45）
+
+2026-11-10 产品需求，沿原 1.2、3.1、3.2。先在登录后的工作台交付按食材与分类选菜、换一组建议及站内菜谱步骤；再交付持久做饭记录与私有照片。三条验收彼此独立：
+
+- 1.2 / 3.1：固定上游文本版本、全部十类、食材搜索与换菜、用料及步骤、移动端和主题；匿名不得进入。
+- 1.2 / 3.1：真实做饭记录保存、刷新后独立读回、账号隔离，Agent 写入与 discovery/Skill 同交付。附件能力未就绪时不显示已保存的照片。
+- 3.2：固定源码的 CI、受控发布和生产读回；照片需要私有附件容量与恢复验收（Issue #16、#43），本人体验单列。以上均不改变原任务状态。

@@ -1564,6 +1564,43 @@
           "openspec/changes/unified-business-ui/tasks.md#3.2"
         ]
       }
+    },
+    {
+      "id": "LO-COOK-001",
+      "version": 1,
+      "title": "做饭工作台",
+      "description": "按食材和分类选菜，查看用料与做法，并保存可回顾的做饭记录及照片。",
+      "status": "not_started",
+      "delivery": "current",
+      "sourceRefs": [
+        "https://github.com/Nirvana-Chow/lifeos-app/issues/45"
+      ],
+      "acceptanceCriteria": [
+        "按食材及分类浏览，首页给少量可换建议；完整菜谱覆盖上游十类。",
+        "显示固定版本的用料、步骤及来源，未提供的耗时或用量保持未知。",
+        "已授权本人可保存和读回做饭日期、关联菜谱及复盘；新增输入同步交付 Agent API、能力发现与 Skill。",
+        "手机拍照或选图后可在历史中再次打开；验证附件私有、容量边界、持久化和恢复。"
+      ],
+      "evidence": [],
+      "blockedBy": [
+        "站内照片持久化依赖 LO-FILES-001 的私有附件实现与恢复验证。"
+      ],
+      "roadmap": {
+        "phaseId": "business",
+        "priority": "P1",
+        "implementation": "not_started",
+        "summary": "先交付选菜与步骤，记录与照片保留独立验收。",
+        "nextStep": "将固定版本中文菜谱接入已登录工作台并验证手机流程。",
+        "issueRefs": [
+          "https://github.com/Nirvana-Chow/lifeos-app/issues/45"
+        ],
+        "prRefs": [],
+        "specTaskRefs": [
+          "openspec/changes/unified-business-ui/tasks.md#1.2",
+          "openspec/changes/unified-business-ui/tasks.md#3.1",
+          "openspec/changes/unified-business-ui/tasks.md#3.2"
+        ]
+      }
     }
   ],
   "roadmap": {
