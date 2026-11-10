@@ -7,9 +7,9 @@ test('owner module links require verified status, exact available flags and the 
  assert.deepEqual(ownerModules(null,scope),[]);
  assert.deepEqual(ownerModules({...status,storageVerified:false},scope),[]);
  assert.deepEqual(ownerModules({...status,ownerId:'owner-b'},scope),[]);
- assert.deepEqual(ownerModules({...status,calendarEnabled:false,requirementSupportEnabled:false},scope),[]);
- assert.deepEqual(ownerModules({...status,requirementsEnabled:false},scope).map(x=>x.id),['calendar']);
- assert.deepEqual(ownerModules(status,scope).map(x=>x.href),['/personal/schedule','/personal/requirements/roadmap','/personal/requirements/feedback','/personal/requirements/updates']);
+ assert.deepEqual(ownerModules({...status,calendarEnabled:false,requirementSupportEnabled:false},scope).map(x=>x.id),['cooking']);
+ assert.deepEqual(ownerModules({...status,requirementsEnabled:false},scope).map(x=>x.id),['cooking','calendar']);
+ assert.deepEqual(ownerModules(status,scope).map(x=>x.href),['/personal/cooking','/personal/schedule','/personal/requirements/roadmap','/personal/requirements/feedback','/personal/requirements/updates']);
 });
 const sha='a'.repeat(40),other='b'.repeat(40),record={id:'synthetic',sourceSha:sha,sourceURL:'https://github.com/Nirvana-Chow/lifeos-app/commit/'+sha,title:'Synthetic source note',changes:['Verified change'],requirementIds:['LO-VERSION-001'],runningExactSource:true};
 const notes={scope:'public-source-records',current:{sourceSha:sha,sourceTreeDigest:'c'.repeat(64),buildId:'synthetic-build'},records:[record,{...record,id:'other',sourceSha:other,sourceURL:'https://github.com/Nirvana-Chow/lifeos-app/commit/'+other,runningExactSource:false}],ownerAccepted:false,visualQualification:'not-attested',preferencesEnabled:true,readState:{sourceSha:sha,seen:false,id:null,revision:null}};
@@ -22,8 +22,8 @@ test('release notice uses only an actual unread running source and never announc
 
 test('new business links appear only for the exact verified module flags',()=>{
  const flags={mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
- const expected=['/personal/media','/personal/career','/personal/portfolio'];
+ const expected=['/personal/cooking','/personal/media','/personal/career','/personal/portfolio'];
  assert.deepEqual(ownerModules({...status,calendarEnabled:false,requirementsEnabled:false,...flags},scope).map(row=>row.href),expected);
  assert.deepEqual(ownerModules({...status,storageVerified:false,...flags},scope),[]);
- for(const key of Object.keys(flags))assert.equal(ownerModules({...status,[key]:false},scope).some(row=>expected.includes(row.href)),false);
+ for(const key of Object.keys(flags))assert.equal(ownerModules({...status,[key]:false},scope).some(row=>expected.slice(1).includes(row.href)),false);
 });

@@ -123,6 +123,16 @@ The owner approved implementation and ordinary main deployment on 2026-11-09. Co
 - [x] Display day, week, month, quarter and year volume and direct muscle coverage, with per-muscle filtering and period drilldown.
 - [ ] Verify mapping gaps, incomplete periods, units, mobile interactions, fixed-SHA CI and production revision independently.
 
+## 做饭工作台（LO-COOK-001，Issue #45）
+
+2026-11-10 产品需求，沿原 1.2、3.1、3.2。先在登录后的工作台交付按食材与分类选菜、换一组建议及站内菜谱步骤；再交付持久做饭记录与私有照片。三条验收彼此独立：
+
+- 1.2 / 3.1：固定上游文本版本、全部十类、食材搜索与换菜、用料及步骤、移动端和主题；匿名不得进入。
+- 1.2 / 3.1：真实做饭记录保存、刷新后独立读回、账号隔离，Agent 写入与 discovery/Skill 同交付。附件能力未就绪时不显示已保存的照片。
+- 3.2：固定源码的 CI、受控发布和生产读回；照片需要私有附件容量与恢复验收（Issue #16、#43），本人体验单列。以上均不改变原任务状态。
+
+选菜切片的本地证据：HowToCook 1.6.0 固定文本覆盖 357 道、10 类。390px 真实 Chrome 的隔离合成会话通过匿名跳转、移动导航、换菜、食材和分类筛选、原菜谱详情、深色切换与无效菜谱 404，浏览期间无业务写入和外站请求。首版从详情返回菜谱库会重新开始筛选。记录、照片、生产读回和本人体验未由该验证覆盖。
+
 ## Owner storage review ([Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41))
 
 Continue the existing private workspace and tasks 3.1/3.2. Use the existing authenticated owner boundary at `/personal/storage-review`. The owner opens a versioned checklist locally and exports decisions by stable item identifier. Each checklist revision identifies a single snapshot, including when the same snapshot is offered as both CSV and JSON. Source fixtures are synthetic. Choices are browser-local review data.

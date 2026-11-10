@@ -16,13 +16,13 @@ function setup(baseline=requirements()){
 const create={spaceId:config.spaceId,confirmed:true,fields};
 test('requirements snapshot composes frozen baseline and independently persistent private long text without acceptance',async()=>{
  const {repo,service}=setup(),original=requirements();
- const before=await service.snapshot(config.ownerId);assert.equal(before.items.length,34);assert.equal(before.truncated,false);
+ const before=await service.snapshot(config.ownerId);assert.equal(before.items.length,requirements().requirements.length);assert.equal(before.truncated,false);
  const result=await service.mutate(config.ownerId,null,create,'requirements-create-1');
  assert.equal(result.entry.fields.priority,'P3');assert.equal(result.entry.revision,1);
  assert.equal(result.entry.requirement.status,'not_started');assert.equal(result.entry.requirement.acceptance,undefined);
  const reload=new RequirementsService(repo,config);
  assert.equal((await reload.get(config.ownerId,result.entry.id)).fields.body,fields.body);
- const snapshot=await reload.snapshot(config.ownerId);assert.equal(snapshot.items.length,35);
+ const snapshot=await reload.snapshot(config.ownerId);assert.equal(snapshot.items.length,requirements().requirements.length+1);
  assert.deepEqual(requirements(),original);assert.equal(JSON.stringify(snapshot).includes('ownerId'),false);
 });
 test('first baseline edits have one owner-space-ID identity and concurrent different command keys use CAS',async()=>{
@@ -32,7 +32,7 @@ test('first baseline edits have one owner-space-ID identity and concurrent diffe
  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal((results.find(r=>r.status==='rejected') as PromiseRejectedResult).reason.code,'REVISION_CONFLICT');
  assert.equal(repo.rows.size,1);assert.equal(repo.rows.keys().next().value,requirementIdentity(config.ownerId,config.spaceId,id));assert.ok(locks()>=2);
  const current=await service.get(config.ownerId,id);assert.equal(current.revision,1);assert.deepEqual(current.requirement.evidence,base.requirements[0].evidence);assert.deepEqual(current.requirement.acceptance,base.requirements[0].acceptance);
- assert.equal((await service.snapshot(config.ownerId)).items.length,34);
+ assert.equal((await service.snapshot(config.ownerId)).items.length,requirements().requirements.length);
 });
 test('immutable provenance and baseline digest conflicts reject edits; changed baseline stays visible',async()=>{
  const baseline=structuredClone(requirements()),{repo,service}=setup(baseline),id=baseline.requirements[0].id,binding=requirementBinding(baseline,id),body={...create,expectedRevision:0,baselineBinding:binding};
@@ -53,7 +53,7 @@ test('exact unknown-command recovery replays historical receipt, rejects changed
  await assert.rejects(service.snapshot('foreign-owner'),{code:'OWNER_ONLY'});
  const foreign=new RequirementsService(repo,{...config,spaceId:'other-requirements-space'});
  await assert.rejects(foreign.get(config.ownerId,recovered.entry.id),{code:'NOT_FOUND'});
- assert.equal((await foreign.snapshot(config.ownerId)).items.length,34);assert.equal(repo.historyRows.length,1);
+ assert.equal((await foreign.snapshot(config.ownerId)).items.length,requirements().requirements.length);assert.equal(repo.historyRows.length,1);
 });
 test('bounded fields, complete updates, verified snapshots and source/schema guards fail closed',async()=>{
  const {repo,service}=setup();
@@ -80,7 +80,7 @@ test('known corrupted requirement rows fail full snapshot closed; missing identi
 test('existing personal overview and task snapshots ignore typed requirement inbox rows without new allowedTypes',async()=>{
  const {PersonalService}=await import('../src/personal-candidate/service.ts'),{service,repo}=setup();await service.mutate(config.ownerId,null,create,'requirements-overview-private');const personal=new PersonalService(repo,config);
  await personal.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic existing task',notes:'',dueOn:null,status:'open'}},'requirements-overview-todo');
- assert.equal((await personal.currentSnapshot(config.ownerId)).length,1);const overview=await personal.overview(config.ownerId,'2026-11-05');assert.equal(overview.total,1);assert.equal(overview.counts.open,1);assert.equal((await service.snapshot(config.ownerId)).total,35);
+ assert.equal((await personal.currentSnapshot(config.ownerId)).length,1);const overview=await personal.overview(config.ownerId,'2026-11-05');assert.equal(overview.total,1);assert.equal(overview.counts.open,1);assert.equal((await service.snapshot(config.ownerId)).total,requirements().requirements.length+1);
 });
 
 test('owner workflow survives schema2 current history and legacy PATCH while engineering and acceptance evidence remain unchanged',async()=>{

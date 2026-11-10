@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/Anduin2017/HowToCook",
+  "version": "1.6.0",
+  "commit": "a0b14bd388ee996943173679c3a7c9db7da04a6c",
+  "license": "Unlicense",
+  "archive": {
+    "sourceUrl": "https://codeload.github.com/Anduin2017/HowToCook/tar.gz/a0b14bd388ee996943173679c3a7c9db7da04a6c",
+    "sha256": "b0913c7df69690868a9677a7e9f14797219311ea13754c6c1997efda248337ee"
+  },
+  "upstreamFiles": [
+    {
+      "upstreamPath": "LICENSE",
+      "localPath": "third-party/howtocook/LICENSE",
+      "sha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
+      "modified": false
+    }
+  ],
+  "adaptation": {
+    "upstreamPaths": "dishes/**/*.md, excluding dishes/template/",
+    "localPath": "src/cooking/catalog-data.json",
+    "sha256": "eb661761dfe3fb3ababc9efd2264592de998ef8bc6cffa427dae9fad0c5c6ad9",
+    "regenerate": "python3 scripts/import-howtocook.py <verified upstream archive>",
+    "recipeCount": 357,
+    "categoryCount": 10,
+    "changes": [
+      "Keep recipe names, difficulty and the four ingredient, amount, instruction and note sections as plain text with an immutable source link.",
+      "Omit introductions, images, markup and generic upstream feedback boilerplate. Convert tables into labeled lines and strip link targets while keeping link labels.",
+      "Derive search terms from the source ingredient lists and trim list syntax, some amounts, optional text and common tool names. Search terms are a partial index.",
+      "Mark the unconfirmed ice sugar table unit for 虎皮肘子 and refer to its original braising instructions."
+    ]
+  }
+}

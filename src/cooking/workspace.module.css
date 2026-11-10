@@ -1,0 +1,344 @@
+.workspace,
+.recipe {
+  display: grid;
+  min-width: 0;
+  gap: 24px;
+  padding-bottom: 24px;
+  color: var(--foreground);
+  font: var(--lo-font-body);
+}
+
+.workspace :is(h2, p),
+.recipe :is(h2, h3, p) {
+  margin: 0;
+}
+
+.workspace h2,
+.recipe h2 {
+  font-size: var(--lo-font-section);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.pickPanel,
+.catalog {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.pickPanel {
+  padding: clamp(12px, 3vw, 24px);
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--muted);
+}
+
+.sectionHead,
+.sectionIntro,
+.filters label,
+.search {
+  min-width: 0;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.sectionIntro h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionIntro h2 svg {
+  flex: 0 0 auto;
+  color: var(--lo-link);
+}
+
+.sectionIntro p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(8rem, 1fr);
+  gap: 12px;
+}
+
+.filters label,
+.search {
+  display: grid;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.search {
+  width: min(100%, 18rem);
+}
+
+.workspace :is(input, select) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--lo-control-height);
+  padding: 5px 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+  font: var(--lo-font-body);
+}
+
+.workspace input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
+.workspace :is(a, button, input, select, h2):focus-visible,
+.recipe a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.workspace .control {
+  min-height: var(--lo-control-height);
+  color: var(--foreground);
+  background: var(--card);
+  border-color: var(--input);
+  cursor: pointer;
+  font: var(--lo-font-body);
+  touch-action: manipulation;
+}
+
+.workspace .control:hover {
+  background: var(--lo-hover);
+}
+
+.suggestions,
+.catalogList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick,
+.catalogLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 100%;
+  min-height: var(--lo-control-height);
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.pick {
+  padding: 10px 12px;
+}
+
+.pickCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pickCopy strong {
+  font-size: var(--lo-font-section);
+  font-weight: 650;
+}
+
+.pickArrow {
+  flex-shrink: 0;
+  color: var(--lo-link);
+}
+
+.pick:hover,
+.catalogLink:hover {
+  border-color: var(--ring);
+  background: var(--lo-hover);
+}
+
+.catalogLink {
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 2px 8px;
+  padding: 8px 10px;
+}
+
+.catalogLink strong {
+  font-weight: 600;
+}
+
+.meta,
+.match,
+.hint,
+.footer {
+  color: var(--muted-foreground);
+  font-size: var(--lo-font-meta);
+  line-height: 1.55;
+}
+
+.match {
+  color: var(--lo-link);
+}
+
+.empty {
+  padding: 10px 0;
+  color: var(--muted-foreground);
+}
+
+.pagination,
+.footer,
+.recipeHeader,
+.recipeNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.pagination {
+  justify-content: center;
+}
+
+.footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.recipeLink,
+.backLink,
+.footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--lo-control-height);
+  color: var(--lo-link);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+}
+
+.backLink {
+  width: fit-content;
+  margin-bottom: 8px;
+}
+
+.backLink:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.recipe {
+  width: min(100%, 46rem);
+  gap: 20px;
+}
+
+.recipeHeader {
+  justify-content: space-between;
+  row-gap: 0;
+}
+
+.recipeNav {
+  width: 100%;
+}
+
+.recipeSection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.recipeSection h2 {
+  scroll-margin-top: 16px;
+}
+
+.recipeGroup {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.recipeGroup h3 {
+  font-size: inherit;
+  font-weight: 650;
+}
+
+.recipeList,
+.recipeList ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-inline-start: 1.5em;
+}
+
+.recipeList ul {
+  padding-top: 4px;
+  list-style: disc;
+}
+
+ul.recipeList {
+  list-style: disc;
+}
+
+ol.recipeList {
+  gap: 0;
+  list-style: decimal;
+}
+
+ol.recipeList > li {
+  padding: 8px 0 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+ol.recipeList > li:last-child {
+  border-bottom: none;
+}
+
+ol.recipeList > li::marker {
+  color: var(--lo-link);
+  font-weight: 650;
+}
+
+@media (max-width: 520px) {
+  .workspace {
+    gap: 20px;
+  }
+
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .search {
+    width: 100%;
+  }
+
+  .pick,
+  .catalogLink {
+    padding-block: 6px;
+  }
+
+  .pagination {
+    column-gap: 8px;
+  }
+}
