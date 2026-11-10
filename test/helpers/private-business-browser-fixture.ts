@@ -287,6 +287,7 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   items:[...choices.map(({id})=>({id,status:'pending'})),{id:protectedId,status:'protected'}].map(({id,status})=>({
    id,status,title:'合成资料 '+id,body:'',question:'',group:'合成资料',kind:'file',
   }))};
+ let phase='open';
  const mutations:string[]=[];
  const recordMutation=(request:BrowserRequest)=>{
   const method=request.method();
@@ -304,24 +305,29 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   assert.equal((await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
   await expect(page.getByRole('heading',{level:1,name:'存储审核',exact:true})).toBeVisible();
   await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');
+  phase='import';
   await page.locator('#file').setInputFiles({
    name:'synthetic-storage-review.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(checklist)),
   });
   await expect(page.locator('#sync-state')).toHaveText('本机预览');
   assert.deepEqual(await privateRead(page,api),{review:null},'preview must not write to PostgreSQL');
+  phase='save';
   await page.getByRole('button',{name:'保存清单到 LifeOS',exact:true}).click();
   await expect(page.locator('#notice')).toHaveText('清单已保存到 LifeOS，并已读回。');
+  phase='decisions';
   for(const {id,decision} of choices){
    await page.locator(`[data-id="${id}"] label:has(input[value="${decision}"])`).click();
    await expect(page.locator(`[data-id="${id}"] input[value="${decision}"]`)).toBeChecked();
    await expect(page.locator('#notice')).toHaveText('决定已保存，并已读回 LifeOS。');
   }
   await verifyChoices(page);
- }finally{page.off('request',recordMutation);}
+ }catch(error){console.log('PRIVATE_STORAGE_REVIEW_FAILURE '+phase);throw error;}
+ finally{page.off('request',recordMutation);}
  assert.deepEqual(mutations,['POST','PATCH','PATCH','PATCH'],'the browser may save choices only through the review endpoint');
 
  const independent=await browser.newContext({viewport:{width:390,height:844}});
  try{
+  phase='independent-readback';
   independent.setDefaultTimeout(5000);
   independent.setDefaultNavigationTimeout(10000);
   await independent.addCookies(await context.cookies(privateOrigin));
@@ -330,14 +336,19 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   await expect(reader.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
   await verifyChoices(reader);
   assert.deepEqual(await privateRead(reader,api),{review:{revision:4,checklist,decisions:choices}});
+  phase='session-loss';
   await independent.clearCookies();
-  await reader.getByRole('button',{name:'打开 LifeOS 清单',exact:true}).click();
+  const [denied]=await Promise.all([
+   reader.waitForResponse(response=>response.url()===privateOrigin+api&&response.request().method()==='GET'),
+   reader.getByRole('button',{name:'打开 LifeOS 清单',exact:true}).click(),
+  ]);
+  assert.equal(denied.status(),401);
   await expect(reader.getByRole('link',{name:'重新登录',exact:true})).toBeVisible();
   await expect(reader.locator('#list [data-id]')).toHaveCount(0);
-  assert.equal((await reader.request.get(privateOrigin+api)).status(),401);
   await reader.reload({waitUntil:'domcontentloaded'});
   await reader.waitForURL(privateOrigin+'/login');
- }finally{await independent.close();}
+ }catch(error){console.log('PRIVATE_STORAGE_REVIEW_FAILURE '+phase);throw error;}
+ finally{await independent.close();}
 }
 
 export type PrivatePresentationSurface='workspace'|'standalone-editor';
