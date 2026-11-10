@@ -20,7 +20,7 @@ import {measureTaskGrid} from './helpers/task-grid-performance-fixture.ts';
 import {verifyPersonalWorkspace} from './helpers/personal-workspace-browser-fixture.ts';
 import {themeStorageKey} from '../src/workbench/theme.ts';
 
-import {withPrivateBrowserFixture,verifyPrivateRouteBoundaries,verifyPrivateAppearanceAndDrafts,verifyPrivatePresentationMatrix,type PrivateBrowserHandoff} from './helpers/private-business-browser-fixture.ts';
+import {withPrivateBrowserFixture,verifyPrivateRouteBoundaries,verifyPrivateAppearanceAndDrafts,verifyPrivatePresentationMatrix,verifyPrivateStorageReview,type PrivateBrowserHandoff} from './helpers/private-business-browser-fixture.ts';
 import {recordSyntheticCapture,publishSyntheticCaptureManifest,assertFixtureCompletion} from '../scripts/synthetic-rendered-qualification.ts';
 async function safeScreenshot(page:Page,name:string){await guardedAuthScreenshot(page,name);recordSyntheticCapture({name,url:page.url(),...await page.evaluate(()=>({width:innerWidth,height:innerHeight,theme:document.documentElement.dataset.lifeosTheme??''}))});}
 let completedHandoff:PrivateBrowserHandoff|undefined;
@@ -172,7 +172,7 @@ test('isolated browser owner recovery and password flow',{skip:!enabled?'isolate
 
 const privateGroups=[
  ['isolated private business route boundaries',90000,verifyPrivateRouteBoundaries],
- ['isolated private appearance and draft lifecycle',90000,verifyPrivateAppearanceAndDrafts],
+ ['isolated private appearance and draft lifecycle',110000,verifyPrivateAppearanceAndDrafts],
  ['isolated private business presentation matrix',180000,verifyPrivatePresentationMatrix],
 ] as const;
 // Release retains the original safety/data assertions. The separate visual run
@@ -185,6 +185,10 @@ for(const [name,timeout,run] of selectedPrivateGroups)test(name,{skip:!enabled?'
   const rowCount=process.env.LIFEOS_SYNTHETIC_GRID_ROWS;
   const samples=await withPrivateBrowserFixture(completedHandoff,async fixture=>{
    await run(fixture);
+   if(name==='isolated private appearance and draft lifecycle'){
+    await verifyPrivateStorageReview(fixture);
+    console.log('PRIVATE_STORAGE_REVIEW_BROWSER passed');
+   }
    if(!matrix||rowCount===undefined)return;
    if(rowCount==='both')return [...await measureTaskGrid(fixture,100),...await measureTaskGrid(fixture,1000,100)];
    if(rowCount!=='100'&&rowCount!=='1000')throw Error('INVALID_SYNTHETIC_GRID_ROWS');

@@ -279,6 +279,67 @@ export async function verifyPrivateAppearanceAndDrafts(f:PrivateFixture){
  catch(error){try{console.error('PRIVATE_APPEARANCE_FAILURE '+JSON.stringify(projectPrivateAppearanceFailure(phase,error)));}catch{}throw error;}
 }
 
+export async function verifyPrivateStorageReview({page,browser,context}:PrivateFixture){
+ const path='/personal/storage-review',api='/api/platform/personal/storage-review';
+ const choices=[{id:'FIXTURE-KEEP',decision:'keep'},{id:'FIXTURE-TRASH',decision:'trash'},{id:'FIXTURE-DEFER',decision:'defer'}];
+ const protectedId='FIXTURE-PROTECTED';
+ const checklist={schema:1,revision:'isolated-browser-storage-review',context:{summary:'合成审核清单'},
+  items:[...choices.map(({id})=>({id,status:'pending'})),{id:protectedId,status:'protected'}].map(({id,status})=>({
+   id,status,title:'合成资料 '+id,body:'',question:'',group:'合成资料',kind:'file',
+  }))};
+ const mutations:string[]=[];
+ const recordMutation=(request:BrowserRequest)=>{
+  const method=request.method();
+  if(method==='GET'||method==='HEAD')return;
+  const url=new URL(request.url());
+  mutations.push(url.origin===privateOrigin&&url.pathname===api?method:'unexpected');
+ };
+ const verifyChoices=async(target:Page)=>{
+  for(const {id,decision} of choices)await expect(target.locator(`[data-id="${id}"] input[value="${decision}"]`)).toBeChecked();
+  await expect(target.locator(`[data-id="${protectedId}"]`)).toBeVisible();
+  await expect(target.locator(`[data-id="${protectedId}"] .choices`)).toHaveCount(0);
+ };
+ page.on('request',recordMutation);
+ try{
+  assert.equal((await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
+  await expect(page.getByRole('heading',{level:1,name:'存储审核',exact:true})).toBeVisible();
+  await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');
+  await page.locator('#file').setInputFiles({
+   name:'synthetic-storage-review.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(checklist)),
+  });
+  await expect(page.locator('#sync-state')).toHaveText('本机预览');
+  assert.deepEqual(await privateRead(page,api),{review:null},'preview must not write to PostgreSQL');
+  await page.getByRole('button',{name:'保存清单到 LifeOS',exact:true}).click();
+  await expect(page.locator('#notice')).toHaveText('清单已保存到 LifeOS，并已读回。');
+  for(const {id,decision} of choices){
+   await page.locator(`[data-id="${id}"] label:has(input[value="${decision}"])`).click();
+   await expect(page.locator(`[data-id="${id}"] input[value="${decision}"]`)).toBeChecked();
+   await expect(page.locator('#notice')).toHaveText('决定已保存，并已读回 LifeOS。');
+  }
+  await verifyChoices(page);
+ }finally{page.off('request',recordMutation);}
+ assert.deepEqual(mutations,['POST','PATCH','PATCH','PATCH'],'the browser may save choices only through the review endpoint');
+
+ const independent=await browser.newContext({viewport:{width:390,height:844}});
+ try{
+  independent.setDefaultTimeout(5000);
+  independent.setDefaultNavigationTimeout(10000);
+  await independent.addCookies(await context.cookies(privateOrigin));
+  const reader=await independent.newPage();
+  await reader.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});
+  await expect(reader.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
+  await verifyChoices(reader);
+  assert.deepEqual(await privateRead(reader,api),{review:{revision:4,checklist,decisions:choices}});
+  await independent.clearCookies();
+  await reader.getByRole('button',{name:'打开 LifeOS 清单',exact:true}).click();
+  await expect(reader.getByRole('link',{name:'重新登录',exact:true})).toBeVisible();
+  await expect(reader.locator('#list [data-id]')).toHaveCount(0);
+  assert.equal((await reader.request.get(privateOrigin+api)).status(),401);
+  await reader.reload({waitUntil:'domcontentloaded'});
+  await reader.waitForURL(privateOrigin+'/login');
+ }finally{await independent.close();}
+}
+
 export type PrivatePresentationSurface='workspace'|'standalone-editor';
 /** Explicit structures: the standalone journal editor deliberately has no main. */
 export function privatePresentationScope(surface:PrivatePresentationSurface,dialog=false){
