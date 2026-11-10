@@ -2,7 +2,7 @@ import {headers} from 'next/headers';
 import {notFound,redirect} from 'next/navigation';
 import {categories,getRecipe} from '../../../../src/cooking/catalog';
 import {CookingRecipe} from '../../../../src/cooking/detail';
-import {PrivacyBoundary} from '../../../../src/personal-candidate/privacy';
+import {CookingFrame} from '../../../../src/cooking/frame';
 import {readPlatformPagePrincipal} from '../../../../src/platform/runtime';
 
 export const dynamic='force-dynamic';
@@ -15,5 +15,5 @@ export default async function Page({params}:{params:Promise<{id:string}>}){
  if(!recipe)notFound();
  const category=categories.find(entry=>entry.id===recipe.category);
  if(!category)notFound();
- return <PrivacyBoundary><CookingRecipe recipe={recipe} categoryLabel={category.label}/></PrivacyBoundary>;
+ return <CookingFrame title={recipe.name}><CookingRecipe recipe={recipe} categoryLabel={category.label}/></CookingFrame>;
 }

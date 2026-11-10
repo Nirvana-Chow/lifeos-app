@@ -44,12 +44,17 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await anonymous.goto(origin+'/personal/cooking',{timeout:65_000});
  await expect(anonymous).toHaveURL(origin+'/login');
  await anonymous.close();
- const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+ const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,colorScheme:'light',extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
  await page.route(origin+'/api/platform/status',route=>route.fulfill({status:200,contentType:'application/json',body:'{}'}));
+ await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',storageVerified:true,ownerId:'synthetic-cooking',spaceId:'synthetic-space'}}));
  const errors:string[]=[],writes:string[]=[],remote:string[]=[];
  page.on('pageerror',error=>errors.push(error.message));
  page.on('request',req=>{if(!['GET','HEAD'].includes(req.method()))writes.push(req.method());if(!req.url().startsWith(origin+'/'))remote.push(req.url());});
  await page.goto(origin+'/personal/cooking',{timeout:65_000});
+ await page.getByRole('button',{name:'打开导航'}).click();
+ const menu=page.getByRole('dialog').getByRole('navigation',{name:'主导航'});
+ await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
+ await page.keyboard.press('Escape');
  const picks=page.getByRole('region',{name:'今天做什么'});
  await expect(picks.getByRole('link')).toHaveCount(3);
  const first=await picks.getByRole('link').allTextContents();
@@ -72,7 +77,8 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await expect(page.getByRole('heading',{name:'食材和工具'})).toBeVisible();
  await expect(page.getByRole('heading',{name:'烹饪步骤'})).toBeVisible();
  await expect(page.getByRole('link',{name:'查看原菜谱'})).toHaveAttribute('href',/^https:\/\/github\.com\/Anduin2017\/HowToCook\/blob\//);
- await page.evaluate(()=>{document.documentElement.dataset.lifeosTheme='dark';});
+ await page.getByRole('button',{name:'切换到深色模式'}).click();
+ await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
  const invalid=await page.goto(origin+'/personal/cooking/0000000000000000');
  assert.equal(invalid?.status(),404);

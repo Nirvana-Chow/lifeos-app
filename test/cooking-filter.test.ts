@@ -46,3 +46,14 @@ test('starter picks are everyday dishes and rotating avoids repeats until all ca
   assert.deepEqual(suggestionGroup(results, 3), first);
   assert.deepEqual(suggestionGroup([], 0), []);
 });
+
+test('regional names for cabbage and sweet potato match the same original ingredient', () => {
+  const produce = [
+    {id:'cabbage', name:'手撕包菜', category:'vegetable_dish', difficulty:1, ingredients:['包菜']},
+    {id:'sweet-potato', name:'烤红薯', category:'staple', difficulty:1, ingredients:['红薯']},
+  ];
+  for (const term of ['卷心菜','高丽菜','圆白菜']) {
+    assert.deepEqual(rankRecipes(produce, {ingredients:[term]}).map(item=>item.recipe.id), ['cabbage']);
+  }
+  assert.deepEqual(rankRecipes(produce, {ingredients:['地瓜']}).map(item=>item.recipe.id), ['sweet-potato']);
+});

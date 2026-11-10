@@ -1,7 +1,5 @@
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
-import { LifeOSWorkspace } from '../ui-review/workspace';
 import type { Recipe } from './catalog';
 import styles from './workspace.module.css';
 
@@ -14,27 +12,6 @@ const sectionNames = {
 
 type Entry = { text: string; notes: string[] };
 type Group = { title: string; entries: Entry[] };
-
-export function CookingFrame({ title, children }: {title: string; children: ReactNode}) {
-  return (
-    <LifeOSWorkspace
-      state={{ status:'unknown' }}
-      access={{ authenticated:true, writable:null, loginAllowed:true }}
-      contentPage={{
-        title,
-        wide:true,
-        content:(
-          <>
-            <Link href="/personal" className={styles.backLink}>
-              <ArrowLeft aria-hidden="true" size={17} />返回工作台
-            </Link>
-            {children}
-          </>
-        ),
-      }}
-    />
-  );
-}
 
 function groupLines(lines: string[]) {
   const groups: Group[] = [{ title:'', entries:[] }];
@@ -72,6 +49,12 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
             <a key={section.id} className={styles.recipeLink} href={`#${section.id}`}>{section.title}</a>
           ))}
         </nav>
+        <div className={styles.footer}>
+          <span>来源：HowToCook 1.6.0</span>
+          <a href={recipe.sourceUrl} target="_blank" rel="noreferrer">
+            查看原菜谱<ExternalLink aria-hidden="true" size={14} />
+          </a>
+        </div>
       </header>
 
       {sections.map(section => (
@@ -98,12 +81,6 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
         </section>
       ))}
 
-      <footer className={styles.footer}>
-        <span>来源：HowToCook 1.6.0</span>
-        <a href={recipe.sourceUrl} target="_blank" rel="noreferrer">
-          查看原菜谱<ExternalLink aria-hidden="true" size={14} />
-        </a>
-      </footer>
     </article>
   );
 }

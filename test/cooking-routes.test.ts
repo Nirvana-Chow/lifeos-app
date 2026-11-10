@@ -17,7 +17,7 @@ function loadRoute(path:string,identity:unknown) {
   'next/headers':{headers:async()=>new Headers()},
   'next/navigation':{redirect:(url:string)=>{throw Error('redirect:'+url);},notFound:()=>{throw Error('not found');}},
   runtime:{readPlatformPagePrincipal:async()=>{if(identity instanceof Error)throw identity;return identity;}},
-  privacy:{PrivacyBoundary:'privacy'},
+  frame:{CookingFrame:'frame'},
   catalog:{categories:[{id:recipe.category,label:'素菜'}],listRecipes:()=>{catalogReads.push('all');return [recipe];},getRecipe:(id:string)=>{catalogReads.push(id);return id===recipe.id?recipe:undefined;}},
   workspace:{CookingWorkspace:'workspace'},detail:{CookingRecipe:'recipe'},
  };
@@ -46,12 +46,12 @@ test('both cooking URLs require verified access before looking up catalog data',
 test('owner can open catalog and direct details; unknown IDs fail closed',async()=>{
  const list=loadRoute(routes[0]!,{ownerId:'fixture-owner'});
  const catalog=await list.page();
- assert.equal(catalog.type,'privacy');
+ assert.equal(catalog.type,'frame');
  assert.equal(catalog.props.children.type,'workspace');
  assert.deepEqual(list.catalogReads,['all']);
  const detail=loadRoute(routes[1]!,{ownerId:'fixture-owner'});
  const selected=await detail.page();
- assert.equal(selected.type,'privacy');
+ assert.equal(selected.type,'frame');
  assert.deepEqual(selected.props.children.props,{recipe,categoryLabel:'素菜'});
  await assert.rejects(detail.page('0000000000000000'),/not found/);
 });

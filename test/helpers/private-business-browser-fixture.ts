@@ -143,7 +143,7 @@ export function captureSourceText(paths:readonly string[]=privateCaptureSources)
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
  // This closed fixture's only rendered native compound is assembled from two
  // source literals. Admit its exact value, never a prefix or body-derived text.
- const out=new Set<string>(['新增健康']);for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
+ const out=new Set<string>(['新增健康','做饭']);for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
 }
 async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark){
  mark('capture-receipts');requireFixture();await assertPrivateReceipts(page,entries);
@@ -216,7 +216,8 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
 export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  await expect(navigation.getByRole('button')).toHaveText(['总览','事项','需求池']);
- await expect(navigation.getByRole('link')).toHaveText(['日记']);
+ await expect(navigation.getByRole('link')).toHaveText(['日记','做饭']);
+ await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
  await expect(navigation.locator('summary')).toHaveCount(0);
  return navigation;
