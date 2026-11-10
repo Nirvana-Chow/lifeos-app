@@ -1,7 +1,7 @@
 import test from'node:test';import assert from'node:assert/strict';import{createHash,randomUUID}from'node:crypto';import{validateAcceptanceEnvironment}from'./helpers/platform-pg.ts';import{PostgresPlatformRepository,verifyRestrictedPool,type SqlPool}from'../src/platform/postgres.ts';import{DraftService}from'../src/platform/service.ts';import{StorageReviewService,isStorageReviewEntry}from'../src/storage-review/service.ts';
 // No schema/role/account creation. Only enable after approval of the exact pre-migrated isolated test target and synthetic writes.
 const enabled=process.env.RUN_PLATFORM_POSTGRES_TESTS==='1';
-test('REAL PostgreSQL restricted-role/RLS, retry concurrency and readback through a new pool (not a process restart)',{skip:enabled?false:'No approved isolated PostgreSQL target or synthetic-write configuration supplied'},async()=>{
+test('REAL PostgreSQL restricted-role/RLS, retry concurrency and readback through a new pool (not a process restart)',{skip:enabled?false:'No approved isolated PostgreSQL target or synthetic-write configuration supplied'},async t=>{
  const config=validateAcceptanceEnvironment(process.env,process.execArgv);const{Pool}=await import('pg');
  const open=()=>new Pool({connectionString:config.databaseURL,max:3,connectionTimeoutMillis:2000,statement_timeout:5000,options:'-c search_path=pg_catalog,lifeos_platform'});
  const pool=open();let reopened:InstanceType<typeof Pool>|undefined;
@@ -13,23 +13,27 @@ test('REAL PostgreSQL restricted-role/RLS, retry concurrency and readback throug
   const incoming=await service.mutate(config.ownerId,'inbox',null,{title:'Synthetic concurrent inbox',text:'Fictional PG input',occurredOn:null,disposition:'pending'},key+'-inbox');const results=await Promise.allSettled([service.createTodoFromInbox(config.ownerId,incoming.entry.id,{expectedRevision:1},key+'-confirm-a'),service.createTodoFromInbox(config.ownerId,incoming.entry.id,{expectedRevision:1},key+'-confirm-b')]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected').length,1);const linked=(await service.list(config.ownerId,'todo')).filter(e=>e.inboxId===incoming.entry.id);assert.equal(linked.length,1);assert.equal((await service.history(config.ownerId,'inbox',incoming.entry.id)).length,2);
   const restricted=await pool.connect();try{for(const table of ['platform_record','platform_source','platform_history','platform_command']){const rows=await restricted.query('SELECT count(*)::int AS n FROM lifeos_platform.'+table);assert.equal(rows.rows[0].n,0,'RLS without owner context');}await assert.rejects(restricted.query('CREATE TABLE lifeos_platform.fixture_forbidden(id integer)'),e=>typeof e==='object'&&e!==null&&'code'in e&&e.code==='42501');}finally{restricted.release();}
   await pool.end();reopened=open();await verifyRestrictedPool(reopened as SqlPool);const readback=await new DraftService(new PostgresPlatformRepository(reopened as SqlPool)).get(config.ownerId,'todo',first.entry.id);assert.equal(readback.source.id,first.entry.source.id);assert.equal(readback.revision,1);
+  await verifyStorageReviewPersistence(config.databaseURL,config.ownerId);
+  t.diagnostic('PASS: storage review snapshots, revision history and fresh service readback on restricted PostgreSQL.');
  }finally{if(!pool.ended)await pool.end();if(reopened)await reopened.end();}
 });
 
 function storageReviewIdentity(owner:string,spaceId:string){const hex=createHash('sha256').update(JSON.stringify(['personal-storage-review-v1',owner,spaceId])).digest('hex').slice(0,32).split('');hex[12]='5';hex[16]=((parseInt(hex[16]!,16)&3)|8).toString(16);const value=hex.join('');return`${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20)}`;}
-test('REAL PostgreSQL storage review writes owner-scoped snapshots, CAS history, and reads them through a fresh service',{skip:enabled?false:'No approved isolated PostgreSQL target or synthetic-write configuration supplied'},async()=>{
- const config=validateAcceptanceEnvironment(process.env,process.execArgv);const{Pool}=await import('pg');const pool=new Pool({connectionString:config.databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,options:'-c search_path=pg_catalog,lifeos_platform'});
+// The release workflow pins the number of outer PostgreSQL fixture cases.
+// Keep these assertions mandatory inside the existing restricted-role case.
+async function verifyStorageReviewPersistence(databaseURL:string,ownerId:string){
+ const{Pool}=await import('pg');const pool=new Pool({connectionString:databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,options:'-c search_path=pg_catalog,lifeos_platform'});
  try{
-  await verifyRestrictedPool(pool as SqlPool);const repository=new PostgresPlatformRepository(pool as SqlPool),spaceId=`synthetic-storage-review-${randomUUID()}`,service=new StorageReviewService(repository,{ownerId:config.ownerId,spaceId}),id=storageReviewIdentity(config.ownerId,spaceId);
+  await verifyRestrictedPool(pool as SqlPool);const repository=new PostgresPlatformRepository(pool as SqlPool),spaceId=`synthetic-storage-review-${randomUUID()}`,service=new StorageReviewService(repository,{ownerId,spaceId}),id=storageReviewIdentity(ownerId,spaceId);
   const checklist=(revision:string)=>({schema:1 as const,revision,context:{summary:'Synthetic isolated PostgreSQL storage review'},items:[{id:'SYN-001',title:'Synthetic file',body:'Synthetic only',question:'Keep?',group:'Synthetic group',kind:'file' as const,status:'pending' as const},{id:'SYN-002',title:'Synthetic protected item',body:'Protected',question:'Read only?',group:'Synthetic group',kind:'app' as const,status:'protected' as const}]});
-  const first=await service.saveChecklist(config.ownerId,{expectedRevision:null,checklist:checklist('synthetic-v1')},`storage-review-${randomUUID()}`);assert.equal(first.revision,1);
-  const decided=await service.saveDecision(config.ownerId,{expectedRevision:1,checklistRevision:'synthetic-v1',id:'SYN-001',decision:'keep'},`storage-review-${randomUUID()}`);assert.equal(decided.revision,2);
-  await assert.rejects(service.saveDecision(config.ownerId,{expectedRevision:2,checklistRevision:'synthetic-v1',id:'SYN-002',decision:'trash'},`storage-review-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='PROTECTED_ITEM');
-  await assert.rejects(service.saveChecklist(config.ownerId,{expectedRevision:1,checklist:checklist('synthetic-v2')},`storage-review-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='REVISION_CONFLICT');
-  const unchanged=await service.saveChecklist(config.ownerId,{expectedRevision:2,checklist:checklist('synthetic-v1')},`storage-review-${randomUUID()}`);assert.deepEqual(unchanged.decisions,[{id:'SYN-001',decision:'keep'}]);
-  const replaced=await service.saveChecklist(config.ownerId,{expectedRevision:2,checklist:checklist('synthetic-v2')},`storage-review-${randomUUID()}`);assert.equal(replaced.revision,3);assert.deepEqual(replaced.decisions,[]);
-  const row=await repository.get(config.ownerId,'inbox',id);assert.ok(isStorageReviewEntry(row));assert.deepEqual(row?.source.original,{marker:'personal-storage-review-v1',spaceId});
-  const history=await repository.history(config.ownerId,'inbox',id);assert.deepEqual(history.map(entry=>entry.revision),[3,2,1]);assert.deepEqual((history[1]!.draft as unknown as {storageReview:{decisions:{id:string;decision:string}[]}}).storageReview.decisions,[{id:'SYN-001',decision:'keep'}]);
-  const fresh=new StorageReviewService(new PostgresPlatformRepository(pool as SqlPool),{ownerId:config.ownerId,spaceId});assert.deepEqual(await fresh.get(config.ownerId),replaced);
+  const first=await service.saveChecklist(ownerId,{expectedRevision:null,checklist:checklist('synthetic-v1')},`storage-review-${randomUUID()}`);assert.equal(first.revision,1);
+  const decided=await service.saveDecision(ownerId,{expectedRevision:1,checklistRevision:'synthetic-v1',id:'SYN-001',decision:'keep'},`storage-review-${randomUUID()}`);assert.equal(decided.revision,2);
+  await assert.rejects(service.saveDecision(ownerId,{expectedRevision:2,checklistRevision:'synthetic-v1',id:'SYN-002',decision:'trash'},`storage-review-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='PROTECTED_ITEM');
+  await assert.rejects(service.saveChecklist(ownerId,{expectedRevision:1,checklist:checklist('synthetic-v2')},`storage-review-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='REVISION_CONFLICT');
+  const unchanged=await service.saveChecklist(ownerId,{expectedRevision:2,checklist:checklist('synthetic-v1')},`storage-review-${randomUUID()}`);assert.deepEqual(unchanged.decisions,[{id:'SYN-001',decision:'keep'}]);
+  const replaced=await service.saveChecklist(ownerId,{expectedRevision:2,checklist:checklist('synthetic-v2')},`storage-review-${randomUUID()}`);assert.equal(replaced.revision,3);assert.deepEqual(replaced.decisions,[]);
+  const row=await repository.get(ownerId,'inbox',id);assert.ok(isStorageReviewEntry(row));assert.deepEqual(row?.source.original,{marker:'personal-storage-review-v1',spaceId});
+  const history=await repository.history(ownerId,'inbox',id);assert.deepEqual(history.map(entry=>entry.revision),[3,2,1]);assert.deepEqual((history[1]!.draft as unknown as {storageReview:{decisions:{id:string;decision:string}[]}}).storageReview.decisions,[{id:'SYN-001',decision:'keep'}]);
+  const fresh=new StorageReviewService(new PostgresPlatformRepository(pool as SqlPool),{ownerId,spaceId});assert.deepEqual(await fresh.get(ownerId),replaced);
  }finally{await pool.end();}
-});
+}
