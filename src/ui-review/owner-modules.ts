@@ -1,4 +1,4 @@
-export type OwnerModuleLink={id:'calendar'|'journal'|'health'|'people'|'finance'|'roadmap'|'feedback'|'updates'|'media'|'career'|'portfolio';label:string;href:string};
+export type OwnerModuleLink={id:'calendar'|'journal'|'health'|'people'|'finance'|'roadmap'|'feedback'|'updates'|'media'|'career'|'portfolio'|'cooking';label:string;href:string};
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 export function verifiedModuleScope(value:unknown):string|null{return object(value)&&value.scope==='personal-manual-candidate'&&value.storageVerified===true&&typeof value.ownerId==='string'&&value.ownerId.length>0&&typeof value.spaceId==='string'&&value.spaceId.length>0?JSON.stringify([value.ownerId,value.spaceId]):null;}
 export function ownerModules(value:unknown,scope:string|null):OwnerModuleLink[]{
@@ -6,6 +6,7 @@ export function ownerModules(value:unknown,scope:string|null):OwnerModuleLink[]{
  const v=value as Record<string,unknown>,links:OwnerModuleLink[]=[];
  if(Array.isArray(v.allowedTypes)&&v.allowedTypes.includes('journal'))links.push({id:'journal',label:'日记',href:'/personal/journal'});
  if(v.healthEnabled===true)links.push({id:'health',label:'健康',href:'/personal/health'});
+ links.push({id:'cooking',label:'做饭',href:'/personal/cooking'});
  if(v.peopleEnabled===true)links.push({id:'people',label:'人物',href:'/personal/people'});
  if(v.financeEnabled===true)links.push({id:'finance',label:'财务',href:'/personal/finance'});
  if(v.mediaEnabled===true)links.push({id:'media',label:'书影音',href:'/personal/media'});

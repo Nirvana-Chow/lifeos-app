@@ -15,7 +15,7 @@ function fixture(enabled=true,ready=true){
 }
 test('requirement API shares owner service and requires independent scopes, full fields, fence, readback and exact replay',async()=>{
  const {repo,send,fences}=fixture();
- assert.equal((await send('/v1/requirements/snapshot')).body.total,34);
+ assert.equal((await send('/v1/requirements/snapshot')).body.total,requirements().requirements.length);
  const first=await send('/v1/requirements','POST',{fields});assert.equal(first.status,201);assert.equal(fences(),1);
  const id=first.body.entry.id,replay=await send('/v1/requirements','POST',{fields});assert.equal(replay.status,200);assert.equal(replay.body.duplicate,true);
  const edited=await send('/v1/requirements/'+id,'PATCH',{fields:{...fields,priority:'P1'},expectedRevision:1,baselineBinding:null},'writer','requirements-api-edit');assert.equal(edited.status,200);assert.equal(edited.body.entry.revision,2);

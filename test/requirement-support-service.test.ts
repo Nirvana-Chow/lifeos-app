@@ -18,7 +18,7 @@ test('feedback persists original text and source without becoming an approved re
  const {repository,service,req}=setup(),created=await service.createFeedback(config.ownerId,input,'support-feedback-create');
  assert.equal(created.entry.text,input.fields.text);assert.equal(created.entry.state,'inbox');assert.equal(created.entry.source.channel,'owner-web');
  const restarted=new RequirementSupportService(repository,config,req);assert.equal((await restarted.feedback(config.ownerId,created.entry.id)).text,input.fields.text);
- assert.equal((await service.snapshot(config.ownerId)).total,1);assert.equal((await req.snapshot(config.ownerId)).total,34);
+ assert.equal((await service.snapshot(config.ownerId)).total,1);assert.equal((await req.snapshot(config.ownerId)).total,requirements().requirements.length);
  assert.equal(JSON.stringify(created).includes('ownerId'),false);
  await assert.rejects(service.feedback('foreign-owner',created.entry.id),{code:'OWNER_ONLY'});
 });

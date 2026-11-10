@@ -14,12 +14,12 @@ function setup(enabled=true){
 }
 test('owner requirement create/read/edit/history uses current authorization and same persistent service',async()=>{
  const {send,repo}=setup(),body={spaceId:config.spaceId,confirmed:true,fields};
- assert.equal((await send('/snapshot')).body.total,34);
+ assert.equal((await send('/snapshot')).body.total,requirements().requirements.length);
  const created=await send('','POST',body);assert.equal(created.status,201);assert.equal(repo.rows.size,1);
  const id=created.body.entry.id;assert.equal((await send('/'+id)).body.entry.fields.title,fields.title);
  const updated=await send('/'+id,'PATCH',{...body,fields:{...fields,title:'Changed'},expectedRevision:1,baselineBinding:null},{'idempotency-key':'requirements-http-edit'});assert.equal(updated.status,200);assert.equal(updated.body.entry.revision,2);
  const history=await send('/'+id+'/history?limit=1');assert.equal(history.status,200);assert.equal(history.body.items.length,1);assert.equal(history.body.truncated,true);
- assert.equal((await send('/snapshot')).body.total,35);
+ assert.equal((await send('/snapshot')).body.total,requirements().requirements.length+1);
 });
 test('owner requirements deny foreign session, bearer, cross-origin, closed writes and oversized body; module closed by default',async()=>{
  const f=setup(),body={spaceId:config.spaceId,confirmed:true,fields};
