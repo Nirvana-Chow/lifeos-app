@@ -14,7 +14,7 @@ const responseHeaders = {
   'Cache-Control': 'private, no-store',
   'Content-Security-Policy': [
     "default-src 'none'",
-    "connect-src 'none'",
+    "connect-src 'self'",
     'script-src ' + inlineHash('script'),
     'style-src ' + inlineHash('style'),
     "frame-ancestors 'none'",

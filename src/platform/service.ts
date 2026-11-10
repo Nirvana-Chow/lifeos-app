@@ -8,10 +8,11 @@ import type {Kind,StoredEntry,PublicEntry,PlatformRepository,MutationResult,Tran
 import {validateRecordCommand,validateProjectReviewCommand,projectReviewAfterEdit,isRecordEntry,normalizeProjectLinks} from '../records-candidate/domain.ts';
 import type {RecordType,RecordFields,RecordMutationResult,ProjectReviewCommand,ProjectLink} from '../records-candidate/contracts.ts';
 import {linkKind,projectLinkCandidate} from '../project-candidate/links.ts';
+import {isStorageReviewEntry} from '../storage-review/service.ts';
 const missing=()=>new PlatformError(404,'NOT_FOUND','没有可访问的记录。');
 const canonical=(v:unknown):string=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).sort(([a],[b])=>a.localeCompare(b,'en')).map(([k,x])=>JSON.stringify(k)+':'+canonical(x)).join(',')+'}':JSON.stringify(v);
 const publicEntry=(e:StoredEntry):PublicEntry=>{const {ownerId,...value}=structuredClone(e);return value;};
-const owned=(e:StoredEntry|null,owner:string,kind:Kind,id?:string):e is StoredEntry=>!!e&&e.ownerId===owner&&e.kind===kind&&(!id||e.id===id);
+const owned=(e:StoredEntry|null,owner:string,kind:Kind,id?:string):e is StoredEntry=>!!e&&e.ownerId===owner&&e.kind===kind&&(!id||e.id===id)&&!isStorageReviewEntry(e);
 const validate=(kind:Kind,input:unknown)=>kind==='todo'?validateTodo(input):kind==='inbox'?validateInbox(input):validateFinance(input);
 export class DraftService {
  private repository:PlatformRepository;

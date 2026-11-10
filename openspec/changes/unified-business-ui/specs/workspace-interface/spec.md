@@ -252,13 +252,19 @@ The signed-in workspace SHALL offer category and ingredient-based selection from
 - **AND** the record and attachment are inaccessible to other accounts, with scoped API capability and Skill available for implemented record operations
 
 ### Requirement: Owner storage review workspace
-The personal workspace SHALL serve the storage review interface only to the existing authenticated owner. The interface SHALL open a selected versioned CSV or JSON checklist in the browser and preserve the checklist's item identifiers.
+The personal workspace SHALL serve the storage review interface only to the existing authenticated owner. The interface SHALL preview a selected versioned CSV or JSON checklist, preserve stable item identifiers and persist explicitly saved review data within the owner's LifeOS space.
 
 #### Scenario: Review a selected checklist
 - **WHEN** the owner opens a valid checklist and chooses keep, trash review, or defer for an editable item
-- **THEN** the current browser records the decision for that checklist revision and exports it in a versioned JSON file with the item identifier
-- **AND** processed and protected items remain read-only
-- **AND** imported records stay in the browser and each exported choice is a review decision
+- **THEN** the interface records a choice for that checklist revision and exports it in a versioned JSON file with the item identifier
+- **AND** processed and protected items remain read-only in the browser and in the server writer
+- **AND** a deletion candidate is a review decision with no filesystem effect
+
+#### Scenario: Save and resume review in another browser
+- **WHEN** the owner explicitly saves a checklist and selects a decision on its saved version
+- **THEN** the owner can open the same checklist and independently reread the decision in another authenticated browser
+- **AND** an unsaved import remains a local preview, and an outdated request cannot replace a newer checklist or decision
+- **AND** generic Inbox and machine routes exclude private review rows unless a reviewed scoped operation explicitly grants access
 
 #### Scenario: Protect access
 - **WHEN** the route receives a request without a verified owner principal

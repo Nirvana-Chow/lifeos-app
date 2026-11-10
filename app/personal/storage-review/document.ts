@@ -15,24 +15,25 @@ export const reviewDocument = `<!doctype html>
 </style>
 </head>
 <body>
-<header class="mast"><div class="wrap"><div><p class="eyebrow">资料去留清单</p><h1>存储审核</h1><p>按编号记录要保留、移入废纸篓或暂缓的资料。</p><p class="summary" id="summary" hidden></p></div><section class="progress-box" aria-label="审核进度"><strong id="progress-text">0 / 0</strong><span id="progress-caption">已记录决定</span><progress id="progress" value="0" max="1" aria-label="已记录决定的进度"></progress></section></div></header>
+<header class="mast"><div class="wrap"><div><p class="eyebrow">资料去留清单</p><h1>存储审核</h1><p>按编号记录要保留、列为删除候选或暂缓的资料。</p><p class="summary" id="summary" hidden></p></div><section class="progress-box" aria-label="审核进度"><strong id="progress-text">0 / 0</strong><span id="progress-caption">已记录决定</span><progress id="progress" value="0" max="1" aria-label="已记录决定的进度"></progress></section></div></header>
 <main class="wrap">
 <div class="controls" aria-label="清单工具">
 <div class="search"><label for="search">搜索资料</label><input id="search" type="search" placeholder="输入编号、名称或关键词" autocomplete="off"></div>
-<div class="filter"><label for="filter">筛选</label><select id="filter"><option value="all">全部资料</option><option value="pending">尚未决定</option><option value="keep">留</option><option value="trash">移废纸篓</option><option value="defer">待定</option><option value="processed">已处理／受保护</option></select></div>
+<div class="filter"><label for="filter">筛选</label><select id="filter"><option value="all">全部资料</option><option value="pending">尚未决定</option><option value="keep">留</option><option value="trash">删除候选</option><option value="defer">待定</option><option value="processed">已处理／受保护</option></select></div>
 <div class="actions"><button type="button" id="compact" aria-pressed="false">精简视图</button><button type="button" id="import">导入清单</button><button type="button" id="copy" disabled>复制编号</button><button type="button" class="primary" id="export" disabled>导出决定</button></div>
 <input type="file" id="file" accept=".csv,.json,text/csv,application/json" hidden>
 </div>
+<div class="meta"><span id="sync-state">本机预览</span><div class="actions"><a href="/login" id="sync-login" hidden>重新登录</a><button type="button" id="open-server">打开 LifeOS 清单</button><button type="button" id="save-server" disabled>保存清单到 LifeOS</button></div></div>
 <div class="meta"><span id="visible"></span><span id="counts"></span></div>
 <p class="note" id="notice" role="status" aria-live="polite"></p>
 <div id="list"></div>
-<footer><span id="revision"></span><br>选项只记录决定。请导出 JSON 留存审核结果。</footer>
+<footer><span id="revision"></span><br>审核选项只记录决定，不会删除文件。可导出 JSON 留存。</footer>
 </main>
 <dialog id="copy-dialog" aria-labelledby="copy-title"><h2 id="copy-title">复制审核决定</h2><label for="copy-text">选中并复制以下编号</label><textarea id="copy-text" readonly></textarea><button type="button" id="close-copy">关闭</button></dialog>
 <script type="application/json" id="review-data">{"schema":1,"revision":"empty","items":[]}</script>
 <script>
 'use strict';
-const DECISIONS = Object.freeze({keep:'留',trash:'移废纸篓',defer:'待定'});
+const DECISIONS = Object.freeze({keep:'留',trash:'删除候选',defer:'待定'});
 const KINDS = Object.freeze({file:'文件',folder:'文件夹',media:'媒体',app:'应用'});
 const STATUS = Object.freeze({pending:'待审',processed:'已处理',protected:'受保护'});
 const OWN = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
@@ -143,36 +144,176 @@ function icon(kind) {
   span.append(svg);
   return span;
 }
+const REVIEW_API = '/api/platform/personal/storage-review';
 let review, choices = new Map(), compact = false;
+let remote, synced = false, busy = false, uncertain = false, localSaved = true, sessionDenied = false;
 function announce(text) { byId('notice').textContent = text; }
-function useReview(next) {
+function useReview(next, snapshot, resetFilters=true) {
+  synced = Boolean(snapshot);
   review = next;
-  choices = new Map();
-  let raw = null;
-  try {
-    raw = localStorage.getItem(storageKey(review.revision));
-    choices = readChoices(raw,review);
-    announce(review.items.length ? '决定保存在当前浏览器。' : '导入审核清单 CSV 或 JSON 后即可开始。');
-  } catch {
-    if (raw !== null) {
-      try { localStorage.removeItem(storageKey(review.revision)); } catch {}
-      announce('原保存记录已损坏，已从空白决定开始。');
-    } else {
-      announce('当前浏览器无法保存决定，请及时导出。');
+  choices = snapshot ? new Map(snapshot.decisions.map(row=>[row.id,row.decision])) : new Map();
+  if (!snapshot) {
+    let raw = null;
+    localSaved = true;
+    try {
+      raw = localStorage.getItem(storageKey(review.revision));
+      choices = readChoices(raw,review);
+      announce(review.items.length ? '决定保存在当前浏览器。' : '导入审核清单 CSV 或 JSON 后即可开始。');
+    } catch {
+      localSaved = false;
+      if (raw !== null) {
+        try { localStorage.removeItem(storageKey(review.revision)); } catch {}
+        announce('原保存记录已损坏，已从空白决定开始。');
+      } else {
+        announce('当前浏览器无法保存决定，请及时导出。');
+      }
     }
   }
   byId('summary').textContent = review.context.summary;
   byId('summary').hidden = !review.context.summary;
   byId('revision').textContent = '清单版本 ' + review.revision;
-  byId('search').value = '';
-  byId('filter').value = 'all';
+  if (resetFilters) {
+    byId('search').value = '';
+    byId('filter').value = 'all';
+  }
   render();
+}
+function parseSnapshot(value) {
+  if (value === null) return null;
+  if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1 || !Array.isArray(value.decisions)) throw Error('LifeOS 返回的清单无效。');
+  const checklist = parseReview(value.checklist);
+  const decisions = readChoices(JSON.stringify({schema:1,revision:checklist.revision,choices:value.decisions}),checklist);
+  if (decisions.size !== value.decisions.length) throw Error('LifeOS 返回的决定无效。');
+  return {revision:value.revision,checklist,decisions:[...decisions].map(([id,decision])=>({id,decision}))};
+}
+async function requestReview(method='GET',body) {
+  const options = {method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)};
+  if (body) {
+    options.headers = {'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()};
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(REVIEW_API,options);
+  if (!response.ok) throw Object.assign(Error('LifeOS 请求未成功。'),{status:response.status});
+  const data = await response.json();
+  return parseSnapshot(data.review);
+}
+function canEdit() { return !busy && (!synced || !uncertain && !!remote); }
+function syncControls() {
+  byId('open-server').disabled = busy;
+  byId('save-server').disabled = busy || synced || uncertain || remote === undefined || !review.items.length;
+  byId('sync-login').hidden = !sessionDenied;
+  byId('import').disabled = busy;
+  byId('file').disabled = busy;
+  byId('sync-state').textContent = (synced ? 'LifeOS 已保存清单' : '本机预览') + (uncertain ? ' · 等待读回' : '');
+  for (const input of byId('list').querySelectorAll('.choices input,.choices button')) input.disabled = !canEdit();
+}
+const isSessionDenial = error => error?.status === 401 || error?.status === 403;
+function hideDeniedServerReview() {
+  remote = undefined;
+  uncertain = false;
+  sessionDenied = true;
+  if (synced) {
+    const dialog = byId('copy-dialog');
+    if (dialog.open) dialog.close();
+    byId('copy-text').value = '';
+    useReview(parseReview({schema:1,revision:'empty',items:[]}));
+  }
+  announce('请重新登录 LifeOS 后再查看服务器清单。仍可审核和导出本机清单。');
+}
+async function openServer(automatic=false) {
+  if (busy) return;
+  if (!automatic && !synced && choices.size && !confirm(localSaved ? '切换到 LifeOS 清单？本机决定仍保存在原清单版本。' : '本机决定尚未持久保存。可先取消并导出。仍切换到 LifeOS 清单吗？')) return;
+  busy = true;
+  syncControls();
+  try {
+    remote = await requestReview();
+    uncertain = false;
+    sessionDenied = false;
+    if (remote) {
+      useReview(remote.checklist,remote);
+      announce('已打开 LifeOS 清单和服务器决定。');
+    } else {
+      announce('LifeOS 暂无保存的清单。可导入并保存，也可仅在本机审核。');
+    }
+  } catch (error) {
+    if (isSessionDenial(error)) hideDeniedServerReview();
+    else announce('暂时无法读取 LifeOS。可导入本机清单，稍后再读回。');
+  } finally {
+    busy = false;
+    syncControls();
+  }
+}
+async function writeServer(method,body,match) {
+  busy = true;
+  syncControls();
+  announce('正在保存并读回 LifeOS…');
+  let failure;
+  try { await requestReview(method,body); }
+  catch (error) { failure = error; }
+  try {
+    const fresh = await requestReview();
+    remote = fresh;
+    uncertain = false;
+    sessionDenied = false;
+    const agrees = fresh && match(fresh);
+    if (fresh && (synced || agrees)) useReview(fresh.checklist,fresh,false);
+    if (agrees) {
+      announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : '决定已保存，并已读回 LifeOS。');
+    } else if (failure?.status === 409) {
+      announce('LifeOS 清单已变化，已读回最新状态。请核对后重试。');
+    } else {
+      announce('已读回 LifeOS，但未确认本次保存。请核对后重试。');
+    }
+  } catch (error) {
+    if (isSessionDenial(error) || isSessionDenial(failure)) hideDeniedServerReview();
+    else {
+      uncertain = true;
+      announce('尚未确认保存结果。请先打开 LifeOS 清单读回，再继续。');
+    }
+  } finally {
+    busy = false;
+    syncControls();
+  }
+}
+async function savePreview() {
+  if (busy || synced || uncertain || remote === undefined || !review.items.length) return;
+  const checklist = review;
+  const expectedRevision = remote?.revision ?? null;
+  if (choices.size && !confirm(localSaved ? '本机决定将继续保留在浏览器，保存清单时不会同步这些决定。可先取消并导出。继续保存清单吗？' : '本机决定尚未持久保存，保存清单时不会同步这些决定。可先取消并导出。仍继续保存清单吗？')) return;
+  if (remote && !confirm('保存到 LifeOS？若清单版本不同，将替换当前服务器清单及其决定。')) return;
+  if (checklist.items.length > 500 || new TextEncoder().encode(JSON.stringify({expectedRevision,checklist})).length > 131072) {
+    announce('清单超过 LifeOS 保存上限。仍可在本机审核和导出。');
+    return;
+  }
+  await writeServer('POST',{expectedRevision,checklist},snapshot=>JSON.stringify(snapshot.checklist)===JSON.stringify(checklist));
+}
+function focusDecision(id,decision) {
+  const row = [...byId('list').querySelectorAll('.row')].find(node=>node.dataset.id===id);
+  (row && [...row.querySelectorAll('.choices input')].find(input=>input.value===decision) || row?.querySelector('.choices input') || byId('filter')).focus();
+}
+async function choose(item,decision) {
+  if (!canEdit() || item.status !== 'pending' || (choices.get(item.id) ?? null) === decision) return;
+  if (synced) {
+    const expectedRevision = remote.revision;
+    const checklistRevision = review.revision;
+    await writeServer('PATCH',{expectedRevision,checklistRevision,id:item.id,decision},snapshot=>
+      snapshot.revision>expectedRevision && snapshot.checklist.revision===checklistRevision &&
+      (snapshot.decisions.find(row=>row.id===item.id)?.decision ?? null)===decision);
+  } else {
+    if (decision === null) choices.delete(item.id);
+    else choices.set(item.id,decision);
+    store();
+    render();
+  }
+  if (canEdit()) focusDecision(item.id,decision);
 }
 function store() {
   try {
     localStorage.setItem(storageKey(review.revision),JSON.stringify(serialize(review,choices)));
+    localSaved = true;
     announce('决定已保存。');
   } catch {
+    localSaved = false;
     announce('当前浏览器无法保存决定，请先导出。');
   }
 }
@@ -183,7 +324,7 @@ function metrics(shown) {
   byId('progress-text').textContent = choices.size + ' / ' + total;
   byId('progress').max = total || 1;
   byId('progress').value = choices.size;
-  byId('counts').textContent = '留 '+n.keep+' · 移废纸篓 '+n.trash+' · 待定 '+n.defer;
+  byId('counts').textContent = '留 '+n.keep+' · 删除候选 '+n.trash+' · 待定 '+n.defer;
   byId('visible').textContent = '显示 '+shown+' / '+review.items.length+' 项';
   byId('copy').disabled = byId('export').disabled = !choices.size;
 }
@@ -196,6 +337,7 @@ function render() {
   metrics(shown.length);
   if (!shown.length) {
     parent.append(make('p','empty',review.items.length ? '没有符合条件的资料。试试修改关键词或筛选。' : '清单为空。请选择「导入清单」。'));
+    syncControls();
     return;
   }
   const groups = new Map();
@@ -213,6 +355,7 @@ function render() {
     for (const item of items) {
       const row = make('article','row');
       const decision = choices.get(item.id);
+      row.dataset.id = item.id;
       row.dataset.status = item.status;
       if (decision) row.dataset.decision = decision;
       row.append(icon(item.kind));
@@ -243,18 +386,15 @@ function render() {
           buttons.append(wrapper);
           radio.addEventListener('change',()=>{
             if (!radio.checked) return;
-            choices.set(item.id,value);
-            store();
-            // Keep the focused radio in place even when a decision changes a filter.
-            if (!matches(item,query,filter,choices)) {
-              render();
-              byId('filter').focus();
-            } else {
-              row.dataset.decision = value;
-              head.lastElementChild.textContent = KINDS[item.kind]+' · '+label;
-              metrics(shown.length);
-            }
+            for (const input of buttons.querySelectorAll('input')) input.checked = input.value === choices.get(item.id);
+            void choose(item,value);
           });
+        }
+        if (decision) {
+          const clear = make('button','','撤销决定');
+          clear.type = 'button';
+          clear.addEventListener('click',()=>void choose(item,null));
+          buttons.append(clear);
         }
         row.append(buttons);
       }
@@ -263,6 +403,7 @@ function render() {
     }
     parent.append(section);
   }
+  syncControls();
 }
 byId('search').addEventListener('input',render);
 byId('filter').addEventListener('change',render);
@@ -273,13 +414,17 @@ byId('compact').addEventListener('click',()=>{
   render();
 });
 byId('import').addEventListener('click',()=>byId('file').click());
+byId('open-server').addEventListener('click',()=>void openServer());
+byId('save-server').addEventListener('click',()=>void savePreview());
 byId('file').addEventListener('change',async()=>{
   const file = byId('file').files[0];
   byId('file').value = '';
-  if (!file) return;
+  if (!file || busy) return;
+  if (!synced && choices.size && !localSaved && !confirm('本机决定尚未持久保存。可先取消并导出。仍打开另一份清单吗？')) return;
   try {
     if (file.size > MAX_IMPORT_BYTES) throw Error('清单超过 2 MiB。');
     const text = new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer());
+    if (busy) return;
     useReview(/\\.csv$/i.test(file.name) ? parseCsvReview(text) : parseReview(JSON.parse(text)));
   }
   catch(error) { announce(error instanceof SyntaxError ? '无法读取 JSON，请检查文件格式。' : error.message); }
@@ -315,6 +460,7 @@ try {
   useReview(parseReview({schema:1,revision:'empty',items:[]}));
   announce(error.message);
 }
+void openServer(true);
 </script>
 </body>
 </html>

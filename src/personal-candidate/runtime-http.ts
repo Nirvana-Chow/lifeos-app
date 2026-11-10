@@ -4,6 +4,8 @@ import {PersonalCalendarService} from '../calendar-candidate/personal-service.ts
 import {handlePersonalCalendar} from '../calendar-candidate/personal-http.ts';
 import {handleRequirementsRequest} from '../requirements-candidate/http.ts';
 import {handleRequirementSupportRequest} from '../requirement-support-candidate/http.ts';
+import {handleStorageReviewRequest} from '../storage-review/http.ts';
+import {StorageReviewService} from '../storage-review/service.ts';
 import {readReleaseArtifact,type ReleaseArtifact} from '../release-notes-candidate/runtime.ts';
 import type {AuthorityService} from '../agent-authority/service.ts';
 import type {ClassificationService} from './classification-service.ts';
@@ -37,6 +39,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
+ const storageReview=options.storageVerified?new StorageReviewService(options.repository,options.config):undefined;
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
@@ -76,6 +79,8 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    if(url.pathname==='/api/platform/personal/finance'||url.pathname.startsWith('/api/platform/personal/finance/')){let writable=false;try{await options.assertWritable();writable=true;}catch{}const finance=options.config.financeEnabled&&options.storageVerified?new PersonalFinanceService(options.repository,{ownerId:options.config.ownerId,spaceId:options.config.spaceId,enabled:true,writable}):undefined;return (await handlePersonalFinance(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:finance,assertOwner,guard:options.assertWritable}))!;}
    const supportResponse=await handleRequirementSupportRequest(request,options.config.ownerId,service.requirementSupport,{assertOwner,assertWritable:options.assertWritable},artifact);
    if(supportResponse)return supportResponse;
+   const storageReviewResponse=await handleStorageReviewRequest(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:storageReview,assertOwner,assertWritable:options.assertWritable});
+   if(storageReviewResponse)return storageReviewResponse;
    const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable});
    if(requirementResponse)return requirementResponse;
    if(/^\/api\/platform\/personal\/(media|career|portfolio)(?:\/|$)/.test(url.pathname)&&!options.storageVerified)throw new PlatformError(503,'PERSONAL_STORAGE_UNAVAILABLE','本人记录存储尚未核验。');

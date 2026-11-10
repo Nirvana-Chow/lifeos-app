@@ -6,6 +6,7 @@ import {parseTimelineQuery} from '../timeline-candidate/domain.ts';
 import {projectWindowTimelineEvent} from '../timeline-candidate/service.ts';
 import type {PlatformRepository,PublicEntry} from './contracts.ts';
 import type {RecordWindowResponse,WindowRow,WindowMode} from './window-contracts.ts';
+import {isStorageReviewEntry} from '../storage-review/service.ts';
 const unavailable=():never=>{throw new PlatformError(503,'WINDOW_STORAGE_UNAVAILABLE','存储未提供可核对的有界分页；没有退回全量读取。');};
 export class RecordWindowService{
  private repository:PlatformRepository;private now:()=>Date;
@@ -25,7 +26,7 @@ export class RecordWindowService{
    // The lookahead row is checked too. This scope cannot attest unscanned data.
    assertReadableEntries([e]);
   }
-  const scanned=rows.slice(0,limit);for(const row of scanned){const {ownerId,...publicRow}=row.entry;void ownerId;const entry=publicRow as PublicEntry;
+  const scanned=rows.slice(0,limit);for(const row of scanned){if(isStorageReviewEntry(row.entry))continue;const {ownerId,...publicRow}=row.entry;void ownerId;const entry=publicRow as PublicEntry;
    const projected=mode==='search'?projectWindowSearchHit({kind:entry.kind,entry},query as ReturnType<typeof parseSearchQuery>):projectWindowTimelineEvent({kind:entry.kind,entry},row.currentRevision,query as ReturnType<typeof parseTimelineQuery>);
    if(projected)result.items.push(projected);
   }

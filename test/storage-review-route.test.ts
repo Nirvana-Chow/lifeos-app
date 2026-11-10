@@ -13,7 +13,7 @@ test('storage review fails closed on anonymous requests and auth errors', async 
   }
 });
 
-test('owner receives an empty local-only review document with exact CSP hashes', async () => {
+test('owner receives the review document with exact CSP hashes and same-origin data access', async () => {
   const result = await storageReviewResponse(async () => ({id:'synthetic-owner'}));
   assert.equal(result.status, 200);
   assert.equal(result.headers.get('content-type'), 'text/html; charset=utf-8');
@@ -24,7 +24,7 @@ test('owner receives an empty local-only review document with exact CSP hashes',
   assert.match(document, /id="review-data">\{"schema":1,"revision":"empty","items":\[\]\}/);
   assert.match(document, /accept="\.csv,\.json,text\/csv,application\/json"/);
   const csp = result.headers.get('content-security-policy') ?? '';
-  assert.match(csp, /connect-src 'none'/);
+  assert.match(csp, /connect-src 'self'/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.doesNotMatch(csp, /'unsafe-inline'|https?:/);
   for (const tag of ['script','style']) {

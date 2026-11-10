@@ -135,7 +135,8 @@ The owner approved implementation and ordinary main deployment on 2026-11-09. Co
 
 ## Owner storage review ([Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41))
 
-Continue the existing private workspace and tasks 3.1/3.2. Use the existing authenticated owner boundary at `/personal/storage-review`. The owner opens a versioned checklist locally and exports decisions by stable item identifier. Each checklist revision identifies a single snapshot, including when the same snapshot is offered as both CSV and JSON. Source fixtures are synthetic. Choices are browser-local review data.
+Continue the existing private workspace and tasks 3.1/3.2. Use the existing authenticated owner boundary at `/personal/storage-review`. Each checklist revision identifies one snapshot, including when the same snapshot is offered as CSV and JSON. An imported checklist is previewed locally. Explicit saves and decisions are revision-checked in the owner space. Source fixtures are synthetic. See the [persistence plan](../../../docs/superpowers/plans/2026-11-10-owner-storage-review-persistence.md).
 
 - [x] Verify owner and anonymous responses, cache policy, and the browser import, selection and export flow with synthetic data.
+- [ ] Verify private durable saves, protected rows, stale writes and separate-session readback through the authenticated site. Review any machine read capability against scope and discovery.
 - [ ] Complete fixed-source qualification and the native publication gate. Read back the deployed route and running source. Record owner experience acceptance separately.
