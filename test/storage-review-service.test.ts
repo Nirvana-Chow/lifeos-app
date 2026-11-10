@@ -130,7 +130,8 @@ test('refuses a decision write that would make the durable snapshot exceed its v
  const state={revision:currentDecisionCount+1,checklist:sourceChecklist,decisions};
  await f.service.saveChecklist(owner,{expectedRevision:null,checklist:sourceChecklist},'storage-review-large-create-001');
  const entry=[...f.memory.rows.values()][0]!;
- const patched={...entry,revision:state.revision,draft:{...entry.draft,storageReview:state}} as typeof entry;
+ const draft={...entry.draft,storageReview:state};
+ const patched:typeof entry={...entry,revision:state.revision,draft};
  f.memory.rows.set(entry.id,patched);f.memory.historyRows.push(patched);
  assert.equal((await f.service.get(owner))?.revision,state.revision);
  const previousHistory=f.memory.historyRows.length,previousReceipts=f.memory.receipts.size;
