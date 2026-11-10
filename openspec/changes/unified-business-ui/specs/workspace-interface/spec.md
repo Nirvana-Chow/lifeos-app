@@ -233,3 +233,17 @@ The health workspace SHALL display training volume and direct muscle coverage fr
 - **WHEN** a source date is missing or marked partial, a completed set has no safe external load, or an exercise has no muscle mapping
 - **THEN** the interface exposes the relevant gap and never imputes a zero, a unit, or a muscle attribution
 - **AND** it only reports zero completed work for a verified complete period with no matching work
+
+### Requirement: Owner storage review workspace
+The personal workspace SHALL serve the storage review interface only to the existing authenticated owner. The interface SHALL open a selected versioned CSV or JSON checklist in the browser and preserve the checklist's item identifiers.
+
+#### Scenario: Review a selected checklist
+- **WHEN** the owner opens a valid checklist and chooses keep, trash review, or defer for an editable item
+- **THEN** the current browser records the decision for that checklist revision and exports it in a versioned JSON file with the item identifier
+- **AND** processed and protected items remain read-only
+- **AND** imported records stay in the browser and each exported choice is a review decision
+
+#### Scenario: Protect access
+- **WHEN** the route receives a request without a verified owner principal
+- **THEN** it redirects to sign-in without sending the review interface
+- **AND** the route responses use private no-store caching

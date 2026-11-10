@@ -122,3 +122,10 @@ The owner approved implementation and ordinary main deployment on 2026-11-09. Co
 - [x] Project verified completed groups and explicit date coverage from the full source export, preserving unknown and partial data.
 - [x] Display day, week, month, quarter and year volume and direct muscle coverage, with per-muscle filtering and period drilldown.
 - [ ] Verify mapping gaps, incomplete periods, units, mobile interactions, fixed-SHA CI and production revision independently.
+
+## Owner storage review ([Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41))
+
+Continue the existing private workspace and tasks 3.1/3.2. Use the existing authenticated owner boundary at `/personal/storage-review`. The owner opens a versioned checklist locally and exports decisions by stable item identifier. Each checklist revision identifies a single snapshot, including when the same snapshot is offered as both CSV and JSON. Source fixtures are synthetic. Choices are browser-local review data.
+
+- [x] Verify owner and anonymous responses, cache policy, and the browser import, selection and export flow with synthetic data.
+- [ ] Complete fixed-source qualification and the native publication gate. Read back the deployed route and running source. Record owner experience acceptance separately.
