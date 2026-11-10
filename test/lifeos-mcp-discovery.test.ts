@@ -40,7 +40,7 @@ async function fixture({readOnly=false,legacy=false,disabledTypes=[] as string[]
  const transaction=repository.transaction.bind(repository);repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>true}));
  const operations=agentOperations.filter(op=>op.module!=='catalog'&&(!readOnly||op.method==='GET'));
  const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:legacy?['todo:read','todo:write'] as const:[...new Set(operations.flatMap(op=>op.requiredScopes))],...(!legacy?{businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:operations.map(op=>op.id)}:{})};
- const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,...(!disabledTypes.includes('media')?{mediaEnabled:true}:{}),...(!disabledTypes.includes('career')?{careerEnabled:true}:{}),...(!disabledTypes.includes('portfolio')?{portfolioEnabled:true}:{}),baseURL:origin},verify:async()=>revoked?null:grant,readCurrentGrant:async()=>revoked?null:grant,operationAvailable:()=>true,assertWritable:async()=>{}});
+ const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,...(!disabledTypes.includes('media')?{mediaEnabled:true}:{}),...(!disabledTypes.includes('career')?{careerEnabled:true}:{}),...(!disabledTypes.includes('portfolio')?{portfolioEnabled:true}:{}),...(!disabledTypes.includes('cooking')?{cookingEnabled:true}:{}),baseURL:origin},verify:async()=>revoked?null:grant,readCurrentGrant:async()=>revoked?null:grant,operationAvailable:()=>true,assertWritable:async()=>{}});
  const requests:string[]=[];
  const writes:{path:string;body:string;key:string|null}[]=[];
  const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-injected-key'},async(input,init)=>{const request=new Request(input,init);requests.push(request.method+' '+new URL(request.url).pathname);request.headers.set('host',new URL(request.url).host);if(request.method!=='GET')writes.push({path:new URL(request.url).pathname,body:await request.clone().text(),key:request.headers.get('idempotency-key')});const response=await handler(request);if(loseWrite&&request.method!=='GET'){loseWrite=false;throw Error('Synthetic lost response after commit');}return response;});
@@ -56,7 +56,7 @@ test('discovery schemas construct native full POST/PATCH bodies and independent 
  const f=await fixture();try{
   const tools=await f.client.listTools(),callSchema=tools.tools.find(t=>t.name==='lifeos_call')!.inputSchema as Schema;
   assert.ok(callSchema.oneOf,'tools/list must pair each operation ID with its arguments');
-  for(const suffix of ['Finance','Journal','Calendar','Health','Person','Organization','Requirement','Todo','Media','Career','Portfolio']){
+  for(const suffix of ['Finance','Journal','Calendar','Health','Person','Organization','Requirement','Todo','Media','Career','Portfolio','Cooking']){
    const create=f.descriptors.find(op=>op.id==='create'+suffix)!;
    const args=fromSchema(create.inputSchema);args.idempotencyKey='synthetic-create-'+suffix;
    assertMatches(create.inputSchema,args);assertMatches(callSchema,{operationId:create.id,arguments:args});
@@ -211,17 +211,17 @@ test('new module source pins use current owner records and reject stale or wrong
  }finally{await f.close();}
 });
 
-test('full current catalog pairs all 50 reviewed operations and rejects altered new-operation scopes',async()=>{
+test('full current catalog pairs all reviewed operations and rejects altered new-operation scopes',async()=>{
  const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:agentOperations}));
  const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-full-catalog',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  try{
   const discovery=await client.callTool({name:'lifeos_discover',arguments:{}}),descriptors=(discovery.structuredContent as {operations:Descriptor[]}).operations;
-  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,50);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
-  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,50);
+  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,want.length);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
+  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,want.length);
   for(const descriptor of descriptors){const branch=call.oneOf.find((s:Schema)=>s.properties.operationId.const===descriptor.id);assert.deepEqual(branch.properties.arguments,descriptor.inputSchema);}
   assertMatches(call,{operationId:'createMedia',arguments:fromSchema(descriptors.find(op=>op.id==='createMedia')!.inputSchema)});
  }finally{await client.close();await server.close();}
- for(const suffix of ['Media','Career','Portfolio']){
+ for(const suffix of ['Media','Career','Portfolio','Cooking']){
   const operation=agentOperations.find(op=>op.id==='create'+suffix)!;
   for(const altered of [{...operation,requiredScopes:['todo:read','todo:write']},{...operation,path:'/v1/records/unreviewed'},{...operation,requiredScopes:[suffix.toLowerCase()+':write']}, {...operation,id:'createUnreviewed'}]){
    const client=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:[altered]}));

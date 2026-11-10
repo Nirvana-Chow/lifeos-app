@@ -17,6 +17,7 @@ export function personalRecordModuleEnabled(module:string,config:PersonalConfig,
   case 'media':return config.mediaEnabled===true;
   case 'career':return config.careerEnabled===true;
   case 'portfolio':return config.portfolioEnabled===true;
+  case 'cooking':return config.cookingEnabled===true;
   case 'feedback':return config.requirementSupportEnabled===true&&config.requirementsEnabled===true;
   default:return false;
  }

@@ -73,7 +73,7 @@ export function createAgentHandler(options: Options) {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
-    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
+    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
     const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];

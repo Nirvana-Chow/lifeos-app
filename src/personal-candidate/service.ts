@@ -1,3 +1,5 @@
+import {getRecipe} from '../cooking/catalog.ts';
+import type {CookingRecipePin} from '../cooking/log-domain.ts';
 import {RequirementsService} from '../requirements-candidate/service.ts';
 import {RequirementSupportService} from '../requirement-support-candidate/service.ts';
 import {lockPersonalRecords} from './personal-record-locks.ts';
@@ -18,6 +20,35 @@ const fail=(status:number,code:string,message:string):never=>{throw new Platform
 const missing=():never=>fail(404,'NOT_FOUND','没有可访问的本人记录。');
 const canonical=(value:unknown):string=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'?'{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b,'en')).map(([key,item])=>JSON.stringify(key)+':'+canonical(item)).join(',')+'}':JSON.stringify(value);
 const publicEntry=(entry:StoredEntry):PublicEntry=>{const{ownerId,...result}=structuredClone(entry);void ownerId;return result;};
+function cookingRecipe(fields:PersonalFields|PublicEntry['draft']):CookingRecipePin|null {
+ const personal='personal' in fields?fields.personal:undefined;
+ return personal&&'type' in personal&&personal.type==='cooking'?personal.recipe:null;
+}
+
+// IDs are hashes of the decoded upstream recipe path, independent of the catalog revision.
+function storedCookingPin(pin:CookingRecipePin|null):boolean {
+ if(!pin)return true;
+ try {
+  const pathStart=pin.sourceUrl.indexOf('/dishes/');
+  if(pathStart<0)return false;
+  const parts=pin.sourceUrl.slice(pathStart+1).split('/').map(decodeURIComponent);
+  if(parts.some(part=>!part||part==='.'||part==='..'||/[\\/\u0000-\u001f\u007f]/u.test(part)))return false;
+  return createHash('sha256').update(parts.join('/')).digest('hex').slice(0,16)===pin.id;
+ } catch {
+  return false;
+ }
+}
+
+function checkNewCookingPin(fields:PublicEntry['draft'], previous?:PublicEntry['draft']):void {
+ const pin=cookingRecipe(fields);
+ if(!pin)return;
+ const old=previous?cookingRecipe(previous):null;
+ if(old?.id===pin.id&&old.sourceUrl===pin.sourceUrl)return;
+ if(getRecipe(pin.id)?.sourceUrl!==pin.sourceUrl) {
+  fail(400,'INVALID_COOKING_RECIPE','请选择当前菜谱库中的固定菜谱来源。');
+ }
+}
+
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):PersonalType|null{
  const source=entry.source,original=source?.original;
@@ -26,7 +57,7 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);validatePersonalBody(type,null,original.input,spaceId);validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;}return type;}catch{return null;}
+ try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
  const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);
@@ -37,13 +68,13 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
  constructor(repository:PlatformRepository,config:PersonalConfig,options:{currentSourceSha?:()=>string|null}={}){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);this.requirementSupport=new RequirementSupportService(repository,this.config,this.requirements,options);}
- private allows(type:PersonalType){return type==='media'?this.config.mediaEnabled===true:type==='career'?this.config.careerEnabled===true:type==='portfolio'?this.config.portfolioEnabled===true:type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
+ private allows(type:PersonalType){return type==='cooking'?this.config.cookingEnabled===true:type==='media'?this.config.mediaEnabled===true:type==='career'?this.config.careerEnabled===true:type==='portfolio'?this.config.portfolioEnabled===true:type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
  private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
  private matches(entry:StoredEntry|null,owner:string,type?:PersonalType|'person',id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.allows(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
  async get(owner:string,type:PersonalType,id:string):Promise<PublicEntry>{this.owner(owner);this.enabled(type);id=validateId(id);const entry=await this.repository.get(owner,type==='todo'?'todo':'inbox',id);if(!this.matches(entry,owner,type,id))return missing();return publicEntry(entry);}
  private async page(owner:string,mode:'current'|'history',limit:number,type?:PersonalType,id?:string):Promise<PersonalPage>{
-  this.owner(owner);if(type&&['media','career','portfolio'].includes(type))this.enabled(type);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
+  this.owner(owner);if(type&&['media','career','portfolio','cooking'].includes(type))this.enabled(type);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   if(!this.repository.readWindow)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','未配置有界读取，已停止。');
   const rows=await this.repository.readWindow(owner,mode,{anchor:null,after:null},limit+1);
   if(!Array.isArray(rows)||rows.length>limit+1)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','有界存储响应无效。');
@@ -55,7 +86,7 @@ export class PersonalService{
  }
  async list(owner:string,type?:PersonalType,limit=50){return this.page(owner,'current',limit,type);}
  async history(owner:string,type:PersonalType,id:string,limit=50){
-  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person','media','career','portfolio'].includes(type))return this.page(owner,'history',limit,type,id);
+  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person','media','career','portfolio','cooking'].includes(type))return this.page(owner,'history',limit,type,id);
   if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   const rows=await this.repository.history(owner,'inbox',id);
   if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,'CALENDAR_HISTORY_UNAVAILABLE','日程历史读取无效。');
@@ -77,8 +108,8 @@ export class PersonalService{
    const now=new Date().toISOString(),draft=type==='todo'?body.fields as TodoDraft:{...body.fields,disposition:'reference'} as InboxDraft;let entry:StoredEntry;
    const references=personalReferences(draft);
    const records=await lockPersonalRecords(tx,[...(id?[{kind,id} as const]:[]),...references.map(({link})=>({kind:'inbox' as const,id:link.id}))]);
-   if(id){const old=records.get(JSON.stringify([kind,id]))??null;if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');entry={...old,draft:preserveOmittedPlanning(type,(raw as {fields:unknown}).fields,old.draft,draft),revision:old.revision+1,updatedAt:now};}
-   else{const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
+   if(id){const old=records.get(JSON.stringify([kind,id]))??null;if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');if(type==='cooking')checkNewCookingPin(draft,old.draft);entry={...old,draft:preserveOmittedPlanning(type,(raw as {fields:unknown}).fields,old.draft,draft),revision:old.revision+1,updatedAt:now};}
+   else{if(type==='cooking')checkNewCookingPin(draft);const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
    for(const reference of references){
     const {type:targetType,link}=reference,target=records.get(JSON.stringify(['inbox',link.id]))??null;
     if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');

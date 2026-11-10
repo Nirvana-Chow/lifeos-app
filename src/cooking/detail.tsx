@@ -1,6 +1,7 @@
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { Recipe } from './catalog';
+import { CookingRecordAction } from './log-action';
 import styles from './workspace.module.css';
 
 const sectionNames = {
@@ -50,6 +51,7 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
           ))}
         </nav>
         <div className={styles.footer}>
+          <CookingRecordAction recipeId={recipe.id} />
           <span>来源：HowToCook 1.6.0</span>
           <a href={recipe.sourceUrl} target="_blank" rel="noreferrer">
             查看原菜谱<ExternalLink aria-hidden="true" size={14} />
