@@ -8,6 +8,8 @@ import {MemoryPort} from './helpers/platform.ts';
 import {MemoryRequirementEvents} from './helpers/requirement-events-memory.ts';
 import {RequirementEventService} from '../src/requirement-events/service.ts';
 import {requirements} from '../src/platform/requirements.ts';
+import {Client,InMemoryTransport} from '@modelcontextprotocol/client';
+import {createAssignedWorkerMcpServer} from '../src/worker-host-candidate/mcp.ts';
 
 async function fixture(){
  const origin='https://lifeos.nirvanachow.com',owner='synthetic-worker-owner',space='synthetic-worker-space';
@@ -22,7 +24,7 @@ async function fixture(){
  const fields={title:'Accepted synthetic ticket',body:'Accepted body must not change',phaseId:requirements().roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,workflow:{state:'planned',purpose:'Accepted purpose',nextStep:'Implement'}} as const;
  const created=await client.execute('createRequirement',{fields,idempotencyKey:'synthetic-worker-create'});assert.equal(created.ok,true);const entry=(created.data as any).entry;
  events.rows.set(entry.id,{requirementId:entry.id,sourceId:entry.sourceId,revision:1,workDigest:'a'.repeat(64),state:'ready',attempts:0,fence:0,lease:null});
- const assignment={jobId:randomUUID(),requirementId:entry.id,sourceId:entry.sourceId,workDigest:'a'.repeat(64),holderId:'synthetic-worker-mac',claimKey:'synthetic-worker-claim'};
+ const assignment={jobId:randomUUID(),requirementId:entry.id,sourceId:entry.sourceId,workDigest:'a'.repeat(64),holderId:'synthetic-worker-mac',claimKey:'synthetic-worker-claim',fence:1};
  let pending:any=null;const journal={read:async()=>pending,remember:async(value:any)=>{pending=structuredClone(value);},clear:async()=>{pending=null;}};
  const channel=createWorkerChannel({assignment,client,journal,attest:async()=>{if(!attested)throw Error('PEER_REJECTED');}});trace.length=0;
  return{assignment,channel,client,entry,fields,events,trace,repo,journal,revoke:()=>{revoked=true;},denyPeer:()=>{attested=false;},loseNextProgress:()=>{lose=true;}};
@@ -58,4 +60,19 @@ test('unknown progress blocks new worker commands and settles only the original 
  const unknown=await f.channel.handle({command:'progress',expectedRevision:1,workflow:{state:'in_progress',purpose:'',nextStep:'Only original command'},idempotencyKey:'synthetic-unknown-worker'});assert.equal(unknown.outcome,'unknown');assert.ok((await f.journal.read())?.requestId);
  f.trace.length=0;await assert.rejects(f.channel.handle({command:'renew',idempotencyKey:'synthetic-new-command'}));assert.equal(f.trace.length,0);
  const recovered=await f.channel.settlePending();assert.equal(recovered.verification?.verified,true,JSON.stringify(recovered));assert.equal(f.repo.historyRows.length,2);assert.equal(await f.journal.read(),null);
+});
+test('official SDK exposes exactly four assigned tools and no owner operation or operator recovery',async()=>{
+ const f=await fixture(),server=createAssignedWorkerMcpServer(f.channel),client=new Client({name:'synthetic-worker',version:'1'});
+ const [a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
+ try{
+  const {tools}=await client.listTools();assert.deepEqual(tools.map(t=>t.name),['read_assigned','claim_assigned','renew_assigned','progress_assigned']);
+  const read=await client.callTool({name:'read_assigned',arguments:{}});assert.equal(read.isError,false);assert.equal((read.structuredContent as any).data.entry.id,f.entry.id);
+  const claimed=await client.callTool({name:'claim_assigned',arguments:{}});assert.equal((claimed.structuredContent as any).verification.verified,true);
+  const renewed=await client.callTool({name:'renew_assigned',arguments:{idempotencyKey:'synthetic-mcp-renew'}});assert.equal(renewed.isError,false);
+  const progress=await client.callTool({name:'progress_assigned',arguments:{expectedRevision:1,workflow:{state:'in_progress',purpose:'Assigned only',nextStep:'Readback'},idempotencyKey:'synthetic-mcp-progress'}});assert.equal((progress.structuredContent as any).verification.verified,true);
+  f.trace.length=0;
+  for(const call of [{name:'lifeos_call',arguments:{operationId:'updateRequirement'}},{name:'lifeos_retry',arguments:{requestId:randomUUID()}},{name:'read_assigned',arguments:{id:randomUUID()}},{name:'progress_assigned',arguments:{expectedRevision:2,workflow:{state:'done',purpose:'',nextStep:''},priority:'P0',idempotencyKey:'synthetic-mcp-extra'}}])assert.equal((await client.callTool(call)).isError,true);
+  assert.equal(f.trace.length,0);
+  f.denyPeer();assert.equal((await client.callTool({name:'read_assigned',arguments:{}})).isError,true);assert.equal(f.trace.length,0);
+ }finally{await client.close();await server.close();}
 });

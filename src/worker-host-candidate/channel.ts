@@ -5,8 +5,9 @@ import type {ExecutionLease} from '../requirement-events/contracts.ts';
 import {validateRequirementFields} from '../requirements-candidate/domain.ts';
 
 const uuid=z.string().uuid(),digest=z.string().regex(/^[a-f0-9]{64}$/),key=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,95}$/);
-const assignmentSchema=z.strictObject({jobId:uuid,requirementId:z.union([uuid,z.string().regex(/^LO-[A-Z]+-\d{3}$/)]),sourceId:uuid,workDigest:digest,holderId:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/),claimKey:key});
+const assignmentSchema=z.strictObject({jobId:uuid,requirementId:z.union([uuid,z.string().regex(/^LO-[A-Z]+-\d{3}$/)]),sourceId:uuid,workDigest:digest,holderId:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/),claimKey:key,fence:z.number().int().positive().max(Number.MAX_SAFE_INTEGER)});
 const workflow=z.strictObject({state:z.enum(['in_progress','blocked','awaiting_review','done']),purpose:z.string().max(4096),nextStep:z.string().max(4096)});
+export const workerToolInputSchemas={read_assigned:z.strictObject({}),claim_assigned:z.strictObject({}),renew_assigned:z.strictObject({idempotencyKey:key}),progress_assigned:z.strictObject({expectedRevision:z.number().int().positive().max(2147483647),workflow,idempotencyKey:key})} as const;
 const commandSchema=z.discriminatedUnion('command',[
  z.strictObject({command:z.literal('read')}),z.strictObject({command:z.literal('claim')}),
  z.strictObject({command:z.literal('renew'),idempotencyKey:key}),
@@ -36,7 +37,7 @@ export function createWorkerChannel(options:Options){
  };
  const live=(execution:Record<string,any>)=>{
   const current=executionLeaseSchema.parse(execution.lease);
-  if(!lease||execution.state!=='running'||execution.leaseActive!==true||current.id!==lease.id||current.fence!==lease.fence||execution.fence!==lease.fence||current.grantId!==lease.grantId||current.requirementId!==assignment.requirementId||current.sourceId!==assignment.sourceId||current.workDigest!==assignment.workDigest||current.holderId!==assignment.holderId)reject('WORKER_LEASE_LOST');
+  if(!lease||execution.state!=='running'||execution.leaseActive!==true||current.id!==lease.id||current.fence!==assignment.fence||current.fence!==lease.fence||execution.fence!==lease.fence||current.grantId!==lease.grantId||current.requirementId!==assignment.requirementId||current.sourceId!==assignment.sourceId||current.workDigest!==assignment.workDigest||current.holderId!==assignment.holderId)reject('WORKER_LEASE_LOST');
   return current;
  };
  const remember=async(operationId:string,result:OperationResult)=>{
@@ -59,7 +60,7 @@ export function createWorkerChannel(options:Options){
     const current=await read();
     if(command.command==='claim'){
      const result=await remember('claimRequirementExecution',await options.client.execute('claimRequirementExecution',{requirementId:assignment.requirementId,workDigest:assignment.workDigest,holderId:assignment.holderId,idempotencyKey:assignment.claimKey}));
-     if(result.ok&&result.verification?.verified===true){const value=executionLeaseSchema.parse(result.data?.lease);if(value.requirementId!==assignment.requirementId||value.sourceId!==assignment.sourceId||value.workDigest!==assignment.workDigest||value.holderId!==assignment.holderId)reject('WORKER_LEASE_LOST');lease=value;}
+     if(result.ok&&result.verification?.verified===true){const value=executionLeaseSchema.parse(result.data?.lease);if(value.requirementId!==assignment.requirementId||value.sourceId!==assignment.sourceId||value.workDigest!==assignment.workDigest||value.holderId!==assignment.holderId||value.fence!==assignment.fence)reject('WORKER_LEASE_LOST');lease=value;}
      return result;
     }
     const active=live(current.execution);

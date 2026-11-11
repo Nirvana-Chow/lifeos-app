@@ -14,7 +14,7 @@
 
 - Only new worker-host named files. Do not edit API/registry/Skill/workflows/mac-dispatcher. Broker5b3a remains frozen, unmodified and unused by tests. No auth.json/Keychain/owner/production/model/launchctl access; slots default0.
 - The channel consumes an injected, separately adopted `WorkerBusinessClient` with existing execute/retry semantics. Missing57-op client/slot/native attestation closes; root owns their later shared seam. No generic owner writer is delegated.
-- Immutable assignment pins jobId/requirementId/sourceId/workDigest/holder and original claim key. Current GET execution metadata and server/current grant remain authority. Caller cannot supply target IDs, lease identity, URL, body, priority, dates, baseline or arbitrary operation.
+- Immutable assignment pins jobId/requirementId/sourceId/workDigest/holder/fence and original claim key. Current GET execution metadata and server/current grant remain authority. Caller cannot supply target IDs, lease identity, URL, body, priority, dates, baseline or arbitrary operation.
 - Progress accepts only workflow `{state,purpose,nextStep}`; states are in_progress/blocked/awaiting_review/done. Native host reads full current record, verifies source/digest/current lease/revision and supplies unchanged fields plus that workflow to the same original writer. Unknown results retain the existing client's recovery ID and block new worker commands; a separate operator recovery uses the original client, never a new body/key.
 - JSON/MCP transport never grants new scopes. The per-job stdio server lists only the four assigned tools. Future exec config uses per-invocation MCP settings, not global configuration. Provider destination/auth/telemetry still needs qualification before any real CLI invocation.
 - The native host launches a trusted wrapper in a fresh process group. The wrapper waits for anonymous FD release. Ledger PID-start/pgid/path/hash/argv/job is durable before release; EOF before release exits without executing the target. Supervisor control-pipe EOF requests owned cancellation. No file flag is a launch permit.
@@ -43,18 +43,18 @@
 - [x] Run worker-host channel tests and typecheck; commit the independently reviewable contract.
 
 ## Task2 — Native ownership ledger and start/control handshake
-- [ ] Write failing native tests for job/schema/code validation, atomic private ledger, exact PID-start/pgid/path/argv observations and zero signals on mismatches.
-- [ ] Implement bounded native file/process helpers; private O_NOFOLLOW regular/nlink/uid/mode checks and atomic fsync. Anonymous start release follows durable identity, not a file flag.
-- [ ] Compile/run only injected/native synthetic test programs; no production executable/real Codex is invoked.
+- [x] Write failing native tests for job/schema/code validation, atomic private ledger, exact PID-start/pgid/path/argv observations and zero signals on mismatches.
+- [x] Implement bounded native file/process helpers; private O_NOFOLLOW regular/nlink/uid/mode checks and atomic fsync. Anonymous start release follows durable identity, not a file flag.
+- [x] Compile/run only injected/native synthetic test programs; no production executable/real Codex is invoked.
 
 ## Task3 — Actual owned-child cancellation and recovery
-- [ ] Observe RED with real synthetic parent/sleep child, pre-ledger hard crash, control EOF, early leader exit and orphan recovery cases.
-- [ ] Implement cancellation through the live owned pipe/parent group. Keep an unreaped leader until cleanup. Recovery quarantines instead of reattaching/signalling/restarting unknown jobs.
-- [ ] Verify actual PID states and target-not-started behavior, with test-owned cleanup for deliberately escaped fixtures. Record limitations explicitly.
+- [x] Observe RED with real synthetic parent/sleep child, pre-ledger hard crash, control EOF, early leader exit and orphan recovery cases.
+- [x] Implement cancellation through the live owned pipe/parent group. Keep an unreaped leader until cleanup. Recovery quarantines instead of reattaching/signalling/restarting unknown jobs.
+- [x] Verify actual PID states and target-not-started behavior, with test-owned cleanup for deliberately escaped fixtures. Record limitations explicitly.
 
 ## Task4 — Standard stdio integration and handoff
-- [ ] Bind the channel to official MCP tools and a typed native launch/attestation interface. Defaults reject missing adopted client/reserved slot/provider qualification.
-- [ ] Run real official-SDK in-process/stdio synthetic requests; unknown tools and owner operations remain unavailable. Do not run actual Codex or edit shared dispatcher seams.
+- [x] Bind the channel to official MCP tools and a typed native launch/attestation interface. Defaults reject missing adopted client/reserved slot/provider qualification.
+- [x] Run real official-SDK in-process/stdio synthetic requests; unknown tools and owner operations remain unavailable. Do not run actual Codex or edit shared dispatcher seams.
 - [ ] Run focused tests/types; obtain non-author review and report fixed SHA, executed native evidence and unavailable live/model/SQL/adoption gates. No webpack unless root later reserves it.
 
 ## Reuse evidence and execution ledger
@@ -64,3 +64,7 @@
 - Root approved the minimum layered plan and anonymous-FD crash requirements before core implementation. Existing client50 package/5b3a broker are untouched. New managed worktree/branch is isolated at87e; committed lock exactly matches reused installed dependencies; no install.
 
 - Task1 evidence: absent module RED, then5 focused groups pass/0skip against actual synthetic client/handler. An initial sync-throw async-contract mismatch was corrected; initial typecheck CFA errors were corrected by an explicit never-returning function declaration. Final tsc passes. No real network/model/credential access.
+- Tasks2/3 evidence: absent Swift source RED; initial compiler/import/fixture issues corrected before actual process assertions. Foundation resolved a physical `/private/var` temp path to `/var`, so the canonical identity check was corrected to POSIX realpath after an exact A/B reproduction. Actual SIGPIPE and exiting-process snapshot races were reproduced and fixed; output loss now requests owned cancellation and never forwards raw target output. A real post-release ledger-write failure initially left the group alive; bounded original-parent cleanup now also runs on throw.
+- Preserve the early-exit failure count: strict BSD-only ownership anchor failed, then allowing status5/zero pgid still failed. Modification paused under development-course-correction-v2. The six-question diagnosis and a tiny synthetic child experiment showed local proc_pidinfo returns0/ESRCH for an exited unreaped child, while waitid(WNOWAIT) identifies that exact waitable child and changes to ECHILD only after waitpid. The single resulting WNOWAIT fix passed the original early-leader-exit regression. No recovered PID is ever signalled.
+- Task4 evidence: absent MCP/launcher modules RED. Official SDK modern stdio initially failed under a directly connected legacy transport; reuse of the repository's SDK serveStdio era-selection pattern passed both modern and legacy. Native peer attestation binds this attestor's real parent, runtime/entry/argv pins, live job ancestry and fence. A nullable peer was initially omitted by JSONEncoder; persisting explicit null restored the strict wrapper handshake for native-only synthetic tests. A fixture rm/mkdir race was fixed by waiting for the recorded running state before injecting the write failure; assertions were retained.
+- Current focused result: 11 TS groups pass/0skip plus14 opt-in native assertions pass/0skip (including the parent group). Types pass. No full suite, webpack, real PostgreSQL, actual Codex/model/provider, current57-client adoption, reserved execution slot, background activation or production/owner acceptance is established. The adoption port has no implementation/default; no dispatcher/Skill/API/workflow file changed. Complete dependency/code verification remains the existing adopted client's responsibility; native peer entry pins alone do not replace it.
