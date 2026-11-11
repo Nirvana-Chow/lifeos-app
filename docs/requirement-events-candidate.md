@@ -1,6 +1,6 @@
 # Requirement event dispatch source candidate
 
-This is an unmounted, default-closed source slice under LO-REQ-001/#30 and LO-AGENT-001/#35, personal-agent-foundation5.4/7.3/8.2/9.7. Business intake remains pending the authorized runtime; this document is not a second requirement pool. No production migration, real requirement import, background task, model execution or owner experience acceptance is asserted.
+This is a default-closed Agent source slice under LO-REQ-001/#30 and LO-AGENT-001/#35, personal-agent-foundation5.4/7.3/8.2/9.7. Business intake remains pending the authorized runtime; this document is not a second requirement pool. No production migration, real requirement import, background task, model execution or owner experience acceptance is asserted.
 
 ## Flow and boundaries
 
@@ -24,7 +24,7 @@ The `codex exec` candidate uses existing native CLI authentication and fixed std
 
 Claim body is `{requirementId,workDigest,holderId}` with the original Idempotency-Key. PATCH is `{action:'renew',lease}` or `{action:'progress',lease,input:{fields,expectedRevision,baselineBinding}}`, same original key on unknown outcome. The server derives owner/space/actor from the reviewed current grant. Progress uses the exact original RequirementFields writer and independently GETs that requirement. Complete immutable evidence and owner acceptance remain unchanged.
 
-Root must serially register exact operation argument schemas, capability readiness, policy SQL allowlist if applicable, reviewed client/durable recovery and intake Skill reference. Do not advertise these handlers before this integration qualifies. The HTTP adapter requires the existing authority boundary to issue its branded actor and current-grant guard; all-business policy cannot bypass its allowedOperationIds. Mounting and readiness stay closed until restricted schema/ACL/RLS metadata has independently passed qualification. There is no caller-provided host/URL/cookie or arbitrary header forwarding.
+The source integration now registers two JSON operations and one separate eventTransports SSE descriptor, exact argument schemas, default-closed readiness, disabled optional SQL registrations and Skill release2026111203. JSON/MCP execution never includes the stream descriptor. Claim/renew receipts use durable command keys and independently GET the existing requirement execution projection. The existing branded AuthorityService/current grant and original transactional writer fences remain authority. Do not enable the module before exact-source qualification. The HTTP adapter requires the existing authority boundary to issue its branded actor and current-grant guard; all-business policy cannot bypass its allowedOperationIds. Mounting and readiness stay closed until restricted schema/ACL/RLS metadata has independently passed qualification. There is no caller-provided host/URL/cookie or arbitrary header forwarding.
 
 Stream stdin is `{cursor:string}` (initial `'0'`; native broker may normalize null only to0). Last-Event-ID is the only derived cursor header. SSE comment `: keepalive` is ignored; event name is `requirement-work`, event id equals data.cursor. Data/credential-free broker JSONL is exactly:
 
@@ -41,13 +41,22 @@ Focused source tests cover admission, held work, generation dedupe, concurrent c
 The source-bound disposable requirements fixture can qualify the new SQL with:
 
 ```
-RUN_REQUIREMENTS_POSTGRES_TESTS=1 RUN_REQUIREMENT_EVENT_POSTGRES_TESTS=1 node --test --test-isolation=none --test-concurrency=1 test/requirement-events-postgres.integration.test.ts
+RUN_REQUIREMENTS_POSTGRES_TESTS=1 RUN_REQUIREMENT_EVENT_POSTGRES_TESTS=1 node --test --test-isolation=none --test-concurrency=1 test/requirements-postgres.integration.test.ts test/requirement-events-postgres.integration.test.ts
 ```
 
 It also requires all existing exact CI/local-fixture identity environment values from `test/helpers/requirements-stage-pg.ts`; this command alone does not authorize or redirect a database. The migration is applied only to a fresh event schema after that helper verifies its isolated target. Public CI remains read-only with synthetic fixture authority only.
 
-Before production: independently review fixed source; root synchronizes discovery/Skill/runtime and obtains exact-SHA CI with the new PG test executed; qualify native stream, slot reservation, current grants and actual worker readback/cancellation; separately prepare approved migration backup/rollback and only then enable. No launchctl/installer is supplied or run here. Roll back source to the preceding fixed release and leave runtime flags off. Do not drop migrated work/outbox/receipts or revoke/delete credentials as an automatic rollback.
+Before production: independently review fixed source; root obtains exact-SHA CI with all four requirements/event PG leaf cases and35 policy/storage/event PG leaves executed without skips; qualify native stream, slot reservation, current grants and actual worker readback/cancellation; separately prepare approved migration backup/rollback and only then enable. No launchctl/installer is supplied or run here. Roll back source to the preceding fixed release and leave runtime flags off. Do not drop migrated work/outbox/receipts or revoke/delete credentials as an automatic rollback.
 
 Official documentation checked2026-11-12: [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode), [SDK](https://developers.openai.com/codex/sdk/), [app-server](https://developers.openai.com/codex/app-server/), [per-invocation agents settings](https://learn.chatgpt.com/docs/agent-configuration/subagents#global-settings). Actual installed CLI is0.167.0-alpha.3.2; no runtime was updated.
 
 PostgreSQL17 official [NOTIFY transaction semantics](https://www.postgresql.org/docs/17/sql-notify.html) and [LISTEN initial-read race guidance](https://www.postgresql.org/docs/17/sql-listen.html) were checked: subscribe/commit before the initial durable query, use short transactions, and never treat the public notification payload as business data or authorization.
+
+
+## Integrated source checkpoint
+
+The explicit `LIFEOS_AGENT_REQUIREMENT_EVENTS=requirement-events-v1` module also requires the existing requirements activation. Schema/ACL/RLS/trigger-source readiness gates every descriptor and request. A separate lazy max1 notification pool reuses the restricted business role; closed/not-ready/unauthorized requests create no listener pool. A second open request fails immediately, including while the first acquisition waits, instead of accumulating behind LISTEN. Cancellation and15-second authorization revalidation release a notification connection even for an unread/backpressured stream. This is bounded server I/O, never a model poll.
+
+Proposed0020 requires exact database/owner/space and owning migration role. Core fixture identity is reused only after its original source/run/attempt readback. The event migration uses one checked-out admin client for all approval/target GUCs and their readback, then records a separate core/SQL/source-bound marker; it never resets core schema/roles. Both existing qualification workflows run core requirements plus event SQL in the same serial process and reject missing/duplicate/skipped/failed/error leaves. A narrow policy registration case checks unchanged legacy grant digest, three disabled registrations and only explicitly enabled exact-scope SQL fences. These are source gates awaiting actual CI, not a claim that real PostgreSQL has passed locally.
+
+The retention race found during independent review is fixed: event bounds and page now come from one materialized SQL statement snapshot, so concurrent retention cannot silently mark a lost interval as reset:false. The regression observed RED before this change and GREEN afterward. Native worker capacity remains0; narrow worker capability/channel, orphan proof and real original-command readback remain adoption prerequisites.

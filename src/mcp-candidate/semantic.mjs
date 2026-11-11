@@ -11,6 +11,12 @@ const equal=(a,b)=>canonical(a)===canonical(b);
 export const responseEntry=v=>v&&typeof v==='object'&&!Array.isArray(v)?(v.entry&&typeof v.entry==='object'?v.entry:typeof v.id==='string'&&(v.fields||typeof v.title==='string'&&typeof v.text==='string'&&v.source)?v:undefined):undefined;
 const entry=responseEntry;
 export function verifyReceipt(operation,args,before,data){
+ if(['claimRequirementExecution','updateRequirementExecution'].includes(operation.id)){
+  if(args.action==='progress')return verifyReceipt({id:'updateRequirement',module:'requirements',method:'PATCH'},{...args.input,id:args.lease.requirementId},before,data);
+  const l=data?.lease,expected=operation.id==='claimRequirementExecution'?args:args.lease;
+  if(!l||!uuid(l.id)||!(uuid(l.requirementId)||/^LO-[A-Z]+-\d{3}$/.test(l.requirementId))||!uuid(l.sourceId)||!Number.isInteger(l.revision)||l.revision<1||!Number.isSafeInteger(l.fence)||l.fence<1||!Number.isSafeInteger(l.expiresAt)||l.expiresAt<1||typeof l.grantId!=='string'||!l.grantId||l.requirementId!==expected.requirementId||l.workDigest!==expected.workDigest||l.holderId!==expected.holderId||args.action==='renew'&&(l.id!==args.lease.id||l.sourceId!==args.lease.sourceId||l.fence!==args.lease.fence||l.grantId!==args.lease.grantId||l.expiresAt<args.lease.expiresAt))throw Error('EXECUTION_RECEIPT_INVALID');
+  return l;
+ }
  const e=entry(data),requirement=operation.module==='requirements';
  if(operation.module==='storageReview'){
   if(!e||!uuid(e.id)||!uuid(e.sourceId)||!Number.isInteger(e.revision)||e.revision<1)throw Error('STORAGE_REVIEW_RECEIPT_INVALID');
@@ -57,3 +63,14 @@ export function verifyClassification(manifest,data){
 }
 export function verifyClassificationCurrent(manifest,receipt,readback){const r=verifyClassification(manifest,receipt);if(!readback.ok)return{verified:false,state:'READBACK_UNAVAILABLE'};const entries=readback.data?.entries;if(!Array.isArray(entries)||!equal(entries.map(e=>e.id).sort(),r.entries.map(e=>e.id).sort()))return{verified:false,state:'READBACK_SET_MISMATCH'};
  const results=r.entries.map(e=>verifyCurrent({entry:{id:e.id,sourceId:e.sourceId,revision:e.revision,fields:{personal:e.personal}}},{ok:true,data:{entry:{id:e.id,sourceId:entries.find(c=>c.id===e.id)?.sourceId,revision:entries.find(c=>c.id===e.id)?.revision,fields:{personal:entries.find(c=>c.id===e.id)?.fields?.personal}}}}));return{verified:results.every(r=>r.verified),state:results.every(r=>r.verified)?'VERIFIED':'READBACK_MISMATCH',entries:results};}
+
+export function verifyExecutionCurrent(operation,args,receipt,readback){
+ if(args.action==='progress')return verifyCurrent(receipt,readback);
+ if(!readback?.ok)return{verified:false,state:'READBACK_UNAVAILABLE'};
+ const lease=receipt?.lease,current=readback.data?.execution,record=entry(readback.data);
+ if(!lease||!current||!record||record.id!==lease.requirementId||record.sourceId!==lease.sourceId||current.sourceId!==lease.sourceId)return{verified:false,state:'READBACK_IDENTITY_MISMATCH'};
+ if(current.leaseActive!==true||current.state!=='running')return{verified:false,state:'LEASE_NOT_ACTIVE'};
+ if(current.workDigest!==lease.workDigest||current.fence!==lease.fence||current.revision!==record.revision||record.revision<lease.revision)return{verified:false,state:'LEASE_LATER_REVISION'};
+ const actual=current.lease,keys=['id','requirementId','sourceId','workDigest','holderId','grantId','fence','expiresAt'];
+ return actual&&keys.every(key=>equal(actual[key],lease[key]))?{verified:true,state:'VERIFIED'}:{verified:false,state:'LEASE_LATER_REVISION'};
+}

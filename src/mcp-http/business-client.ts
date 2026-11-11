@@ -1,6 +1,7 @@
+import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import {LifeOSApiClient,type CapabilityCatalog,type OperationResult,validateLocalArguments} from '../mcp-candidate/client.ts';
 import {parseArguments,type Operation} from '../mcp-candidate/schemas.ts';
-import {responseEntry,verifyReceipt,verifyCurrent} from '../mcp-candidate/semantic.mjs';
+import {responseEntry,verifyReceipt,verifyCurrent,verifyExecutionCurrent} from '../mcp-candidate/semantic.mjs';
 import {PlatformError} from '../platform/domain.ts';
 
 export type BusinessDispatcher=(request:Request)=>Promise<Response>;
@@ -57,7 +58,7 @@ export class HttpBusinessClient{
  }
  async discover():Promise<CapabilityCatalog>{const catalog=await this.api.discover();return{...catalog,operations:catalog.operations.filter(projectable)};}
  private async readback(operation:Operation,args:Record<string,unknown>,data:Record<string,unknown>){
-  try{const entry=responseEntry(data),id=typeof args.id==='string'?args.id:entry?.id;
+  try{const entry=responseEntry(data),id=isRequirementEventOperation(operation.id)?operation.id==='claimRequirementExecution'?args.requirementId:(args.lease as any)?.requirementId:typeof args.id==='string'?args.id:entry?.id;
    const catalog=await this.discover(),read=catalog.operations.find(candidate=>candidate.module===operation.module&&candidate.method==='GET'&&candidate.path.endsWith('{id}'));
    if(!read||typeof id!=='string')return{ok:false,status:403,error:'READBACK_UNAVAILABLE'};
    return await this.api.execute(read.id,{id,...(read.path.includes('{type}')?{type:args.type}:{})});
@@ -91,7 +92,8 @@ export class HttpBusinessClient{
   }
   try{
    let preimage=before?.ok?responseEntry(before.data):undefined;
-   if(operation.method==='PATCH'&&preimage?.revision!==args.expectedRevision){
+   const expected=operation.id==='updateRequirementExecution'?(args.input as any)?.expectedRevision:args.expectedRevision;
+   if(operation.method==='PATCH'&&args.action!=='renew'&&preimage?.revision!==expected){
     if(result.data.duplicate!==true)throw Error('RECEIPT_PREIMAGE_UNAVAILABLE');
     // The durable API receipt is authoritative for inherited fields on replay;
     // its explicit arguments/CAS are still checked by the common validator.
@@ -100,6 +102,6 @@ export class HttpBusinessClient{
    verifyReceipt(operation,args,preimage,result.data);
   }catch{return unknown('API_RECEIPT_INVALID',result.status);}
   const readback=await this.readback(operation,args,result.data);
-  return{ok:true,...result,readback,verification:verifyCurrent(result.data,readback)};
+  return{ok:true,...result,readback,verification:isRequirementEventOperation(operation.id)?verifyExecutionCurrent(operation,args,result.data,readback):verifyCurrent(result.data,readback)};
  }
 }

@@ -29,23 +29,28 @@ export function createRequirementEventHandler(options:Options){return async(requ
   if(!actor.scopes.includes('requirements:read')||operationId!==eventOperations.stream&&!actor.scopes.includes('requirements:write'))return json(403,{error:'ACCESS_DENIED'});
   if(operationId===eventOperations.stream){
    let after=cursor(request.headers.get('last-event-id')??'0'),waiting=false,closed=false;const notifications=await options.openNotifications?.();
-   const close=async()=>{if(!closed){closed=true;await notifications?.close();}};
+   let activeController:ReadableStreamDefaultController<Uint8Array>|undefined,onAbort=()=>{},authChecking=false,authTimer:ReturnType<typeof setInterval>|undefined;
+   const close=async()=>{if(!closed){closed=true;if(authTimer)clearInterval(authTimer);request.signal.removeEventListener('abort',onAbort);await notifications?.close();}};
+   onAbort=()=>{void close().catch(()=>{}).finally(()=>{try{activeController?.close();}catch{}});};
+   request.signal.addEventListener('abort',onAbort,{once:true});
+   // An idle or backpressured reader must not retain a revoked grant/notification slot.
+   authTimer=setInterval(()=>{if(closed||authChecking)return;authChecking=true;void Promise.resolve().then(current).catch(onAbort).finally(()=>{authChecking=false;});},15000);authTimer.unref?.();
    const wait=notifications?.wait.bind(notifications)??options.wait??(async(signal:AbortSignal)=>{await delay(15000,undefined,{signal});});
-   const stream=new ReadableStream<Uint8Array>({async pull(controller){
+   const stream=new ReadableStream<Uint8Array>({start(controller){activeController=controller;if(request.signal.aborted)onAbort();},async pull(controller){
     try{
      if(waiting)await wait(request.signal);request.signal.throwIfAborted();await current();
      const batch=await options.events.batch(actor,after);await current();request.signal.throwIfAborted();
      const payload=JSON.stringify({events:batch.events,ready:batch.ready,cursor:batch.cursor,reset:batch.reset,readyTruncated:batch.readyTruncated});
      after=batch.cursor;waiting=batch.events.length<100;
      controller.enqueue(new TextEncoder().encode(batch.events.length||batch.ready.length||batch.reset?`id: ${after}\nevent: requirement-work\ndata: ${payload}\n\n`:': keepalive\n\n'));
-    }catch{await close();controller.close();}
+    }catch{await close();try{controller.close();}catch{}}
    },async cancel(){await close();}});
    return new Response(stream,{headers:{...headers,'Content-Type':'text/event-stream','X-Accel-Buffering':'no'}});
   }
   const key=request.headers.get('idempotency-key')??'';validateIdempotencyKey(key);
   if(operationId===eventOperations.claim){const body=object(await readJSONBody(request),['requirementId','workDigest','holderId']);const result=await options.events.claim(actor,{...body,requestId:key} as never);await current();return json(200,{lease:result});}
   const body=object(await readJSONBody(request),['action','lease','input']),binding=lease(body.lease);if(binding.id!==claimId||binding.grantId!==actor.grantId)throw new PlatformError(403,'ACCESS_DENIED','执行租约不属于当前授权。');
-  if(body.action==='renew'&&!Object.hasOwn(body,'input'))return json(200,{lease:await options.events.renew(actor,binding)});
+  if(body.action==='renew'&&!Object.hasOwn(body,'input'))return json(200,{lease:await options.events.renew(actor,binding,key)});
   if(body.action!=='progress')throw new PlatformError(400,'INVALID_EXECUTION_ACTION','执行动作无效。');
   const input=object(body.input,['fields','expectedRevision','baselineBinding']);
   const command={...input,spaceId:actor.spaceId,confirmed:true};

@@ -53,3 +53,13 @@
 - `NEXT_TELEMETRY_DISABLED=1 CI=1 npm run build -- --webpack`:pass, Next16.4.1; root-reserved single build slot released.
 - `OPENSPEC_TELEMETRY=0 DO_NOT_TRACK=1 CI=1 npx --yes @fission-ai/openspec@1.16.0 validate personal-agent-foundation --strict`:pass.
 - Root independently owns registry/Skill/runtime synchronization, current grant activation, source/run-bound PostgreSQL CI and production/worker/owner qualification. No task checkbox in the main OpenSpec has been advanced.
+
+
+### Task4: Root-assigned Agent integration (base1b4706d, same requirement slice)
+- [x] Separate SSE eventTransports discovery from the57 executable JSON business descriptors; reuse existing branded actors, current grants and source-owned policy registry.
+- [x] Add two JSON argument/receipt/current-readback/durable operations and use the existing getRequirement top-level execution projection; never add SSE to lifeos_call.
+- [x] Integrate lazy restricted max1 notifications, immediate concurrent-open refusal, abort and bounded revocation release; preserve normal requirement editing.
+- [x] Add readiness/source parity and disabled SQL registration, Skill/reference/artifact sequence2026111203; no new dependency or credentials.
+- [x] Fix reviewed replay retention race with one statement snapshot and RED→GREEN interleaving regression.
+- [x] Add core/event four-leaf and policy/storage/event35-leaf CI zero-skip gates, same-client migration GUC and source-bound fixture marker.
+- [x] Freeze integration checks for fresh independent review and CI:1762 total/1701 pass/0 fail/61 opt-in skips; types, strict OpenSpec and one integration webpack build pass. Exact commit is reported by the writer. Production SQL, grant/module activation, native worker adoption and owner acceptance remain open.

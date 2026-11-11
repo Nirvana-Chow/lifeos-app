@@ -2,7 +2,7 @@ import type {Transaction} from '../platform/contracts.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {normalizeAgentScopes} from './scopes.ts';
 import type {OperationScope} from './personal-operation-registry.ts';
-import {agentOperations} from './capabilities.ts';
+import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {policyAuthorizationScopes} from './business-policy.ts';
 
 export type AgentGrantBinding = Readonly<{grantId:string;ownerId:string;spaceId:string;businessDataPolicy?:'all-personal-business-v1';operationId?:string}>;

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {verifyRequirementEventReadiness} from '../src/requirement-events/readiness.ts';
+import {createAgentHandler} from '../src/agent-api/http.ts';
+import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';
+import {PostgresRequirementEventStore} from '../src/requirement-events/postgres.ts';
+import {RequirementEventService} from '../src/requirement-events/service.ts';
 import {RequirementsService} from '../src/requirements-candidate/service.ts';
 import {PostgresPlatformRepository,type SqlPool} from '../src/platform/postgres.ts';
 import {requirements} from '../src/platform/requirements.ts';
@@ -13,7 +19,20 @@ test('OPT-IN requirement transaction outbox rollback, receipt dedupe and lease f
  await prepareRequirementsFixture();const admin=requirementsFixturePool('admin',1),pool=requirementsFixturePool('runtime',3);
  try{
   const current=(await admin.query("SELECT to_regclass('lifeos_platform.requirement_work') AS work")).rows[0];assert.equal(current.work,null,'Fresh event schema required; never reuse an unknown migrated target');
-  await admin.query("SET lifeos.requirement_events_migration_approved='transaction-outbox-v1'; SET lifeos.agent_expected_database='lifeos_platform_test_local'");await admin.query(await readFile('db/0020_requirement_events.proposed.sql','utf8'));
+  const migration=await readFile('db/0020_requirement_events.proposed.sql','utf8'),session=await admin.connect();
+  try{
+   assert.equal((await session.query("SELECT to_regclass('requirements_fixture.requirement_event_identity') AS marker")).rows[0].marker,null,'Fresh source-bound event marker required');
+   const core=(await session.query('SELECT fixture_id,source_digest FROM requirements_fixture.identity')).rows;assert.equal(core.length,1);
+   const sqlDigest=createHash('sha256').update(migration).digest('hex');
+   await session.query('CREATE TABLE requirements_fixture.requirement_event_identity(fixture_id text NOT NULL,core_digest text NOT NULL,sql_digest text NOT NULL,source_sha text NOT NULL); REVOKE ALL ON requirements_fixture.requirement_event_identity FROM PUBLIC');
+   await session.query('INSERT INTO requirements_fixture.requirement_event_identity VALUES($1,$2,$3,$4)',[core[0].fixture_id,core[0].source_digest,sqlDigest,process.env.SOURCE_SHA??'declared-local-synthetic']);
+   await session.query("SELECT set_config('lifeos.requirement_events_migration_approved','transaction-outbox-v1',false),set_config('lifeos.agent_expected_database','lifeos_platform_test_local',false),set_config('lifeos.agent_expected_owner',$1,false),set_config('lifeos.agent_expected_space',$2,false)",[requirementsFixture.ownerId,requirementsFixture.spaceId]);
+   assert.deepEqual((await session.query("SELECT current_setting('lifeos.requirement_events_migration_approved') AS approval,current_setting('lifeos.agent_expected_database') AS database")).rows,[{approval:'transaction-outbox-v1',database:'lifeos_platform_test_local'}]);
+   await session.query(migration);
+   assert.deepEqual((await session.query('SELECT * FROM requirements_fixture.requirement_event_identity')).rows,[{fixture_id:core[0].fixture_id,core_digest:core[0].source_digest,sql_digest:sqlDigest,source_sha:process.env.SOURCE_SHA??'declared-local-synthetic'}]);
+  }finally{session.release(true);}
+  await verifyRequirementEventReadiness(pool);
+
   const config={ownerId:requirementsFixture.ownerId,ownerEmail:requirementsFixture.email,spaceId:requirementsFixture.spaceId,databaseName:requirementsFixture.database,baseURL:requirementsFixture.origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
   const repository=new PostgresPlatformRepository(pool as SqlPool,false,false,undefined,true),service=new RequirementsService(repository,config);
   const fields={title:'Synthetic event ticket',body:'No real requirement data',phaseId:requirements().roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,workflow:{state:'planned',purpose:'Synthetic',nextStep:'Verify transaction'}} as const;
@@ -26,6 +45,19 @@ test('OPT-IN requirement transaction outbox rollback, receipt dedupe and lease f
   const created=await service.mutate(config.ownerId,null,input,'synthetic-event-create');await service.mutate(config.ownerId,null,input,'synthetic-event-create');
   assert.equal((await admin.query('SELECT count(*)::int AS n FROM lifeos_platform.requirement_event_outbox')).rows[0].n,1);
   const work=(await admin.query('SELECT * FROM lifeos_platform.requirement_work WHERE requirement_id=$1',[created.entry.id])).rows[0];assert.equal(work.dispatch_state,'ready');
+  const verifier=requirementsFixturePool('verifier',1),grantId='synthetic-event-postgres-grant';
+  try{
+   await admin.query(`INSERT INTO lifeos_agent.apikey(id,"configId","referenceId",key,enabled,"createdAt","updatedAt","expiresAt",metadata,permissions) VALUES($1,'default',$2,'synthetic-event-hash',true,clock_timestamp(),clock_timestamp(),clock_timestamp()+interval '1 hour',$3,$4)`,[grantId,config.ownerId,JSON.stringify({spaceId:config.spaceId}),JSON.stringify({requirements:['read','write']})]);
+   const events=new RequirementEventService(new PostgresRequirementEventStore(pool as SqlPool,true));
+   const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,config,repository,modules:{organization:false,classification:false,requirements:true,requirementEvents:true},verify:async()=>readCurrentAgentGrant(verifier,grantId),readCurrentGrant:id=>readCurrentAgentGrant(verifier,id),operationAvailable:()=>true,assertWritable:async()=>{},requirementEvents:{service:events,ready:async()=>{await verifyRequirementEventReadiness(pool);return true;},openNotifications:async()=>({wait:async()=>{throw Error('synthetic-end');},close:async()=>{}})}});
+   const send=(path:string,method='GET',body?:unknown,key='synthetic-event-api-key')=>handler(new Request(config.baseURL+'/api/platform/agent'+path,{method,headers:{host:new URL(config.baseURL).host,authorization:'Bearer synthetic-event-request','idempotency-key':key,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}));
+   const catalog=await(await send('/v2/capabilities')).json();assert.equal(catalog.eventTransports[0].transport,'sse');assert.equal(catalog.operations.some((op:any)=>op.id==='streamRequirementEvents'),false);
+   const claim=await send('/v1/requirement-events/claims','POST',{requirementId:created.entry.id,workDigest:work.work_digest,holderId:'synthetic-api-mac'},'synthetic-event-api-claim');assert.equal(claim.status,200);const claimed=(await claim.json()).lease;
+   const current=await(await send('/v1/requirements/'+created.entry.id)).json();assert.equal(current.execution.lease.id,claimed.id);assert.equal(current.execution.leaseActive,true);
+   const scope=await pool.connect();try{await scope.query('BEGIN');await scope.query("SELECT set_config('lifeos.owner_id',$1,true),set_config('lifeos.requirement_event_space','wrong-space',true)",[config.ownerId]);assert.deepEqual((await scope.query('SELECT requirement_id FROM lifeos_platform.requirement_work')).rows,[]);await scope.query('ROLLBACK');}finally{scope.release();}
+   await admin.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[grantId]);assert.equal((await send('/v1/requirement-events/claims/'+claimed.id,'PATCH',{action:'renew',lease:claimed},'synthetic-event-revoked-renew')).status,401);
+  }finally{await verifier.end();}
+
   const lease={id:'11111111-1111-4111-8111-111111111111',fence:1,holderId:'synthetic-mac',grantId:'synthetic-grant',workDigest:work.work_digest};
   await admin.query("UPDATE lifeos_platform.requirement_work SET dispatch_state='running',lease_id=$1,lease_fence=1,lease_holder=$2,lease_grant_id=$3,lease_expires_at=clock_timestamp()+interval '1 minute' WHERE requirement_id=$4",[lease.id,lease.holderId,lease.grantId,created.entry.id]);
   const progress={...input,fields:{...fields,workflow:{...fields.workflow,state:'in_progress',nextStep:'Synthetic progress only'}},expectedRevision:1,baselineBinding:null};

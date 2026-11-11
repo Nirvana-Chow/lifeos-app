@@ -1,4 +1,4 @@
-import {agentOperations} from './capabilities.ts';
+import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {allPersonalBusinessPolicy,policyOperationScopes} from './business-policy.ts';
 import {businessPolicySqlDigests} from './business-policy-sql-digests.ts';
 

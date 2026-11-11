@@ -26,3 +26,21 @@ test('NOTIFY is bounded/coalesced and notification cleanup releases the dedicate
  for(let i=0;i<1000;i++)client.emit('notification',{channel:'lifeos_requirement_events',payload:'ignored'});
  await notifications.wait(new AbortController().signal);assert.equal(released,0);await notifications.close();assert.equal(client.listenerCount('notification'),0);assert.equal(released,1);
 });
+
+test('retention cannot race replay bounds into a false no-gap result',async()=>{
+ const {PostgresRequirementEventStore}=await import('../src/requirement-events/postgres.ts');const row={cursor:'1010',requirement_id:'LO-REQ-001',source_id:binding.sourceId,record_revision:1,work_digest:binding.workDigest,dispatch_state:'ready'};let replayStatements=0;
+ const client:SqlClient={release:()=>{},query:async(sql)=>{
+  if(sql.includes('assert_business_grant'))return{rows:[{allowed:true}],rowCount:1};
+  if(sql.includes('requirement_event_outbox')){replayStatements++;if(sql.includes('WITH visible_events'))return{rows:[{first:'1010',last:'2009',events:[row]}],rowCount:1};if(sql.includes('min(event_id)'))return{rows:[{first:'10',last:'1009'}],rowCount:1};return{rows:[row],rowCount:1};}
+  return{rows:[],rowCount:0};
+ }};
+ const actor={kind:'agent-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',grantId:'synthetic-grant',scopes:['requirements:read']} as unknown as import('../src/requirement-events/contracts.ts').EventActor;
+ const result=await new PostgresRequirementEventStore({connect:async()=>client},true).transaction(actor,'streamRequirementEvents',tx=>tx.replay('9',100));
+ assert.equal(result.reset,true,'retained first event1010 requires reconciliation after cursor9');assert.equal(result.events[0].cursor,'1010');assert.equal(replayStatements,1,'bounds and page share one PostgreSQL statement snapshot');
+});
+
+test('a second notification request fails immediately during acquisition and old close cannot release a newer owner',async()=>{
+ const {singleRequirementNotifications}=await import('../src/requirement-events/notifications.ts'),gate=Promise.withResolvers<void>();let opened=0;
+ const open=singleRequirementNotifications(async()=>{opened++;await gate.promise;return{wait:async()=>{},close:async()=>{}};});
+ const first=open();await assert.rejects(open(),{code:'EVENT_LISTENER_BUSY'});assert.equal(opened,1);gate.resolve();const source=await first;await source.close();const second=await open();await source.close();await assert.rejects(open(),{code:'EVENT_LISTENER_BUSY'});await second.close();
+});

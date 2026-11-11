@@ -23,3 +23,14 @@ test('invalid cursor, method and owner/space payload cannot initiate a write',as
  assert.equal((await handler(request(streamPath,{},'POST',{}))).status,405);
  const response=await handler(request(claimsPath,{'idempotency-key':'claim-synthetic-001'},'POST',{requirementId:'LO-REQ-001',workDigest:'a'.repeat(64),holderId:'synthetic-mac',ownerId:'forged'}));assert.equal(response.status,400);assert.equal(writes,0);
 });
+
+test('aborting an unread stream proactively releases its notification connection',async()=>{
+ let closed=0;const abort=new AbortController();const handler=createRequirementEventHandler({enabled:true,origin,authorize:async()=>({actor,current:async()=>{}}),events:{batch:async()=>({cursor:'0',events:[],ready:[],reset:false,readyTruncated:false})} as never,requirements:{} as never,openNotifications:async()=>({wait:async()=>new Promise<void>(()=>{}),close:async()=>{closed++;}})});
+ const r=await handler(new Request(request(),{signal:abort.signal})),reader=r.body!.getReader();await reader.read();abort.abort();await new Promise(resolve=>setImmediate(resolve));try{assert.equal(closed,1);}finally{await reader.cancel();}
+});
+
+test('revocation releases an unread notification connection within the bounded authorization interval',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});let allowed=true,closed=0;
+ const handler=createRequirementEventHandler({enabled:true,origin,authorize:async()=>({actor,current:async()=>{if(!allowed)throw Error('revoked');}}),events:{batch:async()=>({cursor:'0',events:[],ready:[],reset:false,readyTruncated:false})} as never,requirements:{} as never,openNotifications:async()=>({wait:async()=>new Promise<void>(()=>{}),close:async()=>{closed++;}})});
+ const response=await handler(request()),reader=response.body!.getReader();await reader.read();allowed=false;t.mock.timers.tick(15000);await new Promise(resolve=>setImmediate(resolve));try{assert.equal(closed,1);}finally{await reader.cancel();}
+});
