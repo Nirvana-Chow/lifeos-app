@@ -44,7 +44,7 @@ npm run typecheck
 git diff --check
 ```
 
-- Final native Chrome regression: **1 passed, 0 failed, 0 skipped**. Original health/finance checks and their read-only/status-only guards remain. The added unavailable-data keyboard check passed all four widths (`1365`, `768`, `390`, `430`) in both themes. At mobile widths, its final metrics were `[1,0,1,1,1,1,1,0,0]`.
+- Final native Chrome regression: **1 passed, 0 failed, 0 skipped**. Original health/finance checks and their read-only/status-only guards remain. The added unavailable-data keyboard check passed all four widths (`1365`, `360`, `390`, `430`) in both themes. At mobile widths, its final metrics were `[1,0,1,1,1,1,1,0,0]`.
 - Fixture cleanup independently reported browser stopped, server stopped, temporary root removed, and no cleanup failures.
 - Existing focused fixture suite: **22 passed, 0 failed, 0 skipped**.
 - Typecheck and diff whitespace check passed.
