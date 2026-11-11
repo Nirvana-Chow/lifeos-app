@@ -15,7 +15,14 @@ async function fixture(){
  const origin='https://lifeos.nirvanachow.com',owner='synthetic-worker-owner',space='synthetic-worker-space';
  const repo=new MemoryPort(),events=new MemoryRequirementEvents(),service=new RequirementEventService(events);let revoked=false,attested=true;
  const transaction=repo.transaction.bind(repo);repo.readCurrentSnapshot=async()=>structuredClone([...repo.rows.values()]);
- repo.transaction=(id,key,run)=>transaction(id,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>!revoked,assertRequirementExecutionLease:async b=>{const row=events.rows.get(b.requirementId);if(!row?.lease||row.lease.id!==b.id||row.fence!==b.fence||row.lease.expiresAt<=events.now)throw Object.assign(Error('expired'),{status:409,code:'EXECUTION_LEASE_LOST'});},write:async(entry,raw,create)=>{await tx.write(entry,raw,create);const work=events.rows.get(entry.id);if(work)work.revision=entry.revision;}}));
+ repo.transaction=(id,key,run)=>transaction(id,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>!revoked,
+ // The real GET now composes the canonical requirement reader with this port
+ // on the original transaction. Projection is read-only; digest is synthetic.
+ projectRequirementExecution:async binding=>{
+  assert.equal(binding.spaceId,space);
+  const work=structuredClone(events.rows.get(binding.requirementId)??{requirementId:binding.requirementId,sourceId:binding.sourceId,revision:binding.revision,workDigest:'a'.repeat(64),state:'candidate' as const,attempts:0,fence:0,lease:null});
+  return{...work,leaseActive:work.state==='running'&&!!work.lease&&work.lease.expiresAt>events.now};
+ },assertRequirementExecutionLease:async b=>{const row=events.rows.get(b.requirementId);if(!row?.lease||row.lease.id!==b.id||row.fence!==b.fence||row.lease.expiresAt<=events.now)throw Object.assign(Error('expired'),{status:409,code:'EXECUTION_LEASE_LOST'});},write:async(entry,raw,create)=>{await tx.write(entry,raw,create);const work=events.rows.get(entry.id);if(work)work.revision=entry.revision;}}));
  const grant=()=>revoked?null:{ownerId:owner,spaceId:space,grantId:'synthetic-worker-grant',scopes:['requirements:read','requirements:write'] as const};
  const config={ownerId:owner,spaceId:space,ownerEmail:'fixture@example.invalid',baseURL:origin,databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:false,classification:false,requirements:true,requirementEvents:true},repository:repo,config,verify:async()=>grant(),readCurrentGrant:async()=>grant(),operationAvailable:()=>true,assertWritable:async()=>{},requirementEvents:{service,ready:async()=>true,openNotifications:async()=>({wait:async()=>{throw Error('end');},close:async()=>{}})}});
@@ -29,6 +36,16 @@ async function fixture(){
  const channel=createWorkerChannel({assignment,client,journal,attest:async()=>{if(!attested)throw Error('PEER_REJECTED');}});trace.length=0;
  return{assignment,channel,client,entry,fields,events,trace,repo,journal,revoke:()=>{revoked=true;},denyPeer:()=>{attested=false;},loseNextProgress:()=>{lose=true;}};
 }
+test('worker fixture GET projects current execution without materializing legacy work or changing the record',async()=>{
+ const f=await fixture(),records=structuredClone([...f.repo.rows.values()]),work=structuredClone(f.events.rows.get(f.entry.id)!);
+ const read=await f.client.execute('getRequirement',{id:f.entry.id});assert.equal(read.ok,true,JSON.stringify(read));
+ assert.deepEqual((read.data as any).execution,{...work,leaseActive:false,admissionEligible:true});
+ assert.deepEqual([...f.repo.rows.values()],records);assert.deepEqual(f.events.rows.get(f.entry.id),work);
+ f.events.rows.delete(f.entry.id);
+ const legacy=await f.client.execute('getRequirement',{id:f.entry.id});assert.equal(legacy.ok,true,JSON.stringify(legacy));
+ assert.deepEqual((legacy.data as any).execution,{requirementId:f.entry.id,sourceId:f.entry.sourceId,revision:1,workDigest:f.assignment.workDigest,state:'candidate',attempts:0,fence:0,lease:null,leaseActive:false,admissionEligible:true});
+ assert.equal(f.events.rows.size,0,'a GET must not backfill/admit legacy work');assert.deepEqual([...f.repo.rows.values()],records);assert.equal(f.repo.historyRows.length,1);
+});
 test('worker channel reads only the assigned record, claims and renews with current independent lease readback',async()=>{
  const f=await fixture(),read=await f.channel.handle({command:'read'});assert.equal(read.ok,true);assert.equal((read.data as any).entry.id,f.entry.id);
  const claimed=await f.channel.handle({command:'claim'});assert.equal(claimed.verification?.verified,true,JSON.stringify(claimed));
