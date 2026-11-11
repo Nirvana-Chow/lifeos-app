@@ -1,3 +1,5 @@
+import {StorageReviewService} from '../src/storage-review/service.ts';
+import {assertAgentGrant} from '../src/agent-api/grant-fence.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {mkdtemp,readFile} from 'node:fs/promises';
@@ -185,6 +187,30 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
     await cas(issued.grant.id,await digest(issued.grant.id),null);assert.equal((await send('/v1/todos','POST',write)).status,403);
     const page=await issuer.handle('list',cookie,{});assert.equal(page.status,200);const body=page.body as {availablePolicies:string[];keys:{businessDataPolicy?:string}[]};assert.deepEqual(body.availablePolicies,[policy]);assert.ok(body.keys.some(key=>key.businessDataPolicy===policy));
    }finally{await issuer.close();}
+  });
+  await t.test('storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence',async()=>{
+   await admin.query("SET lifeos.storage_review_agent_approved='1'");await admin.query(await readFile('db/0019_storage_review_agent_operations.proposed.sql','utf8'));
+   const reviewIds=['snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision'];
+   const registered=(await readBusinessPolicyCatalog(verifier)).operations.filter(op=>reviewIds.includes(op.id));assert.equal(registered.length,5);assert.ok(registered.every(op=>op.enabled===false));
+   await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true WHERE operation_id=ANY($1::text[])',[reviewIds]);
+   const id=await seed();await cas(id,await digest(id),policy);
+   const resolver=async()=>{const catalog=await readBusinessPolicyCatalog(verifier);return{ownerId:owner,spaceId:space,policyEnabled:catalog.enabled,registry:agentOperations,operationAvailable:(id:string)=>reviewIds.includes(id)&&catalog.operations.some(op=>op.id===id&&op.enabled)};};
+   const personal={ownerId:owner,ownerEmail:'policy@example.test',spaceId:space,baseURL:'https://policy.example.test',databaseName:'lifeos_platform_test_local',approval:'personal-manual-v1',allowedTypes:['todo','journal']} as const;
+   const modules={organization:false,classification:false,businessDataPolicy:true,storageReview:true};
+   const repository=new PostgresPlatformRepository(runtime as SqlPool,true,true,modules),handler=createAgentHandler({enabled:true,config:personal,modules,repository,fenceWrites:true,verify:async()=>readCurrentAgentGrant(verifier,id,resolver),readCurrentGrant:key=>readCurrentAgentGrant(verifier,key,resolver),operationAvailable:async id=>(await resolver()).operationAvailable(id),assertWritable:async()=>{}});
+   const send=(path:string,method='GET',body?:unknown,key=randomUUID())=>handler(new Request(personal.baseURL+path,{method,headers:{host:'policy.example.test',authorization:'Bearer synthetic-storage-grant','idempotency-key':key,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})}));
+   const checklist={schema:1,revision:'synthetic-policy-storage-v1',context:{summary:'Synthetic only'},items:[{id:'P-1',title:'Synthetic example',body:'No real paths',question:'Keep?',group:'Synthetic',kind:'file',status:'pending'}]};
+   const response=await send('/v1/storage-reviews','POST',{fields:{checklist}});assert.equal(response.status,201);const created=await response.json();
+   const args={expectedRevision:1,fields:{checklistRevision:checklist.revision,itemId:'P-1',decision:'keep'}},key=randomUUID();
+   const choice=await send('/v1/storage-reviews/'+created.entry.id+'/decisions','PATCH',args,key);assert.equal(choice.status,200);assert.equal((await choice.json()).entry.revision,2);
+   const duplicate=await send('/v1/storage-reviews/'+created.entry.id+'/decisions','PATCH',args,key);assert.equal((await duplicate.json()).duplicate,true);
+   const current=await send('/v1/storage-reviews/'+created.entry.id);assert.deepEqual((await current.json()).entry.fields.decisions,[{id:'P-1',decision:'keep'}]);
+   const actor={grantId:id,ownerId:owner,spaceId:space,businessDataPolicy:'all-personal-business-v1' as const};
+   await admin.query("UPDATE lifeos_agent.business_policy_operation SET enabled=false WHERE operation_id='updateStorageReviewDecision'");
+   const service=new StorageReviewService(repository,personal);
+   await assert.rejects(service.saveDecisionResult(owner,{expectedRevision:2,checklistRevision:checklist.revision,id:'P-1',decision:'defer'},randomUUID(),undefined,tx=>assertAgentGrant(tx,actor,['storage-review:read','storage-review:write'],'updateStorageReviewDecision')),error=>!!error&&typeof error==='object'&&'code'in error&&error.code==='WRITE_GRANT_REVOKED');
+   assert.equal((await service.get(owner))?.revision,2);
+   await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true WHERE operation_id=ANY($1::text[])',[reviewIds]);
   });
   await t.test('readiness refuses broader function EXECUTE and direct registry access',async()=>{
    await admin.query('GRANT EXECUTE ON FUNCTION lifeos_agent.set_managed_business_grant(text,text,text,jsonb,text) TO PUBLIC');

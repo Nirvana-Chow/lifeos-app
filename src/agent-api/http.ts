@@ -1,3 +1,4 @@
+import {handleStorageReviewAgent} from '../storage-review/agent.ts';
 import {PersonalFinanceService} from '../personal-finance/service.ts';
 import {financeKeys} from '../platform/domain.ts';
 import type {OperationScope,AgentRecordType} from './personal-operation-registry.ts';
@@ -61,6 +62,7 @@ export function createAgentHandler(options: Options) {
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentOperations.find(entry => entry.id === id);
+    if(operation?.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||options.fenceWrites!==true))return false;
     if(operation&&isRecordModule(operation.module)&&operation.id.startsWith('snapshot')&&!options.repository.readCurrentSnapshot)return false;
     if(operation&&isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,config,modules as AgentModules)||options.fenceWrites!==true))return false;
     if (operation?.module === 'classification' && (!modules.classification || !modules.organization || !options.classification || options.fenceWrites !== true)) return false;
@@ -73,6 +75,7 @@ export function createAgentHandler(options: Options) {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
+    const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions))?$/.exec(route);
     const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
     const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
@@ -82,9 +85,9 @@ export function createAgentHandler(options: Options) {
     const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
     const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
     const organizationId=organizationRoute?.[2];
-    const template=personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const template=storageRoute?'/v1/storage-reviews/{id}'+(storageRoute[2]?'/'+storageRoute[2]:''):personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
     const operation = agentOperations.find(entry => entry.method === request.method && entry.path === template);
-    if (options.enabled !== true || !operation || isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
+    if (options.enabled !== true || !operation || operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy)|| isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
       const token = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization') ?? '')?.[1];
@@ -107,6 +110,7 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if(operation.module==='storageReview')return await handleStorageReviewAgent(request,{operation,recordId:storageRoute?.[1],actor,authority,repository:options.repository,config,currentReady:()=>available(operation.id),assertWritable:()=>options.assertWritable(grant)});
       if(isRecordModule(operation.module)){
         if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
         const current=async()=>{try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');};

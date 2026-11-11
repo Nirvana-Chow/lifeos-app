@@ -2,7 +2,7 @@ import type {AgentScope} from './scopes.ts';
 
 export const personalRecordTypes=['journal','calendar','health','person','finance','media','career','portfolio'] as const;
 export type AgentRecordType=typeof personalRecordTypes[number];
-export type BusinessScope=`${AgentRecordType|'feedback'}:${'read'|'write'}`;
+export type BusinessScope=`${AgentRecordType|'feedback'|'storage-review'}:${'read'|'write'}`;
 export type OperationScope=AgentScope|BusinessScope;
 const title=(type:string)=>type[0].toUpperCase()+type.slice(1);
 /** Only reviewed server code supplies these IDs, scopes and paths. */

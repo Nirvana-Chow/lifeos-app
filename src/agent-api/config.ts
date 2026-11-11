@@ -10,6 +10,7 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_CLASSIFICATION',
   'LIFEOS_AGENT_ALL_BUSINESS_DATA',
   'LIFEOS_AGENT_PERSONAL_RECORDS',
+  'LIFEOS_AGENT_STORAGE_REVIEW',
 ] as const;
 
 export const agentVerifierRole = 'lifeos_agent_verifier';
@@ -41,8 +42,10 @@ export function readAgentRuntimeConfig(
   return Object.freeze({databaseURL, secret});
 }
 
-export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean}>;
+export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean;storageReview?:boolean}>;
 export function readAgentBusinessModules(env: Record<string,string|undefined>, personal: PersonalConfig|null): AgentModules {
+  const review=env.LIFEOS_AGENT_STORAGE_REVIEW;
+  if(review!==undefined&&(review!=='storage-review-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent storage review configuration unavailable');
   const records=env.LIFEOS_AGENT_PERSONAL_RECORDS;
   if(records!==undefined&&(records!=='personal-records-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent personal records configuration unavailable');
   const policy=env.LIFEOS_AGENT_ALL_BUSINESS_DATA;
@@ -50,5 +53,5 @@ export function readAgentBusinessModules(env: Record<string,string|undefined>, p
   const requirement=env.LIFEOS_AGENT_REQUIREMENTS;if(requirement!==undefined&&requirement!=='requirements-v1'||requirement&&personal?.requirementsEnabled!==true)throw Error('Agent requirements configuration unavailable');
   const org = env.LIFEOS_AGENT_ORGANIZATION; const classification = env.LIFEOS_AGENT_CLASSIFICATION;
   if (org !== undefined && org !== 'organization-v1' || classification !== undefined && classification !== 'todo-classification-v1' || classification && !org || org && !personal) throw Error('Agent business configuration unavailable');
-  return Object.freeze({...(records?{personalRecords:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
+  return Object.freeze({...(review?{storageReview:true}:{}),...(records?{personalRecords:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
 }

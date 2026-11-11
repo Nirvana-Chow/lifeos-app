@@ -58,6 +58,7 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
 export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean, modules:AgentModules={organization:false,classification:false}):boolean {
   const operation = agentOperations.find(entry => entry.id === id);
   if (!operation || operation.module === 'catalog') return false;
+  if(operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||!fenceReady))return false;
   if(isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,personal,modules)||!fenceReady))return false;
   if (operation.module === 'todo' && !personal.allowedTypes.includes('todo')) return false;
   if(operation.module==='requirements'&&(!modules.requirements||!personal.requirementsEnabled||!fenceReady))return false;
@@ -227,7 +228,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
         if(agentOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
         if(agentOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
-        if(isRecordModule(agentOperations.find(op=>op.id===id)?.module??'')){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
+        if(isRecordModule(agentOperations.find(op=>op.id===id)?.module??'')||agentOperations.find(op=>op.id===id)?.module==='storageReview'){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
         return true;
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),

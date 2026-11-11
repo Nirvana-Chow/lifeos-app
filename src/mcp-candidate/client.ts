@@ -22,6 +22,7 @@ const supported=(operation:Operation)=>policyOperationScopes(operation)!==null&&
  /^\/v1\/requirements(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/records\/(?:journal|calendar|health|person|finance|media|career|portfolio)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/feedback(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
+ /^\/v1\/storage-reviews(?:\/(?:snapshot|\{id\})(?:\/(?:checklist|decisions))?)?$/.test(operation.path)||
  /^\/v1\/todo-classifications\/(?:preview|commit)$/.test(operation.path));
 export function validateLocalArguments(operationId:string,input:unknown){const operation=agentOperations.find(op=>op.id===operationId&&supported(op));if(!operation)throw new ApiError(403,'OPERATION_UNAVAILABLE');return{operation,parsed:parseArguments(operation,input)};}
 type FrozenRequest={requestId:string;operationId:string;argsJSON:string;path:string;encoded:string;key:string;before?:Record<string,unknown>;manifest?:Record<string,unknown>};

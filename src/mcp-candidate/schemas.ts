@@ -10,7 +10,8 @@ import {requirementId,validateRequirementFields,validateBaselineBinding} from '.
 import {validateFeedbackInput} from '../requirement-support-candidate/domain.ts';
 import {decodeChanges} from '../personal-candidate/classification-contracts.ts';
 import {classificationConfirmation} from '../personal-candidate/classification-service.ts';
-import {writeFieldsSchema,organizationFieldsSchema,classificationChanges,recordId,revision,commandKey,digest,baselineBinding} from './field-schemas.ts';
+import {writeFieldsSchema,storageReviewWriteFieldsSchema,organizationFieldsSchema,classificationChanges,recordId,revision,commandKey,digest,baselineBinding} from './field-schemas.ts';
+import {validateStorageReviewFields} from '../storage-review/agent-fields.ts';
 export type Operation=typeof agentOperations[number];
 const fields=z.record(z.string(),z.unknown());
 // Envelope parsing deliberately leaves business values to the canonical native
@@ -42,7 +43,7 @@ export function argumentSchema(operation:Operation):z.ZodType{
   if(operation.module==='organization'){
    return z.xor(organizationTypes.map(type=>z.strictObject({...shape,type:z.literal(type),fields:organizationFieldsSchema(type,operation.method==='PATCH')}))).describe('Complete organization fields on PATCH; metadata type must match route type. Omitted optional project planning dates preserve saved dates; null clears.');
   }
-  shape.fields=writeFieldsSchema(operation.module,operation.method==='PATCH');
+  shape.fields=operation.module==='storageReview'?storageReviewWriteFieldsSchema(operation.id):writeFieldsSchema(operation.module,operation.method==='PATCH');
  }
  return z.strictObject(shape).describe(operation.method==='PATCH'?'Submit complete required fields, not a partial merge. Preserve current fields from GET; optional planning/workflow omission preserves values and null clears. Native normalizers and current authorization remain authoritative.':operation.description);
 }
@@ -58,7 +59,8 @@ export function parseArguments(operation:Operation,input:unknown){
  else if(operation.id==='commitTodoClassification')classificationConfirmation(body);
  else if(operation.method!=='GET'){
   if(operation.method==='PATCH'&&!(operation.module==='requirements'&&typeof args.id==='string'&&args.id.startsWith('LO-')&&body.expectedRevision===0))validateRevision(body.expectedRevision);
-  if(operation.module==='requirements'){
+  if(operation.module==='storageReview')validateStorageReviewFields(operation.id,body.fields);
+  else if(operation.module==='requirements'){
    validateRequirementFields(body.fields);
    if(operation.method==='PATCH')validateBaselineBinding(body.baselineBinding);
   }else if(operation.module==='todo'){

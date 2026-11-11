@@ -1,4 +1,5 @@
 import {completeRecordFields} from '../agent-api/personal-records.ts';
+import {expectedStorageReviewFields} from '../storage-review/agent-fields.ts';
 import {preserveOmittedPlanning} from '../personal-candidate/planning.ts';
 import {validateTodo,validateFinance} from '../platform/domain.ts';
 import {normalizePersonalFields} from '../personal-candidate/business.ts';
@@ -11,6 +12,18 @@ export const responseEntry=v=>v&&typeof v==='object'&&!Array.isArray(v)?(v.entry
 const entry=responseEntry;
 export function verifyReceipt(operation,args,before,data){
  const e=entry(data),requirement=operation.module==='requirements';
+ if(operation.module==='storageReview'){
+  if(!e||!uuid(e.id)||!uuid(e.sourceId)||!Number.isInteger(e.revision)||e.revision<1)throw Error('STORAGE_REVIEW_RECEIPT_INVALID');
+  const expected=expectedStorageReviewFields(operation.id,args.fields,before?.fields);
+  if(operation.method==='POST'&&e.revision!==1)throw Error('CREATE_REVISION_MISMATCH');
+  if(operation.method==='PATCH'){
+   const replay=data.duplicate===true&&!Number.isInteger(before?.revision);
+   const revision=args.expectedRevision+(equal(expected,before?.fields)?0:1);
+   if(!before||e.id!==args.id||e.sourceId!==before.sourceId||!(replay?[args.expectedRevision,args.expectedRevision+1].includes(e.revision):e.revision===revision))throw Error('RECEIPT_IDENTITY_OR_CAS_MISMATCH');
+  }
+  if(!equal(e.fields,expected))throw Error('RECEIPT_CANONICAL_FIELDS_MISMATCH');
+  return e;
+ }
  if(!e||!(uuid(e.id)||requirement&&/^LO-[A-Z]+-\d{3}$/.test(e.id))||!Number.isInteger(e.revision)||e.revision<1||(operation.module!=='feedback'&&(!e.fields||typeof e.fields!=='object'))||!uuid(e.sourceId))throw Error('RECEIPT_INVALID');
  if(operation.method==='POST'&&e.revision!==1)throw Error('CREATE_REVISION_MISMATCH');
  if(operation.method==='PATCH'&&(!before||e.id!==args.id||(before.sourceId!==null&&e.sourceId!==before.sourceId)||e.revision!==args.expectedRevision+1))throw Error('RECEIPT_IDENTITY_OR_CAS_MISMATCH');

@@ -1,0 +1,10 @@
+import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
+const read=['storage-review:read'] as readonly OperationScope[];
+const write=['storage-review:read','storage-review:write'] as readonly OperationScope[];
+export const storageReviewOperations=[
+ {id:'snapshotStorageReviews',method:'GET',path:'/v1/storage-reviews/snapshot',module:'storageReview',policyClass:'personal-business-data',requiredScopes:read,description:'Read the complete owner storage-review singleton (zero or one) with checklist, decisions, source identity and revision. No filesystem access.'},
+ {id:'getStorageReview',method:'GET',path:'/v1/storage-reviews/{id}',module:'storageReview',policyClass:'personal-business-data',requiredScopes:read,description:'Read the exact storage-review record ID returned by the snapshot or receipt, including all saved owner decisions.'},
+ {id:'createStorageReview',method:'POST',path:'/v1/storage-reviews',module:'storageReview',policyClass:'personal-business-data',requiredScopes:write,description:'Upload an explicitly supplied private checklist once through the reviewed writer using fields.checklist and an idempotency key. No scan or file action.'},
+ {id:'updateStorageReviewChecklist',method:'PATCH',path:'/v1/storage-reviews/{id}/checklist',module:'storageReview',policyClass:'personal-business-data',requiredScopes:write,description:'Update fields.checklist with expectedRevision and an idempotency key. Preserve unchanged decided item IDs; reject changed or removed decided objects instead of clearing decisions.'},
+ {id:'updateStorageReviewDecision',method:'PATCH',path:'/v1/storage-reviews/{id}/decisions',module:'storageReview',policyClass:'personal-business-data',requiredScopes:write,description:'Save one pending item decision using fields.checklistRevision, itemId, decision (keep/trash/defer/null), expectedRevision and an idempotency key. A trash choice is a review decision, never filesystem deletion or permanent-delete authorization.'},
+] as const;

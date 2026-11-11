@@ -46,7 +46,7 @@ test('decision uses snapshot CAS, keeps checklist on read, and rejects protected
  assert.equal((await f.service.get(owner))?.decisions[0]?.decision,'keep');
 });
 
-test('checklist replacement requires current revision, preserves the prior entry in history, and retains matching decisions only by explicit policy',async()=>{
+test('checklist replacement requires current revision and preserves unchanged decided items',async()=>{
  const f=setup();await f.service.saveChecklist(owner,{expectedRevision:null,checklist:checklist()},'storage-review-create-001');
  await f.service.saveDecision(owner,{expectedRevision:1,checklistRevision:'review-v1',id:'F-001',decision:'defer'},'storage-review-decision-001');
  const beforeNoop=f.memory.historyRows.length;
@@ -58,7 +58,16 @@ test('checklist replacement requires current revision, preserves the prior entry
  const replaced=await f.service.saveChecklist(owner,{expectedRevision:2,checklist:checklist('review-v2')},'storage-review-replace-001');
  assert.equal(replaced.revision,3);assert.equal(f.memory.historyRows.length,3);
  assert.deepEqual((await f.service.get(owner))?.checklist,checklist('review-v2'));
- assert.deepEqual(replaced.decisions,[]);
+ assert.deepEqual(replaced.decisions,[{id:'F-001',decision:'defer'}]);
+});
+
+test('a new checklist revision cannot silently remove or alter a previously decided object',async()=>{
+ const f=setup();await f.service.saveChecklist(owner,{expectedRevision:null,checklist:checklist()},'storage-review-create-001');
+ await f.service.saveDecision(owner,{expectedRevision:1,checklistRevision:'review-v1',id:'F-001',decision:'keep'},'storage-review-decision-001');
+ const changed=checklist('review-v2');changed.items[0]={...changed.items[0],title:'Different object'};
+ for(const next of [changed,{...checklist('review-v2'),items:[checklist().items[1]]}])
+  await assert.rejects(f.service.saveChecklist(owner,{expectedRevision:2,checklist:next},'storage-review-changed-decided'),error=>!!error&&typeof error==='object'&&'code'in error&&error.code==='CHECKLIST_DECISION_CONFLICT');
+ assert.equal((await f.service.get(owner))?.revision,2);assert.equal(f.memory.historyRows.length,2);
 });
 
 test('rejects malformed IDs, duplicate IDs, unknown fields, oversize payloads, and another owner without writes',async()=>{

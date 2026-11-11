@@ -7,6 +7,12 @@ import {storageReviewMarker,validateChecklistCommand,validateDecisionCommand,val
 type ReviewDraft=InboxDraft&{storageReview:ReviewSnapshot};
 type ReviewEntry=StoredEntry&{draft:ReviewDraft};
 type Config={ownerId:string;spaceId:string};
+export type StorageReviewAudit={kind:'agent-grant';grantId:string;operationId:string};
+export type StorageReviewDetail={id:string;sourceId:string;revision:number;fields:Pick<ReviewSnapshot,'checklist'|'decisions'>};
+export function storageReviewDetail(entry:PublicEntry):StorageReviewDetail{
+ const state=validateReviewSnapshot((entry.draft as ReviewDraft).storageReview);
+ return{id:entry.id,sourceId:entry.source.id,revision:entry.revision,fields:{checklist:state.checklist,decisions:state.decisions}};
+}
 const missing=()=>new PlatformError(404,'NOT_FOUND','没有可访问的个人审核记录。');
 const unavailable=()=>new PlatformError(503,'STORAGE_REVIEW_UNAVAILABLE','审核记录暂不可读取。');
 const canonical=(value:unknown):string=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'?'{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b,'en')).map(([k,v])=>JSON.stringify(k)+':'+canonical(v)).join(',')+'}':JSON.stringify(value);
@@ -70,36 +76,51 @@ export class StorageReviewService{
   const entry=await this.repository.get(owner,'inbox',this.id);return entry?checkedEntry(entry,owner,this.config.spaceId,this.id):null;
  }
  async get(owner:string):Promise<ReviewSnapshot|null>{this.authorize(owner);const entry=await this.locate(owner);return entry?snapshot(entry):null;}
+ async getEntry(owner:string,id?:string):Promise<StorageReviewDetail|null>{
+  this.authorize(owner);if(id!==undefined&&validateId(id)!==this.id)throw missing();
+  const entry=await this.locate(owner);return entry?storageReviewDetail(saved(entry).entry):null;
+ }
  async saveChecklist(owner:string,input:unknown,key:string,guard?:()=>Promise<void>):Promise<ReviewSnapshot>{
-  this.authorize(owner);validateStorageReviewKey(key);const command=validateChecklistCommand(input),raw=structuredClone(command),commandDigest=digest({action:storageReviewMarker,owner,spaceId:this.config.spaceId,kind:'checklist',input:raw}),checkGuard=guardFn(guard);
+  return snapshotFromReceipt(await this.saveChecklistResult(owner,input,key,guard),owner,this.config.spaceId,this.id);
+ }
+ async saveChecklistResult(owner:string,input:unknown,key:string,guard?:()=>Promise<void>,transactionGuard?:(tx:Transaction)=>Promise<void>,audit?:StorageReviewAudit):Promise<MutationResult>{
+  this.authorize(owner);validateStorageReviewKey(key);const command=validateChecklistCommand(input),raw={...structuredClone(command),...(audit?{actor:{...audit}}:{})},commandDigest=digest({action:storageReviewMarker,owner,spaceId:this.config.spaceId,kind:'checklist',input:raw}),checkGuard=guardFn(guard);
   if(storageReviewJsonBytes({owner,spaceId:this.config.spaceId,input:raw})>131072)throw new PlatformError(413,'STORAGE_REVIEW_TOO_LARGE','审核请求超过安全大小上限。');
   await checkGuard();
   return this.repository.transaction(owner,key,async tx=>{
-   await checkGuard();const receipt=await tx.receipt();
-   if(receipt){if(receipt.digest!==commandDigest)throw new PlatformError(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');return snapshotFromReceipt(receipt.result,owner,this.config.spaceId,this.id);}
+   await checkGuard();await transactionGuard?.(tx);const receipt=await tx.receipt();
+   if(receipt){if(receipt.digest!==commandDigest)throw new PlatformError(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');snapshotFromReceipt(receipt.result,owner,this.config.spaceId,this.id);return{...structuredClone(receipt.result),duplicate:true};}
    await identityLock(tx,this.id);const rawEntry=await tx.get('inbox',this.id),current=rawEntry?checkedEntry(rawEntry,owner,this.config.spaceId,this.id):null;
    if(!current){if(command.expectedRevision!==null)throw new PlatformError(409,'REVISION_CONFLICT','审核状态已变化，请重新读取。');}
    else if(command.expectedRevision!==current.revision)throw new PlatformError(409,'REVISION_CONFLICT','审核状态已变化，请重新读取。');
    let state:ReviewSnapshot;
    if(current&&command.checklist.revision===current.draft.storageReview.checklist.revision){
     if(!same(command.checklist,current.draft.storageReview.checklist))throw new PlatformError(409,'CHECKLIST_REVISION_CONFLICT','相同清单版本不能替换内容。');
-    state=snapshot(current);const result=saved(current);await tx.saveReceipt({digest:commandDigest,result});return state;
+    state=snapshot(current);const result=saved(current);await tx.saveReceipt({digest:commandDigest,result});return result;
    }else{
     if(current&&current.revision===2147483647)throw new PlatformError(409,'REVISION_LIMIT','审核状态版本已达上限。');
-    state={revision:(current?.revision??0)+1,checklist:command.checklist,decisions:[]};
+    const previous=current?.draft.storageReview;
+    const decisions=previous?.decisions??[];
+    for(const decision of decisions){
+     const before=previous!.checklist.items.find(item=>item.id===decision.id),after=command.checklist.items.find(item=>item.id===decision.id);
+     if(!before||!after||after.status!=='pending'||!same(before,after))throw new PlatformError(409,'CHECKLIST_DECISION_CONFLICT','已决定条目发生变化，请先明确处理原决定。');
+    }
+    state={revision:(current?.revision??0)+1,checklist:command.checklist,decisions:[...decisions].sort((a,b)=>command.checklist.items.findIndex(item=>item.id===a.id)-command.checklist.items.findIndex(item=>item.id===b.id))};
     const entry=entryFrom(owner,this.id,this.config.spaceId,current,state);await checkGuard();await tx.write(entry as StoredEntry,raw,!current);
-    const result=saved(entry);await tx.saveReceipt({digest:commandDigest,result});return state;
+    const result=saved(entry);await tx.saveReceipt({digest:commandDigest,result});return result;
    }
-   const entry=entryFrom(owner,this.id,this.config.spaceId,current,state),result=saved(entry);await tx.saveReceipt({digest:commandDigest,result});return state;
   });
  }
  async saveDecision(owner:string,input:unknown,key:string,guard?:()=>Promise<void>):Promise<ReviewSnapshot>{
-  this.authorize(owner);validateStorageReviewKey(key);const command=validateDecisionCommand(input),raw=structuredClone(command),commandDigest=digest({action:storageReviewMarker,owner,spaceId:this.config.spaceId,kind:'decision',input:raw}),checkGuard=guardFn(guard);
+  return snapshotFromReceipt(await this.saveDecisionResult(owner,input,key,guard),owner,this.config.spaceId,this.id);
+ }
+ async saveDecisionResult(owner:string,input:unknown,key:string,guard?:()=>Promise<void>,transactionGuard?:(tx:Transaction)=>Promise<void>,audit?:StorageReviewAudit):Promise<MutationResult>{
+  this.authorize(owner);validateStorageReviewKey(key);const command=validateDecisionCommand(input),raw={...structuredClone(command),...(audit?{actor:{...audit}}:{})},commandDigest=digest({action:storageReviewMarker,owner,spaceId:this.config.spaceId,kind:'decision',input:raw}),checkGuard=guardFn(guard);
   if(storageReviewJsonBytes({owner,spaceId:this.config.spaceId,input:raw})>131072)throw new PlatformError(413,'STORAGE_REVIEW_TOO_LARGE','审核请求超过安全大小上限。');
   await checkGuard();
   return this.repository.transaction(owner,key,async tx=>{
-   await checkGuard();const receipt=await tx.receipt();
-   if(receipt){if(receipt.digest!==commandDigest)throw new PlatformError(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');return snapshotFromReceipt(receipt.result,owner,this.config.spaceId,this.id);}
+   await checkGuard();await transactionGuard?.(tx);const receipt=await tx.receipt();
+   if(receipt){if(receipt.digest!==commandDigest)throw new PlatformError(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');snapshotFromReceipt(receipt.result,owner,this.config.spaceId,this.id);return{...structuredClone(receipt.result),duplicate:true};}
    await identityLock(tx,this.id);const rawEntry=await tx.get('inbox',this.id);if(!rawEntry)throw missing();const current=checkedEntry(rawEntry,owner,this.config.spaceId,this.id),old=current.draft.storageReview;
    if(command.expectedRevision!==current.revision||command.checklistRevision!==old.checklist.revision)throw new PlatformError(409,'REVISION_CONFLICT','审核状态或清单版本已变化，请重新读取。');
    const item=old.checklist.items.find(value=>value.id===command.id);if(!item||item.status!=='pending')throw new PlatformError(409,'PROTECTED_ITEM','仅待处理条目可以修改处置。');
@@ -107,11 +128,11 @@ export class StorageReviewService{
    if(command.decision!==null)decisions.push({id:command.id,decision:command.decision});
    decisions.sort((a,b)=>old.checklist.items.findIndex(value=>value.id===a.id)-old.checklist.items.findIndex(value=>value.id===b.id));
    if(same(decisions,old.decisions)){
-    await tx.saveReceipt({digest:commandDigest,result:saved(current)});return snapshot(current);
+    const result=saved(current);await tx.saveReceipt({digest:commandDigest,result});return result;
    }
    if(current.revision===2147483647)throw new PlatformError(409,'REVISION_LIMIT','审核状态版本已达上限。');
    const state:ReviewSnapshot={revision:current.revision+1,checklist:old.checklist,decisions},entry=entryFrom(owner,this.id,this.config.spaceId,current,state);
-   await checkGuard();await tx.write(entry as StoredEntry,raw,false);const result=saved(entry);await tx.saveReceipt({digest:commandDigest,result});return state;
+   await checkGuard();await tx.write(entry as StoredEntry,raw,false);const result=saved(entry);await tx.saveReceipt({digest:commandDigest,result});return result;
   });
  }
 }
