@@ -8,6 +8,7 @@ import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test'
 import {readyHeading,assertPrivateCaptureContent,captureSourceText,privateLocalInteractions,privateMobileNavigation,privateOrigin} from './helpers/private-business-browser-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
+import {presentationDensity} from './helpers/personal-workspace-browser-fixture.ts';
 
 test('OPT-IN private visual oracle admits only native closed finance and health surfaces',{
  skip:process.env.RUN_PRIVATE_NATIVE_VISUAL_BROWSER_TESTS!=='1'&&'Requires disposable read-only Next/Chrome fixture',timeout:120000,
@@ -43,6 +44,14 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
   for(const [path,heading] of [['health','健康'],['finance','财务']] as const){
    await page.goto(origin+'/personal/'+path,{waitUntil:'domcontentloaded',timeout:60000});await readyHeading(page,heading);
    await privateLocalInteractions(page,'private-'+path);
+   if(path==='health'){
+    const alert=page.locator('[data-personal-record-module="health"]').getByRole('alert');
+    const typography=await alert.evaluate(node=>{const rect=node.getBoundingClientRect();return{tag:node.tagName,class:node.className,font:parseFloat(getComputedStyle(node).fontSize),parentFont:parseFloat(getComputedStyle(node.parentElement!).fontSize),finePointer:matchMedia('(pointer:fine)').matches,rect:{width:rect.width,height:rect.height}};});
+    const minimum=presentationDensity(width,typography.finePointer).body;
+    // Shape and numeric layout only; never emit text, input values or record IDs.
+    console.log('PRIVATE_HEALTH_TYPOGRAPHY '+JSON.stringify({width,theme,minimum,...typography}));
+    assert.ok(typography.font>=minimum,'closed health alert follows the existing readable body typography');
+   }
    const facts=await page.locator('.lo-shell').evaluate(shell=>{
     const texts:string[]=[],walk=document.createTreeWalker(shell,NodeFilter.SHOW_TEXT);let node:Node|null;
     while((node=walk.nextNode())){const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript,option'))continue;const range=document.createRange();range.selectNode(node);if(!Array.from(range.getClientRects()).some(r=>r.width>0&&r.height>0))continue;const text=node.textContent?.replace(/\s+/g,' ').trim();if(text)texts.push(text);}
