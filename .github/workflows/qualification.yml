@@ -95,6 +95,19 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres -d lifeos_platform_test_local"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      policy-postgres:
+        # Dedicated empty cluster: policy tests create cluster-global roles.
+        # Same fixed official image as the other isolated services; no live target.
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture-ci-admin-never-live
+        ports:
+          - 127.0.0.1:55449:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - name: Check out the exact source head, without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -184,6 +197,28 @@ jobs:
           set -euo pipefail
           node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/classification-pg.xml" test/classification-postgres.integration.test.ts
           python3 scripts/check-classification-junit.py postgres "$RUNNER_TEMP/classification-pg.xml"
+      - name: Qualify fresh policy and storage-review SQL fences without skips
+        env:
+          RUN_BUSINESS_POLICY_POSTGRES_TESTS: '1'
+          LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
+          LIFEOS_POLICY_FIXTURE_CONTEXT: github-actions
+          LIFEOS_POLICY_FIXTURE_ID: business-policy-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/business-policy-pg.xml" test/agent-business-policy-postgres.integration.test.ts
+          python3 - <<'PY_BUSINESS_POLICY_PG'
+          import os, xml.etree.ElementTree as ET
+          cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'business-policy-pg.xml')).getroot().iter('testcase'))
+          names = {c.get('name') for c in cases}
+          required = {
+            'migration changes no existing key and keeps exact legacy digest; policy starts closed',
+            'wrong owner/space, revocation and expiry independently deny and direct roles cannot mutate policy or registry',
+            'storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence',
+          }
+          assert len(cases) == 34 and len(names) == 34 and required <= names, 'Expected all 34 distinct native policy/storage PostgreSQL leaf cases'
+          assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Policy/storage SQL skip or failure is not acceptance'
+          print('PASS: 34 fresh policy/storage SQL leaf cases; zero skips, independent source/run-bound service.')
+          PY_BUSINESS_POLICY_PG
       - name: Qualify isolated requirements persistence and Agent grants without skips
         env:
           RUN_REQUIREMENTS_POSTGRES_TESTS: '1'

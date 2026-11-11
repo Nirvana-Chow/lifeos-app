@@ -13,26 +13,35 @@ import {agentOperations} from '../src/agent-api/capabilities.ts';
 import {createPostgresKeyIssuer,readKeyIssuerConfig} from '../src/agent-api/key-issuer.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {PostgresPlatformRepository,type SqlPool} from '../src/platform/postgres.ts';
+import {prepareBusinessPolicyCI,policyCIPassword} from './helpers/business-policy-stage-pg.ts';
+import {tmpdir} from 'node:os';
 
-// A fresh cluster is created and stopped by this test. No existing DB or declared fixture is reused.
+// Local mode owns a new cluster process; CI owns a dedicated empty Docker service.
+// Neither mode reuses an initialized database or another qualification fixture.
 test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
  skip:process.env.RUN_BUSINESS_POLICY_POSTGRES_TESTS!=='1'&&'Fresh synthetic PostgreSQL policy fixture not requested',timeout:90000,
 },async t=>{
+ const ci=process.env.LIFEOS_POLICY_FIXTURE_CONTEXT==='github-actions'?await prepareBusinessPolicyCI():null;
  const bin=process.env.LIFEOS_POLICY_PG_BIN;
- assert.ok(bin&&/^\/private\/tmp\/lifeos-pg17\.[A-Za-z0-9]+\/install\/bin$/.test(bin));
- assert.match(execFileSync(join(bin,'postgres'),['--version'],{encoding:'utf8'}),/17\.11/);
- const root=await mkdtemp('/private/tmp/lifeos-policy-'),data=join(root,'data');
- execFileSync(join(bin,'initdb'),['-D',data,'-U','postgres','--auth=trust','--no-locale'],{stdio:'pipe'});
- // New process and private data path only; fixed test port never redirects to an existing server.
- execFileSync(join(bin,'pg_ctl'),['-D',data,'-l',join(root,'postgres.log'),'-o',`-h 127.0.0.1 -p 55449 -k ${root}`,'-w','start'],{stdio:'pipe'});
+ if(!ci){
+  assert.ok(process.env.CI!=='true'&&process.env.GITHUB_ACTIONS!=='true'&&bin&&/^\/private\/tmp\/lifeos-pg17\.[A-Za-z0-9]+\/install\/bin$/.test(bin));
+  assert.match(execFileSync(join(bin,'postgres'),['--version'],{encoding:'utf8'}),/17\.11/);
+ }
+ const root=ci?tmpdir():await mkdtemp('/private/tmp/lifeos-policy-'),data=ci?'/var/lib/postgresql/data':join(root,'data');
+ if(!ci){
+  execFileSync(join(bin!,'initdb'),['-D',data,'-U','postgres','--auth=trust','--no-locale'],{stdio:'pipe'});
+  // New process and private data path only; fixed test port never redirects to an existing server.
+  execFileSync(join(bin!,'pg_ctl'),['-D',data,'-l',join(root,'postgres.log'),'-o',`-h 127.0.0.1 -p 55449 -k ${root}`,'-w','start'],{stdio:'pipe'});
+ }
  const pools:Pool[]=[];
- const connect=(user='postgres',database='lifeos_platform_test_local')=>{const p=new Pool({host:'127.0.0.1',port:55449,database,user,max:4,connectionTimeoutMillis:2000,statement_timeout:7000,lock_timeout:5000});pools.push(p);return p;};
+ const connect=(user='postgres',database='lifeos_platform_test_local')=>{const p=ci?ci.connect(user,database):new Pool({host:'127.0.0.1',port:55449,database,user,max:4,connectionTimeoutMillis:2000,statement_timeout:7000,lock_timeout:5000});pools.push(p);return p;};
  const initial=connect('postgres','postgres');
  try{
   assert.equal((await initial.query("SELECT current_setting('data_directory') AS data")).rows[0].data,data);
   await initial.query('CREATE DATABASE lifeos_platform_test_local');
   const admin=connect();
-  for(const role of ['lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_issuer','lifeos_agent_verifier','lifeos_agent_key_manager'])await admin.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION`);
+  if(ci)await ci.bindDatabase(admin);
+  for(const role of ['lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_issuer','lifeos_agent_verifier','lifeos_agent_key_manager'])await admin.query(`CREATE ROLE ${role} LOGIN ${ci?`PASSWORD '${policyCIPassword}' `:''}NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION`);
   await admin.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC; REVOKE CREATE ON DATABASE lifeos_platform_test_local FROM PUBLIC');
   await admin.query("SET lifeos.calendar_migration_approved='1'; SET lifeos.chat_migration_approved='1'");
   for(const name of ['0001_platform_candidate.sql','0002_platform_inbox.sql','0003_ai_settings.proposed.sql','0004_calendar.proposed.sql','0005_ai_chat.proposed.sql','platform-synthetic-bootstrap-grants.proposed.sql'])await admin.query(await readFile('db/'+name,'utf8'));
@@ -160,7 +169,7 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
    }finally{await left.query('ROLLBACK');await right.query('ROLLBACK');left.release();right.release();}
   });
   await t.test('policy-aware issuer lists actual policy and issues with explicit selection using existing owner MFA',async()=>{
-   const config=readKeyIssuerConfig({socketPath:join(root,'issuer.sock'),baseURL:'https://policy.example.test',databaseURL:'postgresql://lifeos_agent_key_manager:synthetic-unused@127.0.0.1:55449/lifeos_platform_test_local',ownerId:owner,ownerEmail:'policy@example.test',spaceId:space,sessionSecret:'synthetic-policy-session-secret-0000000000',agentSecret:'synthetic-policy-agent-secret-0000000000000',businessScopes:'requirements-v1',businessDataPolicy:policy});
+   const config=readKeyIssuerConfig({socketPath:join(root,'issuer.sock'),baseURL:'https://policy.example.test',databaseURL:ci?.managerURL??'postgresql://lifeos_agent_key_manager:synthetic-unused@127.0.0.1:55449/lifeos_platform_test_local',ownerId:owner,ownerEmail:'policy@example.test',spaceId:space,sessionSecret:'synthetic-policy-session-secret-0000000000',agentSecret:'synthetic-policy-agent-secret-0000000000000',businessScopes:'requirements-v1',businessDataPolicy:policy});
    const issuer=await createPostgresKeyIssuer(config);try{const signature=createHmac('sha256',config.sessionSecret).update(session).digest('base64'),cookie='__Secure-lifeos-platform-candidate.session_token='+encodeURIComponent(session+'.'+signature);
     const result=await issuer.handle('create',cookie,{name:'Synthetic policy key',scopes:['todo:read'],expiresInDays:7,businessDataPolicy:policy});assert.equal(result.status,201);
     const issued=result.body as {key:string;grant:{id:string}};
@@ -236,6 +245,6 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
    assert.equal((await readBusinessPolicyCatalog(verifier)).enabled,true);
   });
  }finally{
-  await Promise.all(pools.map(pool=>pool.end()));execFileSync(join(bin,'pg_ctl'),['-D',data,'-m','immediate','-w','stop'],{stdio:'pipe'});
+  await Promise.all(pools.map(pool=>pool.end()));if(!ci)execFileSync(join(bin!,'pg_ctl'),['-D',data,'-m','immediate','-w','stop'],{stdio:'pipe'});
  }
 });
