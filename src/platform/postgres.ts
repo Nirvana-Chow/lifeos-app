@@ -1,3 +1,4 @@
+import {assertPostgresExecutionLease} from '../requirement-events/transaction.ts';
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
 import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
@@ -44,8 +45,8 @@ function decode(row:Record<string,unknown>):StoredEntry{
  return{id:row.id as string,ownerId:row.owner_id as string,kind:row.kind as Kind,...(row.inbox_id?{inboxId:row.inbox_id as string}:{}),draft:row.draft as StoredEntry['draft'],source:{id:row.source_id as string,system:'website',externalId:row.external_id as string,version:row.source_version as number,asOf:iso(row.as_of),original:row.original},revision:row.revision as number,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),syncState:'draft',externalStatus:null};
 }
 export class PostgresPlatformRepository implements ClassificationRepository{
- private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;private readonly businessFeatures?:AgentModules;
- constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false,businessFeatures?:AgentModules){this.businessFeatures=businessFeatures;this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
+ private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;private readonly businessFeatures?:AgentModules;private readonly requirementEventsEnabled:boolean;
+ constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false,businessFeatures?:AgentModules,requirementEventsEnabled=false){this.requirementEventsEnabled=requirementEventsEnabled;this.businessFeatures=businessFeatures;this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
  private async scoped<T>(owner:string,fn:(client:SqlClient)=>Promise<T>,consistentRead=false):Promise<T>{
   const client=await this.pool.connect();try{await client.query(consistentRead?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN ISOLATION LEVEL READ COMMITTED');await client.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner]);const result=await fn(client);await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
  }
@@ -76,6 +77,7 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
+   ...(this.requirementEventsEnabled?{assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding)}:{}),
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
    ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
     if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;

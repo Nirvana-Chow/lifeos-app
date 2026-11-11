@@ -10,6 +10,8 @@ export type PublicEntry=Omit<StoredEntry,'ownerId'>;
 export type MutationResult={entry:PublicEntry;duplicate:boolean};
 export type Receipt={digest:string;result:MutationResult};
 export interface Transaction {
+ /** Optional, default-closed worker fence on this same transaction/connection. */
+ assertRequirementExecutionLease?(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding):Promise<void>;
  /** Serialize deterministic identities even before the first record exists. */
  lockRecordIdentity?(kind:Kind,id:string):Promise<void>;
  lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
