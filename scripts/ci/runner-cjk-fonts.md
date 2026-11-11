@@ -15,7 +15,14 @@ The repair reuses the same Ubuntu noble package `1:20230817+repack1-3`. The
 specifies 61,229,778 bytes and SHA256
 `7d64b985f6fe128c99eae5610d5c047338e572bdcfb2bb09736be01b824a7f6c`.
 It downloads only that package from [Ubuntu's HTTPS archive](https://archive.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/),
-without APT index refreshes or unrelated third-party repository access. A private
+with a transport-failure fallback to the same fixed package at
+[Ubuntu's security archive](https://security.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/).
+[Ubuntu's project documentation](https://ubuntu.com/project/docs/how-ubuntu-is-made/concepts/package-archive/)
+identifies these as the same official archive servers. The second hostname can
+avoid a hostname-specific DNS failure; it is not an independent backend or a
+guarantee against all Ubuntu or runner network outages. A successful download
+that fails its hash or metadata is rejected without trying another artifact.
+The helper uses no APT index refreshes or unrelated repository access. A private
 temporary download on macOS matched that hash; its control metadata had the same
 name/version/architecture and its complete copyright file was 14,712 bytes,
 including SIL-1.1 fonts and GPL-3+ Debian packaging. Nothing was installed locally,
@@ -31,10 +38,11 @@ preserves the complete upstream copyright under `/usr/share/doc/fonts-noto-cjk/`
 
 The helper has a 180-second overall deadline (plus at most 5 seconds before kill),
 including cache, download, installation and installed-status readback. `curl` has
-10-second connection/65-second transfer limits, at most one retry, a 135-second
-retry budget and low-speed detection. Its [official documentation](https://curl.se/docs/manpage.html#--retry-max-time)
-explains that the retry timer alone is not an absolute wall-clock limit; the outer
-timeout supplies that bound. The privileged `dpkg` child has its own 35-second
+10-second connection/65-second transfer limits, one attempt per official hostname
+(two attempts total), no intra-host retries and low-speed detection. Its
+[official connection-timeout documentation](https://curl.se/docs/manpage.html#--connect-timeout)
+includes DNS resolution in that budget; the outer timeout supplies the absolute
+wall-clock bound. The privileged `dpkg` child has its own 35-second
 deadline plus 5 seconds before kill. Both workflow steps have a four-minute hard
 limit; `fc-cache`, Chinese `fc-match` and Chrome version checks also have deadlines.
 The original copyright, Chinese-family oracle, Chrome/NSS requirements and all UI
@@ -45,7 +53,7 @@ Fixtures isolate package/network/privileged commands and cover exact-installed
 reuse, cache reuse, cold download, poison-cache rejection using the real SHA256
 tool, corrupt download, download failure, metadata mismatch, install failure and
 failed installed-status readback. A stalled-transfer test checks the production
-deadline invocation and uses the real timeout with a one-second test clock to
+deadline invocation and uses the real timeout with a five-second test clock to
 prove termination before installation. The workflow contract test retains the font,
 copyright and browser checks. These simulations are not Linux installation or
 rendering acceptance: the new exact SHA must pass the existing real Linux CI.
@@ -55,3 +63,38 @@ coordinator must update that binding through the existing controlled process and
 retain old receipt evidence; a workflow edit does not authorize reusing old green
 runs. Rollback is this source slice plus the matching controlled digest binding,
 not a weakened qualification gate.
+
+## 2026-11-12 DNS failure and minimal correction
+
+The target remains successful real Linux font/license/Chinese-family qualification
+under the existing UI delivery gates. Coordinator readback on unchanged MCP source
+`130d77303179beda791022a18c30fc1e0611324e` found unit/types/webpack/Auth/PostgreSQL
+checks successful, but recovery job `130642900785` and its one failed-job retry
+`130653899066` both stopped at two ten-second archive-host DNS timeouts (curl28).
+These are two infrastructure attempts, with no source repair between them; no
+third blind retry was performed and neither partial run is full-green evidence.
+
+The proven boundary is hostname resolution before package download. It does not
+prove a general DNS configuration error or an application regression. The official
+Ubuntu metadata still lists the exact version/hash above. Local HTTPS HEAD checks
+for both archive hostnames returned 200 and 61,229,778 bytes; a complete download
+from the security hostname matched the same pinned SHA256. Ubuntu snapshot service
+was investigated but its local TLS attempt timed out, so it is not an additional
+fallback. The existing installed-package and checked cache paths remain unchanged;
+no cross-run cache action, global DNS change, new mirror or package is added.
+
+The sole source repair replaces two attempts at one hostname with one attempt at
+each of the two documented official hostnames. Regression first reproduced the
+archive-only failure with no fallback and then passed fallback success and corrupt
+fallback rejection. Hash/metadata failure never triggers alternate-artifact use.
+
+The pre-existing one-second test clock also reproduced an earlier prerequisite
+timeout before curl began. Only that test clock is now five seconds, with an
+explicit stalled-curl-start marker, real timeout exit124, a nine-second test upper
+bound and zero privileged installation. The production 180-second and privileged
+35-second deadlines are unchanged. Focused shell/release tests passed 15/15 with
+zero skips; these fixtures do not establish Linux package installation or browser
+acceptance. The next and deciding validation is the original required GitHub
+qualification on the new fixed source. If both official sources remain unavailable,
+retain the failure and investigate new evidence instead of adding unverified hosts
+or weakening the font gate. Rollback is this helper/test/documentation change.

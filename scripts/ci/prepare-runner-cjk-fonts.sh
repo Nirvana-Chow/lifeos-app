@@ -13,6 +13,9 @@ readonly filename='fonts-noto-cjk_20230817+repack1-3_all.deb'
 # https://packages.ubuntu.com/noble/all/fonts-noto-cjk/download
 readonly sha256='7d64b985f6fe128c99eae5610d5c047338e572bdcfb2bb09736be01b824a7f6c'
 readonly url="https://archive.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/$filename"
+# Canonical documents security.ubuntu.com as the same official archive servers.
+# Independent hostname fallback; the exact artifact still must pass its hash.
+readonly fallback_url="https://security.ubuntu.com/ubuntu/pool/main/f/fonts-noto-cjk/$filename"
 
 installed_package() {
   [[ "$(dpkg-query -W -f='${db:Status-Status} ${Version}\n' fonts-noto-cjk 2>/dev/null)" == "installed $version" ]]
@@ -32,11 +35,16 @@ if [[ -f "$cache/$filename" ]]; then
   # Install a private snapshot, so a cache path is never passed to root/dpkg.
   cp -- "$cache/$filename" "$package"
 else
-  echo 'Downloading fixed Ubuntu CJK font package over HTTPS (at most two attempts).'
-  curl --fail --location --proto '=https' --proto-redir '=https' \
-    --connect-timeout 10 --max-time 65 --speed-limit 1024 --speed-time 20 \
-    --retry 1 --retry-delay 2 --retry-max-time 135 \
-    --silent --show-error --output "$package" "$url"
+  echo 'Downloading fixed Ubuntu CJK font package over HTTPS (one attempt per official hostname).'
+  download_font() {
+    curl --fail --location --proto '=https' --proto-redir '=https' \
+      --connect-timeout 10 --max-time 65 --speed-limit 1024 --speed-time 20 \
+      --retry 0 --silent --show-error --output "$package" "$1"
+  }
+  if ! download_font "$url"; then
+    echo 'Primary download failed; trying the same fixed package from the official Ubuntu security archive.' >&2
+    download_font "$fallback_url"
+  fi
 fi
 
 # Every cache hit and download must pass the same pinned hash before dpkg-deb or
