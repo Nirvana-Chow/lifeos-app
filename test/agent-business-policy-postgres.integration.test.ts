@@ -198,7 +198,16 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
    }finally{await issuer.close();}
   });
   await t.test('storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence',async()=>{
-   await admin.query("SET lifeos.storage_review_agent_approved='1'");await admin.query(await readFile('db/0019_storage_review_agent_operations.proposed.sql','utf8'));
+   // Earlier lock tests check out the admin session while querying blockers,
+   // creating another pool connection. Bind this migration on one exact client;
+   // a later pool.query must not inherit another session's target approval.
+   const migration=await admin.connect();
+   try{
+    await migration.query("SELECT set_config('lifeos.agent_expected_database',$1,false),set_config('lifeos.agent_expected_owner',$2,false),set_config('lifeos.agent_expected_space',$3,false),set_config('lifeos.storage_review_agent_approved','1',false)",['lifeos_platform_test_local',owner,space]);
+    const binding=(await migration.query("SELECT current_database() AS database,current_user AS role,current_setting('lifeos.agent_expected_database') AS target,current_setting('lifeos.agent_expected_owner') AS owner,current_setting('lifeos.agent_expected_space') AS space,current_setting('lifeos.storage_review_agent_approved') AS approved")).rows[0];
+    assert.deepEqual(binding,{database:'lifeos_platform_test_local',role:'postgres',target:'lifeos_platform_test_local',owner,space,approved:'1'});
+    await migration.query(await readFile('db/0019_storage_review_agent_operations.proposed.sql','utf8'));
+   }finally{migration.release(true);}
    const reviewIds=['snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision'];
    const registered=(await readBusinessPolicyCatalog(verifier)).operations.filter(op=>reviewIds.includes(op.id));assert.equal(registered.length,5);assert.ok(registered.every(op=>op.enabled===false));
    await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true WHERE operation_id=ANY($1::text[])',[reviewIds]);
