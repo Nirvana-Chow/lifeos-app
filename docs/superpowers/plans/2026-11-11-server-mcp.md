@@ -1,0 +1,34 @@
+# Same-site HTTP MCP slice
+
+Continues LO-AGENT-001 / #35 and personal-agent-foundation 7.1, 7.2, 9.7. The owner's 2026-11-11 request adds server MCP and permits source implementation while the local credential path is unavailable. Requirement-pool intake remains pending; this document is engineering evidence, not a second business backlog or owner acceptance. Root owns shared registry, Skill and OpenSpec updates.
+
+Use the already locked official split SDK 2.4.0 and its `createMcpHandler`: one server instance per HTTP request, modern 2026-07-28 auto responses (JSON without related notifications) and the SDK's stateless 2025 compatibility. No session, OAuth, extra dependency, background service or production setting is introduced. The route remains closed unless its explicit versioned flag and the existing Agent runtime are enabled.
+
+The thin adapter accepts a Bearer credential for the configured LifeOS origin. It validates host/path/origin before dispatch, never forwards cookies, and calls the existing Agent HTTP handler in-process using only canonical registry paths. The existing verifier, current grant checks, module readiness, transaction fences and business writer remain authoritative. Tool arguments cannot choose another host, headers, owner, scope or writer.
+
+Discover and call reuse the operation registry, argument schemas and receipt/readback projections. Every call rediscovers current authority. Ordinary writes use the original API idempotency key and an independent authorized GET. A lost result keeps the original operation/arguments/key: resubmitting the identical `lifeos_call` reaches the existing durable API receipt, including across HTTP handler restarts. No `lifeos_retry` or in-memory recovery ID is advertised. Classification commit is not projected until the HTTP adapter has an authorized complete preview-manifest path; preview remains available. This is an explicit qualification gap, not a claim of full registry parity.
+
+References: [SDK 2.4.0](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/v2.4.0), [2026-07-28 Streamable HTTP](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/basic/transports/streamable-http.mdx). Existing `agent-mcp` remote-activation text predates this owner source request; live activation, client compatibility and any OAuth identity package remain separate gates.
+
+Plan: write synthetic protocol/boundary tests (RED); implement the in-process business adapter and SDK HTTP boundary; run focused protocol tests (GREEN), full unit suite, typecheck and one build; commit a reviewable source slice. Root independently reviews, integrates shared docs/discovery references, qualifies fixed-SHA CI and decides the existing private release path. No real credential/API/data/configuration is used here.
+
+Validation ledger (completed across 2026-11-11/12): initial RED was the missing HTTP adapter. Fourteen focused synthetic tests pass with zero skips, including official modern/legacy clients, POST/PATCH durable replay, same-connection scope reduction, cross-key/owner/revocation boundaries and independent readback. Peer review reproduced a dropped inner abort signal; the correction was verified RED (already-aborted input dispatched; in-flight wait timed out) → GREEN (combined cancellation/budget, bounded caller wait and committed-write unknown/recovery). Unknown operation status was also verified400 →403.
+
+`npm run typecheck` passes. The final default-concurrency `npm test` ran1691 tests with1631 pass, one failure and59 opt-in skips: the unchanged CJK-font one-second test deadline expired before reaching its curl stub under load. Its11-test file passed separately. The same complete suite with `node --test --test-concurrency=2 test/*.test.ts` then passed1691 total /1632 pass /0 fail /59 skips in50.6 seconds, without editing test content, timeouts or skips. The first failed full run is retained as evidence, not replaced by the bounded result. Opt-in PostgreSQL/browser/network qualification remains skipped, not accepted.
+
+The sole production build, `NEXT_TELEMETRY_DISABLED=1 CI=1 npm run build -- --webpack`, passes on Next16.4.1 and includes the dynamic `/api/platform/mcp` route; the only build warning is the expected absence of a cold build cache. OpenSpec1.16.0 strict validation of `personal-agent-foundation` passes with telemetry disabled. No OpenSpec completion checkbox is advanced; fixed-final-tree independent review, new-SHA CI, actual release and owner acceptance remain outstanding.
+
+## Endpoint and activation contract
+
+`POST /api/platform/mcp` accepts the existing LifeOS Agent Bearer credential. GET, DELETE and OPTIONS provide no session or data access. Every POST is authenticated again; a connection or an earlier tools list conveys no authority. Incoming cookies, forwarding headers and tool-supplied URLs never reach the business handler. A client must support an explicitly supplied Bearer credential; clients requiring an OAuth authorization flow are not qualified by this slice.
+
+The source gate is exactly `LIFEOS_MCP_HTTP=streamable-http-v1`, together with the existing enabled, qualified Agent API and HTTPS platform configuration. This source work does not set that flag, change the reverse proxy, grant scopes or configure any client. A separate controlled deployment must verify the exact public route, origin/proxy boundary and running source. This server path needs no Mac Keychain reader: each caller supplies its credential through the caller's approved secret store and the existing server verifies it.
+
+Requests are bounded to128KiB including the MCP envelope; API and returned MCP bodies are bounded to8MiB. Existing API timeout signals and the outer caller cancellation are combined. Cancellation ends waiting without claiming an in-flight database write was rolled back. Direct writes use a30-second dispatch budget; an uncertain result retains the original idempotency key. Source-only fixture results do not establish PostgreSQL deployment, host compatibility or real-account acceptance.
+
+## Root integration and remaining gates
+
+- Append the owner addition to the existing requirement/Issue trail when its authorized business API is available; do not alter the public business baseline to simulate intake.
+- Update the existing `agent-mcp` HTTP transport specification and portable Skill references serially. This slice leaves those shared files untouched and advertises no live availability.
+- Retain the explicit classification-commit manifest qualification gap and absence of `lifeos_retry`. Ordinary create/update recovery uses the existing durable API receipt with unchanged operation, arguments and idempotency key; a new key is not recovery.
+- Obtain independent fixed-tree review, exact-SHA public CI and private release qualification. No production config, migration, grant, OAuth setup, persistent service or user acceptance is implied.
