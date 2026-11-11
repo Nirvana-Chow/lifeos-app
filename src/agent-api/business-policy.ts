@@ -1,4 +1,4 @@
-import {agentOperations} from './capabilities.ts';
+import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {normalizeAgentScopes,agentScopes} from './scopes.ts';
 import type {OperationScope} from './personal-operation-registry.ts';
 import {decodeAgentPermissions} from './scopes.ts';

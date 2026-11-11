@@ -230,6 +230,27 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
    assert.equal((await service.get(owner))?.revision,2);
    await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true WHERE operation_id=ANY($1::text[])',[reviewIds]);
   });
+  await t.test('event registration preserves legacy grants and remains closed until exact scoped SQL activation',async()=>{
+   const before=await digest(legacy),client=await admin.connect();
+   try{
+    await client.query("SELECT set_config('lifeos.requirement_events_migration_approved','transaction-outbox-v1',false),set_config('lifeos.agent_expected_database','lifeos_platform_test_local',false),set_config('lifeos.agent_expected_owner',$1,false),set_config('lifeos.agent_expected_space',$2,false)",[owner,space]);
+    assert.equal((await client.query("SELECT current_setting('lifeos.requirement_events_migration_approved') AS approval")).rows[0].approval,'transaction-outbox-v1');
+    await client.query(await readFile('db/0020_requirement_events.proposed.sql','utf8'));
+   }finally{client.release(true);}
+   assert.equal(await digest(legacy),before);
+   const ids=['streamRequirementEvents','claimRequirementExecution','updateRequirementExecution'],catalog=await readBusinessPolicyCatalog(verifier);
+   assert.deepEqual(catalog.operations.filter(op=>ids.includes(op.id)).map(op=>op.enabled),[false,false,false]);
+   // The earlier expiry test deliberately leaves all expired. Preserve that
+   // denial and use an independent valid actor to exercise operation activation.
+   assert.equal(await fence(all,policy,['requirements:read','requirements:write'],owner,space,'claimRequirementExecution'),false);
+   const eventGrant=await seed();await cas(eventGrant,await digest(eventGrant),policy);
+   assert.equal(await fence(eventGrant,policy,['requirements:read','requirements:write'],owner,space,'claimRequirementExecution'),false);
+   await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true WHERE operation_id=ANY($1::text[])',[ids]);
+   assert.equal(await fence(eventGrant,policy,['requirements:read','requirements:write'],owner,space,'claimRequirementExecution'),true);
+   assert.equal(await fence(eventGrant,policy,['requirements:read'],owner,space,'streamRequirementEvents'),true);
+   assert.equal(await fence(eventGrant,policy,['requirements:read'],owner,space,'claimRequirementExecution'),false);
+   await admin.query('UPDATE lifeos_agent.business_policy_operation SET enabled=false WHERE operation_id=ANY($1::text[])',[ids]);
+  });
   await t.test('readiness refuses broader function EXECUTE and direct registry access',async()=>{
    await admin.query('GRANT EXECUTE ON FUNCTION lifeos_agent.set_managed_business_grant(text,text,text,jsonb,text) TO PUBLIC');
    await assert.rejects(readBusinessPolicyCatalog(verifier),/qualification unavailable/);

@@ -1,4 +1,5 @@
 import {createHash,randomUUID} from 'node:crypto';
+import {assertExecutionWrite,type ExecutionFence} from '../requirement-events/transaction.ts';
 import {requirements,type Requirement,type RequirementBaseline} from '../platform/requirements.ts';
 import {object,PlatformError,validateId,validateIdempotencyKey,validateInbox,validateRevision,type InboxDraft} from '../platform/domain.ts';
 import type {PlatformRepository,StoredEntry,PublicEntry,Transaction,MutationResult} from '../platform/contracts.ts';
@@ -96,11 +97,12 @@ export class RequirementsService{
   this.owner(owner);id=requirementId(id);const recordId=id.startsWith('LO-')?requirementIdentity(owner,this.config.spaceId,id):id,row=await tx.get('inbox',recordId);
   if(row&&!this.matches(row,owner,id))return missing();return this.project(id,row?publicEntry(row):null);
  }
- async mutate(owner:string,id:string|null,input:unknown,key:string,guard:()=>Promise<void>=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<{entry:RequirementItem;duplicate:boolean}>{
+ async mutate(owner:string,id:string|null,input:unknown,key:string,guard:()=>Promise<void>=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>,executionLease?:ExecutionFence):Promise<{entry:RequirementItem;duplicate:boolean}>{
   this.owner(owner);if(id)id=requirementId(id);validateIdempotencyKey(key);const raw=structuredClone(input),body=command(raw,id,this.config.spaceId),commandDigest=digest({action:requirementMarker,owner,spaceId:this.config.spaceId,id,raw});await guard();
   const result=await this.repository.transaction(owner,key,async tx=>{
    await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
    if(receipt){if(receipt.digest!==commandDigest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!metadata(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
+   if(!id&&executionLease)fail(400,'EXECUTION_REQUIRES_EXISTING_REQUIREMENT','执行进度需要现有需求。');
    if(!id){const entry=await this.createInTransaction(owner,randomUUID(),raw,tx,guard),result:MutationResult={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest:commandDigest,result});return result;}
    const b=this.baseline();if(!b.roadmap?.phases.some(p=>p.id===body.fields.phaseId))fail(400,'INVALID_REQUIREMENT_PHASE','需求阶段不存在。');
    if(id?.startsWith('LO-')&&!same(body.baselineBinding,requirementBinding(b,id)))fail(409,'BASELINE_CONFLICT','公共需求基线已变化，请重新核对。');
@@ -114,7 +116,7 @@ export class RequirementsService{
    const {title,body:text,...planning}=body.fields,meta:RequirementMetadata={schema:2,id:stableId,baselineBinding:body.baselineBinding??null,...planning,...(!Object.hasOwn(body.fields,'workflow')&&oldMeta&&Object.hasOwn(oldMeta,'workflow')?{workflow:oldMeta.workflow}:{})};
    const draft=validateInbox({title,text,occurredOn:null,disposition:'reference',requirement:meta}),now=new Date().toISOString();
    const entry:StoredEntry=old?{...old,draft,revision:old.revision+1,updatedAt:now}:{id:recordId,ownerId:owner,kind:'inbox',draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:requirementMarker,schema:2,type:'requirement',spaceId:this.config.spaceId,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};
-   await guard();await tx.write(entry,raw,!old);const result:MutationResult={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest:commandDigest,result});return result;
+   await guard();if(executionLease)await assertExecutionWrite(tx,{...executionLease,spaceId:this.config.spaceId,requirementId:stableId,sourceId:entry.source.id});await tx.write(entry,raw,!old);const result:MutationResult={entry:publicEntry(entry),duplicate:false};await tx.saveReceipt({digest:commandDigest,result});return result;
   });
   return{entry:this.project(metadata(result.entry,this.config.spaceId)!.id,result.entry),duplicate:result.duplicate};
  }

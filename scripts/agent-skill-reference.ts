@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { agentApiVersion, agentOperations } from '../src/agent-api/capabilities.ts';
+import { agentApiVersion, agentOperations,agentEventTransports } from '../src/agent-api/capabilities.ts';
 
 type DocumentedOperation = Readonly<{
   id: string;
@@ -23,6 +23,12 @@ export function renderAgentOperations(operations: readonly DocumentedOperation[]
     '| --- | --- | --- | --- | --- |',
     ...operations.map(({ id, method, path, scope, requiredScopes, description }) =>
       `| \`${id}\` | \`${method}\` | \`${path}\` | \`${requiredScopes?.length ? requiredScopes.join(', ') : scope ?? 'valid grant'}\` | ${description.replaceAll('|', '\\|').replace(/\r?\n/g, ' ')} |`),
+    '',
+    '## Native event transports — not JSON operations',
+    '',
+    '| ID | Transport | Method | Path | Required scopes |',
+    '| --- | --- | --- | --- | --- |',
+    ...agentEventTransports.map(operation=>`| \`${operation.id}\` | \`${operation.transport}\` | \`${operation.method}\` | \`${operation.path}\` | \`${operation.requiredScopes.join(', ')}\` |`),
     '',
   ];
   return lines.join('\n');

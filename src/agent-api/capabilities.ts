@@ -1,3 +1,4 @@
+import {requirementEventOperations,requirementEventTransports} from '../requirement-events/operations.ts';
 import {personalRecordOperations,feedbackOperations} from './personal-operation-registry.ts';
 import {storageReviewOperations} from '../storage-review/operations.ts';
 import type {AgentScope} from './scopes.ts';
@@ -5,7 +6,7 @@ export type {AgentScope} from './scopes.ts';
 export const agentApiVersion = '1';
 
 export const agentOperations = [
-  ...personalRecordOperations,...feedbackOperations,...storageReviewOperations,
+  ...personalRecordOperations,...feedbackOperations,...storageReviewOperations,...requirementEventOperations,
   {id:'snapshotRequirements',method:'GET',path:'/v1/requirements/snapshot',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read the complete server-composed public and own private requirement pool, optional owner workflow (state/purpose/nextStep), exact baseline bindings and revisions, or fail without a partial inventory.'},
   {id:'getRequirement',method:'GET',path:'/v1/requirements/{id}',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read one stable public LO-ID or private UUID, full editable fields including optional workflow (state/purpose/nextStep) and its baseline binding.'},
   {id:'createRequirement',method:'POST',path:'/v1/requirements',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read','requirements:write'] as readonly AgentScope[],description:'Create one private requirement with six required fields, optional workflow (state/purpose/nextStep) and an idempotency key; engineering evidence and owner acceptance remain authoritative.'},
@@ -24,3 +25,7 @@ export const agentOperations = [
   {id:'createOrganization',method:'POST',path:'/v1/organization/{type}',module:'organization',policyClass:'personal-business-data',requiredScopes:['organization:read','organization:write'] as readonly AgentScope[],description:'Create one project, domain or topic with fields and an idempotency key; project personal metadata accepts optional plannedStartOn/plannedEndOn; identical names remain independent records.'},
   {id:'updateOrganization',method:'PATCH',path:'/v1/organization/{type}/{id}',module:'organization',policyClass:'personal-business-data',requiredScopes:['organization:read','organization:write'] as readonly AgentScope[],description:'Update one project, domain or topic with expectedRevision, all four fields (title, text, occurredOn, personal) and an idempotency key; omitted optional project planning dates preserve saved dates, explicit null clears.'},
 ] as const;
+
+export const agentEventTransports=requirementEventTransports;
+/** Full server-owned authorization registry; streaming transports never enter the JSON operation list. */
+export const agentCapabilityOperations=[...agentOperations,...agentEventTransports] as const;

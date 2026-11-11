@@ -1,6 +1,6 @@
 import {normalizeOperationGrantScopes} from '../agent-api/business-policy.ts';
 import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
-import {agentOperations} from '../agent-api/capabilities.ts';
+import {agentCapabilityOperations as agentOperations} from '../agent-api/capabilities.ts';
 import type {AuthoritySourceRef,TrustedActor,TrustedAgentActor,TrustedOwnerActor} from './contracts.ts';
 type Owner = Readonly<{ownerId:string;spaceId:string;sessionRef:string}>;
 type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly OperationScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;

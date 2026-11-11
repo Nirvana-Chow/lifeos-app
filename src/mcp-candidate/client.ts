@@ -1,7 +1,8 @@
+import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import {randomUUID} from 'node:crypto';
-import {responseEntry,verifyReceipt,verifyCurrent,verifyClassification,verifyClassificationCurrent} from './semantic.mjs';
+import {responseEntry,verifyReceipt,verifyCurrent,verifyClassification,verifyClassificationCurrent,verifyExecutionCurrent} from './semantic.mjs';
 import {decodePreview,classificationCanonical} from '../personal-candidate/classification-contracts.ts';
-import {agentOperations} from '../agent-api/capabilities.ts';
+import {agentOperations,agentEventTransports} from '../agent-api/capabilities.ts';
 import {policyOperationScopes} from '../agent-api/business-policy.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {parseMcpRuntimeConfig,type McpRuntimeConfig,type McpRuntimeOptions} from './config.ts';
@@ -9,7 +10,7 @@ import {parseArguments,type Operation} from './schemas.ts';
 export type ReadbackResult={ok:boolean;status:number;data?:Record<string,unknown>;error?:string};
 export type VerificationResult={verified:boolean;state:string;receiptRevision?:number;currentRevision?:number;entries?:readonly VerificationResult[]};
 export type OperationResult=ReadbackResult&{verification?:VerificationResult;outcome?:'unknown';recovery?:{requestId:string;exactRetryRequired:true};readback?:ReadbackResult};
-export type CapabilityCatalog={apiVersion:'2';operations:readonly Operation[]};
+export type CapabilityCatalog={apiVersion:'2';operations:readonly Operation[];eventTransports?:readonly typeof agentEventTransports[number][]};
 class ApiError extends Error{readonly status:number;constructor(status:number,code:string){super(code);this.status=status;}}
 const isObject=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const mount='/api/platform/agent';
@@ -19,6 +20,7 @@ const responseLimit=8*1024*1024,requestLimit=131072;
 const supported=(operation:Operation)=>policyOperationScopes(operation)!==null&&(
  /^\/v1\/todos(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/organization\/(?:snapshot|\{type\}(?:\/\{id\})?)$/.test(operation.path)||
+ /^\/v1\/requirement-events\/claims(?:\/\{id\})?$/.test(operation.path)||
  /^\/v1\/requirements(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/records\/(?:journal|calendar|health|person|finance|media|career|portfolio)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/feedback(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
@@ -72,7 +74,8 @@ export class LifeOSApiClient{
   if(new Set(remote.map((x:any)=>x?.id)).size!==remote.length)throw new ApiError(502,'API_CATALOG_INVALID');
   for(const local of agentOperations){const matches=remote.filter((x:any)=>x?.id===local.id);if(matches.length&&(!isObject(matches[0])||matches[0].method!==local.method||matches[0].path!==local.path||!Array.isArray(matches[0].requiredScopes)||new Set(matches[0].requiredScopes).size!==matches[0].requiredScopes.length||JSON.stringify([...matches[0].requiredScopes].sort())!==JSON.stringify([...local.requiredScopes].sort())))throw new ApiError(502,'API_CONTRACT_MISMATCH');}
   const operations=agentOperations.filter(local=>supported(local)&&remote.filter((entry:unknown)=>isObject(entry)&&entry.id===local.id).length===1&&remote.some((entry:unknown)=>isObject(entry)&&entry.id===local.id&&entry.method===local.method&&entry.path===local.path&&Array.isArray(entry.requiredScopes)&&entry.requiredScopes.length===local.requiredScopes.length&&new Set(entry.requiredScopes).size===entry.requiredScopes.length&&local.requiredScopes.every(s=>entry.requiredScopes instanceof Array&&entry.requiredScopes.includes(s))));
-  return{apiVersion:'2',operations};
+  const eventTransports=Array.isArray(result.data.eventTransports)?agentEventTransports.filter(local=>(result.data.eventTransports as any[]).some(remote=>remote?.id===local.id&&remote.transport===local.transport&&remote.method===local.method&&remote.path===local.path&&JSON.stringify(remote.requiredScopes)===JSON.stringify(local.requiredScopes))):undefined;
+  return{apiVersion:'2',operations,...(eventTransports?{eventTransports}:{})};
  }
  async discover():Promise<CapabilityCatalog>{await this.#before();return this.#catalog();}
  #error(error:unknown):ReadbackResult{
@@ -83,7 +86,7 @@ export class LifeOSApiClient{
   try{
    const catalog=await this.#catalog();
    const entry=isObject(data?.entry)?data.entry:data;
-   const id=typeof args.id==='string'?args.id:typeof entry?.id==='string'?entry.id:undefined;
+   const id=isRequirementEventOperation(operation.id)?operation.id==='claimRequirementExecution'?args.requirementId:(args.lease as any)?.requirementId:typeof args.id==='string'?args.id:typeof entry?.id==='string'?entry.id:undefined;
    const read=catalog.operations.find(op=>op.method==='GET'&&op.module===operation.module&&(id?op.path.endsWith('{id}'):op.id.startsWith('snapshot')))
      ??(operation.module==='classification'?catalog.operations.find(op=>op.id==='snapshotTodos'):undefined);
    if(!read)return{ok:false,status:403,error:'READBACK_UNAVAILABLE'};
@@ -108,7 +111,7 @@ export class LifeOSApiClient{
     ?await this.#classificationReadback(request,response.data)
     :await this.#readback(operation,args,response.data);
    let verification:VerificationResult;
-   try{verification=operation.module==='classification'?verifyClassificationCurrent(request.manifest,response.data,readback):verifyCurrent(response.data,readback);}
+   try{verification=operation.module==='classification'?verifyClassificationCurrent(request.manifest,response.data,readback):isRequirementEventOperation(operation.id)?verifyExecutionCurrent(operation,args,response.data,readback):verifyCurrent(response.data,readback);}
    catch{verification={verified:false,state:'READBACK_MISMATCH'};}
    this.#pending.delete(request.requestId);
    if(settled&&!(await this.#catalog()).operations.some(o=>o.id===operation.id))throw new ApiError(403,'OPERATION_UNAVAILABLE');
@@ -149,8 +152,9 @@ export class LifeOSApiClient{
    if(prior)return{ok:false,status:409,error:'RECOVERY_REQUIRED',...(this.#runtime.durable?.settled(prior.requestId)?{}:{outcome:'unknown' as const}),recovery:{requestId:prior.requestId,exactRetryRequired:true}};
    if(this.#pending.size+this.#active.size>=100||this.#active.has(parsed.key!))return{ok:false,status:409,error:'MCP_WRITE_BUSY'};
    let before:Record<string,unknown>|undefined;
-   if(operation.method==='PATCH'){
-    const prior=await this.#readback(operation,input as Record<string,unknown>);const priorEntry=responseEntry(prior.data);if(!prior.ok||!priorEntry||priorEntry.revision!==(input as any).expectedRevision)throw new ApiError(409,'CAS_PREIMAGE_CHANGED');if(operation.module==='requirements'&&priorEntry.baselineConflict)throw new ApiError(409,'REQUIREMENT_BASELINE_CONFLICT');before=priorEntry;
+   if(operation.method==='PATCH'&&!(operation.id==='updateRequirementExecution'&&(input as any).action==='renew')){
+    const expected=operation.id==='updateRequirementExecution'?(input as any).input.expectedRevision:(input as any).expectedRevision;
+    const prior=await this.#readback(operation,input as Record<string,unknown>);const priorEntry=responseEntry(prior.data);if(!prior.ok||!priorEntry||priorEntry.revision!==expected)throw new ApiError(409,'CAS_PREIMAGE_CHANGED');if(operation.module==='requirements'&&priorEntry.baselineConflict)throw new ApiError(409,'REQUIREMENT_BASELINE_CONFLICT');before=priorEntry;
    }
    const manifest=operation.module==='classification'?this.#runtime.durable?.getManifest((input as any).planId,(input as any).digest):undefined;
    if(operation.module==='classification'&&!manifest)throw new ApiError(403,'CLASSIFICATION_MANIFEST_REQUIRED');

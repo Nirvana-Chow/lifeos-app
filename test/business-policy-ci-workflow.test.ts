@@ -15,13 +15,13 @@ test('both qualification workflows run the new storage SQL scope gate against a 
   assert.ok(step);assert.match(step,/RUN_BUSINESS_POLICY_POSTGRES_TESTS: '1'/);assert.match(step,/LIFEOS_POLICY_FIXTURE_CONTEXT: github-actions/);
   assert.match(step,/business-policy-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(step,/--test-isolation=none --test-concurrency=1/);assert.match(step,/test\/agent-business-policy-postgres\.integration\.test\.ts/);
-  assert.match(step,/len\(cases\) == 34/);assert.match(step,/storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence/);
+  assert.match(step,/len\(cases\) == 35/);assert.match(step,/storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence/);
   assert.match(step,/\('skipped', 'failure', 'error'\)/);assert.doesNotMatch(step,/continue-on-error/);
   assert.match(workflow,/permissions:\n  contents: read\n  actions: read/);
  }
 });
 test('the actual policy JUnit gate refuses missing storage coverage, duplicates, skips and failures',()=>{
- const names=['migration changes no existing key and keeps exact legacy digest; policy starts closed','wrong owner/space, revocation and expiry independently deny and direct roles cannot mutate policy or registry','storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence',...Array.from({length:31},(_,i)=>'Synthetic additional leaf '+i)];
+ const names=['migration changes no existing key and keeps exact legacy digest; policy starts closed','wrong owner/space, revocation and expiry independently deny and direct roles cannot mutate policy or registry','storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence','event registration preserves legacy grants and remains closed until exact scoped SQL activation',...Array.from({length:31},(_,i)=>'Synthetic additional leaf '+i)];
  const root=mkdtempSync(join(tmpdir(),'lifeos-policy-junit-'));
  try{
   for(const file of ['qualification.yml','visual-qualification.yml']){

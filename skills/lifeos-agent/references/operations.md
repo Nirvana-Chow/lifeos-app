@@ -46,6 +46,8 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 | `createStorageReview` | `POST` | `/v1/storage-reviews` | `storage-review:read, storage-review:write` | Upload an explicitly supplied private checklist once through the reviewed writer using fields.checklist and an idempotency key. No scan or file action. |
 | `updateStorageReviewChecklist` | `PATCH` | `/v1/storage-reviews/{id}/checklist` | `storage-review:read, storage-review:write` | Update fields.checklist with expectedRevision and an idempotency key. Preserve unchanged decided item IDs; reject changed or removed decided objects instead of clearing decisions. |
 | `updateStorageReviewDecision` | `PATCH` | `/v1/storage-reviews/{id}/decisions` | `storage-review:read, storage-review:write` | Save one pending item decision using fields.checklistRevision, itemId, decision (keep/trash/defer/null), expectedRevision and an idempotency key. A trash choice is a review decision, never filesystem deletion or permanent-delete authorization. |
+| `claimRequirementExecution` | `POST` | `/v1/requirement-events/claims` | `requirements:read, requirements:write` | Claim one current executable owner requirement with a bounded fenced lease; independently GET its requirement execution projection. |
+| `updateRequirementExecution` | `PATCH` | `/v1/requirement-events/claims/{id}` | `requirements:read, requirements:write` | Renew an existing lease or write fenced progress through the original requirement writer. Preserve original body/key for unknown outcomes and independently GET the current requirement. |
 | `snapshotRequirements` | `GET` | `/v1/requirements/snapshot` | `requirements:read` | Read the complete server-composed public and own private requirement pool, optional owner workflow (state/purpose/nextStep), exact baseline bindings and revisions, or fail without a partial inventory. |
 | `getRequirement` | `GET` | `/v1/requirements/{id}` | `requirements:read` | Read one stable public LO-ID or private UUID, full editable fields including optional workflow (state/purpose/nextStep) and its baseline binding. |
 | `createRequirement` | `POST` | `/v1/requirements` | `requirements:read, requirements:write` | Create one private requirement with six required fields, optional workflow (state/purpose/nextStep) and an idempotency key; engineering evidence and owner acceptance remain authoritative. |
@@ -63,3 +65,9 @@ Legacy catalog API version `1`; the v2 catalog uses API version `2` and required
 | `getOrganization` | `GET` | `/v1/organization/{type}/{id}` | `organization:read` | Read one project, domain or topic with complete fields and its current revision. |
 | `createOrganization` | `POST` | `/v1/organization/{type}` | `organization:read, organization:write` | Create one project, domain or topic with fields and an idempotency key; project personal metadata accepts optional plannedStartOn/plannedEndOn; identical names remain independent records. |
 | `updateOrganization` | `PATCH` | `/v1/organization/{type}/{id}` | `organization:read, organization:write` | Update one project, domain or topic with expectedRevision, all four fields (title, text, occurredOn, personal) and an idempotency key; omitted optional project planning dates preserve saved dates, explicit null clears. |
+
+## Native event transports — not JSON operations
+
+| ID | Transport | Method | Path | Required scopes |
+| --- | --- | --- | --- | --- |
+| `streamRequirementEvents` | `sse` | `GET` | `/v1/requirement-events/stream` | `requirements:read` |

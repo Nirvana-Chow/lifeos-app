@@ -214,20 +214,22 @@ jobs:
             'migration changes no existing key and keeps exact legacy digest; policy starts closed',
             'wrong owner/space, revocation and expiry independently deny and direct roles cannot mutate policy or registry',
             'storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence',
+            'event registration preserves legacy grants and remains closed until exact scoped SQL activation',
           }
-          assert len(cases) == 34 and len(names) == 34 and required <= names, 'Expected all 34 distinct native policy/storage PostgreSQL leaf cases'
+          assert len(cases) == 35 and len(names) == 35 and required <= names, 'Expected all 35 distinct native policy/storage/event PostgreSQL leaf cases'
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Policy/storage SQL skip or failure is not acceptance'
-          print('PASS: 34 fresh policy/storage SQL leaf cases; zero skips, independent source/run-bound service.')
+          print('PASS: 35 fresh policy/storage/event SQL leaf cases; zero skips, independent source/run-bound service.')
           PY_BUSINESS_POLICY_PG
       - name: Qualify isolated requirements persistence and Agent grants without skips
         env:
           RUN_REQUIREMENTS_POSTGRES_TESTS: '1'
+          RUN_REQUIREMENT_EVENT_POSTGRES_TESTS: '1'
           LIFEOS_FIXTURE_FRESH: approved-isolated-fixture
           LIFEOS_REQUIREMENTS_FIXTURE_CONTEXT: github-actions
           LIFEOS_REQUIREMENTS_FIXTURE_ID: requirements-ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/requirements-pg.xml" test/requirements-postgres.integration.test.ts
+          node --test --test-isolation=none --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/requirements-pg.xml" test/requirements-postgres.integration.test.ts test/requirement-events-postgres.integration.test.ts
           python3 - <<'PY_REQUIREMENTS_PG'
           import os, xml.etree.ElementTree as ET
           cases = list(ET.parse(os.path.join(os.environ['RUNNER_TEMP'], 'requirements-pg.xml')).getroot().iter('testcase'))
@@ -235,10 +237,11 @@ jobs:
             'concurrent first overlays lock one deterministic identity and second different key sees CAS conflict',
             'create restart readback update history and lost committed response recover exact command',
             'new issuer mode has independently verified native scopes and fence rejects revoked requirements grants',
+            'OPT-IN requirement transaction outbox rollback, receipt dedupe and lease fence on restricted PostgreSQL',
           }
-          assert len(cases) == len(expected) and {c.get('name') for c in cases} == expected, 'Expected the three named requirements PostgreSQL leaf cases'
+          assert len(cases) == len(expected) and {c.get('name') for c in cases} == expected, 'Expected four distinct core requirements/event PostgreSQL leaf cases'
           assert not any(c.find(tag) is not None for c in cases for tag in ('skipped', 'failure', 'error')), 'Requirements PostgreSQL skip or failure is not acceptance'
-          print('PASS: three named isolated requirements persistence/grant leaf cases, zero skips; production SQL and grants unchanged.')
+          print('PASS: four named source-bound core requirements/event SQL leaf cases, zero skips; production SQL and grants unchanged.')
           PY_REQUIREMENTS_PG
       - name: Prepare the empty runner-local synthetic PostgreSQL fixture
         run: |

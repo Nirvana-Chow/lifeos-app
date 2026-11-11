@@ -211,13 +211,13 @@ test('new module source pins use current owner records and reject stale or wrong
  }finally{await f.close();}
 });
 
-test('full current catalog pairs all 55 reviewed operations and rejects altered new-operation scopes',async()=>{
+test('full current catalog pairs all 57 reviewed JSON operations and rejects altered new-operation scopes',async()=>{
  const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:agentOperations}));
  const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-full-catalog',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  try{
   const discovery=await client.callTool({name:'lifeos_discover',arguments:{}}),descriptors=(discovery.structuredContent as {operations:Descriptor[]}).operations;
-  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,55);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
-  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,55);
+  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,57);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
+  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,57);
   for(const descriptor of descriptors){const branch=call.oneOf.find((s:Schema)=>s.properties.operationId.const===descriptor.id);assert.deepEqual(branch.properties.arguments,descriptor.inputSchema);}
   assertMatches(call,{operationId:'createMedia',arguments:fromSchema(descriptors.find(op=>op.id==='createMedia')!.inputSchema)});
  }finally{await client.close();await server.close();}

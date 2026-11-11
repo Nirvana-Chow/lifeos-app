@@ -1,3 +1,8 @@
+import {PostgresRequirementEventStore} from '../requirement-events/postgres.ts';
+import {RequirementEventService} from '../requirement-events/service.ts';
+import {verifyRequirementEventReadiness} from '../requirement-events/readiness.ts';
+import {openRequirementNotifications,singleRequirementNotifications} from '../requirement-events/notifications.ts';
+import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import {isRecordModule,personalRecordModuleEnabled} from './personal-records.ts';
 import type {OperationScope} from './personal-operation-registry.ts';
 import {classificationDigest} from '../personal-candidate/classification-contracts.ts';
@@ -15,7 +20,7 @@ import {resolveBusinessPolicyGrant,type PolicyResolutionOptions,type PolicyGrant
 import {readBusinessPolicyCatalog} from './business-policy-postgres.ts';
 import {createAgentHandler} from './http.ts';
 import {organizationTypes} from './organization.ts';
-import {agentOperations} from './capabilities.ts';
+import {agentOperations,agentCapabilityOperations} from './capabilities.ts';
 
 type AgentConfig = NonNullable<ReturnType<typeof readAgentRuntimeConfig>>;
 type Handler = ReturnType<typeof createAgentHandler>;
@@ -56,7 +61,8 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
 
 /** Read-only readiness uses the same live business permit as the write guard. */
 export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean, modules:AgentModules={organization:false,classification:false}):boolean {
-  const operation = agentOperations.find(entry => entry.id === id);
+  const operation = agentCapabilityOperations.find(entry => entry.id === id);
+  if((isRequirementEventOperation(id)||id==='streamRequirementEvents')&&!modules.requirementEvents)return false;
   if (!operation || operation.module === 'catalog') return false;
   if(operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||!fenceReady))return false;
   if(isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,personal,modules)||!fenceReady))return false;
@@ -152,6 +158,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
   const business = new Pool({...limits, connectionString: platform.databaseURL, options: '-c search_path=pg_catalog,lifeos_platform'});
   const verifier = new Pool({...limits, connectionString: config.databaseURL, options: '-c search_path=lifeos_agent,pg_catalog'});
 
+  let notifications:InstanceType<typeof Pool>|undefined;
   try {
     await verifyRestrictedPool(business as SqlPool);
     const modules=readAgentBusinessModules(process.env,personal);
@@ -195,20 +202,25 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
     });
     await auth.$context;
 
-    const repository=new PostgresPlatformRepository(business as SqlPool,true,true,modules);
+    const eventReady=async()=>{await verifyRequirementEventReadiness(business);};
+    const openEventNotifications=singleRequirementNotifications(async()=>{await eventReady();notifications??=new Pool({...limits,max:1,connectionString:platform.databaseURL,options:'-c search_path=pg_catalog,lifeos_platform'});return openRequirementNotifications(notifications as SqlPool);});
+    const eventService=modules.requirementEvents?new RequirementEventService(new PostgresRequirementEventStore(business as SqlPool,true)):undefined;
+    const repository=new PostgresPlatformRepository(business as SqlPool,true,true,modules,modules.requirementEvents===true);
     const classificationReady=async()=>{await verifyAgentBusinessReadiness(business);await verifyClassificationPool(business as SqlPool);};
     const policyOptions=modules.businessDataPolicy?async()=>{
       const catalog=await readBusinessPolicyCatalog(verifier);
-      const readiness=await Promise.all(agentOperations.map(async operation=>{
+      const readiness=await Promise.all(agentCapabilityOperations.map(async operation=>{
         if(!agentOperationAvailable(operation.id,personal,fenceReady,modules))return false;
         if(operation.module==='requirements')await verifyAgentRequirementsReadiness(business);
+        if(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents')try{await eventReady();}catch{return false;}
         if(operation.module==='classification')await classificationReady();
         return catalog.operations.some(entry=>entry.id===operation.id&&entry.enabled);
       }));
-      return {ownerId:personal.ownerId,spaceId:personal.spaceId,policyEnabled:catalog.enabled,registry:agentOperations,operationAvailable:(id:string)=>readiness[agentOperations.findIndex(op=>op.id===id)]===true};
+      return {ownerId:personal.ownerId,spaceId:personal.spaceId,policyEnabled:catalog.enabled,registry:agentCapabilityOperations,operationAvailable:(id:string)=>readiness[agentCapabilityOperations.findIndex(op=>op.id===id)]===true};
     }:undefined;
     const handler=createAgentHandler({
       enabled: true,
+      ...(eventService?{requirementEvents:{service:eventService,ready:async()=>{try{await eventReady();return true;}catch{return false;}},openNotifications:openEventNotifications}}:{}),
       modules,
       fenceWrites: true,
       mountPath: '/api/platform/agent',
@@ -226,16 +238,17 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       readCurrentGrant: id => readCurrentAgentGrant(verifier, id,policyOptions),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
-        if(agentOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
-        if(agentOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
-        if(isRecordModule(agentOperations.find(op=>op.id===id)?.module??'')||agentOperations.find(op=>op.id===id)?.module==='storageReview'){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
+        if(isRequirementEventOperation(id)||id==='streamRequirementEvents')try{await eventReady();}catch{return false;}
+        if(agentCapabilityOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
+        if(agentCapabilityOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
+        if(isRecordModule(agentCapabilityOperations.find(op=>op.id===id)?.module??'')||agentCapabilityOperations.find(op=>op.id===id)?.module==='storageReview'){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
         return true;
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
     return{handler:modules.organization||modules.businessDataPolicy?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id,policyOptions)};
   } catch (error) {
-    await Promise.allSettled([business.end(), verifier.end()]);
+    await Promise.allSettled([business.end(), verifier.end(),...(notifications?[notifications.end()]:[])]);
     throw error;
   }
 }

@@ -11,6 +11,7 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_ALL_BUSINESS_DATA',
   'LIFEOS_AGENT_PERSONAL_RECORDS',
   'LIFEOS_AGENT_STORAGE_REVIEW',
+  'LIFEOS_AGENT_REQUIREMENT_EVENTS',
 ] as const;
 
 export const agentVerifierRole = 'lifeos_agent_verifier';
@@ -42,8 +43,10 @@ export function readAgentRuntimeConfig(
   return Object.freeze({databaseURL, secret});
 }
 
-export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean;storageReview?:boolean}>;
+export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean;storageReview?:boolean;requirementEvents?:boolean}>;
 export function readAgentBusinessModules(env: Record<string,string|undefined>, personal: PersonalConfig|null): AgentModules {
+  const events=env.LIFEOS_AGENT_REQUIREMENT_EVENTS;
+  if(events!==undefined&&(events!=='requirement-events-v1'||env.LIFEOS_AGENT_REQUIREMENTS!=='requirements-v1'||personal?.requirementsEnabled!==true))throw Error('Agent requirement events configuration unavailable');
   const review=env.LIFEOS_AGENT_STORAGE_REVIEW;
   if(review!==undefined&&(review!=='storage-review-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent storage review configuration unavailable');
   const records=env.LIFEOS_AGENT_PERSONAL_RECORDS;
@@ -53,5 +56,5 @@ export function readAgentBusinessModules(env: Record<string,string|undefined>, p
   const requirement=env.LIFEOS_AGENT_REQUIREMENTS;if(requirement!==undefined&&requirement!=='requirements-v1'||requirement&&personal?.requirementsEnabled!==true)throw Error('Agent requirements configuration unavailable');
   const org = env.LIFEOS_AGENT_ORGANIZATION; const classification = env.LIFEOS_AGENT_CLASSIFICATION;
   if (org !== undefined && org !== 'organization-v1' || classification !== undefined && classification !== 'todo-classification-v1' || classification && !org || org && !personal) throw Error('Agent business configuration unavailable');
-  return Object.freeze({...(review?{storageReview:true}:{}),...(records?{personalRecords:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
+  return Object.freeze({...(events?{requirementEvents:true}:{}),...(review?{storageReview:true}:{}),...(records?{personalRecords:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
 }
