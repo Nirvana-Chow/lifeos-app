@@ -5,8 +5,9 @@ import {cp,mkdir,mkdtemp,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
-import {readyHeading,assertPrivateCaptureContent,captureSourceText,privateLocalInteractions,privateMobileNavigation} from './helpers/private-business-browser-fixture.ts';
+import {readyHeading,assertPrivateCaptureContent,captureSourceText,privateLocalInteractions,privateMobileNavigation,privateOrigin} from './helpers/private-business-browser-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
+import {handlePersonalFinance} from '../src/personal-finance/http.ts';
 
 test('OPT-IN private visual oracle admits only native closed finance and health surfaces',{
  skip:process.env.RUN_PRIVATE_NATIVE_VISUAL_BROWSER_TESTS!=='1'&&'Requires disposable read-only Next/Chrome fixture',timeout:120000,
@@ -14,6 +15,8 @@ test('OPT-IN private visual oracle admits only native closed finance and health 
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-private-visual-'));
  let browser:Browser|undefined,browserServer:BrowserServer|undefined,browserProcess:FixtureProcess|undefined,server:FixtureProcess|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server}));
+ const financeStatusResponse=await handlePersonalFinance(new Request(privateOrigin+'/api/platform/personal/finance/status',{headers:{host:'review.example.test'}}),{ownerId:'personal-review-user',baseURL:privateOrigin});
+ assert.ok(financeStatusResponse);assert.equal(financeStatusResponse.status,200);const closedFinanceStatus=await financeStatusResponse.json();
  await mkdir(join(root,'app','[[...section]]'),{recursive:true});
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','[[...section]]','page.tsx'),`'use client';
@@ -33,7 +36,7 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
   await page.route('**/api/platform/**',async route=>{
    const request=route.request(),path=new URL(request.url()).pathname;requests.push(request.method()+' '+path);
    if(request.method()!=='GET')return route.abort();
-   const body=path==='/api/platform/personal/status'?{scope:'personal-manual-candidate',ownerId:'personal-review-user',spaceId:'personal-review-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}:path==='/api/platform/personal/finance/status'?{scope:'personal-finance-v1',configured:false,writable:false}:path==='/api/platform/personal/calendar/status'?{scope:'personal-calendar-v1',configured:false,writable:false}:null;
+   const body=path==='/api/platform/personal/status'?{scope:'personal-manual-candidate',ownerId:'personal-review-user',spaceId:'personal-review-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}:path==='/api/platform/personal/finance/status'?closedFinanceStatus:path==='/api/platform/personal/calendar/status'?{scope:'personal-calendar-v1',configured:false,writable:false}:null;
    if(!body)return route.abort();
    await route.fulfill({status:200,headers:{'cache-control':'private, no-store'},json:body});
   });

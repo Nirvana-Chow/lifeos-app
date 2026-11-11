@@ -141,9 +141,9 @@ export const privateCaptureSources=[
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
  if(paths.length!==privateCaptureSources.length||paths.some((p,i)=>p!==privateCaptureSources[i]))throw Error('PRIVATE_CAPTURE_SOURCE_DENIED');
- // This closed fixture's only rendered native compound is assembled from two
- // source literals. Admit its exact value, never a prefix or body-derived text.
- const out=new Set<string>(['新增健康','做饭']);for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
+ // Admit exact native compounds and the two fixed closed-status reasons from
+ // personal-finance/http.ts and service.ts, never arbitrary response text.
+ const out=new Set<string>(['新增健康','做饭','财务共享存储与权限尚未开放。','财务共享存储与写入权限尚未开放。']);for(const path of paths){const tree=ts.createSourceFile(path,readFileSync(path,'utf8'),ts.ScriptTarget.Latest,true,path.endsWith('.tsx')?ts.ScriptKind.TSX:ts.ScriptKind.TS);const visit=(node:ts.Node)=>{if(ts.isStringLiteralLike(node)||ts.isJsxText(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)){const value=normalize(node.text);if(value)out.add(value);}ts.forEachChild(node,visit);};visit(tree);}return out;
 }
 async function capturePrivatePage(page:Page,row:typeof privateCaptureCases[number],entries:PrivateFixture['entries'],mark:PresentationMark){
  mark('capture-receipts');requireFixture();await assertPrivateReceipts(page,entries);

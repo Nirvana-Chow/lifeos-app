@@ -10,6 +10,9 @@ import type {PublicEntry} from '../src/platform/contracts.ts';
 import {privateHrefs} from '../src/workbench/private-navigation.ts';
 import * as fixture from './helpers/private-business-browser-fixture.ts';
 import {presentationDensity} from './helpers/personal-workspace-browser-fixture.ts';
+import {handlePersonalFinance} from '../src/personal-finance/http.ts';
+import {PersonalFinanceService} from '../src/personal-finance/service.ts';
+import {readPersonalFinanceStatus} from '../src/personal-finance/client.ts';
 
 test('missing private handoff fails before trust launch or body access',async()=>{
  let touched=false;
@@ -200,6 +203,23 @@ test('real native finance heading passes the finite capture guard without admitt
  const texts=fixture.captureSourceText();
  assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,texts:[...heading,'private financial body']},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+});
+
+for(const [variant,reason] of [['absent','财务共享存储与权限尚未开放。'],['disabled','财务共享存储与写入权限尚未开放。']] as const)test(`closed finance HTTP status with ${variant} service remains capturable after client decoding`,async()=>{
+ const ownerId='synthetic-capture-owner',baseURL='https://review.example.test';
+ const service=variant==='absent'?undefined:new PersonalFinanceService({} as never,{ownerId,spaceId:'synthetic-capture-space',enabled:false,writable:false});
+ const response=await handlePersonalFinance(new Request(baseURL+'/api/platform/personal/finance/status',{headers:{host:'review.example.test'}}),{ownerId,baseURL,service});
+ assert.ok(response);assert.equal(response.status,200);
+ const status=await readPersonalFinanceStatus(async()=>response.clone());
+ assert.deepEqual(status,{scope:'personal-finance-v1',configured:false,writable:false,reason});
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent({forbidden:0,texts:['财务记录尚未开放',status.reason],values:[],editable:[],recordIds:[]},fixture.captureSourceText(),new Set(),[]));
+});
+test('finance status capture still rejects unknown private reasons and extensions of approved reasons',async()=>{
+ for(const reason of ['private financial reason sentinel','财务共享存储与权限尚未开放。 private body','财务共享存储与写入权限尚未开放。 private body']){
+  const status=await readPersonalFinanceStatus(async()=>Response.json({scope:'personal-finance-v1',configured:false,writable:false,reason}));
+  assert.ok(!status.configured);
+  assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,texts:[status.reason],values:[],editable:[],recordIds:[]},fixture.captureSourceText(),new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+ }
 });
 
 
