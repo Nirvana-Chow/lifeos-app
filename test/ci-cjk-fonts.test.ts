@@ -17,9 +17,12 @@ function fixture(mode:string,cached?:string){
  const stub=(name:string,body:string)=>writeFileSync(join(bin,name),'#!/bin/bash\nset -euo pipefail\nprintf \'%s\\n\' "'+name+' $*" >> "$FONT_TEST_LOG"\n'+body+'\n',{mode:0o755});
  stub('dpkg-query',`if [[ "$FONT_TEST_MODE" == installed || -f "$FONT_TEST_ROOT/installed" ]]; then printf 'installed 1:20230817+repack1-3\\n'; else exit 1; fi`);
  stub('curl',`if [[ "$FONT_TEST_MODE" == download-fail ]]; then exit 28; fi
- if [[ "$FONT_TEST_MODE" == stalled ]]; then sleep 30; exit 28; fi
+ if [[ "$FONT_TEST_MODE" == primary-dns-fail || "$FONT_TEST_MODE" == corrupt-fallback ]]; then
+  if [[ "\${@: -1}" == https://archive.ubuntu.com/* ]]; then exit 28; fi
+ fi
+ if [[ "$FONT_TEST_MODE" == stalled ]]; then printf 'stalled-curl-start\\n' >> "$FONT_TEST_LOG"; sleep 30; exit 28; fi
  while [[ "$1" != --output ]]; do shift; done
- if [[ "$FONT_TEST_MODE" == corrupt-download ]]; then printf poison > "$2"; else printf 'trusted synthetic font package' > "$2"; fi`);
+ if [[ "$FONT_TEST_MODE" == corrupt-download || "$FONT_TEST_MODE" == corrupt-fallback ]]; then printf poison > "$2"; else printf 'trusted synthetic font package' > "$2"; fi`);
  stub('sha256sum',`if [[ "$FONT_TEST_MODE" == poisoned-cache ]]; then exec "$FONT_TEST_SHA256" "$@"; fi
  IFS= read -r line
  if [[ "$line" != '${hash}  '* ]]; then exit 1; fi
@@ -31,9 +34,9 @@ function fixture(mode:string,cached?:string){
  if [[ "$FONT_TEST_MODE" != wrong-readback ]]; then touch "$FONT_TEST_ROOT/installed"; fi`);
  if(mode==='stalled')stub('timeout',`[[ "$1" == --kill-after=5s && "$2" == 180s ]] || exit 99
  shift 2
- exec "$FONT_TEST_TIMEOUT" --kill-after=1s 1s "$@"`);
+ exec "$FONT_TEST_TIMEOUT" --kill-after=1s 5s "$@"`);
  if(cached!==undefined)writeFileSync(join(cache,filename),cached);
- return {root,cache,log,run:()=>spawnSync('bash',[script],{encoding:'utf8',timeout:5000,env:{...process.env,PATH:bin+':'+process.env.PATH,RUNNER_TEMP:root,LIFEOS_CJK_FONT_CACHE_DIR:cache,FONT_TEST_ROOT:root,FONT_TEST_MODE:mode,FONT_TEST_LOG:log,FONT_TEST_SHA256:realSha256,FONT_TEST_TIMEOUT:realTimeout}})};
+ return {root,cache,log,run:()=>spawnSync('bash',[script],{encoding:'utf8',timeout:mode==='stalled'?10000:5000,env:{...process.env,PATH:bin+':'+process.env.PATH,RUNNER_TEMP:root,LIFEOS_CJK_FONT_CACHE_DIR:cache,FONT_TEST_ROOT:root,FONT_TEST_MODE:mode,FONT_TEST_LOG:log,FONT_TEST_SHA256:realSha256,FONT_TEST_TIMEOUT:realTimeout}})};
 }
 for(const [mode,cached] of [['installed',undefined],['cached','trusted synthetic font package'],['download',undefined]] as const){
  test('CI CJK font preparation accepts '+mode,()=>{const f=fixture(mode,cached);try{
@@ -42,7 +45,7 @@ for(const [mode,cached] of [['installed',undefined],['cached','trusted synthetic
    assert.match(log,/sha256sum --check --status/);assert.match(log,/sudo -n timeout --kill-after=5s 35s dpkg --install/);
    assert.ok(log.indexOf('sha256sum')<log.indexOf('sudo'));
    if(mode==='cached')assert.doesNotMatch(log,/curl/);else{
-    assert.match(log,/--connect-timeout 10/);assert.match(log,/--max-time 65/);assert.match(log,/--retry 1/);assert.match(log,/--retry-max-time 135/);
+    assert.match(log,/--connect-timeout 10/);assert.match(log,/--max-time 65/);assert.match(log,/--retry 0/);
     assert.match(log,/https:\/\/archive\.ubuntu\.com\/ubuntu\/pool\/main\/f\/fonts-noto-cjk\/fonts-noto-cjk_20230817\+repack1-3_all.deb/);
     assert.equal(readFileSync(join(f.cache,filename),'utf8'),'trusted synthetic font package');
    }
@@ -53,7 +56,7 @@ for(const [mode,cached] of [['poisoned-cache','poison'],['download-fail',undefin
  test('CI CJK font preparation rejects '+mode+' before privileged installation',()=>{const f=fixture(mode,cached);try{
   const r=f.run();assert.notEqual(r.status,0,JSON.stringify({stdout:r.stdout,stderr:r.stderr,log:readFileSync(f.log,'utf8')}));assert.notEqual(r.status,null,r.stderr);
   const log=readFileSync(f.log,'utf8');assert.doesNotMatch(log,/sudo/);
-  if(mode==='download-fail')assert.match(log,/curl/);else assert.match(log,/sha256sum/);
+  if(mode==='download-fail')assert.equal(log.split('\n').filter(line=>line.startsWith('curl ')).length,2);else assert.match(log,/sha256sum/);
   if(mode==='poisoned-cache'||mode==='corrupt-download')assert.match(r.stderr,/SHA256 mismatch/);
   if(mode==='wrong-package')assert.match(r.stderr,/Unexpected font package identity/);
   if(mode==='poisoned-cache')assert.doesNotMatch(log,/curl/);
@@ -64,9 +67,11 @@ for(const mode of ['install-fail','wrong-readback'])test('CI CJK font preparatio
  assert.match(readFileSync(f.log,'utf8'),/sudo/);
 }finally{rmSync(f.root,{recursive:true,force:true});}});
 test('the real overall deadline terminates a stalled download without installation',()=>{const f=fixture('stalled');try{
- // Check the production 180s invocation, then scale only the test clock to 1s.
- const started=Date.now(),r=f.run();assert.equal(r.status,124,r.stderr);assert.ok(Date.now()-started<4000);
- const log=readFileSync(f.log,'utf8');assert.match(log,/timeout --kill-after=5s 180s/);assert.match(log,/curl/);assert.doesNotMatch(log,/sudo/);
+ // Check the production 180s invocation. Five test seconds allow cold shell
+ // startup to reach the stalled curl; the previous one-second clock could
+ // expire before that boundary on macOS. The production budget stays unchanged.
+ const started=Date.now(),r=f.run();assert.equal(r.status,124,r.stderr);assert.ok(Date.now()-started<9000);
+ const log=readFileSync(f.log,'utf8');assert.match(log,/timeout --kill-after=5s 180s/);assert.match(log,/^stalled-curl-start$/m);assert.doesNotMatch(log,/sudo/);
 }finally{rmSync(f.root,{recursive:true,force:true});}});
 test('both CJK font workflow steps retain bounded Chinese, copyright and Chrome/NSS checks',()=>{
  for(const file of ['qualification.yml','visual-qualification.yml']){
@@ -81,3 +86,12 @@ test('both CJK font workflow steps retain bounded Chinese, copyright and Chrome/
  const helper=readFileSync(script,'utf8');assert.match(helper,/exec timeout --kill-after=5s 180s/);
  assert.doesNotMatch(helper,/apt-get|--retry-all-errors/);
 });
+test('an archive DNS failure uses the same fixed artifact from the official security archive',()=>{const f=fixture('primary-dns-fail');try{
+ const r=f.run();assert.equal(r.status,0,r.stderr);const log=readFileSync(f.log,'utf8');
+ const calls=log.split('\n').filter(line=>line.startsWith('curl '));assert.equal(calls.length,2);
+ assert.match(calls[0]!,/https:\/\/archive\.ubuntu\.com\//);assert.match(calls[1]!,/https:\/\/security\.ubuntu\.com\/ubuntu\/pool\/main\/f\/fonts-noto-cjk\/fonts-noto-cjk_20230817\+repack1-3_all.deb/);
+ assert.ok(log.lastIndexOf('curl ')<log.indexOf('sha256sum'));assert.ok(log.indexOf('sha256sum')<log.indexOf('sudo'));
+}finally{rmSync(f.root,{recursive:true,force:true});}});
+test('the official fallback still fails closed on a corrupt package before installation',()=>{const f=fixture('corrupt-fallback');try{
+ const r=f.run();assert.notEqual(r.status,0);assert.match(r.stderr,/SHA256 mismatch/);assert.doesNotMatch(readFileSync(f.log,'utf8'),/sudo/);
+}finally{rmSync(f.root,{recursive:true,force:true});}});
