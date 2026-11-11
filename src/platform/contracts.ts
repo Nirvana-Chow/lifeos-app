@@ -10,6 +10,10 @@ export type PublicEntry=Omit<StoredEntry,'ownerId'>;
 export type MutationResult={entry:PublicEntry;duplicate:boolean};
 export type Receipt={digest:string;result:MutationResult};
 export interface Transaction {
+ /** Fixed event commands/projection on this original owner transaction only. */
+ readRequirementExecutionCommand?(binding:import('../requirement-events/admission.ts').ExecutionCommandBinding):Promise<{digest:string;response:unknown}|null>;
+ projectRequirementExecution?(binding:import('../requirement-events/admission.ts').ExecutionProjectionBinding):Promise<import('../requirement-events/contracts.ts').Work&{leaseActive?:boolean}>;
+ admitRequirementExecution?(binding:import('../requirement-events/admission.ts').ExecutionAdmissionBinding):Promise<import('../requirement-events/admission.ts').AdmissionResult>;
  /** Optional, default-closed worker fence on this same transaction/connection. */
  assertRequirementExecutionLease?(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding):Promise<void>;
  /** Serialize deterministic identities even before the first record exists. */

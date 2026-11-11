@@ -1,6 +1,7 @@
 import {createRequirementEventHandler,type NotificationWait} from '../requirement-events/http.ts';
 import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import type {RequirementEventService} from '../requirement-events/service.ts';
+import {RequirementAdmissionService} from '../requirement-events/admission.ts';
 import {handleStorageReviewAgent} from '../storage-review/agent.ts';
 import {PersonalFinanceService} from '../personal-finance/service.ts';
 import {financeKeys} from '../platform/domain.ts';
@@ -63,6 +64,7 @@ export function createAgentHandler(options: Options) {
   const config = Object.freeze(structuredClone(options.config));
   const modules=Object.freeze({...options.modules});
   const service = new PersonalService(options.repository, config);
+  const admission=new RequirementAdmissionService(options.repository,service.requirements);
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentCapabilityOperations.find(entry => entry.id === id);
@@ -116,7 +118,13 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
-      if(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents'){const adapter=options.requirementEvents!;return createRequirementEventHandler({enabled:true,origin:config.baseURL,events:adapter.service,requirements:service.requirements,openNotifications:adapter.openNotifications,authorize:async()=>({actor,current:async()=>{if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await authority.assertCurrentAuthority(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作尚未就绪。');if(operation.method!=='GET')await options.assertWritable(grant);}})})(request);}
+      if(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents'){
+        // Policy-aware readCurrentGrant also computes metadata readiness using
+        // the business pool. Inside a held writer transaction, current grant
+        // authority is enforced by its same-connection SQL fence instead.
+        const adapter=options.requirementEvents!,mutationGuard=async()=>{if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');if(operation.method!=='GET')await options.assertWritable(grant);};
+        return createRequirementEventHandler({enabled:true,origin:config.baseURL,events:adapter.service,requirements:service.requirements,admission,openNotifications:adapter.openNotifications,authorize:async()=>({actor,mutationGuard,current:async()=>{await mutationGuard();await authority.assertCurrentAuthority(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作尚未就绪。');}})})(request);
+      }
       if(operation.module==='storageReview')return await handleStorageReviewAgent(request,{operation,recordId:storageRoute?.[1],actor,authority,repository:options.repository,config,currentReady:()=>available(operation.id),assertWritable:()=>options.assertWritable(grant)});
       if(isRecordModule(operation.module)){
         if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
@@ -154,7 +162,11 @@ export function createAgentHandler(options: Options) {
       if(operation.module==='requirements'){
         const requirements=service.requirements;
         if(operation.id==='snapshotRequirements')return respond(200,await requirements.snapshot(actor.ownerId));
-        if(operation.id==='getRequirement'){const entry=await requirements.get(actor.ownerId,requirementId!);const execution=modules.requirementEvents&&options.requirementEvents&&await available('streamRequirementEvents')?await options.requirementEvents.service.inspect(actor,requirementId!):undefined;await authority.assertCurrentAuthority(actor,operation.id);return respond(200,{entry,...(execution!==undefined?{execution}:{})});}
+        if(operation.id==='getRequirement'){
+          const current=()=>authority.assertCurrentAuthority(actor,operation.id);
+          const result=modules.requirementEvents&&options.requirementEvents&&await available('streamRequirementEvents')?await admission.read(actor,requirementId!,current):{entry:await requirements.get(actor.ownerId,requirementId!)};
+          await current();return respond(200,result);
+        }
         const updating=operation.id==='updateRequirement',input=object(await readJSONBody(request),updating?['fields','expectedRevision','baselineBinding']:['fields']);
         const result=await requirements.mutate(actor.ownerId,requirementId??null,{...input,spaceId:actor.spaceId,confirmed:true},request.headers.get('idempotency-key')??'',async()=>{
           if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await options.assertWritable(grant);

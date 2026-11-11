@@ -6,11 +6,13 @@ import {assertAgentGrant} from '../agent-api/grant-fence.ts';
 import type {RequirementsService} from '../requirements-candidate/service.ts';
 import type {RequirementEventService} from './service.ts';
 import {cursor} from './service.ts';
+import type {RequirementAdmissionService} from './admission.ts';
 import {claimsPath,streamPath,eventOperations,type EventActor,type ExecutionLease} from './contracts.ts';
 export type NotificationWait={wait(signal:AbortSignal):Promise<void>;close():Promise<void>};
-type Options={enabled?:boolean;origin:string;authorize:(request:Request,operationId:string)=>Promise<{actor:EventActor;current:()=>Promise<void>}>;events:RequirementEventService;requirements:RequirementsService;wait?:(signal:AbortSignal)=>Promise<void>;openNotifications?:()=>Promise<NotificationWait>};
+type Options={enabled?:boolean;origin:string;authorize:(request:Request,operationId:string)=>Promise<{actor:EventActor;current:()=>Promise<void>;mutationGuard?:()=>Promise<void>}>;events:RequirementEventService;requirements:RequirementsService;admission?:RequirementAdmissionService;wait?:(signal:AbortSignal)=>Promise<void>;openNotifications?:()=>Promise<NotificationWait>};
 const headers={'Cache-Control':'private, no-store',Vary:'Authorization','X-Content-Type-Options':'nosniff'};
 function json(status:number,value:unknown){return Response.json(value,{status,headers});}
+async function afterWrite(current:()=>Promise<void>){try{await current();}catch{throw new PlatformError(503,'EXECUTION_OUTCOME_UNVERIFIED','执行回执需要按原请求恢复。');}}
 function lease(value:unknown):ExecutionLease{
  const v=object(value,['id','requirementId','sourceId','revision','workDigest','holderId','grantId','fence','expiresAt']);
  validateId(v.id);validateId(v.sourceId);validateRevision(v.revision);
@@ -25,7 +27,7 @@ export function createRequirementEventHandler(options:Options){return async(requ
  try{
   assertLocalRequest(request,options.origin);const authorization=request.headers.get('authorization');if(!/^Bearer [A-Za-z0-9_-]{1,256}$/.test(authorization??''))return json(401,{error:'AUTH_REQUIRED'});
   const safeHeaders=new Headers(request.headers);safeHeaders.delete('cookie');const authorizationRequest=new Request(request.clone(),{headers:safeHeaders});
-  const {actor,current}=await options.authorize(authorizationRequest,operationId);await current();
+  const {actor,current,mutationGuard}=await options.authorize(authorizationRequest,operationId);await current();
   if(!actor.scopes.includes('requirements:read')||operationId!==eventOperations.stream&&!actor.scopes.includes('requirements:write'))return json(403,{error:'ACCESS_DENIED'});
   if(operationId===eventOperations.stream){
    let after=cursor(request.headers.get('last-event-id')??'0'),waiting=false,closed=false;const notifications=await options.openNotifications?.();
@@ -48,14 +50,24 @@ export function createRequirementEventHandler(options:Options){return async(requ
    return new Response(stream,{headers:{...headers,'Content-Type':'text/event-stream','X-Accel-Buffering':'no'}});
   }
   const key=request.headers.get('idempotency-key')??'';validateIdempotencyKey(key);
-  if(operationId===eventOperations.claim){const body=object(await readJSONBody(request),['requirementId','workDigest','holderId']);const result=await options.events.claim(actor,{...body,requestId:key} as never);await current();return json(200,{lease:result});}
+  if(operationId===eventOperations.claim){
+   const raw=await readJSONBody(request);
+   if(raw&&typeof raw==='object'&&!Array.isArray(raw)&&Object.hasOwn(raw,'action')){
+    if(!options.admission)throw new PlatformError(503,'EXECUTION_ADMISSION_UNAVAILABLE','受控入队尚未启用。');
+    return json(200,await options.admission.admit(actor,raw,key,current,mutationGuard));
+   }
+   const body=object(raw,['requirementId','workDigest','holderId']);const result=await options.events.claim(actor,{...body,requestId:key} as never);await afterWrite(current);return json(200,{lease:result});
+  }
   const body=object(await readJSONBody(request),['action','lease','input']),binding=lease(body.lease);if(binding.id!==claimId||binding.grantId!==actor.grantId)throw new PlatformError(403,'ACCESS_DENIED','执行租约不属于当前授权。');
-  if(body.action==='renew'&&!Object.hasOwn(body,'input'))return json(200,{lease:await options.events.renew(actor,binding,key)});
+  if(body.action==='renew'&&!Object.hasOwn(body,'input')){const result=await options.events.renew(actor,binding,key);await afterWrite(current);return json(200,{lease:result});}
   if(body.action!=='progress')throw new PlatformError(400,'INVALID_EXECUTION_ACTION','执行动作无效。');
   const input=object(body.input,['fields','expectedRevision','baselineBinding']);
   const command={...input,spaceId:actor.spaceId,confirmed:true};
-  const result=await options.requirements.mutate(actor.ownerId,binding.requirementId,command,key,current,tx=>assertAgentGrant(tx,actor,['requirements:read','requirements:write'],operationId),binding);
-  await current();let observed;
+  // Metadata readiness uses the same bounded business pool. It was checked
+  // before entering the writer and is checked again after; never recursively
+  // acquire another business connection while holding this transaction.
+  const result=await options.requirements.mutate(actor.ownerId,binding.requirementId,command,key,mutationGuard??current,tx=>assertAgentGrant(tx,actor,['requirements:read','requirements:write'],operationId),binding);
+  await afterWrite(current);let observed;
   try{observed=await options.requirements.get(actor.ownerId,result.entry.id);await current();}catch{return json(200,{...result,verification:{verified:false},outcome:'unverified',retry:{operationId,leaseId:binding.id,idempotencyKey:key,input:body}});}
   const exact=observed.sourceId===result.entry.sourceId&&observed.revision===result.entry.revision&&isDeepStrictEqual(observed.fields,result.entry.fields);
   return json(200,{...result,verification:{verified:exact,current:observed,...(!exact?{historicalReceipt:true}:{})}});

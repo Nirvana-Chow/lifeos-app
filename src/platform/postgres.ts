@@ -1,4 +1,6 @@
 import {assertPostgresExecutionLease} from '../requirement-events/transaction.ts';
+import {projectPostgresExecution,admitPostgresExecution} from '../requirement-events/admission-postgres.ts';
+import {readExecutionCommand} from '../requirement-events/command-postgres.ts';
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
 import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
@@ -77,7 +79,12 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
   const tx:Transaction={
-   ...(this.requirementEventsEnabled?{assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding)}:{}),
+   ...(this.requirementEventsEnabled?{
+    assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding),
+    readRequirementExecutionCommand:(binding:import('../requirement-events/admission.ts').ExecutionCommandBinding)=>readExecutionCommand(client,owner,binding),
+    projectRequirementExecution:(binding:import('../requirement-events/admission.ts').ExecutionProjectionBinding)=>projectPostgresExecution(client,owner,binding),
+    admitRequirementExecution:(binding:import('../requirement-events/admission.ts').ExecutionAdmissionBinding)=>admitPostgresExecution(client,owner,binding),
+   }:{}),
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
    ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
     if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
