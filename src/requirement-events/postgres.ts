@@ -2,8 +2,9 @@ import type {SqlClient,SqlPool} from '../platform/postgres.ts';
 import {PlatformError} from '../platform/domain.ts';
 import type {EventActor,EventStore,EventTransaction,ExecutionLease,Work,WorkEvent} from './contracts.ts';
 import {eventOperations} from './contracts.ts';
+import {readExecutionCommand,saveExecutionCommand} from './command-postgres.ts';
 const columns='requirement_id,source_id::text,record_revision,work_digest,dispatch_state,attempts,lease_fence,lease_id::text,lease_holder,lease_grant_id,lease_expires_at';
-function work(row:Record<string,unknown>):Work{
+export function decodeWork(row:Record<string,unknown>):Work{
  const result:Work={requirementId:String(row.requirement_id),sourceId:String(row.source_id),revision:Number(row.record_revision),workDigest:String(row.work_digest),state:row.dispatch_state as Work['state'],attempts:Number(row.attempts),fence:Number(row.lease_fence),lease:null};
  if(row.lease_id)result.lease={id:String(row.lease_id),requirementId:result.requirementId,sourceId:result.sourceId,revision:result.revision,workDigest:result.workDigest,holderId:String(row.lease_holder),grantId:String(row.lease_grant_id),fence:result.fence,expiresAt:new Date(row.lease_expires_at as string).valueOf()};return result;
 }
@@ -24,7 +25,7 @@ export class PostgresRequirementEventStore implements EventStore{
    const values=[owner,space];
    const tx:EventTransaction={
     now:async()=>new Date((await client.query('SELECT clock_timestamp() AS now')).rows[0].now as string).valueOf(),
-    get:async id=>{const r=await client.query('SELECT '+columns+' FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND requirement_id=$3 FOR UPDATE',[...values,id]);return r.rows[0]?work(r.rows[0]):null;},
+    get:async id=>{const r=await client.query('SELECT '+columns+' FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND requirement_id=$3 FOR UPDATE',[...values,id]);return r.rows[0]?decodeWork(r.rows[0]):null;},
     put:async item=>{const lease=item.lease;const r=await client.query(`UPDATE lifeos_platform.requirement_work SET record_revision=$4,work_digest=$5,dispatch_state=$6,attempts=$7,lease_fence=$8,lease_id=$9,lease_holder=$10,lease_grant_id=$11,lease_expires_at=$12 WHERE owner_id=$1 AND space_id=$2 AND requirement_id=$3 AND source_id=$13::uuid`,[...values,item.requirementId,item.revision,item.workDigest,item.state,item.attempts,item.fence,lease?.id??null,lease?.holderId??null,lease?.grantId??null,lease?new Date(lease.expiresAt).toISOString():null,item.sourceId]);if(r.rowCount!==1)throw new PlatformError(409,'REQUIREMENT_WORK_CHANGED','需求已变化。');},
     replay:async(after,limit)=>{
      // Bounds and retained page MUST use the same statement snapshot. A later
@@ -40,9 +41,9 @@ export class PostgresRequirementEventStore implements EventStore{
      const events=rows.map(row=>({cursor:String(row.cursor),requirementId:String(row.requirement_id),sourceId:String(row.source_id),revision:Number(row.record_revision),workDigest:String(row.work_digest),state:row.dispatch_state as WorkEvent['state']}));
      return{events,cursor:events.at(-1)?.cursor??last,reset};
     },
-    ready:async limit=>(await client.query('SELECT '+columns+` FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND attempts<3 AND (dispatch_state='ready' OR dispatch_state='running' AND lease_expires_at<=clock_timestamp()) ORDER BY requirement_id LIMIT $3`,[...values,limit])).rows.map(work),
-    claimReceipt:async requestId=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['requirement-claim-v1',owner,space,actor.grantId,requestId])]);const row=(await client.query('SELECT digest,response FROM lifeos_platform.requirement_claim_command WHERE owner_id=$1 AND space_id=$2 AND grant_id=$3 AND command_key=$4',[...values,actor.grantId,requestId])).rows[0];return row?{digest:String(row.digest),lease:row.response as ExecutionLease}:null;},
-    saveClaimReceipt:async(requestId,receipt)=>{await client.query('INSERT INTO lifeos_platform.requirement_claim_command(owner_id,space_id,grant_id,command_key,digest,response) VALUES($1,$2,$3,$4,$5,$6::jsonb)',[...values,actor.grantId,requestId,receipt.digest,JSON.stringify(receipt.lease)]);}
+    ready:async limit=>(await client.query('SELECT '+columns+` FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND attempts<3 AND (dispatch_state='ready' OR dispatch_state='running' AND lease_expires_at<=clock_timestamp()) ORDER BY requirement_id LIMIT $3`,[...values,limit])).rows.map(decodeWork),
+    claimReceipt:async requestId=>{const receipt=await readExecutionCommand(client,owner,{spaceId:space,grantId:actor.grantId,key:requestId});return receipt?{digest:receipt.digest,lease:receipt.response as ExecutionLease}:null;},
+    saveClaimReceipt:async(requestId,receipt)=>saveExecutionCommand(client,owner,{spaceId:space,grantId:actor.grantId,key:requestId},receipt.digest,receipt.lease)
    };
    const result=await run(tx);await client.query('COMMIT');return result;
   }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
