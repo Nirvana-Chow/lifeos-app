@@ -5,7 +5,7 @@ import {cp,mkdir,mkdtemp,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
-import {readyHeading,assertPrivateCaptureContent,captureSourceText,privateLocalInteractions,privateMobileNavigation,privateOrigin} from './helpers/private-business-browser-fixture.ts';
+import {readyHeading,assertPrivateCaptureContent,captureSourceText,privateLocalInteractions,privateMobileNavigation,privateOrigin,assertPrivateKeyboardFocus} from './helpers/private-business-browser-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
 import {presentationDensity} from './helpers/personal-workspace-browser-fixture.ts';
@@ -19,6 +19,7 @@ test('OPT-IN private visual oracle admits only native closed finance and health 
  const financeStatusResponse=await handlePersonalFinance(new Request(privateOrigin+'/api/platform/personal/finance/status',{headers:{host:'review.example.test'}}),{ownerId:'personal-review-user',baseURL:privateOrigin});
  assert.ok(financeStatusResponse);assert.equal(financeStatusResponse.status,200);const closedFinanceStatus=await financeStatusResponse.json();
  await mkdir(join(root,'app','[[...section]]'),{recursive:true});
+ await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','[[...section]]','page.tsx'),`'use client';
 import {usePathname} from 'next/navigation';
@@ -26,7 +27,7 @@ import {LifeOSWorkspace} from '../../src/ui-review/workspace';
 import {PersonalRecordPage} from '../../src/personal-candidate/record-page';
 import {PersonalCalendarPage} from '../../src/calendar-candidate/personal-page';
 import {PersonalFinancePage} from '../../src/personal-finance/page';
-export default function Page(){const path=usePathname();if(path.endsWith('/health'))return <PersonalRecordPage type="health"/>;if(path.endsWith('/people'))return <PersonalRecordPage type="person"/>;if(path.endsWith('/schedule'))return <PersonalCalendarPage/>;if(path.endsWith('/finance'))return <PersonalFinancePage/>;return <LifeOSWorkspace state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']}} onCreateTask={()=>true} viewPreferenceScope={JSON.stringify(['personal-review-user','personal-review-space'])}/>;}`);
+export default function Page(){const path=usePathname();if(path.endsWith('/health'))return <PersonalRecordPage type="health"/>;if(path.endsWith('/people'))return <PersonalRecordPage type="person"/>;if(path.endsWith('/schedule'))return <PersonalCalendarPage/>;if(path.endsWith('/finance'))return <PersonalFinancePage/>;if(path.endsWith('/settings/data'))return <LifeOSWorkspace state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} unavailablePage={{title:'数据库与数据',message:'数据管理入口已收起。'}}/>;return <LifeOSWorkspace state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']}} onCreateTask={()=>true} viewPreferenceScope={JSON.stringify(['personal-review-user','personal-review-space'])}/>;}`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout')),30000);const check=()=>{const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);child.stdout.off('data',check);accept(match[0]);}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit'));});check();});
@@ -61,6 +62,9 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
    assert.throws(()=>assertPrivateCaptureContent({...facts,texts:[...facts.texts,'private body from unapproved source']},captureSourceText(),new Set(['']),[]),/PRIVATE_CAPTURE_DENIED/);
    if(width<800&&path==='finance')await privateMobileNavigation(page);
   }
+  await page.setViewportSize({width,height:width===1365?900:844});await page.goto(origin+'/personal/settings/data',{waitUntil:'domcontentloaded',timeout:60000});await readyHeading(page,'数据库与数据');await expect(page.locator('.lo-unavailable')).toBeVisible();
+  await expect(page.locator('header [data-slot="theme-toggle"]')).toBeEnabled();
+  await assertPrivateKeyboardFocus(page,(_stage,metrics)=>console.log('PRIVATE_DATA_KEYBOARD '+JSON.stringify({width,theme,metrics})));
   assert.deepEqual(errors,[]);assert.ok(requests.length>0);assert.ok(requests.every(value=>value.startsWith('GET ')));
   assert.ok(requests.every(value=>value.endsWith('/status')),'closed surfaces must not request business snapshots');
   console.log('PRIVATE_NATIVE_VISUAL '+JSON.stringify({width,theme,surfaces:2,readOnly:true}));await page.close();

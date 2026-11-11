@@ -365,6 +365,15 @@ export function assertPrivateHeaderGeometry(surface:PrivatePresentationSurface,w
  // fixed-height row. Require its three real children, 44px minimum and no escape.
  if(surface!=='standalone-editor'||f.display!=='flex'||f.wrap!=='wrap'||f.gap!==12||!f.contained||f.childHeights.length!==3||f.childHeights.some(h=>!Number.isFinite(h)||h<=0)||!Number.isFinite(f.height)||f.height+1<Math.max(44,...f.childHeights)||f.height>f.childHeights.reduce((a,b)=>a+b,0)+f.gap*2+1)fail();
 }
+/** Diagnostic only: retain the original Tab -> Shift+Tab assertion. The finite
+ * shape never includes page text, values, attributes, classes or record IDs. */
+export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark=()=>{}){
+ mark('keyboard');const focus=page.locator(themeButtonSelector);
+ const shape=()=>focus.evaluate(node=>{const active=document.activeElement;return{target:active===node,documentFocused:document.hasFocus(),focusVisible:node.matches(':focus-visible'),outline:getComputedStyle(node).outlineStyle!=='none',disabled:(node as HTMLButtonElement).disabled,activeKind:active===node?0:active===document.body?1:active?.closest('.lo-shell,[data-lifeos-surface="personal"]')?2:3};});
+ await focus.focus();const initial=await shape();await page.keyboard.press('Tab');const forward=await shape();await page.keyboard.press('Shift+Tab');const backward=await shape();
+ mark('keyboard',[Number(initial.target),Number(forward.documentFocused),forward.activeKind,Number(backward.target),Number(backward.focusVisible),Number(backward.outline),Number(backward.documentFocused),backward.activeKind,Number(backward.disabled)]);
+ assert.equal(backward.target&&backward.focusVisible&&backward.outline,true,'private keyboard focus');
+}
 async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'dark',mark:PresentationMark,dialog=false,surface:PrivatePresentationSurface='workspace'){
  mark('measure-ready');const selectors=privatePresentationScope(surface,dialog);
  await page.evaluate(()=>document.fonts.ready.then(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))));
@@ -408,7 +417,7 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
   await expect(page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true})).toBeVisible();
  }
  if(dialog){const button=page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
- mark('keyboard');const focus=page.locator(themeButtonSelector);await focus.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert.equal(await focus.evaluate(n=>document.activeElement===n&&n.matches(':focus-visible')&&getComputedStyle(n).outlineStyle!=='none'),true,'private keyboard focus');
+ await assertPrivateKeyboardFocus(page,mark);
 }
 export async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'){
