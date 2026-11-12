@@ -217,11 +217,31 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
 }
 export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
- await expect(navigation.getByRole('button')).toHaveText(['总览','事项','需求池']);
+ await expect(navigation.getByRole('button')).toHaveText(['总览','事项']);
  await expect(navigation.getByRole('link')).toHaveText(['日记','做饭']);
  await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
  await expect(navigation.locator('summary')).toHaveCount(0);
+ const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
+ // The TLS fixture binds workspace state to URLs; the native surface fixture
+ // renders the same workspace without syncUrl and only exercises local state.
+ const urlBound=new URL(page.url()).origin===privateOrigin;
+ await page.getByRole('button',{name:'设置',exact:true}).click();
+ await expect(page.getByRole('heading',{level:1,name:'设置',exact:true})).toBeVisible();
+ await expect(page.locator('[data-settings-page]')).toBeVisible();
+ await expect(page.locator('aside button[aria-label="设置"]')).toHaveAttribute('aria-current','page');
+ if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal?page=settings&panel=general');
+ const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+ await categories.getByRole('button',{name:'需求池',exact:true}).click();
+ await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
+ await expect(categories.getByRole('button',{name:'需求池',exact:true})).toHaveAttribute('aria-current','page');
+ await expect(page.locator('aside button[aria-label="设置"]')).toHaveAttribute('aria-current','page');
+ if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal?page=requirements');
+ await page.getByRole('button',{name:'返回总览',exact:true}).click();
+ await readyHeading(page,'总览');
+ if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal');
+ if(drawerOpen)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ await expect(navigation.getByRole('button',{name:'总览',exact:true})).toHaveAttribute('aria-current','page');
  return navigation;
 }
 export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
