@@ -51,6 +51,17 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  page.on('pageerror',error=>errors.push(error.message));
  page.on('request',req=>{if(!['GET','HEAD'].includes(req.method()))writes.push(req.method());if(!req.url().startsWith(origin+'/'))remote.push(req.url());});
  await page.goto(origin+'/personal/cooking',{timeout:65_000});
+ if(process.env.LIFEOS_COOKING_EVIDENCE_DIR){
+  const folder=resolve(process.env.LIFEOS_COOKING_EVIDENCE_DIR);
+  await mkdir(folder,{recursive:true});
+  await page.screenshot({path:join(folder,'cooking-mobile.png'),fullPage:true});
+  const desktop=await browser.newPage({viewport:{width:1365,height:900},extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+  await desktop.goto(origin+'/personal/cooking',{timeout:65_000});
+  await expect(desktop.getByRole('group',{name:'菜谱分类'}).getByRole('button')).toHaveCount(11);
+  assert.equal(await desktop.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+  await desktop.screenshot({path:join(folder,'cooking-desktop.png'),fullPage:true});
+  await desktop.close();
+ }
  await page.getByRole('button',{name:'打开导航'}).click();
  const menu=page.getByRole('dialog').getByRole('navigation',{name:'主导航'});
  await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
@@ -63,7 +74,16 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  assert.ok(next.every(label=>!first.includes(label)));
  const food=page.getByRole('searchbox',{name:'手头食材'});
  await food.fill('西红柿');
- await page.getByRole('combobox',{name:'菜谱分类'}).selectOption('vegetable_dish');
+ const categories=page.getByRole('group',{name:'菜谱分类'});
+ await categories.getByRole('button',{name:/^素菜/}).click();
+ await expect(categories.getByRole('button',{name:/^素菜/})).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('searchbox',{name:'搜索菜名'}).fill('西红柿炒鸡蛋');
+ await page.getByRole('button',{name:'随机选一道',exact:true}).click();
+ const random=page.getByRole('status',{name:'随机选菜结果'});
+ await expect(random.getByRole('link')).toHaveText(/西红柿炒鸡蛋/);
+ await page.getByRole('searchbox',{name:'搜索菜名'}).fill('不存在的菜名');
+ await expect(random).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'随机选一道',exact:true})).toBeDisabled();
  await page.getByRole('searchbox',{name:'搜索菜名'}).fill('西红柿炒鸡蛋');
  const target=page.getByRole('link',{name:/西红柿炒鸡蛋/}).first();
  await expect(target).toBeVisible();

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Utensils } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Shuffle, Utensils } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '../ui-review/ui/button';
@@ -19,6 +19,7 @@ export function CookingWorkspace({ recipes, categories }: {
   const [keyword, setKeyword] = useState('');
   const [group, setGroup] = useState(0);
   const [page, setPage] = useState(0);
+  const [randomPick, setRandomPick] = useState<RecipeSummary | null>(null);
   const catalogHeading = useRef<HTMLHeadingElement>(null);
   const ingredients = useMemo(() => ingredientTerms(ingredientInput), [ingredientInput]);
   const matches = useMemo(() => rankRecipes(recipes, { category, ingredients }), [recipes, category, ingredients]);
@@ -27,6 +28,11 @@ export function CookingWorkspace({ recipes, categories }: {
     return rankRecipes(recipes, { category, ingredients, keyword });
   }, [matches, recipes, category, ingredients, keyword]);
   const categoryLabels = new Map(categories.map(item => [item.id, item.label]));
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const recipe of recipes) counts.set(recipe.category, (counts.get(recipe.category) ?? 0) + 1);
+    return counts;
+  }, [recipes]);
   const suggestions = suggestionGroup(matches, group);
   const pageCount = Math.ceil(catalog.length / pageSize);
   const visible = catalog.slice(page * pageSize, (page + 1) * pageSize);
@@ -44,14 +50,33 @@ export function CookingWorkspace({ recipes, categories }: {
             <h2 id="cooking-suggestion-heading"><Utensils aria-hidden="true" size={19} />今天做什么</h2>
             <p>第一次做，先挑一道 1–2 星的菜。读完步骤，切好食材、备齐调料再开火。</p>
           </div>
+          <div className={styles.actions}>
+            <Button type="button" variant="outline" className={styles.control} disabled={!catalog.length}
+              onClick={() => setRandomPick(catalog[Math.floor(Math.random() * catalog.length)]?.recipe ?? null)}>
+              <Shuffle aria-hidden="true" />随机选一道
+            </Button>
           {matches.length > 3 && (
             <Button type="button" variant="outline" className={styles.control}
               onClick={() => setGroup(current => current + 1)}>
               <RefreshCw aria-hidden="true" />换一批
             </Button>
           )}
+          </div>
         </div>
 
+        <div className={styles.categories} role="group" aria-label="菜谱分类">
+          {[{id: '', label: '全部菜谱'}, ...categories].map(item => (
+            <Button key={item.id} type="button" variant="outline" className={styles.category}
+              aria-pressed={category === item.id} onClick={() => {
+                setCategory(item.id);
+                setGroup(0);
+                setPage(0);
+                setRandomPick(null);
+              }}>
+              <span>{item.label}</span><span className={styles.meta}>{item.id ? categoryCounts.get(item.id) ?? 0 : recipes.length}</span>
+            </Button>
+          ))}
+        </div>
         <div className={styles.filters}>
           <label>
             手头食材
@@ -60,20 +85,19 @@ export function CookingWorkspace({ recipes, categories }: {
                 setIngredientInput(event.target.value);
                 setGroup(0);
                 setPage(0);
+                setRandomPick(null);
               }} />
           </label>
-          <label>
-            菜谱分类
-            <select value={category} onChange={event => {
-              setCategory(event.target.value);
-              setGroup(0);
-              setPage(0);
-            }}>
-              <option value="">全部分类</option>
-              {categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </label>
         </div>
+
+        {randomPick && (
+          <div className={styles.randomResult} role="status" aria-label="随机选菜结果">
+            <span className={styles.meta}>这次试试</span>
+            <Link href={`/personal/cooking/${randomPick.id}`} prefetch={false}>
+              <strong>{randomPick.name}</strong><span>查看做法 <ArrowRight aria-hidden="true" size={16} /></span>
+            </Link>
+          </div>
+        )}
 
         {suggestions.length ? (
           <ul className={styles.suggestions}>
@@ -112,6 +136,7 @@ export function CookingWorkspace({ recipes, categories }: {
               onChange={event => {
                 setKeyword(event.target.value);
                 setPage(0);
+                setRandomPick(null);
               }} />
           </label>
         </div>
