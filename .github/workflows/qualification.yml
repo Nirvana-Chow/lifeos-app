@@ -461,11 +461,12 @@ jobs:
           RUN_UI_DENSITY_BROWSER_TESTS: '1'
           RUN_REQUIREMENTS_BROWSER_TESTS: '1'
           RUN_REQUIREMENTS_CRUD_BROWSER_TESTS: '1'
+          RUN_REQUIREMENTS_PROGRESS_BROWSER_TESTS: '1'
           LIFEOS_TEST_CHROMIUM_PATH: /usr/bin/google-chrome
         run: |
           set -euo pipefail
           node --test --test-name-pattern='OPT-IN public auth theme oracle' test/owner-recovery-browser.integration.test.ts
-          node --test --test-concurrency=1 test/ui-density-browser.integration.test.ts test/ui-density-board-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts test/requirements-crud-browser.integration.test.ts
+          node --test --test-concurrency=1 test/ui-density-browser.integration.test.ts test/ui-density-board-browser.integration.test.ts test/requirements-multiview-browser.integration.test.ts test/requirements-crud-browser.integration.test.ts test/requirements-progress-browser.integration.test.ts
       - name: Create restricted synthetic fixture and failure injection triggers
         env:
           LIFEOS_FIXTURE_PORT: '55439'

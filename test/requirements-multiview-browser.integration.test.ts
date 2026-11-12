@@ -165,7 +165,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
    await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
    const table=gantt.getByRole('button',{name:'查看需求表格',exact:true});await table.scrollIntoViewIfNeeded();await expect(table).toBeInViewport({ratio:0.5});await table.click();
   }
-  const populatedColumn=page.locator('[aria-label="按开发进度查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
+  const populatedColumn=page.locator('[aria-label="按推进状态查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
   const viewport=view==='board'?populatedColumn.first().locator(':scope > div'):page.locator('[data-slot="data-grid-table-viewport"]');
   const headerHeight=view!=='board'?(await viewport.locator('thead').boundingBox())!.height:0;
   const height=(await viewport.boundingBox())!.height;
