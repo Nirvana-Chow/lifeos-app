@@ -12,9 +12,21 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_PERSONAL_RECORDS',
   'LIFEOS_AGENT_STORAGE_REVIEW',
   'LIFEOS_AGENT_REQUIREMENT_EVENTS',
+  'LIFEOS_MCP_HTTP',
 ] as const;
 
 export const agentVerifierRole = 'lifeos_agent_verifier';
+export const agentMcpHttpTransport = 'streamable-http-v1' as const;
+
+/** One versioned transport codec for protected startup and the HTTP boundary.
+ * A parsed transport is not Agent authority; the complete binding below and
+ * the existing live API dispatcher remain required. */
+export function readAgentMcpHttpTransport(env:Record<string,string|undefined>):typeof agentMcpHttpTransport|null {
+  const transport=env.LIFEOS_MCP_HTTP;
+  if(transport===undefined)return null;
+  if(transport!==agentMcpHttpTransport)throw Error('Agent runtime configuration unavailable');
+  return transport;
+}
 
 export function readAgentRuntimeConfig(
   env: Record<string, string | undefined>,
@@ -24,6 +36,7 @@ export function readAgentRuntimeConfig(
   if (agentRuntimeKeys.every(key => env[key] === undefined)) return null;
 
   const invalid = (): never => { throw Error('Agent runtime configuration unavailable'); };
+  readAgentMcpHttpTransport(env);
   const databaseURL = env.LIFEOS_AGENT_API_DATABASE_URL;
   const secret = env.LIFEOS_AGENT_API_SECRET;
   if (env.LIFEOS_AGENT_API_ENABLED !== '1' || !personal || personal.transport === 'ssh-loopback' ||
