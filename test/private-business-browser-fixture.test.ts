@@ -27,18 +27,27 @@ test('keyboard lifecycle diagnostics contain at most three bounded integer snaps
  assert.equal(fixture.projectPrivateKeyboardLifecycle({html:secret,cookie:secret}),undefined);
  assert.deepEqual(fixture.projectPrivateKeyboardLifecycle([-1,1.5,Number.POSITIVE_INFINITY]),[512,512,512]);
 });
+test('skip-target observation projects only three booleans and rejects private or malformed values',()=>{
+ const secret='private-skip-target-secret';
+ assert.deepEqual(fixture.projectPrivateKeyboardSkipTarget([false,true,false,secret]),[false,true,false]);
+ assert.deepEqual(fixture.projectPrivateKeyboardSkipTarget([]),[]);
+ for(const value of [[secret,true,false],[0,1,false],[null,false,true],[undefined,true],['true'],[new Boolean(true)],Array(3),[true,,false],{body:secret},secret,null,undefined]){
+  const projected=fixture.projectPrivateKeyboardSkipTarget(value);
+  assert.equal(projected,undefined);assert.equal(JSON.stringify({projected}).includes(secret),false);
+ }
+});
 test('finite keyboard samples retain the original nine metrics and detect replacement without changing the key sequence',async()=>{
- for(const replace of [false,true]){
-  const calls:string[]=[],body={},main={matches:(s:string)=>s==='main',closest:()=>({})};
+ for(const replace of [false,true])for(const forwardSkip of [false,true]){
+  const calls:string[]=[],body={},skip={closest:()=>({}),matches:()=>false},main={matches:(s:string)=>s==='main',closest:()=>({})};
   const makeNode=()=>({isConnected:true,disabled:false,matches:(selector:string)=>selector===':focus-visible',getBoundingClientRect(){return{width:this.isConnected?44:0,height:44};}});
   const original=makeNode();let target=original;
-  const document={activeElement:body,body,hasFocus:()=>true,visibilityState:'visible'};
+  const document={activeElement:body,body,hasFocus:()=>true,visibilityState:'visible',querySelector:(selector:string)=>{assert.equal(selector,'.lo-skip');calls.push('skip-observation');return skip;}};
   const getComputedStyle=()=>({outlineStyle:'solid',visibility:'visible',display:'block'});
   const focus={elementHandle:async()=>{calls.push('handle');return Object.assign(original,{dispose:async()=>{calls.push('dispose');}});},focus:async()=>{calls.push('focus');document.activeElement=target;},evaluate:async(fn:Function,arg:unknown)=>new Function('document','getComputedStyle','node','original',`return (${fn.toString()})(node,original)`)(document,getComputedStyle,target,arg)};
-  const page={locator:()=>focus,keyboard:{press:async(key:string)=>{calls.push(key);if(key==='Tab'){if(replace){original.isConnected=false;target=makeNode();}document.activeElement=main;}else document.activeElement=target;}}};
-  let metrics:readonly number[]|undefined;const samples:number[][]=[];
-  await fixture.assertPrivateKeyboardFocus(page as never,(_stage,numbers)=>{metrics=numbers;},values=>samples.push([...values]));
-  assert.deepEqual(calls,['handle','focus','Tab','Shift+Tab','dispose']);assert.deepEqual(metrics,[1,1,2,1,1,1,1,0,0]);assert.deepEqual(samples.at(-1),replace?[215,464,208]:[215,471,215]);
+  const page={locator:()=>focus,keyboard:{press:async(key:string)=>{calls.push(key);if(key==='Tab'){if(replace){original.isConnected=false;target=makeNode();}document.activeElement=forwardSkip?skip:main;}else document.activeElement=target;}}};
+  let metrics:readonly number[]|undefined;const samples:number[][]=[],skipSamples:boolean[][]=[];
+  await fixture.assertPrivateKeyboardFocus(page as never,(_stage,numbers)=>{metrics=numbers;},(values,skipTargets)=>{samples.push([...values]);skipSamples.push([...skipTargets]);});
+  assert.deepEqual(calls,['handle','focus','skip-observation','Tab','skip-observation','Shift+Tab','skip-observation','dispose']);assert.deepEqual(metrics,[1,1,2,1,1,1,1,0,0]);assert.deepEqual(samples.at(-1),replace?(forwardSkip?[215,208,208]:[215,464,208]):(forwardSkip?[215,215,215]:[215,471,215]));assert.deepEqual(skipSamples,[[false],[false,forwardSkip],[false,forwardSkip,false]]);
  }
 });
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{

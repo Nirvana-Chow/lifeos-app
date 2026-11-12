@@ -370,27 +370,36 @@ export function assertPrivateHeaderGeometry(surface:PrivatePresentationSurface,w
 export function projectPrivateKeyboardLifecycle(value:unknown):number[]|undefined{
  return Array.isArray(value)?value.slice(0,3).map(n=>typeof n==='number'&&Number.isInteger(n)&&n>=0&&n<=512?n:512):undefined;
 }
-export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark=()=>{},lifecycle?:(snapshots:readonly number[])=>void){
+/** Only primitive boolean samples may leave the selected cell; malformed arrays
+ * are omitted rather than coercing private values or shifting sample positions. */
+export function projectPrivateKeyboardSkipTarget(value:unknown):boolean[]|undefined{
+ if(!Array.isArray(value))return undefined;
+ const samples=value.slice(0,3);
+ for(const sample of samples)if(typeof sample!=='boolean')return undefined;
+ return samples;
+}
+type KeyboardObservation=(snapshots:readonly number[],skipTargets:readonly boolean[])=>void;
+export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark=()=>{},lifecycle?:KeyboardObservation){
  mark('keyboard');const focus=page.locator(themeButtonSelector);
  // Only the selected failing cell retains one node handle. Three existing shape
  // reads sample lifecycle; no listener, page state, DOM mutation or added wait.
- const original=lifecycle?await focus.elementHandle():null,snapshots:number[]=[];
+ const original=lifecycle?await focus.elementHandle():null,snapshots:number[]=[],skipTargets:boolean[]=[];
  const shape=()=>focus.evaluate((node,original)=>{
   const active=document.activeElement,facts={target:active===node,documentFocused:document.hasFocus(),focusVisible:node.matches(':focus-visible'),outline:getComputedStyle(node).outlineStyle!=='none',disabled:(node as HTMLButtonElement).disabled,activeKind:active===node?0:active===document.body?1:active?.closest('.lo-shell,[data-lifeos-surface="personal"]')?2:3};
-  if(!original)return{...facts,lifecycle:512};
+  if(!original)return{...facts,lifecycle:512,skipTarget:undefined};
   const visible=(n:Element)=>{const rect=n.getBoundingClientRect(),style=getComputedStyle(n);return rect.width>0&&rect.height>0&&style.visibility!=='hidden'&&style.display!=='none';};
   // Bits 0..8: same node, original connected/visible/disabled, current
   // visible/disabled, document focus/visible, active element is main.
   const flags=[node===original,original.isConnected,visible(original),(original as HTMLButtonElement).disabled,visible(node),facts.disabled,facts.documentFocused,document.visibilityState==='visible',active?.matches('main')===true];
-  return{...facts,lifecycle:flags.reduce((bits,value,index)=>bits|(Number(value)<<index),0)};
- },original).then(facts=>{if(lifecycle){snapshots.push(facts.lifecycle);lifecycle(snapshots);}return facts;});
+  return{...facts,lifecycle:flags.reduce((bits,value,index)=>bits|(Number(value)<<index),0),skipTarget:active===document.querySelector('.lo-skip')};
+ },original).then(facts=>{if(lifecycle){snapshots.push(facts.lifecycle);if(typeof facts.skipTarget==='boolean')skipTargets.push(facts.skipTarget);lifecycle(snapshots,skipTargets);}return facts;});
  try{
  await focus.focus();const initial=await shape();await page.keyboard.press('Tab');const forward=await shape();await page.keyboard.press('Shift+Tab');const backward=await shape();
  mark('keyboard',[Number(initial.target),Number(forward.documentFocused),forward.activeKind,Number(backward.target),Number(backward.focusVisible),Number(backward.outline),Number(backward.documentFocused),backward.activeKind,Number(backward.disabled)]);
  assert.equal(backward.target&&backward.focusVisible&&backward.outline,true,'private keyboard focus');
  }finally{await original?.dispose().catch(()=>{});}
 }
-async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'dark',mark:PresentationMark,dialog=false,surface:PrivatePresentationSurface='workspace',keyboardLifecycle?:(snapshots:readonly number[])=>void){
+async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'dark',mark:PresentationMark,dialog=false,surface:PrivatePresentationSurface='workspace',keyboardLifecycle?:KeyboardObservation){
  mark('measure-ready');const selectors=privatePresentationScope(surface,dialog);
  await page.evaluate(()=>document.fonts.ready.then(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()))));
  // The workbench paints this fixed icon entirely inside the native select's
@@ -587,7 +596,7 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
 export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  const {page,entries}=f;
  let row:typeof privateCaptureCases[number]|undefined,stage:PresentationStage='personal';
- let metrics:readonly number[]|undefined,keyboardLifecycle:readonly number[]|undefined;
+ let metrics:readonly number[]|undefined,keyboardLifecycle:readonly number[]|undefined,keyboardSkipTarget:readonly boolean[]|undefined;
  const mark:PresentationMark=(value,numbers)=>{stage=value;metrics=numbers;};
  try{
  await verifyPersonalPresentations(page,entries);
@@ -595,14 +604,14 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  const transport=watchPrivateTransport(page);let cells=0;
  try{
   for(const item of privateCaptureCases){
-   row=item;keyboardLifecycle=undefined;mark('navigation');
+   row=item;keyboardLifecycle=undefined;keyboardSkipTarget=undefined;mark('navigation');
    await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});
    if(row.key==='private-settings')await openPrivateSettings(page,row.path,entries);
    else await page.goto(privateOrigin+row.path,{waitUntil:'domcontentloaded'});
    mark('heading');await readyHeading(page,row.key==='private-settings'?'设置':row.heading);mark('theme');await themeState(page,row.theme,'system');mark('interaction');await privateLocalInteractions(page,row.key);
    if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.locator('[data-category-grid="reui"]').getByText('title'in entry.draft?entry.draft.title:'',{exact:true})).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
-   const observeKeyboard=row.key==='private-data'&&row.width===430&&row.theme==='light'?(values:readonly number[])=>{keyboardLifecycle=projectPrivateKeyboardLifecycle(values);}:undefined;
+   const observeKeyboard=row.key==='private-data'&&row.width===430&&row.theme==='light'?(values:readonly number[],skipTargets:readonly boolean[])=>{keyboardLifecycle=projectPrivateKeyboardLifecycle(values);keyboardSkipTarget=projectPrivateKeyboardSkipTarget(skipTargets);}:undefined;
    await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace',observeKeyboard);await capturePrivatePage(page,row,entries,mark);cells++;
    mark('close-dialog');if(row.key==='private-settings'){await page.getByRole('dialog',{name:'设置',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();}else if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
    mark('mobile-navigation');if(row.width<800&&row.key==='private-finance')await privateMobileNavigation(page);
@@ -614,7 +623,7 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
   try{
    const message=error instanceof Error?error.message:undefined;
    const reason=presentationCodes.find(code=>code===message)??projectPrivateAppearanceFailure(undefined,error).errorKind;
-   console.error('PRIVATE_PRESENTATION_FAILURE '+JSON.stringify({family:row?.key??null,width:row?.width??null,theme:row?.theme??null,stage,reason,metrics:metrics?.slice(0,9).map(n=>Number.isFinite(n)?Math.round(Math.max(0,Math.min(n,1000000))*100)/100:null),keyboardLifecycle:projectPrivateKeyboardLifecycle(keyboardLifecycle)}));
+   console.error('PRIVATE_PRESENTATION_FAILURE '+JSON.stringify({family:row?.key??null,width:row?.width??null,theme:row?.theme??null,stage,reason,metrics:metrics?.slice(0,9).map(n=>Number.isFinite(n)?Math.round(Math.max(0,Math.min(n,1000000))*100)/100:null),keyboardLifecycle:projectPrivateKeyboardLifecycle(keyboardLifecycle),keyboardSkipTarget:projectPrivateKeyboardSkipTarget(keyboardSkipTarget)}));
   }catch{}
   throw error;
  }
