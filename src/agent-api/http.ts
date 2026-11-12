@@ -16,6 +16,7 @@ import {PersonalService, personalEntryType} from '../personal-candidate/service.
 import {assertAgentGrant,assertAgentTodoWriteGrant} from './grant-fence.ts';
 import {agentApiVersion, agentOperations,agentEventTransports,agentCapabilityOperations} from './capabilities.ts';
 import {AuthorityService} from '../agent-authority/service.ts';
+import {AgentRateLimitError} from './rate-limit.ts';
 
 import type {AgentModules} from './config.ts';
 import type {OrganizationType} from '../personal-candidate/business.ts';
@@ -37,11 +38,12 @@ type Options = {
   requirementEvents?:{service:RequirementEventService;ready:()=>Promise<boolean>;openNotifications:()=>Promise<NotificationWait>};
 };
 
-function respond(status: number, body: unknown) {
+function respond(status: number, body: unknown, retryAfterSeconds?:number) {
   return Response.json(body, {status, headers: {
     'Cache-Control': 'private, no-store',
     Vary: 'Authorization',
     'X-Content-Type-Options': 'nosniff',
+    ...(status===429&&retryAfterSeconds!==undefined?{'Retry-After':String(retryAfterSeconds)}:{}),
   }});
 }
 
@@ -230,7 +232,7 @@ export function createAgentHandler(options: Options) {
         {entry: detail(result.entry), duplicate: result.duplicate});
     } catch (error) {
       return error instanceof PlatformError
-        ? respond(error.status, {error: error.code})
+        ? respond(error.status, {error: error.code},error instanceof AgentRateLimitError?error.retryAfterSeconds:undefined)
         : respond(503, {error: 'AGENT_API_UNAVAILABLE'});
     }
   };

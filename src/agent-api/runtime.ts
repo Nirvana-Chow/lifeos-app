@@ -12,6 +12,7 @@ import {readPersonalConfig, type PersonalConfig} from '../personal-candidate/con
 import {requirePersonalBusinessWrite} from '../personal-candidate/runtime-http.ts';
 import {readPlatformConfig, type PlatformConfig} from '../platform/config.ts';
 import {PlatformError} from '../platform/domain.ts';
+import {AgentRateLimitError} from './rate-limit.ts';
 import {PostgresPlatformRepository, verifyRestrictedPool, type SqlPool} from '../platform/postgres.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {agentVerifierRole, readAgentRuntimeConfig, readAgentBusinessModules,type AgentModules} from './config.ts';
@@ -229,7 +230,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       ...(modules.classification?{classification:(authority:import('../agent-authority/service.ts').AuthorityService)=>new ClassificationService(repository,personal,{authority,assertReady:classificationReady,assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''),policyRevision:()=>classificationPolicyRevision(personal)})}:{}),
       verify: async token => {
         const result = await auth.api.verifyApiKey({body: {key: token}});
-        if (result.error?.code === 'RATE_LIMITED') throw new PlatformError(429, 'RATE_LIMITED', '请求过于频繁。');
+        if (result.error?.code === 'RATE_LIMITED') throw new AgentRateLimitError(result.error);
         const key = result.key;
         const spaceId = key?.metadata?.spaceId;
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
