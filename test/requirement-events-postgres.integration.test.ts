@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {Pool} from 'pg';
 import {verifyRequirementEventReadiness} from '../src/requirement-events/readiness.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';
@@ -12,12 +13,98 @@ import {PostgresPlatformRepository,type SqlPool} from '../src/platform/postgres.
 import {requirements} from '../src/platform/requirements.ts';
 import {prepareRequirementsFixture,requirementsFixture,requirementsFixturePool} from './helpers/requirements-stage-pg.ts';
 
+// Runs only AFTER the original source/run-bound disposable cluster preflight.
+// Objects have two distinct owners at creation; no ALTER OWNER or private-table grant.
+async function qualifyEventSplitOwners(admin:Pool){
+ const database='lifeos_platform_test_event_owners',platformOwner='lifeos_platform_candidate_migrator',authOwner='lifeos_auth_test_bootstrap',password='fixture-event-owner-never-live';
+ const pools:Pool[]=[],createdRoles:{name:string;oid:number}[]=[];let databaseOid:number|undefined;
+ const connect=(user:string)=>{const pool=new Pool({host:'127.0.0.1',port:requirementsFixture.port,database,user,password:user==='postgres'?'fixture-ci-admin-never-live':user==='lifeos_platform_candidate_runtime'?'fixture-ci-runtime-never-live':password,max:1,connectionTimeoutMillis:2000,statement_timeout:10000,lock_timeout:8000});pools.push(pool);return pool;};
+ try{
+  assert.equal((await admin.query('SELECT count(*)::int AS n FROM pg_database WHERE datname=$1',[database])).rows[0].n,0,'Never touch an existing owner-split database');
+  assert.deepEqual((await admin.query('SELECT rolname FROM pg_roles WHERE rolname=ANY($1::text[])',[[platformOwner,authOwner]])).rows,[],'Never reuse existing owner roles');
+  for(const name of [platformOwner,authOwner]){
+   await admin.query(`CREATE ROLE ${name} LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS NOREPLICATION`);
+   createdRoles.push({name,oid:(await admin.query('SELECT oid::int AS oid FROM pg_roles WHERE rolname=$1',[name])).rows[0].oid});
+  }
+  await admin.query(`CREATE DATABASE ${database} OWNER ${platformOwner}`);
+  databaseOid=(await admin.query('SELECT oid::int AS oid FROM pg_database WHERE datname=$1',[database])).rows[0].oid;
+  const owner=connect(platformOwner),auth=connect(authOwner),runtime=connect('lifeos_platform_candidate_runtime'),catalog=connect('postgres');
+  assert.deepEqual((await catalog.query("SELECT current_database() AS database,current_setting('server_version_num') AS version")).rows,[{database,version:'170011'}]);
+  await catalog.query(`REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE SCHEMA lifeos_agent AUTHORIZATION ${authOwner}; REVOKE ALL ON SCHEMA lifeos_agent FROM PUBLIC`);
+  for(const name of ['0001_platform_candidate.sql','0002_platform_inbox.sql'])await owner.query(await readFile('db/'+name,'utf8'));
+  // Existing Auth migration prerequisites need only platform meta in this narrow fixture.
+  // Full reviewed grant functions and fences remain covered by the separate policy PG case.
+  await owner.query(`GRANT USAGE ON SCHEMA lifeos_platform TO ${authOwner}; GRANT SELECT ON lifeos_platform.platform_meta TO ${authOwner}`);
+  await owner.query('INSERT INTO lifeos_platform.platform_user(id,name,email) VALUES($1,$1,$2)',[requirementsFixture.ownerId,requirementsFixture.email]);
+  await auth.query(`CREATE TABLE lifeos_agent.key_management_binding(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),owner_id text NOT NULL,space_id text NOT NULL);
+   CREATE TABLE lifeos_agent.apikey(id text PRIMARY KEY,permissions jsonb NOT NULL);
+   CREATE TABLE lifeos_agent.business_policy_control(singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),enabled boolean NOT NULL DEFAULT false);
+   INSERT INTO lifeos_agent.business_policy_control(singleton) VALUES(true);
+   CREATE TABLE lifeos_agent.business_policy_operation(operation_id text PRIMARY KEY,required_scopes text[] NOT NULL,enabled boolean NOT NULL DEFAULT false);
+   REVOKE ALL ON ALL TABLES IN SCHEMA lifeos_agent FROM PUBLIC;
+   CREATE FUNCTION lifeos_agent.assert_business_grant(text,text,text,text[]) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+   CREATE FUNCTION lifeos_agent.assert_current_business_grant(text,text,text,text[],text,text) RETURNS boolean LANGUAGE sql AS 'SELECT false';
+   REVOKE ALL ON ALL FUNCTIONS IN SCHEMA lifeos_agent FROM PUBLIC`);
+  await auth.query('INSERT INTO lifeos_agent.key_management_binding(owner_id,space_id) VALUES($1,$2)',[requirementsFixture.ownerId,requirementsFixture.spaceId]);
+  await auth.query(`INSERT INTO lifeos_agent.apikey VALUES('synthetic-legacy','{"requirements":["read"]}')`);
+  const keyBefore=(await auth.query('SELECT * FROM lifeos_agent.apikey')).rows;
+  const config={ownerId:requirementsFixture.ownerId,ownerEmail:requirementsFixture.email,spaceId:requirementsFixture.spaceId,databaseName:database,baseURL:requirementsFixture.origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
+  const fields={title:'Synthetic split-owner ticket',body:'Disposable fixture only',phaseId:requirements().roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,workflow:{state:'planned',purpose:'Synthetic',nextStep:'Check ownership'}} as const,input={spaceId:config.spaceId,confirmed:true,fields};
+  const service=new RequirementsService(new PostgresPlatformRepository(runtime as SqlPool,false,false,{organization:false,classification:false,requirements:true}),config);
+  const legacy=(await service.mutate(config.ownerId,null,input,'synthetic-split-legacy')).entry;
+  const platformSQL=await readFile('db/0020_requirement_events.proposed.sql','utf8'),policySQL=await readFile('db/0020_requirement_events_agent_operations.proposed.sql','utf8');
+  const migrate=async(pool:Pool,sql:string,change:Partial<Record<'database'|'owner'|'space'|'platformApproval'|'policyApproval',string>>={})=>{
+   const session=await pool.connect();try{
+    const values={database,owner:config.ownerId,space:config.spaceId,platformApproval:'transaction-outbox-v1',policyApproval:'1',...change};
+    await session.query("SELECT set_config('lifeos.agent_expected_database',$1,false),set_config('lifeos.agent_expected_owner',$2,false),set_config('lifeos.agent_expected_space',$3,false),set_config('lifeos.requirement_events_migration_approved',$4,false),set_config('lifeos.requirement_events_agent_approved',$5,false)",Object.values(values));
+    await session.query(sql);
+   }catch(error){await session.query('ROLLBACK');throw error;}finally{session.release(true);}
+  };
+  assert.deepEqual((await catalog.query(`SELECT pg_get_userbyid(c.relowner) AS owner FROM pg_class c WHERE c.oid IN ('lifeos_platform.platform_record'::regclass,'lifeos_agent.business_policy_operation'::regclass) ORDER BY owner`)).rows,[{owner:authOwner},{owner:platformOwner}]);
+  assert.equal((await catalog.query("SELECT has_schema_privilege($1,'lifeos_agent','USAGE') AS allowed",[platformOwner])).rows[0].allowed,false);
+  for(const change of [{database:'wrong_database'},{owner:'wrong_owner'},{space:''},{platformApproval:''}])await assert.rejects(migrate(owner,platformSQL,change),{code:'P0001'});
+  await assert.rejects(migrate(auth,platformSQL));await assert.rejects(migrate(runtime,platformSQL),{code:'P0001'});
+  await migrate(owner,platformSQL);await verifyRequirementEventReadiness(runtime);
+  assert.equal((await catalog.query('SELECT count(*)::int AS n FROM lifeos_platform.requirement_work')).rows[0].n,0,'No legacy backfill');
+  assert.equal((await catalog.query('SELECT count(*)::int AS n FROM lifeos_platform.requirement_event_outbox')).rows[0].n,0);
+  assert.deepEqual((await service.get(config.ownerId,legacy.id)).fields,fields,'DDL does not edit the owner requirement');
+  for(const change of [{database:'wrong_database'},{owner:'wrong_owner'},{space:'wrong_space'},{policyApproval:''}])await assert.rejects(migrate(auth,policySQL,change),{code:'P0001'});
+  for(const role of [owner,runtime]){
+   await assert.rejects(migrate(role,policySQL),{code:'42501'});
+   await assert.rejects(role.query('SELECT * FROM lifeos_agent.business_policy_operation'),{code:'42501'});
+   await assert.rejects(role.query("INSERT INTO lifeos_agent.business_policy_operation VALUES('untrusted',ARRAY['requirements:read'],false)"),{code:'42501'});
+   await assert.rejects(role.query('UPDATE lifeos_agent.business_policy_operation SET enabled=true'),{code:'42501'});
+  }
+  assert.equal((await auth.query('SELECT count(*)::int AS n FROM lifeos_agent.business_policy_operation')).rows[0].n,0);
+  await migrate(auth,policySQL);
+  assert.deepEqual((await auth.query('SELECT operation_id,required_scopes,enabled FROM lifeos_agent.business_policy_operation ORDER BY operation_id')).rows,[
+   {operation_id:'claimRequirementExecution',required_scopes:['requirements:read','requirements:write'],enabled:false},
+   {operation_id:'streamRequirementEvents',required_scopes:['requirements:read'],enabled:false},
+   {operation_id:'updateRequirementExecution',required_scopes:['requirements:read','requirements:write'],enabled:false},
+  ]);
+  assert.deepEqual((await auth.query('SELECT enabled FROM lifeos_agent.business_policy_control')).rows,[{enabled:false}]);assert.deepEqual((await auth.query('SELECT * FROM lifeos_agent.apikey')).rows,keyBefore);
+  await service.mutate(config.ownerId,null,input,'synthetic-split-after-ddl');
+  assert.equal((await catalog.query('SELECT count(*)::int AS n FROM lifeos_platform.requirement_event_outbox')).rows[0].n,1,'Original restricted writer still invokes the unchanged trigger');
+  await verifyRequirementEventReadiness(runtime);
+ }finally{
+  await Promise.all(pools.map(pool=>pool.end()));
+  if(databaseOid!==undefined){
+   assert.deepEqual((await admin.query('SELECT oid::int AS oid,pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname=$1',[database])).rows,[{oid:databaseOid,owner:platformOwner}]);
+   await admin.query(`DROP DATABASE ${database}`);
+  }
+  for(const role of createdRoles.reverse()){
+   assert.deepEqual((await admin.query('SELECT oid::int AS oid FROM pg_roles WHERE rolname=$1',[role.name])).rows,[{oid:role.oid}]);await admin.query(`DROP ROLE ${role.name}`);
+  }
+ }
+}
+
 // Reuses the exact source/run-bound disposable requirements fixture. Never redirects to a live database.
 test('OPT-IN requirement transaction outbox rollback, receipt dedupe and lease fence on restricted PostgreSQL',{
  skip:process.env.RUN_REQUIREMENT_EVENT_POSTGRES_TESTS!=='1'&&'Dedicated requirement event PostgreSQL qualification not enabled',timeout:30000,
 },async()=>{
  await prepareRequirementsFixture();const admin=requirementsFixturePool('admin',1),pool=requirementsFixturePool('runtime',2);
  try{
+  await qualifyEventSplitOwners(admin);
   const config={ownerId:requirementsFixture.ownerId,ownerEmail:requirementsFixture.email,spaceId:requirementsFixture.spaceId,databaseName:requirementsFixture.database,baseURL:requirementsFixture.origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
   const repository=new PostgresPlatformRepository(pool as SqlPool,false,false,{organization:false,classification:false,requirements:true},true),service=new RequirementsService(repository,config);
   const fields={title:'Synthetic event ticket',body:'No real requirement data',phaseId:requirements().roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,workflow:{state:'planned',purpose:'Synthetic',nextStep:'Verify transaction'}} as const;

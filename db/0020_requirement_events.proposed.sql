@@ -1,18 +1,18 @@
 -- PROPOSED ONLY. No production execution, role creation, key scopes or background activation.
--- Root must separately qualify exact database/owner, backup, restricted roles and rollback.
+-- Platform owner step only; private binding and disabled operation registration are checked
+-- separately by0020_requirement_events_agent_operations as the Auth/policy owner.
+-- Root must separately qualify both steps, exact target, backup, restricted roles and rollback.
 BEGIN;
 SET LOCAL search_path=pg_catalog,pg_temp;
 DO $$ BEGIN
  IF current_setting('lifeos.requirement_events_migration_approved',true) IS DISTINCT FROM 'transaction-outbox-v1'
   OR current_setting('lifeos.agent_expected_database',true) IS DISTINCT FROM current_database()
-  OR current_setting('lifeos.agent_expected_owner',true) IS DISTINCT FROM (SELECT owner_id FROM lifeos_agent.key_management_binding)
-  OR current_setting('lifeos.agent_expected_space',true) IS DISTINCT FROM (SELECT space_id FROM lifeos_agent.key_management_binding)
-  OR (SELECT count(*) FROM lifeos_agent.key_management_binding)<>1
+  OR NOT EXISTS(SELECT 1 FROM lifeos_platform.platform_user WHERE id=current_setting('lifeos.agent_expected_owner',true))
+  OR COALESCE(current_setting('lifeos.agent_expected_space',true),'') !~ '^[A-Za-z0-9_-]{8,80}$'
   OR (SELECT version FROM lifeos_platform.platform_meta) IS DISTINCT FROM 2
   OR to_regclass('lifeos_platform.requirement_work') IS NOT NULL
-  OR current_user IN ('lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_verifier','lifeos_agent_key_manager')
+  OR current_user IN ('lifeos_platform_candidate_runtime','lifeos_platform_candidate_bootstrap','lifeos_agent_issuer','lifeos_agent_verifier','lifeos_agent_key_manager')
   OR (SELECT relowner FROM pg_class WHERE oid='lifeos_platform.platform_record'::regclass) IS DISTINCT FROM (SELECT oid FROM pg_roles WHERE rolname=current_user)
-  OR to_regprocedure('lifeos_agent.assert_business_grant(text,text,text,text[])') IS NULL
  THEN RAISE EXCEPTION 'Explicit exact-target migration approval and restricted business prerequisites required';END IF;
 END $$;
 CREATE TABLE lifeos_platform.requirement_work(
@@ -89,13 +89,4 @@ END $$;
 REVOKE ALL ON FUNCTION lifeos_platform.capture_requirement_event() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION lifeos_platform.capture_requirement_event() TO lifeos_platform_candidate_runtime;
 CREATE TRIGGER requirement_event_after_write AFTER INSERT OR UPDATE ON lifeos_platform.platform_record FOR EACH ROW EXECUTE FUNCTION lifeos_platform.capture_requirement_event();
--- Optional all-business registration is disabled; this never changes a key or activates policy.
-DO $$ BEGIN
- IF to_regclass('lifeos_agent.business_policy_operation') IS NOT NULL THEN
-  INSERT INTO lifeos_agent.business_policy_operation(operation_id,required_scopes) VALUES
-   ('streamRequirementEvents',ARRAY['requirements:read']),
-   ('claimRequirementExecution',ARRAY['requirements:read','requirements:write']),
-   ('updateRequirementExecution',ARRAY['requirements:read','requirements:write']);
- END IF;
-END $$;
 COMMIT;

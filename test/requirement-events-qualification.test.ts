@@ -15,6 +15,17 @@ test('event module requires explicit requirements activation and exact schema re
  const sql=readFileSync('db/0020_requirement_events.proposed.sql','utf8'),marker=sql.indexOf('CREATE FUNCTION lifeos_platform.capture_requirement_event'),start=sql.indexOf('AS $$',marker)+5,end=sql.indexOf('$$;',start);
  assert.equal(createHash('sha256').update(sql.slice(start,end)).digest('hex'),requirementEventTriggerDigest);
 });
+test('event platform migration never reads or writes the Auth private registry and registration stays closed',()=>{
+ const platform=readFileSync('db/0020_requirement_events.proposed.sql','utf8');
+ assert.doesNotMatch(platform,/lifeos_agent\./,'Platform owner must not need Auth schema usage or private table rights');
+ const policy=readFileSync('db/0020_requirement_events_agent_operations.proposed.sql','utf8');
+ assert.match(policy,/lifeos\.agent_expected_database/);assert.match(policy,/lifeos\.agent_expected_owner/);assert.match(policy,/lifeos\.agent_expected_space/);
+ assert.match(policy,/lifeos_agent\.key_management_binding/);assert.match(policy,/lifeos_agent\.business_policy_operation/);
+ assert.doesNotMatch(policy,/GRANT\s|ALTER\s+.*OWNER|UPDATE\s+lifeos_agent/i);
+ assert.deepEqual([...policy.matchAll(/\('([A-Za-z]+)',ARRAY\[([^\]]+)\],false\)/g)].map(match=>[match[1],match[2]]),[
+  ['streamRequirementEvents',"'requirements:read'"],['claimRequirementExecution',"'requirements:read','requirements:write'"],['updateRequirementExecution',"'requirements:read','requirements:write'"],
+ ]);
+});
 test('actual requirements/event JUnit gate rejects missing event coverage, skips, duplicates and errors',()=>{
  const names=['concurrent first overlays lock one deterministic identity and second different key sees CAS conflict','create restart readback update history and lost committed response recover exact command','new issuer mode has independently verified native scopes and fence rejects revoked requirements grants','OPT-IN requirement transaction outbox rollback, receipt dedupe and lease fence on restricted PostgreSQL'];
  const directory=mkdtempSync(join(tmpdir(),'lifeos-event-junit-'));

@@ -236,6 +236,8 @@ test('OPT-IN fresh synthetic PostgreSQL all-business-policy qualification',{
     await client.query("SELECT set_config('lifeos.requirement_events_migration_approved','transaction-outbox-v1',false),set_config('lifeos.agent_expected_database','lifeos_platform_test_local',false),set_config('lifeos.agent_expected_owner',$1,false),set_config('lifeos.agent_expected_space',$2,false)",[owner,space]);
     assert.equal((await client.query("SELECT current_setting('lifeos.requirement_events_migration_approved') AS approval")).rows[0].approval,'transaction-outbox-v1');
     await client.query(await readFile('db/0020_requirement_events.proposed.sql','utf8'));
+    await client.query("SELECT set_config('lifeos.requirement_events_agent_approved','1',false)");
+    await client.query(await readFile('db/0020_requirement_events_agent_operations.proposed.sql','utf8'));
    }finally{client.release(true);}
    assert.equal(await digest(legacy),before);
    const ids=['streamRequirementEvents','claimRequirementExecution','updateRequirementExecution'],catalog=await readBusinessPolicyCatalog(verifier);
