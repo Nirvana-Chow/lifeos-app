@@ -126,11 +126,11 @@ test('native column handles can resize below their starting widths without chang
  assert.deepEqual(h.options().data,[task('a',4)]);
 });
 
-test('the required title column absorbs native filler space while meaningful columns remain available', () => {
+test('the required title column opts into native auto sizing while meaningful columns remain available', () => {
  const h=harness();
  h.render({tasks:[task('a',4)],writable:false,onOpen(){}});
  const columns=h.options().columns;
- assert.deepEqual(columns.filter((column:any)=>column.meta.fillWidth).map((column:any)=>column.id),['title']);
+ assert.deepEqual(columns.filter((column:any)=>column.meta.autoSize).map((column:any)=>column.id),['title']);
  assert.deepEqual(columns.map((column:any)=>column.id),['complete','title','status','due','project','area','detail']);
  assert.equal(h.options().state.columnVisibility.title,undefined,'the content column remains visible by default');
 });

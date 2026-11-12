@@ -45,11 +45,6 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  await page.goto(origin,{waitUntil:'networkidle',timeout:60_000});
  const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();
  const title=grid.locator('tr[data-row-id="synthetic-0"] td[data-col-id="title"]');
- const initialTitleWidth=await title.evaluate(node=>node.getBoundingClientRect().width);
- const columns=grid.getByRole('button',{name:'列设置',exact:true});await columns.click();
- for(const label of ['到期日','项目','领域','详情'])await grid.getByRole('checkbox',{name:`显示${label}列`,exact:true}).uncheck();
- await grid.getByRole('button',{name:'向前移动状态列',exact:true}).click();await columns.click();
- await expect(grid.locator('thead th[data-col-id="status"]')).toHaveCount(1);
  const measure=()=>grid.evaluate(node=>{
   const viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!,table=node.querySelector('table')!,header=node.querySelector('thead')!;
   const columns=Array.from(header.querySelectorAll('th[data-col-id]'));
@@ -58,6 +53,40 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
    lastColumnEnd:columns.at(-1)!.getBoundingClientRect().right-viewport.getBoundingClientRect().left,
    headers:columns.map(column=>column.getAttribute('data-col-id'))};
  });
+ await expect.poll(async()=>(await measure()).filler).toBeLessThanOrEqual(1);
+ const defaultLayout=await measure();
+ assert.ok(Math.abs(defaultLayout.lastColumnEnd-defaultLayout.viewport)<=1,JSON.stringify(defaultLayout));
+ const titleHeader=grid.getByRole('columnheader',{name:/待办/}).first();
+ const originalWidth=(await titleHeader.boundingBox())!.width;
+ const resizeHandle=titleHeader.locator('[data-slot="data-grid-table-resize-handle"]');
+ const handleBox=await resizeHandle.boundingBox();assert.ok(handleBox);
+ let resizeWrites=0;const countResize=(request:import('@playwright/test').Request)=>{if(!['GET','HEAD'].includes(request.method()))resizeWrites++;};
+ page.on('request',countResize);
+ try{
+  await page.mouse.move(handleBox.x+handleBox.width/2,handleBox.y+handleBox.height/2);await page.mouse.down();
+  await page.mouse.move(handleBox.x+handleBox.width/2-48,handleBox.y+handleBox.height/2,{steps:4});await page.mouse.up();
+  await expect.poll(async()=>(await titleHeader.boundingBox())!.width).toBeLessThan(originalWidth-20);
+  const resizedWidth=(await titleHeader.boundingBox())!.width;
+  assert.ok(Math.abs(resizedWidth-(originalWidth-48))<=1,'the original title handle visibly applies the 48px drag');
+  await page.setViewportSize({width:1465,height:900});
+  await expect.poll(async()=>(await measure()).viewport).toBe(defaultLayout.viewport+100);
+  await expect.poll(async()=>(await measure()).filler).toBeGreaterThan(100);
+  assert.ok(Math.abs((await titleHeader.boundingBox())!.width-resizedWidth)<=1,'container growth preserves the manually dragged title width');
+  await resizeHandle.dblclick();
+  await expect.poll(async()=>(await measure()).filler).toBeLessThanOrEqual(1);
+  const resetLayout=await measure();
+  assert.ok(Math.abs(resetLayout.lastColumnEnd-resetLayout.viewport)<=1,JSON.stringify(resetLayout));
+  await page.setViewportSize({width:1365,height:900});
+  await expect.poll(async()=>(await measure()).viewport).toBe(defaultLayout.viewport);
+  await expect.poll(async()=>(await measure()).filler).toBeLessThanOrEqual(1);
+  await expect.poll(async()=>Math.abs((await titleHeader.boundingBox())!.width-originalWidth)).toBeLessThanOrEqual(1);
+  assert.equal(resizeWrites,0);assert.equal(await page.getByLabel('合成写入次数').innerText(),'0');
+ }finally{page.off('request',countResize);}
+ const initialTitleWidth=await title.evaluate(node=>node.getBoundingClientRect().width);
+ const columns=grid.getByRole('button',{name:'列设置',exact:true});await columns.click();
+ for(const label of ['到期日','项目','领域','详情'])await grid.getByRole('checkbox',{name:`显示${label}列`,exact:true}).uncheck();
+ await grid.getByRole('button',{name:'向前移动状态列',exact:true}).click();await columns.click();
+ await expect(grid.locator('thead th[data-col-id="status"]')).toHaveCount(1);
  await expect.poll(async()=>(await measure()).filler).toBeLessThanOrEqual(1);
  const desktop=await measure();
  assert.ok(desktop.title>initialTitleWidth+200,JSON.stringify({desktop,initialTitleWidth}));

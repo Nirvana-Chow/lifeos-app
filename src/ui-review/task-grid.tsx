@@ -274,7 +274,7 @@ export function TaskGrid(props: TaskGridProps) {
       meta: {
         headerTitle: columnLabels[id],
         cellClassName: styles.tableCell,
-        ...(id === 'title' ? { fillWidth: true } : {}),
+        ...(id === 'title' ? { autoSize: true } : {}),
         ...(editableFields.includes(id as TaskCellField) ? { cellEdit: { editable: () => canWrite(latest.current) } } : {}),
       },
       cell: TaskGridValueCell,
