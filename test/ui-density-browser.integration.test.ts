@@ -31,7 +31,7 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  await page.reload({waitUntil:'networkidle'});await expect(grid.locator('thead th').nth(1)).toContainText('状态');assert.equal(await grid.locator('thead th[data-col-id="project"]').count(),0);
  await page.getByRole('button',{name:'切换合成账号',exact:true}).click();await expect(grid.locator('thead th').nth(1)).toContainText('待办');await expect(grid.getByRole('columnheader',{name:/项目/})).toHaveCount(1);
  // Layout measurements use computed styles, actual geometry and composited colors.
- await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.getByRole('dialog',{name:'设置',exact:true});
+ await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.locator('[data-settings-page]');
  for(const palette of ['slate-indigo','sage-teal','mauve-violet'])for(const mode of ['light','dark']){
   await settings.locator(`input[type="radio"][value="${palette}"]`).check();await settings.getByLabel('明暗模式',{exact:true}).selectOption(mode);await page.waitForTimeout(160);
   const sample=await page.locator('.lo-shell').evaluate(node=>{const style=getComputedStyle(node),header=node.querySelector('.lo-header')!,side=node.querySelector('.lo-sidebar')!;return {font:parseFloat(style.fontSize),header:header.getBoundingClientRect().height,sidebar:side.getBoundingClientRect().width,foreground:style.color,layers:[{backgroundColor:style.backgroundColor}]};});

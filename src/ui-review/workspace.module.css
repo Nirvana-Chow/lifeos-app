@@ -1,0 +1,24 @@
+.breadcrumbs { display:flex; align-items:center; gap:6px; min-width:0; margin:0 0 12px; color:var(--muted-foreground); font-size:14px; }
+.breadcrumbs > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); }
+.breadcrumbs > svg { flex:none; }
+.shell .breadcrumbs button { min-height:32px; padding:4px 6px; font-size:14px; color:var(--muted-foreground); }
+.historyButtons { display:flex; flex:none; gap:2px; margin-right:6px; padding-right:8px; border-right:1px solid var(--border); }
+.settingsNavigation { display:flex; align-items:center; flex-wrap:wrap; gap:4px; flex:none; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
+.shell .settingsNavigation :is(button,a) { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:6px 10px; border:0; border-radius:6px; background:transparent; font:inherit; font-size:14px; text-decoration:none; color:var(--muted-foreground); white-space:nowrap; }
+.shell .settingsNavigation [aria-current=page] { color:var(--foreground); background:var(--muted); font-weight:550; }
+.shell .settingsNavigation :is(button,a):hover { background:var(--muted); color:var(--foreground); }
+.settingsContent { height:100%; min-height:0; display:flex; flex-direction:column; }
+.settingsContent > :not(.settingsPage) { flex:none; }
+.settingsPage { display:flex; flex:1; min-height:0; overflow:hidden; }
+.settingsLayout { display:flex; flex:1; min-width:0; min-height:0; }
+.settingsPanel { flex:1; min-width:0; padding:0 4px 24px 0; }
+.shell .settingsPanel { --primary:var(--foreground); --primary-foreground:var(--background); }
+.shell .settingsPanel :global([aria-label="修改密码"]) { margin-inline:0; }
+.shell :global(.lo-nav) :global(.is-current),.shell :global(.lo-sidebar-bottom) :global(.is-current) { color:var(--foreground); background:var(--muted); }
+@media(max-width:850px) {
+ .breadcrumbs { gap:2px; font-size:16px; }
+ .shell .breadcrumbs button { min-height:44px; min-width:44px; font-size:16px; }
+ .historyButtons { padding-right:4px; margin-right:2px; }
+ .settingsNavigation { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior:contain; margin-bottom:12px; padding-bottom:8px; }
+ .shell .settingsNavigation :is(button,a) { min-height:44px; flex:none; font-size:16px; }
+}

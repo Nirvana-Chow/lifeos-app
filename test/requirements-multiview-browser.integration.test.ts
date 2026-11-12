@@ -93,6 +93,10 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   });
   const visibleIds=async()=>page.locator('[data-requirement-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-requirement-id')!).sort());
   assert.deepEqual(await visibleIds(),allIds);
+  const grouping=page.getByRole('combobox',{name:'表格分组',exact:true});
+  await grouping.selectOption('implementation');await expect(page.locator('[data-requirements-group="implementation"]').first()).toBeVisible();assert.deepEqual(await visibleIds(),allIds);
+  await grouping.selectOption('none');await expect(page.locator('[data-requirements-group]')).toHaveCount(0);assert.deepEqual(await visibleIds(),allIds);
+  await grouping.selectOption('phase');await expect(page.locator('[data-requirements-phase]').first()).toBeVisible();
   await page.getByRole('button',{name:'按需求排序',exact:true}).click();
   const viewport=page.locator('[data-slot="data-grid-table-viewport"]');
   if(width<600)assert.equal(await viewport.evaluate(node=>node.scrollWidth>node.clientWidth),true,'Mobile table needs its own horizontal viewport');
@@ -161,7 +165,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
    await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
    const table=gantt.getByRole('button',{name:'查看需求表格',exact:true});await table.scrollIntoViewIfNeeded();await expect(table).toBeInViewport({ratio:0.5});await table.click();
   }
-  const populatedColumn=page.locator('[aria-label="按阶段查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
+  const populatedColumn=page.locator('[aria-label="按开发进度查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
   const viewport=view==='board'?populatedColumn.first().locator(':scope > div'):page.locator('[data-slot="data-grid-table-viewport"]');
   const headerHeight=view!=='board'?(await viewport.locator('thead').boundingBox())!.height:0;
   const height=(await viewport.boundingBox())!.height;

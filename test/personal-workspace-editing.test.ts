@@ -32,7 +32,7 @@ function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
  return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
 }
 test('task workspace exposes browsing sections and reserves category creation for its explicit section',()=>{
- const html=workspace();assert.match(html,/aria-label="待办分类视图"/);assert.match(html,/需求池/);
+ const html=workspace();assert.match(html,/aria-label="待办分类视图"/);assert.doesNotMatch(html,/aria-label="需求池"/);
  assert.doesNotMatch(html,/管理项目与领域|新建 \/ 管理主题|href="\/personal\/edit\?type=(?:domain|project|topic)"/);
  assert.doesNotMatch(html,/<option[^>]*>[^<]*(?:示例|默认项目|默认领域)/);
  assert.match(workspace({initialPage:'areas'}),/href="\/personal\/edit\?type=domain"/);
@@ -75,11 +75,11 @@ test('enabled form does not offer category creation without verified type capabi
  }
 });
 
-test('settings uses a modal while the overview remains mounted',()=>{
+test('settings keeps account actions in its own content page',()=>{
  const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['topic']},initialPage:'settings',onLogout:()=>{}});
- assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='总览').length);
- assert.ok(elements(tree,n=>n.props.className==='lo-settings-dialog').length);
+ assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='设置').length);
+ assert.equal(elements(tree,n=>n.props.className==='lo-settings-dialog').length,0);
  assert.ok(elements(tree,n=>n.props.className==='lo-logout').length);
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
@@ -128,13 +128,14 @@ test('personal data settings acknowledge records and bounded export without moun
  const settings=renderToStaticMarkup(React.createElement(PersonalSettings,{dataHref:'/personal/settings/data',aiHref:'/personal/settings/ai'}));assert.doesNotMatch(settings,/href="\/review\/admin/);
 });
 
-test('settings overlay retains task background and opening captures without leaving or discarding',()=>{
+test('settings renders a dedicated page and its opener uses the departure guard',()=>{
  const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');let captured=0,left=0;
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'tasks',initialModal:'settings',onBeforeSettingsChange:()=>{captured++;return true;},onBeforeNavigate:()=>{left++;return true;}});
- assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='待办').length);
- const settings=elements(tree,n=>n.props.className==='lo-settings-dialog')[0];assert.ok(settings,'entire settings needs a dialog overlay');
+ assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='设置').length);
+ assert.equal(elements(tree,n=>n.props.className==='lo-settings-dialog').length,0);
+ assert.ok(elements(tree,n=>n.props['data-settings-page']!==undefined).length);
  const trigger=elements(tree,n=>n.props['aria-label']==='设置')[0];trigger.props.onClick({currentTarget:null});
- assert.equal(captured,1);assert.equal(left,0,'overlay opener must not run destructive leave guard');
+ assert.equal(captured,0);assert.equal(left,1,'settings is an ordinary guarded page departure');
  assert.ok(elements(tree,n=>n.props['aria-label']==='事项').length);
 });
 
@@ -146,10 +147,23 @@ test('settings downloads preserve background drafts and departing links respect 
  click(false);assert.equal(left,0,'pending settings panel guards before any destructive background leave');assert.equal(blocked,1);
 });
 
-test('requirement navigation guard blocks real departures and preserves settings overlays on the current background',()=>{
+test('requirement navigation guard also blocks departure to the standalone settings page',()=>{
  let departures=0,guards=0,overlays=0;const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'requirements',onNavigatePage:()=>departures++,onBeforeSettingsChange:()=>{overlays++;return true;}});
  const page=elements(tree,n=>n.type?.name==='RequirementsPage')[0];assert.ok(page);page.props.navigationGuard.current=()=>{guards++;return false;};
  const nav=elements(tree,n=>n.props?.['aria-label']==='事项')[0];assert.equal(nav.props.onClick(),false);assert.equal(departures,0);assert.equal(guards,1);
- elements(tree,n=>n.props?.['aria-label']==='设置')[0].props.onClick({currentTarget:null});assert.equal(overlays,1);assert.equal(guards,1);
+ elements(tree,n=>n.props?.['aria-label']==='设置')[0].props.onClick({currentTarget:null});assert.equal(overlays,0);assert.equal(guards,2);
+});
+
+test('content-page history controls guard departures and retain the active editor before mouse blur',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');let traversals=0,guards=0;
+ const original=Object.getOwnPropertyDescriptor(globalThis,'window');
+ Object.defineProperty(globalThis,'window',{configurable:true,value:{history:{back:()=>traversals++,forward:()=>traversals++}}});
+ try{
+  for(const flags of [{},{saving:true},{uncertain:true},{saving:true,syncUrl:true},{uncertain:true,syncUrl:true}]){
+   const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'requirements',contentPage:{title:'反馈 Inbox',content:null},onBeforeNavigate:()=>{guards++;return false;},...flags});
+   for(const name of ['后退','前进']){const button=elements(tree,n=>n.props['aria-label']===name)[0];assert.equal(button.props['data-workspace-nav'],true);button.props.onClick();}
+  }
+  assert.equal(traversals,0);assert.equal(guards,2,'pending or uncertain history stays closed before the departure callback');
+ }finally{if(original)Object.defineProperty(globalThis,'window',original);else Reflect.deleteProperty(globalThis,'window');}
 });

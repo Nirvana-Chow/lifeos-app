@@ -45,7 +45,7 @@ test('requirement pool renders a compact shared ReUI table and three reachable v
 test('board retains legacy undated requirements without optional roadmap metadata',()=>{
  const item={id:'LO-LEGACY-001',version:1,title:'保留旧基线需求',description:'原始描述',status:'not_started',delivery:'backlog',sourceRefs:['README.md'],acceptanceCriteria:['保留稳定 ID'],evidence:[],blockedBy:[]};
  const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:[],onOpen:()=>{}});
- assert.match(html,/未排阶段/);
+ assert.match(html,/待核验/);
  assert.match(html,/data-requirement-id="LO-LEGACY-001"/);
  assert.match(html,/查看需求 LO-LEGACY-001 保留旧基线需求/);
 });
@@ -66,4 +66,31 @@ test('saved owner workflow shows a compact summary and owner next step without c
  const html=renderPage('requirements-views.tsx','RequirementsTable',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{},workflow});
  assert.match(html,/推进：已完成（业务标记）/);assert.match(html,/私人用途 &lt;script&gt; 数据/);assert.match(html,/下一步原始业务内容/);assert.doesNotMatch(html,/<script/);assert.match(html,/本人验收|未验收|尚未验收|已验收/);
  const untouched=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{}});assert.doesNotMatch(untouched,/data-requirement-workflow/);
+});
+
+
+test('board uses source development progress and keeps business workflow separate from acceptance',()=>{
+ const baseline=requirements(),original=baseline.requirements[0];
+ const rows=[
+  {...original,id:'LO-TEST-001',title:'尚未开始样例',status:'not_started',roadmap:{...original.roadmap,implementation:'not_started'}},
+  {...original,id:'LO-TEST-002',title:'部分实现样例',status:'in_progress',roadmap:{...original.roadmap,implementation:'partial'}},
+  {...original,id:'LO-TEST-003',title:'源码实现样例',status:'in_progress',roadmap:{...original.roadmap,implementation:'implemented'}},
+  {...original,id:'LO-TEST-004',title:'待审查样例',status:'awaiting_acceptance',roadmap:{...original.roadmap,implementation:'implemented'}},
+ ];
+ const workflow=new Map([[rows[0].id,{state:'done',purpose:'业务推进标记',nextStep:'核对源码'}]]);
+ const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},workflow});
+ assert.match(html,/aria-label="按开发进度查看需求"/);
+ for(const [state,title] of [['not_started','尚未开始样例'],['in_progress','部分实现样例'],['implemented','源码实现样例'],['awaiting_acceptance','待审查样例']]){const column=html.match(new RegExp('<section[^>]*data-requirements-progress="'+state+'"[^]*?</section>'))?.[0]??'';assert.match(column,new RegExp(title));for(const item of rows.filter(row=>row.title!==title))assert.ok(!column.includes(item.title),'each requirement belongs to its evidence-backed development column');}
+ assert.match(html,/推进：已完成（业务标记）/);assert.doesNotMatch(html,/data-requirements-progress="accepted"/);
+});
+
+test('requirements table grouping is optional and reuses the native grouped row model',()=>{
+ const baseline=requirements(),rows=baseline.requirements;
+ for(const grouping of ['phase','implementation','priority','acceptance']){
+  const html=renderPage('requirements-views.tsx','RequirementsTable',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},grouping});
+  assert.match(html,new RegExp('data-requirements-group="'+grouping+'"'));
+ }
+ const plain=renderPage('requirements-views.tsx','RequirementsTable',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},grouping:'none'});
+ assert.doesNotMatch(plain,/data-requirements-group=/);
+ assert.match(renderPage(),/aria-label="表格分组"/);
 });

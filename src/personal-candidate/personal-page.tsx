@@ -15,6 +15,7 @@ export function PersonalPage({title,children,initialPage='settings',canNavigate,
   access={{authenticated:true,writable:null,loginAllowed:true}}
   initialPage={initialPage}
   contentPage={{title,wide,content:<PrivacyBoundary>{children}</PrivacyBoundary>}}
-  onNavigatePage={page=>{if(!canNavigate||canNavigate())router.push(workspaceHref(page));}}
+  onBeforeNavigate={canNavigate}
+  onNavigatePage={page=>router.push(workspaceHref(page))}
  />;
 }

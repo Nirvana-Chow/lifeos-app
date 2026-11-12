@@ -204,9 +204,9 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
       return route.continue();
     });
 
-    const keysURL=origin+'/personal?modal=settings&panel=api-keys';
+    const keysURL=origin+'/personal?page=settings&panel=api-keys';
     await page.goto(origin+'/account/api-keys', {waitUntil: 'domcontentloaded', timeout: 55_000});
-    await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();
+    await expect(page.locator('#personal-main:has([data-settings-page])')).toBeVisible();
     await expect(page.getByRole('heading', {level:2,name: 'API 密钥',exact:true})).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme',theme);
     await expect(page.locator('main')).toHaveCount(1);

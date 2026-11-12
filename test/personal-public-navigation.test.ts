@@ -14,7 +14,7 @@ import * as workspaceSelectors from '../src/ui-review/selectors.ts';
 type Node = {type:unknown;props:Record<string,any>};
 const jsx={jsx:(type:unknown,props:Record<string,any>)=>({type,props}),jsxs:(type:unknown,props:Record<string,any>)=>({type,props}),Fragment:'fragment'};
 const react={useRef:(value:any)=>({current:value}),useState:(value:any)=>[value,()=>{}],useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn()};
-function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{if(key.endsWith('/key-management-config'))return {keyManagementFlag};if(key==='./owner-module-navigation')return {useOwnerModules:()=>({links:[],scope:null,path:''}),OwnerModuleLinks:()=>null};if(key==='./owner-release-notice')return {OwnerReleaseNotice:()=>null};assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
+function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{if(key.endsWith('/key-management-config'))return {keyManagementFlag};if(key==='./workspace.module.css')return {default:{}};if(key==='./owner-module-navigation')return {useOwnerModules:()=>({links:[],scope:null,path:''}),OwnerModuleLinks:()=>null};if(key==='./owner-release-notice')return {OwnerReleaseNotice:()=>null};assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
 function find(node:any,predicate:(n:Node)=>boolean):Node|undefined{if(!node||typeof node!=='object')return;if(Array.isArray(node)){for(const item of node){const found=find(item,predicate);if(found)return found;}return;}return predicate(node)?node:find(node.props?.children,predicate);}
 const destinations:string[]=[];
 const id='11111111-1111-4111-8111-111111111111';
@@ -92,7 +92,7 @@ test('collapsed personal navigation keeps available tooltips and hides journal a
  const render=()=>{cursor=0;return workspace.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null}});};
  let tree=render();
  find(tree,n=>n.props['aria-label']==='收起侧栏')!.props.onClick();tree=render();
- for(const label of ['事项','总览','需求池','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
+ for(const label of ['事项','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
  for(const path of ['schedule','journal'] as const)assert.equal(find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path]),undefined);
 });
 
@@ -196,9 +196,9 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
   render();
  };
  traverse('/personal?page=settings',1);
- assert.deepEqual(guards,['committed'],'The same popstate must reach the workspace with the latest committed guard');
- assert.equal(find(render(),node=>node.type==='h1')?.props.children,'总览');
- assert.equal(find(tree,node=>node.type==='dialog-content'&&node.props.className==='lo-settings-dialog')?.props['aria-labelledby'],'lo-settings-title');
+ assert.deepEqual(guards,['leave'],'The same popstate must reach the workspace with the latest committed guard');
+ assert.equal(find(render(),node=>node.type==='h1')?.props.children,'设置');
+ assert.ok(find(tree,node=>node.props['data-settings-page']!==undefined));
  assert.equal(registrations.filter(item=>item.type==='popstate'&&!item.removed).at(-1)!.callback,subscribed);
 
  const latestTask={id,revision:9,title:'Synthetic task',notes:'',status:'open',dueOn:null,area:null,project:null,inInbox:null,sourceLabel:null};
@@ -216,5 +216,7 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
  traverse('/personal?page=requirements&create=todo',3);
  assert.equal(created,0,'an informational requirements history entry must not open a task editor');
  assert.equal(find(render(),node=>node.type==='h1')?.props.children,'需求池');
+ traverse('/personal?page=settings&create=todo',4);assert.equal(created,0,'settings history cannot open a task editor');
+ assert.equal(find(render(),node=>node.type==='h1')?.props.children,'设置');
  for(const item of effects.values())item.cleanup?.();
 });

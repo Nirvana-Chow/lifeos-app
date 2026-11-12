@@ -15,11 +15,11 @@ test('finite capture manifest binds anonymous routes viewport theme and public h
 
 for(const [width,height] of [[1365,900],[360,844],[390,844],[430,844]] as const){
  for(const theme of ['light','dark'] as const){
-  test(`settings capture accepts only the canonical general overlay at ${width}/${theme}`,async()=>{
+  test(`settings capture accepts only the canonical general page at ${width}/${theme}`,async()=>{
    const {captureDescriptor}=await import('../scripts/synthetic-rendered-qualification.ts');
    const name=`private-settings-${width}-${theme}.png`;
-   assert.deepEqual(captureDescriptor({name,url:'https://review.example.test/personal?modal=settings&panel=general',width,height,theme}),{
-    name,directory:'owner-personal-browser-screenshots',route:'/personal?modal=settings&panel=general',viewport:{width,height},theme,
+   assert.deepEqual(captureDescriptor({name,url:'https://review.example.test/personal?page=settings&panel=general',width,height,theme}),{
+    name,directory:'owner-personal-browser-screenshots',route:'/personal?page=settings&panel=general',viewport:{width,height},theme,
    });
   });
  }
@@ -47,9 +47,13 @@ test('every approved private browser capture can enter the finite manifest',asyn
 
 test('settings capture refuses legacy routes other panels and URL or viewport expansion',async()=>{
  const {captureDescriptor}=await import('../scripts/synthetic-rendered-qualification.ts');
- const clean={name:'private-settings-1365-light.png',url:'https://review.example.test/personal?modal=settings&panel=general',width:1365,height:900,theme:'light'};
+ const clean={name:'private-settings-1365-light.png',url:'https://review.example.test/personal?page=settings&panel=general',width:1365,height:900,theme:'light'};
  for(const url of [
   'https://review.example.test/personal?page=settings',
+  'https://review.example.test/personal?modal=settings&panel=general',
+  'https://review.example.test/personal?page=settings&panel=security',
+  'https://review.example.test/personal?page=settings&panel=api-keys',
+  'https://review.example.test/personal?page=settings&panel=topics',
   'https://review.example.test/personal?modal=settings&panel=security',
   'https://review.example.test/personal?modal=settings&panel=api-keys',
   'https://review.example.test/personal?modal=settings&panel=topics',
@@ -59,10 +63,10 @@ test('settings capture refuses legacy routes other panels and URL or viewport ex
   'https://review.example.test/personal?page=tasks&modal=settings&panel=general',
   'https://review.example.test/personal?panel=general&modal=settings',
   clean.url+'#fragment',
-  'https://user:synthetic-password@review.example.test/personal?modal=settings&panel=general',
-  'https://other.example.test/personal?modal=settings&panel=general',
-  'http://review.example.test/personal?modal=settings&panel=general',
-  'https://review.example.test:14443/personal?modal=settings&panel=general',
+  'https://user:synthetic-password@review.example.test/personal?page=settings&panel=general',
+  'https://other.example.test/personal?page=settings&panel=general',
+  'http://review.example.test/personal?page=settings&panel=general',
+  'https://review.example.test:14443/personal?page=settings&panel=general',
  ])assert.throws(()=>captureDescriptor({...clean,url}),/^Error: SYNTHETIC_CAPTURE_DENIED$/);
  for(const change of [{name:'../'+clean.name},{name:'private-settings-unknown.png'},{width:390},{height:844},{theme:'dark'}]){
   assert.throws(()=>captureDescriptor({...clean,...change}),/^Error: SYNTHETIC_CAPTURE_DENIED$/);

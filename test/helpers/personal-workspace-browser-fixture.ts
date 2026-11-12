@@ -455,23 +455,16 @@ export async function verifyPersonalWorkspace(page:Page){
  await expect(overviewInput).toBeFocused();await expect(page.getByRole('dialog')).toHaveCount(0);
  await expect(page.locator('form')).toHaveCount(0);
  phase='overview-title-draft';await overviewInput.fill('合成未保存总览草稿');
- const overviewNode=await overviewInput.elementHandle();let overviewWrites=0,overviewNativeDialogs=0;
+ const overviewNode=await overviewInput.elementHandle();let overviewWrites=0;
  const trackOverviewWrite=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))overviewWrites++;};
- const unexpectedOverviewDialog=(dialog:Dialog)=>{overviewNativeDialogs++;void dialog.dismiss();};
- page.on('request',trackOverviewWrite);page.on('dialog',unexpectedOverviewDialog);
+ page.on('request',trackOverviewWrite);
  try{
-  phase='overview-settings-open';await page.getByRole('button',{name:'设置',exact:true}).click();
-  const settings=page.getByRole('dialog',{name:'设置',exact:true});
-  phase='overview-settings-visible';await expect(settings).toBeVisible();
-  assert.equal(overviewNativeDialogs,0,'Settings overlays the draft without native discard confirmation');assert.equal(overviewWrites,0);
-  phase='overview-settings-close';await settings.getByRole('button',{name:'关闭',exact:true}).click();
-  phase='overview-settings-draft-restored';await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
-  await expect(overviewInput).toHaveValue('合成未保存总览草稿');assert.equal(await overviewNode!.evaluate(node=>node.isConnected),true,'the overview editor remains mounted');
-  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeFocused();assert.equal(overviewNativeDialogs,0);assert.equal(overviewWrites,0);
-  page.off('dialog',unexpectedOverviewDialog);
+  phase='overview-settings-discard-refused';await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'设置',exact:true}).click();});
+  await expect(page.locator('[data-settings-page]')).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
+  await expect(overviewInput).toHaveValue('合成未保存总览草稿');assert.equal(await overviewNode!.evaluate(node=>node.isConnected),true,'refusing settings departure retains the original overview editor');assert.equal(overviewWrites,0);
   phase='overview-matters-discard-refused';await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'事项',exact:true}).click();});
   phase='overview-matters-draft-retained';await expect(page).toHaveURL(origin+'/personal');await expect(overviewInput).toHaveValue('合成未保存总览草稿');assert.equal(overviewWrites,0);
- }finally{page.off('request',trackOverviewWrite);page.off('dialog',unexpectedOverviewDialog);}
+ }finally{page.off('request',trackOverviewWrite);}
  phase='overview-title-save';await overviewInput.fill(synthetic.title+'（总览）');
  const overviewReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');
  await overviewInput.press('Enter');todo=(await(await overviewReceipt).json()).entry;
@@ -491,7 +484,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await readyTaskDetail(page,synthetic.title);
  await recordField(page,'正文').fill(synthetic.editedNotes);todo=await saveTask(page,todo);
  phase='settings-actions';await page.getByRole('button',{name:'设置',exact:true}).click();
- await expect(page.getByRole('dialog',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
+ await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
  const records=[domain,project,todo];
@@ -529,9 +522,9 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);
  await page.getByRole('button',{name:'事项',exact:true}).click();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');
+ await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.goForward();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
+ await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  await page.reload({waitUntil:'domcontentloaded'});await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  phase='workspace-history-draft-refusal';
@@ -543,9 +536,9 @@ export async function verifyPersonalWorkspace(page:Page){
   await confirmDiscard(page,false,async()=>{await page.goBack();});
   await expect(page).toHaveURL(tasksURL);await expect(historyField).toHaveValue('合成后退保留草稿');
   assert.equal(historyWrites,0);await historyField.press('Escape');await expect(historyField).toHaveCount(0);
-  await page.goForward();await expect(page).toHaveURL(tasksURL+'&modal=settings&panel=general');
+  await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
   await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();assert.equal(historyWrites,0);
-  // Simulate an older real page departure, preserving Next.js router state. Overlay traversal retains drafts; actual page departure still confirms.
+  // Simulate an older real page departure, preserving Next.js router state. Standalone settings and actual page departures use the same draft guard.
   phase='workspace-history-legacy-mark';historyCanary='legacy';
   await page.evaluate(()=>{const state={...history.state};delete state.__lifeosWorkspace;history.replaceState(state,'','/personal?page=requirements');});
   phase='workspace-history-legacy-back-navigation';await page.goBack();

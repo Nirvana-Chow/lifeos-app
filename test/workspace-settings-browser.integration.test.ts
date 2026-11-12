@@ -8,6 +8,7 @@ import test from 'node:test';
 import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 import {confirmDiscard} from './helpers/personal-workspace-browser-fixture.ts';
+import {requirements} from '../src/platform/requirements.ts';
 
 const source=resolve(import.meta.dirname,'..');
 const ids=Array.from({length:7},(_,index)=>`${String(index+1).repeat(8)}-1111-4111-8111-${String(index+1).repeat(12)}`);
@@ -60,6 +61,7 @@ async function fixture(root:string){
  await Promise.all([
   ...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
   cp(join(source,'app/personal/page.tsx'),join(root,'app/personal/page.tsx')),
+  cp(join(source,'app/personal/requirements'),join(root,'app/personal/requirements'),{recursive:true}),
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   cp(join(source,'src'),join(root,'src'),{recursive:true}),
   symlink(join(source,'node_modules'),join(root,'node_modules')),
@@ -71,7 +73,7 @@ async function fixture(root:string){
  return server;
 }
 
-test('OPT-IN settings preserve drafts/history and bounded task viewport geometry',{
+test('OPT-IN standalone settings preserves drafts/history and bounded task viewport geometry',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next.js fixture',timeout:240_000,
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-settings-browser-')),server=await fixture(root),stopped=once(server,'exit');
@@ -102,42 +104,40 @@ test('OPT-IN settings preserve drafts/history and bounded task viewport geometry
   assert.deepEqual(await toolbar.boundingBox(),before,'toolbar must remain fixed');
   const header=viewport.locator('thead');const headerY=(await header.boundingBox())!.y;
   await viewport.evaluate(e=>e.scrollTop=900);await page.waitForTimeout(100);assert.equal((await header.boundingBox())!.y,headerY,'native header must stay fixed');
-  const scrollTop=await viewport.evaluate(e=>e.scrollTop),reads=personalReads;
-  await nav();const settings=page.getByRole('dialog',{name:'设置',exact:true});await expect(settings).toBeVisible();
+  const reads=personalReads;
+  await nav();const settings=page.locator('#personal-main'),settingsPage=page.locator('[data-settings-page]');await expect(settingsPage).toBeVisible();
+  await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);await expect(page.locator('[data-task-grid]')).toHaveCount(0);
   await settings.getByRole('button',{name:'安全与密码',exact:true}).click();await expect(settings.getByRole('textbox',{name:'本人账号'})).toBeVisible();
-  await expect(page).toHaveURL(origin+'/personal?page=tasks&modal=settings&panel=security');
-  await expect(settings.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+  await expect(settings.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-current','page');
   await page.screenshot({path:join(source,`.review-results/settings-security-${width}.png`),animations:'disabled'});
   await settings.getByLabel('原密码',{exact:true}).fill('synthetic-refused-draft');const refuse=(d:import('@playwright/test').Dialog)=>void d.dismiss();page.on('dialog',refuse);
-  await page.goBack();await expect(page).toHaveURL(origin+'/personal?page=tasks&modal=settings&panel=security');await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');page.off('dialog',refuse);await settings.getByLabel('原密码',{exact:true}).fill('');
-  await page.goBack();await expect(settings).toHaveCount(0);assert.equal(await viewport.evaluate(e=>e.scrollTop),scrollTop);await expect(page.getByRole('textbox',{name:'搜索待办',exact:true})).toHaveValue('合成');
-  await page.goForward();await expect(settings).toBeVisible();
+  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');page.off('dialog',refuse);await settings.getByLabel('原密码',{exact:true}).fill('');
+  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(settingsPage).toHaveCount(0);await expect(page.getByRole('textbox',{name:'搜索待办',exact:true})).toHaveValue('');
+  await page.getByRole('button',{name:'前进',exact:true}).click();await expect(settingsPage).toBeVisible();await page.getByRole('button',{name:'前进',exact:true}).click();await expect(settings.getByLabel('原密码',{exact:true})).toBeVisible();
   await settings.getByLabel('原密码',{exact:true}).fill('synthetic-unsaved-password');let confirmations=0;const accept=(d:import('@playwright/test').Dialog)=>{confirmations++;void d.accept();};page.on('dialog',accept);
-  await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(settings).toHaveCount(0);page.off('dialog',accept);assert.equal(confirmations,1,'one explicit close must confirm unsaved password only once');
-  assert.equal(personalReads,reads,'overlay transitions must not reload background business data');
+  if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.getByRole('button',{name:'事项',exact:true}).click();await expect(settingsPage).toHaveCount(0);page.off('dialog',accept);assert.equal(confirmations,1,'one page departure confirms unsaved password once');
+  assert.equal(personalReads,reads,'client page transitions retain the verified data controller');
   await viewport.evaluate(e=>e.scrollTop=0);await page.getByRole('gridcell',{name:'合成待办甲',exact:true}).dblclick();
   const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await input.fill('未保存合成草稿');
-  await nav();await expect(settings).toBeVisible();await page.keyboard.press('Escape');await expect(settings).toHaveCount(0);await expect(input).toHaveValue('未保存合成草稿');assert.equal(writes,0,'opening settings must not blur-submit or discard draft');
+  await confirmDiscard(page,false,nav);await expect(settingsPage).toHaveCount(0);
+  if(width<850)await page.keyboard.press('Escape');
+  await expect(input).toHaveValue('未保存合成草稿');assert.equal(writes,0,'refused settings departure never blur-submits or discards the draft');
   await page.screenshot({path:join(source,`.review-results/settings-background-${width}.png`)});
-  // Fresh navigation is safe here only after the retained draft is explicitly discarded.
-  page.on('dialog',d=>d.accept());await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
-  await page.goto(origin+'/personal?page=settings');await expect(settings).toBeVisible();await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');
-  await page.goto(origin+'/personal?page=projects&modal=settings&panel=security');await expect(settings).toBeVisible();await page.reload();
+  await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();});
+  await page.goto(origin+'/personal?page=settings');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await page.goto(origin+'/personal?page=projects&modal=settings&panel=security');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await page.reload();
   if(width===390){
    await page.setViewportSize({width,height:400});
-   await expect.poll(()=>page.evaluate(()=>innerHeight)).toBe(400);
-   await expect.poll(()=>settings.evaluate(e=>Math.round(e.getBoundingClientRect().height))).toBe(400);
-   const close=settings.getByRole('button',{name:'关闭',exact:true}),panel=settings.locator('.lo-settings-panel'),save=settings.getByRole('button',{name:'保存密码',exact:true});
-   await expect(save).toBeEnabled();
-   await expect.poll(()=>panel.evaluate(e=>e.clientHeight>80&&e.scrollHeight>e.clientHeight)).toBe(true);
+   const panel=settings.locator('.lo-settings-panel'),save=settings.getByRole('button',{name:'保存密码',exact:true});
+   await expect(save).toBeEnabled();await expect.poll(()=>panel.evaluate(e=>e.clientHeight>60&&e.scrollHeight>e.clientHeight)).toBe(true);
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),save]){await control.scrollIntoViewIfNeeded();await expect(control).toBeInViewport({ratio:0.75});}
-   await expect(close).toBeInViewport({ratio:1});
-   await page.setViewportSize({width,height:900});await expect.poll(()=>settings.evaluate(e=>Math.round(e.getBoundingClientRect().height))).toBe(900);
+   await page.setViewportSize({width,height:900});
   }
-  await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=projects');
   for(const view of ['列表','看板']){await page.goto(origin+'/personal?page=tasks');await page.getByRole('button',{name:view,exact:true}).click();const target=page.locator(view==='列表'?'.lo-list-rows':'.lo-board-cards').first(),columnHeader=page.locator(view==='列表'?'.lo-list-columns':'.lo-board-column > h2').first(),top=await columnHeader.boundingBox();assert.ok(await target.evaluate(e=>e.scrollHeight>e.clientHeight));await target.evaluate(e=>e.scrollTop=900);assert.deepEqual(await columnHeader.boundingBox(),top);assert.equal(await page.locator('#personal-main').evaluate(e=>e.scrollTop),0);}
   await page.goto(origin+'/personal?page=requirements');await page.getByLabel('搜索需求',{exact:true}).fill('LO-TASK-001');await page.getByRole('button',{name:'看板视图',exact:true}).click();
-  await nav();await expect(settings).toBeVisible();await page.keyboard.press('Escape');await expect(settings).toHaveCount(0);await expect(page.getByLabel('搜索需求',{exact:true})).toHaveValue('LO-TASK-001');await expect(page.getByRole('button',{name:'看板视图',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('[data-requirement-id="LO-TASK-001"]')).toHaveCount(1);
+  await nav();await expect(settingsPage).toBeVisible();await page.getByRole('button',{name:'后退',exact:true}).click();await expect(settingsPage).toHaveCount(0);await expect(page.getByLabel('搜索需求',{exact:true})).toHaveValue('');await expect(page.getByRole('button',{name:'表格视图',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('[data-requirement-id="LO-TASK-001"]')).toHaveCount(1);
   await page.close();
  }
  for(const [height,expanded] of [[400,false],[568,true],[900,true]] as const){
@@ -186,7 +186,7 @@ test('OPT-IN settings preserve drafts/history and bounded task viewport geometry
 
 });
 
-test('OPT-IN overview draft survives Settings overlay and rejected matters navigation',{
+test('OPT-IN overview draft survives rejected Settings and matters page departures',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-overview-settings-')),server=await fixture(root),stopped=once(server,'exit');
@@ -200,14 +200,75 @@ test('OPT-IN overview draft survives Settings overlay and rejected matters navig
  const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await expect(input).toBeFocused();
  await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('form')).toHaveCount(0);
  await input.fill('合成未保存总览草稿');const originalInput=await input.elementHandle();
- let nativeDialogs=0;const unexpected=(dialog:import('@playwright/test').Dialog)=>{nativeDialogs++;void dialog.dismiss();};page.on('dialog',unexpected);
- try{
-  await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.getByRole('dialog',{name:'设置',exact:true});await expect(settings).toBeVisible();
-  assert.equal(nativeDialogs,0,'opening Settings is an overlay, not draft departure');assert.equal(writes(),0);
-  await settings.getByRole('button',{name:'关闭',exact:true}).click();await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
-  await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(await originalInput!.evaluate(node=>node.isConnected),true,'preserve the same overview input');
-  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeFocused();assert.equal(nativeDialogs,0);assert.equal(writes(),0);
- }finally{page.off('dialog',unexpected);}
+ await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'设置',exact:true}).click();});
+ await expect(page.locator('[data-settings-page]')).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
+ await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(await originalInput!.evaluate(node=>node.isConnected),true,'refused settings departure preserves the same overview input');
+ assert.equal(writes(),0);
  await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'事项',exact:true}).click();});
  await expect(page).toHaveURL(origin+'/personal');await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(writes(),0,'refused page departure does not submit or discard');
+});
+
+test('OPT-IN settings category returns to the requested panel after requirement browsing',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:90_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-settings-return-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('settings return fixture timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('settings return fixture exited'));});});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage({viewport:{width:1365,height:900}});t.after(()=>page.close());
+ const writes=await installSyntheticReads(page,origin);
+ await page.goto(origin+'/personal?page=settings&panel=security');await expect(page.getByLabel('原密码',{exact:true})).toBeVisible();
+ const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+ await categories.getByRole('button',{name:'需求池',exact:true}).click();await expect(page.getByLabel('搜索需求',{exact:true})).toBeVisible();
+ await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(page.getByLabel('原密码',{exact:true})).toBeVisible();
+ assert.equal(writes(),0);
+});
+
+
+test('OPT-IN feedback dirty and uncertain state guards settings links and document back/forward',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-settings-feedback-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('feedback fixture timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('feedback fixture exited'));});});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage({viewport:{width:1365,height:900}});t.after(()=>page.close());let writes=0,authorized=true;
+ await page.route('**/*',async route=>{
+  const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();
+  if(!['GET','HEAD'].includes(request.method())){writes++;return route.abort();}
+  if(url.pathname.endsWith('/personal/status'))return route.fulfill(authorized?{json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic'],requirementsEnabled:true,requirementSupportEnabled:true}}:{status:403,json:{error:{message:'Synthetic revoked'}}});
+  if(url.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
+  if(url.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+  if(url.pathname.endsWith('/requirements/snapshot'))return route.fulfill({json:{scope:'full-current-requirements-snapshot',total:0,truncated:false,items:[],baseline:requirements()}});
+  if(url.pathname.endsWith('/requirement-support/feedback/snapshot'))return route.fulfill({json:{scope:'full-current-feedback-snapshot',total:0,truncated:false,items:[]}});
+  if(url.pathname.endsWith('/requirement-support/updates'))return route.fulfill({json:{}});
+  return route.continue();
+ });
+ let feedbackPhase='start';
+ const confirmFeedback=async(accept:boolean,action:()=>Promise<unknown>,destination?:string)=>{
+  let count=0;let received!:()=>void;const seen=new Promise<void>(resolve=>{received=resolve;});
+  const handler=async(dialog:import('@playwright/test').Dialog)=>{count++;if(dialog.type()!=='confirm'){await dialog.dismiss();throw Error('Feedback guard '+feedbackPhase+' expected confirm but got '+dialog.type());}assert.equal(dialog.type(),'confirm');assert.equal(dialog.message(),'反馈内容尚未保存，确定放弃并离开？');if(accept&&count===1)await dialog.accept();else await dialog.dismiss();received();};
+  page.on('dialog',handler);
+  try{await Promise.all([action(),seen]);if(destination)await expect(page).toHaveURL(destination);assert.equal(count,1,'one explicit feedback departure has one confirmation');}finally{page.off('dialog',handler);}
+ };
+ await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});
+ const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+ await categories.getByRole('link',{name:'反馈 Inbox',exact:true}).click();
+ const original=page.getByRole('textbox',{name:'原文',exact:true});await expect(original).toBeEnabled();
+ await categories.getByRole('link',{name:'更新记录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/requirements/updates');
+ await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();await original.fill('Synthetic unsaved feedback');
+ feedbackPhase='link-refused';await confirmFeedback(false,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click());await expect(original).toHaveValue('Synthetic unsaved feedback');
+ for(const direction of ['后退','前进']){feedbackPhase='button-'+direction;await confirmFeedback(false,()=>page.getByRole('button',{name:direction,exact:true}).click());}
+ for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
+ await expect(page).toHaveURL(origin+'/personal/requirements/feedback');await expect(original).toHaveValue('Synthetic unsaved feedback');assert.equal(writes,0);
+ feedbackPhase='link-accepted';await confirmFeedback(true,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click(),origin+'/personal/requirements/updates');
+ await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();await original.fill('Synthetic pending feedback');
+ await page.getByRole('button',{name:'保存反馈',exact:true}).click();await expect(page.getByRole('button',{name:'恢复原请求并回读',exact:true})).toBeVisible();assert.equal(writes,1);
+ const checkPending=async(name:string)=>{const dialog=page.waitForEvent('dialog'),action=page.getByRole('button',{name,exact:true}).click({noWaitAfter:true});const alert=await dialog;assert.equal(alert.type(),'alert');assert.match(alert.message(),/保存结果尚未确认/);await alert.accept();await action;};
+ await checkPending('设置');
+ await expect(page).toHaveURL(origin+'/personal/requirements/feedback');
+ for(const direction of ['后退','前进'])await checkPending(direction);
+ for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
+ authorized=false;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(original).toHaveCount(0);await expect(categories.getByRole('link',{name:'反馈 Inbox',exact:true})).toHaveCount(0);assert.equal(writes,1);
 });
