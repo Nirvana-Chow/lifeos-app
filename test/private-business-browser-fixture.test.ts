@@ -231,6 +231,21 @@ function renderRealComponent(file:string,name:string,props:Record<string,unknown
  }
  return renderToStaticMarkup(React.createElement(load(file)[name],props));
 }
+test('real appearance palette SSR passes only the exact public capture allowlist',()=>{
+ const html=renderRealComponent('src/workbench/theme-switch.tsx','AppearanceSettings',{});
+ const radios=Array.from(html.matchAll(/<input\b[^>]*\btype="radio"[^>]*>/g),match=>match[0].match(/\bvalue="([^"]*)"/)?.[1]??'');
+ const labels=Array.from(html.matchAll(/<span>([^<]+)<\/span>/g),match=>match[1]);
+ assert.deepEqual(radios,['slate-indigo','sage-teal','mauve-violet']);
+ assert.deepEqual(labels,['岩灰 · 靛蓝','鼠尾草 · 青绿','雾紫 · 紫罗兰']);
+ const texts=fixture.captureSourceText(),values=new Set(['system',...texts]);
+ const facts={forbidden:0,values:radios,texts:labels,editable:[],recordIds:[]};
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,values,[]));
+ for(const change of [
+  {values:[...radios,'unreviewed-palette']},{texts:[...labels,'未批准配色']},
+  {values:[...radios,'slate-indigo private sentinel']},{texts:[...labels,'岩灰 · 靛蓝 private sentinel']},
+  {forbidden:1},{editable:['private sentinel']},{recordIds:['foreign-record']},
+ ])assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,values,[]),/PRIVATE_CAPTURE_DENIED/);
+});
 test('real standalone journal SSR maps measurement to its personal surface and flow Header without requiring main',()=>{
  const html=renderRealComponent('src/personal-candidate/workspace.tsx','PersonalWorkspace',{initialType:'journal',returnHref:'/personal'});
  assert.match(html,/^<div[^>]*data-lifeos-surface="personal"/);assert.doesNotMatch(html,/<main\b/);assert.match(html,/<header[^>]*aria-label="日记导航"/);assert.match(html,/<h1>日记<\/h1>/);
