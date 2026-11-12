@@ -98,7 +98,7 @@ export class DurableMcpClient{
     if(operation.method==='PATCH'){
      const preimage=await this.#readback(definition,args,catalog),entry=responseEntry(preimage.data);
      if(!preimage.ok||!entry||entry.id!==args.id||entry.revision!==args.expectedRevision||!(typeof entry.sourceId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(entry.sourceId)||operation.module==='requirements'&&args.expectedRevision===0&&entry.sourceId===null))fail('CAS_PREIMAGE_CHANGED',409);
-     if(operation.module==='requirements'&&entry.baselineConflict)fail('REQUIREMENT_BASELINE_CONFLICT',409);
+     if(operation.module==='requirements'&&(entry.baselineConflict||!Object.hasOwn(entry,'baselineBinding')||canonicalJSON(args.baselineBinding)!==canonicalJSON(entry.baselineBinding)))fail('REQUIREMENT_BASELINE_CONFLICT',409);
      before=structuredClone(entry);
     }
     request={requestId:randomUUID(),transport:'server-mcp-v1',operationId,definitionJSON:canonicalJSON(definition),argsJSON,path:'/api/platform/mcp',encoded:this.#channel.prepareCall(operationId,args),key:parsed.key!,businessPath:parsed.path,businessEncoded:JSON.stringify(parsed.body),...(before?{before}:{})};

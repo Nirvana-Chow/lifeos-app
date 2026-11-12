@@ -135,3 +135,53 @@ test('server readback evidence remains distinct from the hosts independent GET',
  const f=fixture(t);f.alter(value=>value.status===201?{...value,readback:{ok:false,status:503,error:'SERVER_READBACK_UNAVAILABLE'},verification:{verified:false,state:'READBACK_UNAVAILABLE'}}:value);
  const r=await f.client().execute('createJournal',command);assert.equal(r.verification?.verified,true);assert.equal((r as any).serverReadback.error,'SERVER_READBACK_UNAVAILABLE');assert.equal((r as any).serverVerification.verified,false);assert.equal(f.rows()[0].receipt.readback.error,'SERVER_READBACK_UNAVAILABLE');
 });
+
+const requirementFields={title:'Synthetic requirement',body:'Purpose',phaseId:'now',priority:'P1',plannedStartOn:null,plannedEndOn:null};
+const requirementBinding={baselineVersion:'synthetic-v1',itemVersion:1,digest:'a'.repeat(64)};
+function requirementFixture(t:TestContext,privateRecord=false){
+ const directory=mkdtempSync(join(tmpdir(),'lifeos-mcp-requirement-binding-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ const recordId=privateRecord?id:'LO-REQ-001',binding=privateRecord?null:requirementBinding;
+ let current:any={id:recordId,sourceId:privateRecord?sourceId:null,revision:privateRecord?1:0,fields:requirementFields,baselineBinding:binding,baselineConflict:false};
+ let receipt:any,prepares=0,lose=false;const sent:string[]=[];
+ const port:BrokerPort={beforeUse:async()=>{},fingerprint:async()=>fingerprint,request:async envelope=>{
+  const rpc=JSON.parse(envelope.encoded);let result:any;
+  if(rpc.method==='server/discover')result={resultType:'complete',supportedVersions:['2026-07-28'],capabilities:{tools:{}}};
+  else if(rpc.params.name==='lifeos_discover')result={resultType:'complete',content:[],structuredContent:{apiVersion:'2',operations:localDefinitions}};
+  else{
+   const {operationId,arguments:args}=rpc.params.arguments;
+   if(operationId==='updateRequirement'){
+    sent.push(envelope.encoded);
+    if(!receipt){receipt={id:recordId,sourceId,revision:args.expectedRevision+1,fields:args.fields,baselineBinding:args.baselineBinding,baselineConflict:false};current=receipt;}
+    if(lose){lose=false;throw Error('synthetic committed response loss');}
+   }
+   result={resultType:'complete',content:[],structuredContent:{ok:true,status:200,data:{entry:operationId==='updateRequirement'?receipt:current}}};
+  }
+  return{status:200,credentialFingerprint:fingerprint,data:{jsonrpc:'2.0',id:rpc.id,result}};
+ }};
+ const command={id:recordId,expectedRevision:privateRecord?1:0,baselineBinding:binding,fields:requirementFields,idempotencyKey:'synthetic-requirement-binding-01'};
+ const client=()=>{const store=new DurableStore(directory,fingerprint),prepare=store.prepare.bind(store);store.prepare=request=>{prepares++;prepare(request);};return new DurableMcpClient({channel:createMcpChannel(port),store,localDefinitions});};
+ return{client,command,sent,get prepares(){return prepares;},get rows(){return readdirSync(directory).filter(name=>name.endsWith('.json'));},current:(value:any)=>{current={...current,...value};},lose:()=>{lose=true;}};
+}
+for(const changed of [
+ {baselineVersion:'synthetic-new-v2',itemVersion:1,digest:'a'.repeat(64)},
+ {baselineVersion:'synthetic-v1',itemVersion:2,digest:'a'.repeat(64)},
+ {baselineVersion:'synthetic-v1',itemVersion:1,digest:'b'.repeat(64)},
+])test('first requirement PATCH rejects changed complete binding before prepare: '+JSON.stringify(changed),async t=>{
+ const f=requirementFixture(t);f.current({baselineBinding:changed,baselineConflict:false});const r=await f.client().execute('updateRequirement',f.command);
+ assert.equal(r.error,'REQUIREMENT_BASELINE_CONFLICT');assert.equal(r.status,409);assert.equal(f.prepares,0);assert.equal(f.sent.length,0);assert.deepEqual(f.rows,[]);
+});
+test('requirement baseline conflict flag still blocks a matching binding',async t=>{
+ const f=requirementFixture(t);f.current({baselineConflict:true});assert.equal((await f.client().execute('updateRequirement',f.command)).error,'REQUIREMENT_BASELINE_CONFLICT');assert.equal(f.prepares,0);assert.equal(f.sent.length,0);
+});
+test('matching requirement binding tolerates key ordering and private null remains supported',async t=>{
+ for(const privateRecord of [false,true]){
+  const f=requirementFixture(t,privateRecord);if(!privateRecord)f.current({baselineBinding:{digest:'a'.repeat(64),itemVersion:1,baselineVersion:'synthetic-v1'}});
+  assert.equal((await f.client().execute('updateRequirement',f.command)).verification?.verified,true);assert.equal(f.prepares,1);assert.equal(f.sent.length,1);
+ }
+});
+test('unknown requirement command replays saved binding without current preimage revalidation',async t=>{
+ const f=requirementFixture(t);f.lose();assert.equal((await f.client().execute('updateRequirement',f.command)).outcome,'unknown');
+ f.current({revision:2,baselineBinding:{...requirementBinding,itemVersion:2,digest:'b'.repeat(64)},baselineConflict:true});
+ const r=await f.client().execute('updateRequirement',f.command);assert.equal(r.ok,true);assert.equal(r.verification?.state,'LATER_REVISION');assert.equal(f.prepares,1);assert.equal(f.sent.length,2);assert.equal(f.sent[0],f.sent[1]);
+ const settled=await f.client().execute('updateRequirement',f.command);assert.equal(settled.ok,true);assert.equal(f.sent.length,2);
+});
