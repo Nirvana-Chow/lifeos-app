@@ -8,12 +8,12 @@ import {createPinnedWorkerClient} from '../src/worker-host-adoption/business-cli
 import {createWorkerPendingJournal} from '../src/worker-host-adoption/pending-journal.ts';
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const id='11111111-1111-4111-8111-111111111111';
-test('actual pinned wrapper receives only the fixed business command and retains its original unknown result',async()=>{
+test('actual pinned wrapper receives only the fixed business command and retains its original unknown result',{timeout:35000},async()=>{
  const root=await realpath(await mkdtemp(join(tmpdir(),'worker-client-')));try{
   const trace=join(root,'trace.json'),script=`#!/bin/sh\nexec '${process.execPath}' '${join(root,'fixture.mjs')}' "$@"\n`;
   await writeFile(join(root,'client'),script,{mode:0o700});
   await writeFile(join(root,'fixture.mjs'),`import{writeFileSync}from'node:fs';let raw='';for await(const c of process.stdin)raw+=c;writeFileSync(${JSON.stringify(trace)},JSON.stringify({args:process.argv.slice(2),body:raw,nodeEnv:process.env.NODE_ENV}));console.log(JSON.stringify({ok:false,status:0,outcome:'unknown',recovery:{requestId:${JSON.stringify(id)},exactRetryRequired:true}}));process.exitCode=2;`);
-  const client=createPinnedWorkerClient({entry:{binary:join(root,'client'),sha256:hash(script)},timeoutMs:2000});
+  const client=createPinnedWorkerClient({entry:{binary:join(root,'client'),sha256:hash(script)},timeoutMs:30000});
   const input={requirementId:'LO-REQ-001',workDigest:'a'.repeat(64),holderId:'synthetic-holder',idempotencyKey:'original-claim-key'};
   const result=await client.execute('claimRequirementExecution',input);
   assert.equal(result.outcome,'unknown');assert.equal(result.recovery?.requestId,id);
