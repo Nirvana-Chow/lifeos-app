@@ -104,7 +104,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(page.getByRole('heading',{level:1,name:'待办',exact:true})).toBeVisible();
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办甲',{exact:true})).toBeVisible();
   if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
-  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','事项','需求池']);
+  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','事项']);
   if(width<850)await page.getByRole('button',{name:'关闭导航',exact:true}).click();
   const sections=page.getByRole('navigation',{name:'待办分类视图'});
   await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
@@ -136,21 +136,42 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
    await page.getByRole('button',{name,exact:true}).click();
   };
   await nav('设置');
-  const settings=page.locator('#personal-main:has([data-settings-page])');
-  await settings.getByRole('button',{name:'标签',exact:true}).click();
+  const settings=page.locator('[data-settings-page]');
+  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+  await expect(settings).toBeVisible();
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);
+  await categories.getByRole('button',{name:'标签',exact:true}).click();
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
+  await expect(categories.getByRole('button',{name:'标签',exact:true})).toHaveAttribute('aria-current','page');
   const topics=settings.getByRole('region',{name:'标签',exact:true});
   await expect(topics.getByText('合成主题',{exact:true})).toBeVisible();
   await expect(topics.getByRole('link',{name:'编辑标签',exact:true})).toHaveAttribute('href','/personal/edit?type=topic&id='+ids[6]);
-  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(settings).toHaveCount(0);
+  await page.keyboard.press('Escape');await expect(settings).toBeVisible();
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
+  await page.getByRole('button',{name:'后退',exact:true}).click();
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await page.getByRole('button',{name:'后退',exact:true}).click();
+  await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal?page=areas');
   await nav('设置');await expect(settings).toBeVisible();
-  await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();await expect(settings).toHaveCount(0);
   if(width>=1024)await page.setViewportSize({width,height:768});
-  await nav('设置');await page.getByRole('navigation',{name:'设置分类',exact:true}).getByRole('button',{name:'需求池',exact:true}).click();
+  await categories.getByRole('button',{name:'需求池',exact:true}).click();
+  await expect(settings).toHaveCount(0);
+  await expect(categories.getByRole('button',{name:'需求池',exact:true})).toHaveAttribute('aria-current','page');
   await expect(page).toHaveURL(origin+'/personal?page=requirements');
   await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
   await expect(page.getByText('LO-TASK-001',{exact:true})).toBeVisible();
-  if(width>=1024){const metrics=await page.locator('[data-requirements-page]').evaluate(node=>{const intro=node.querySelector('header')!.getBoundingClientRect(),controls=node.querySelector('[role="search"]')!.parentElement!.getBoundingClientRect(),viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();return {topControls:controls.bottom-intro.top,readableRows:Array.from(node.querySelectorAll('[data-requirement-id]')).filter(item=>{const r=item.getBoundingClientRect();return r.top>=viewport.top&&r.bottom<=viewport.bottom;}).length};});assert.ok(metrics.topControls<=128,JSON.stringify(metrics));assert.ok(metrics.readableRows>=8,JSON.stringify(metrics));}
+  if(width>=1024){
+   await page.screenshot({path:join(source,`.review-results/workspace-requirements-density-${width}-${theme}.png`)});
+   const metrics=await page.locator('[data-requirements-page]').evaluate(node=>{
+    const intro=node.querySelector('header')!.getBoundingClientRect(),controls=node.querySelector('[role="search"]')!.parentElement!.getBoundingClientRect(),viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();
+    const rect=(element:Element)=>{const r=element.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};
+    return {topControls:controls.bottom-intro.top,readableRows:Array.from(node.querySelectorAll('[data-requirement-id]')).filter(item=>{const r=item.getBoundingClientRect();return r.top>=viewport.top&&r.bottom<=viewport.bottom;}).length,
+     settingsNavigation:rect(document.querySelector('[aria-label="设置分类"]')!),breadcrumbs:rect(document.querySelector('[aria-label="浏览位置"]')!),viewport:{top:viewport.top,bottom:viewport.bottom,height:viewport.height},rows:Array.from(node.querySelectorAll('[data-requirement-id]')).slice(0,9).map(rect)};
+   });
+   assert.ok(metrics.topControls<=128,JSON.stringify(metrics));assert.ok(metrics.readableRows>=8,JSON.stringify(metrics));
+  }
   await page.getByLabel('搜索需求',{exact:true}).fill('LO-TASK-001');
   await expect(page.getByText('LO-TASK-001',{exact:true})).toBeVisible();
   await expect(page.getByText('LO-FIN-001',{exact:true})).toHaveCount(0);

@@ -22,3 +22,8 @@
  .settingsNavigation { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior:contain; margin-bottom:12px; padding-bottom:8px; }
  .shell .settingsNavigation :is(button,a) { min-height:44px; flex:none; font-size:16px; }
 }
+@media(min-width:1024px) and (pointer:fine) {
+ .breadcrumbs { margin-bottom:4px; }
+ .settingsNavigation { margin-bottom:4px; padding-bottom:4px; }
+ .shell .settingsNavigation :is(button,a) { min-height:var(--lo-control-height); padding-block:4px; }
+}
