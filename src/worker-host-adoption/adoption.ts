@@ -8,7 +8,7 @@ import {prepareOwnedWorker,startPreparedWorker,type WorkerBinding,type WorkerAdo
 import type {WorkerAssignment} from '../worker-host-candidate/channel.ts';
 import {createPinnedWorkerClient} from './business-client.ts';
 import {assignmentSchema,bridgeBindingSchema,providerSummarySchema,runtimeSchema,type WorkerRuntime} from './contracts.ts';
-import {checkedFile,checkedPin,privateDirectory,sha256,syncDirectory,type CodePin} from './private-files.ts';
+import {checkedFile,checkedPin,privateDirectory,sha256,syncDirectory,codePinSchema,type CodePin} from './private-files.ts';
 const tools=['read_assigned','claim_assigned','renew_assigned','progress_assigned'];
 type ArgvInput={cli:string;node:string;bridgeEntry:string;bindingPath:string;bindingSHA256:string;worktree:string};
 const quoted=(v:string)=>JSON.stringify(v);
@@ -75,4 +75,14 @@ export function createWorkerAdoption(options:Options):WorkerAdoptionPort{
 }
 /** Concrete composition. Source import/prepare never starts a model; only this
  * explicit parent call launches the single admitted original native process. */
-export async function launchAdoptedWorker(options:Options,signal?:AbortSignal){signal?.throwIfAborted();const prepared=await prepareOwnedWorker(bindingOf(options.assignment),{adoption:createWorkerAdoption(options)});await assertProjectConfigAbsent(options.runtime.worktree);signal?.throwIfAborted();return startPreparedWorker(prepared,signal);}
+export async function launchAdoptedWorker(options:Options,signal?:AbortSignal){
+ signal?.throwIfAborted();
+ // Snapshot the same root-reviewed pins before any await; revalidation cannot
+ // select a replacement runtime or new authority after a slow discovery/GET.
+ const fixed={...options,assignment:assignmentSchema.parse(options.assignment),runtime:runtimeSchema.parse(options.runtime),providerQualification:codePinSchema.parse(options.providerQualification)},runtime=fixed.runtime;
+ const prepared=await prepareOwnedWorker(bindingOf(fixed.assignment),{adoption:createWorkerAdoption(fixed)});
+ await assertProjectConfigAbsent(runtime.worktree);
+ for(const pin of [runtime.host,runtime.cli,runtime.node,runtime.bridge.entry,runtime.bridge.manifest,runtime.bridge.gate])await checkedPin(pin);
+ await providerGate(fixed.providerQualification,runtime);await clientGate(runtime);
+ signal?.throwIfAborted();return startPreparedWorker(prepared,signal);
+}

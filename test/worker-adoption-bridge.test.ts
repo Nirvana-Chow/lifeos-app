@@ -46,9 +46,9 @@ async function fixture(){
  const node=await pin(await realpath(process.execPath)),trace=join(root,'trace.jsonl'),statePath=join(root,'state.json');
  const lease={id:'44444444-4444-4444-8444-444444444444',requirementId:assignment.requirementId,sourceId:assignment.sourceId,revision:1,workDigest:assignment.workDigest,holderId:assignment.holderId,grantId:'synthetic-grant',fence:assignment.fence,expiresAt:Date.now()+600000};
  const fields={title:'Synthetic accepted ticket',body:'Keep accepted body',phaseId:requirements().roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,workflow:{state:'planned',purpose:'Synthetic only',nextStep:'Verify'}};
- const state={catalog:{apiVersion:'2',operations:agentOperations.filter(op=>['getRequirement','claimRequirementExecution','updateRequirementExecution'].includes(op.id))},read:{ok:true,status:200,data:{entry:{id:assignment.requirementId,sourceId:assignment.sourceId,revision:1,baselineBinding:null,baselineConflict:false,fields},execution:{requirementId:assignment.requirementId,sourceId:assignment.sourceId,revision:1,workDigest:assignment.workDigest,state:'running',fence:assignment.fence,leaseActive:true,lease}}},lease};
+ const state={delayReadMs:0,revokeAdoptionDuringRead:false,catalog:{apiVersion:'2',operations:agentOperations.filter(op=>['getRequirement','claimRequirementExecution','updateRequirementExecution'].includes(op.id))},read:{ok:true,status:200,data:{entry:{id:assignment.requirementId,sourceId:assignment.sourceId,revision:1,baselineBinding:null,baselineConflict:false,fields},execution:{requirementId:assignment.requirementId,sourceId:assignment.sourceId,revision:1,workDigest:assignment.workDigest,state:'running',fence:assignment.fence,leaseActive:true,lease}}},lease};
  await writeFile(statePath,JSON.stringify(state));
- const wrapperCode=`import{readFileSync,appendFileSync}from'node:fs';let body='';for await(const c of process.stdin)body+=c;const args=process.argv.slice(2),s=JSON.parse(readFileSync(${JSON.stringify(statePath)},'utf8'));appendFileSync(${JSON.stringify(trace)},JSON.stringify({args,body})+'\\n');if(args[0]==='discover')console.log(JSON.stringify(s.catalog));else if(args[1]==='getRequirement')console.log(JSON.stringify(s.read));else if(args[1]==='claimRequirementExecution')console.log(JSON.stringify({ok:true,status:200,data:{lease:s.lease},verification:{verified:true,state:'CURRENT'}}));else{console.log(JSON.stringify({ok:false,status:0,outcome:'unknown',recovery:{requestId:${JSON.stringify(recoveryId)},exactRetryRequired:true}}));process.exitCode=2;}`;
+ const wrapperCode=`import{readFileSync,appendFileSync,unlinkSync}from'node:fs';let body='';for await(const c of process.stdin)body+=c;const args=process.argv.slice(2),s=JSON.parse(readFileSync(${JSON.stringify(statePath)},'utf8'));appendFileSync(${JSON.stringify(trace)},JSON.stringify({args,body})+'\\n');if(args[0]==='discover')console.log(JSON.stringify(s.catalog));else if(args[1]==='getRequirement'){if(s.delayReadMs)await new Promise(r=>setTimeout(r,s.delayReadMs));if(s.revokeAdoptionDuringRead)unlinkSync(${JSON.stringify(join(root,'client-root/adoption.json'))});console.log(JSON.stringify(s.read));}else if(args[1]==='claimRequirementExecution')console.log(JSON.stringify({ok:true,status:200,data:{lease:s.lease},verification:{verified:true,state:'CURRENT'}}));else{console.log(JSON.stringify({ok:false,status:0,outcome:'unknown',recovery:{requestId:${JSON.stringify(recoveryId)},exactRetryRequired:true}}));process.exitCode=2;}`;
  await writeFile(join(root,'wrapper.mjs'),wrapperCode);
  const wrapper=join(root,'client'),shell=(path:string)=>`#!/bin/sh\nexec '${node.binary}' '${path}' "$@"\n`;
  await writeFile(wrapper,shell(join(root,'wrapper.mjs')),{mode:0o700});
@@ -149,4 +149,21 @@ test('expired provider evidence, unadopted client, missing discovery and stale f
   await assert.rejects(readFile(join(f.root,'launch-spec.json')),/ENOENT/);
   assert.ok((await f.calls()).every(row=>row.args[0]==='discover'||row.args[1]==='getRequirement'));
  }finally{await f.clean();}
+});
+
+test('provider expiry or owner adoption revocation during GET stops launch and keeps the original slot consumed',{timeout:30000},async t=>{
+ for(const change of ['provider-expiry','adoption-revocation'])await t.test(change,async()=>{
+  const f=await fixture();try{
+   const slots=createParentWorkerSlots({capacity:4,occupied:3}),reservation=slots.reserve(assignment),options={assignment,runtime:f.runtime,providerQualification:f.providerQualification,slots,reservation};
+   if(change==='provider-expiry'){
+    const summary=JSON.parse(await readFile(f.providerQualification.binary,'utf8'));summary.observedAt=Date.now();summary.expiresAt=Date.now()+600;
+    const raw=JSON.stringify(summary);await writeFile(f.providerQualification.binary,raw);f.providerQualification.sha256=sha256(raw);f.state.delayReadMs=1000;
+   }else f.state.revokeAdoptionDuringRead=true;
+   await writeFile(f.statePath,JSON.stringify(f.state));
+   await assert.rejects(launchAdoptedWorker(options),change==='provider-expiry'?/WORKER_PROVIDER_UNQUALIFIED/:/ENOENT/);
+   assert.ok((await f.calls()).some(row=>row.args[1]==='getRequirement'),'the change happens after the initial gates, during the actual wrapper GET');
+   await assert.rejects(readFile(join(f.root,'launch-spec.json')),/ENOENT/);
+   await assert.rejects(launchAdoptedWorker(options),/WORKER_SLOT_UNAVAILABLE/);
+  }finally{await f.clean();}
+ });
 });
