@@ -237,6 +237,7 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
  await page.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();
   if(!['GET','HEAD'].includes(request.method())){writes++;return route.abort();}
+  if(url.pathname==='/api/platform/status')return route.fulfill(authorized?{json:{scope:'isolated-synthetic-review',personalAccountReady:false,personalDataAuthorized:false,storage:{type:'postgresql',schemaVersion:2,restrictedRoleVerified:true},features:{training:{readable:true,writesEnabled:false,activationRequiresAcceptance:true}},extensions:{calendar:{configured:false,restrictedRoleVerified:false},chat:{configured:false,restrictedRoleVerified:false}},ai:{configured:false,settingsPersistable:false,secretStoreReady:false,externalCallsEnabled:false}}}:{status:403,json:{error:{message:'Synthetic revoked'}}});
   if(url.pathname.endsWith('/personal/status'))return route.fulfill(authorized?{json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic'],requirementsEnabled:true,requirementSupportEnabled:true}}:{status:403,json:{error:{message:'Synthetic revoked'}}});
   if(url.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
   if(url.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
@@ -257,7 +258,12 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
  await categories.getByRole('link',{name:'反馈 Inbox',exact:true}).click();
  const original=page.getByRole('textbox',{name:'原文',exact:true});await expect(original).toBeEnabled();
  await categories.getByRole('link',{name:'更新记录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/requirements/updates');
- await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();await original.fill('Synthetic unsaved feedback');
+ await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();
+ // Exercise the privacy recheck required when a document returns from bfcache.
+ const privacyRead=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/status');
+ await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+ assert.equal((await privacyRead).status(),200,'restored synthetic owner passes the fresh platform privacy check');
+ await expect(page).toHaveURL(origin+'/personal/requirements/feedback');await expect(original).toBeEnabled();await original.fill('Synthetic unsaved feedback');
  feedbackPhase='link-refused';await confirmFeedback(false,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click());await expect(original).toHaveValue('Synthetic unsaved feedback');
  for(const direction of ['后退','前进']){feedbackPhase='button-'+direction;await confirmFeedback(false,()=>page.getByRole('button',{name:direction,exact:true}).click());}
  for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
