@@ -19,6 +19,28 @@ test('missing private handoff fails before trust launch or body access',async()=
  await assert.rejects(fixture.withPrivateBrowserFixture(undefined,async()=>{touched=true;}),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
  assert.equal(touched,false);
 });
+test('keyboard lifecycle diagnostics contain at most three bounded integer snapshots and no private values',()=>{
+ const secret='private-keyboard-secret';
+ assert.deepEqual(fixture.projectPrivateKeyboardLifecycle([511,64,128,secret]),[511,64,128]);
+ const projected=fixture.projectPrivateKeyboardLifecycle([secret,Number.NaN,513]);
+ assert.deepEqual(projected,[512,512,512]);assert.equal(JSON.stringify(projected).includes(secret),false);
+ assert.equal(fixture.projectPrivateKeyboardLifecycle({html:secret,cookie:secret}),undefined);
+ assert.deepEqual(fixture.projectPrivateKeyboardLifecycle([-1,1.5,Number.POSITIVE_INFINITY]),[512,512,512]);
+});
+test('finite keyboard samples retain the original nine metrics and detect replacement without changing the key sequence',async()=>{
+ for(const replace of [false,true]){
+  const calls:string[]=[],body={},main={matches:(s:string)=>s==='main',closest:()=>({})};
+  const makeNode=()=>({isConnected:true,disabled:false,matches:(selector:string)=>selector===':focus-visible',getBoundingClientRect(){return{width:this.isConnected?44:0,height:44};}});
+  const original=makeNode();let target=original;
+  const document={activeElement:body,body,hasFocus:()=>true,visibilityState:'visible'};
+  const getComputedStyle=()=>({outlineStyle:'solid',visibility:'visible',display:'block'});
+  const focus={elementHandle:async()=>{calls.push('handle');return Object.assign(original,{dispose:async()=>{calls.push('dispose');}});},focus:async()=>{calls.push('focus');document.activeElement=target;},evaluate:async(fn:Function,arg:unknown)=>new Function('document','getComputedStyle','node','original',`return (${fn.toString()})(node,original)`)(document,getComputedStyle,target,arg)};
+  const page={locator:()=>focus,keyboard:{press:async(key:string)=>{calls.push(key);if(key==='Tab'){if(replace){original.isConnected=false;target=makeNode();}document.activeElement=main;}else document.activeElement=target;}}};
+  let metrics:readonly number[]|undefined;const samples:number[][]=[];
+  await fixture.assertPrivateKeyboardFocus(page as never,(_stage,numbers)=>{metrics=numbers;},values=>samples.push([...values]));
+  assert.deepEqual(calls,['handle','focus','Tab','Shift+Tab','dispose']);assert.deepEqual(metrics,[1,1,2,1,1,1,1,0,0]);assert.deepEqual(samples.at(-1),replace?[215,464,208]:[215,471,215]);
+ }
+});
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{
  assert.equal(fixture.privateCaptureCases.length,96);
  const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,96);
