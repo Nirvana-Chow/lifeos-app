@@ -64,7 +64,7 @@ test('P3 can be validated and filtered without changing other public requirement
 test('saved owner workflow shows a compact summary and owner next step without changing engineering or acceptance labels',()=>{
  const baseline=requirements(),item=baseline.requirements[0],workflow=new Map([[item.id,{state:'done',purpose:'私人用途 <script> 数据',nextStep:'下一步原始业务内容'}]]);
  const html=renderPage('requirements-views.tsx','RequirementsTable',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{},workflow});
- assert.match(html,/推进：已完成（业务标记）/);assert.match(html,/私人用途 &lt;script&gt; 数据/);assert.match(html,/下一步原始业务内容/);assert.doesNotMatch(html,/<script/);assert.match(html,/本人验收|未验收|尚未验收|已验收/);
+ assert.match(html,/推进：开发完成/);assert.match(html,/私人用途 &lt;script&gt; 数据/);assert.match(html,/下一步原始业务内容/);assert.doesNotMatch(html,/<script/);assert.match(html,/本人验收|未验收|尚未验收|已验收/);
  const untouched=renderPage('requirements-views.tsx','RequirementsBoard',{rows:[item],phases:baseline.roadmap!.phases,onOpen:()=>{}});assert.doesNotMatch(untouched,/data-requirement-workflow/);
 });
 
@@ -81,7 +81,7 @@ test('board uses source development progress and keeps business workflow separat
  const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},workflow});
  assert.match(html,/aria-label="按开发进度查看需求"/);
  for(const [state,title] of [['not_started','尚未开始样例'],['in_progress','部分实现样例'],['implemented','源码实现样例'],['awaiting_acceptance','待审查样例']]){const column=html.match(new RegExp('<section[^>]*data-requirements-progress="'+state+'"[^]*?</section>'))?.[0]??'';assert.match(column,new RegExp(title));for(const item of rows.filter(row=>row.title!==title))assert.ok(!column.includes(item.title),'each requirement belongs to its evidence-backed development column');}
- assert.match(html,/推进：已完成（业务标记）/);assert.doesNotMatch(html,/data-requirements-progress="accepted"/);
+ assert.match(html,/推进：开发完成/);assert.doesNotMatch(html,/data-requirements-progress="accepted"/);
 });
 
 test('requirements table grouping is optional and reuses the native grouped row model',()=>{
@@ -93,4 +93,11 @@ test('requirements table grouping is optional and reuses the native grouped row 
  const plain=renderPage('requirements-views.tsx','RequirementsTable',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},grouping:'none'});
  assert.doesNotMatch(plain,/data-requirements-group=/);
  assert.match(renderPage(),/aria-label="表格分组"/);
+});
+
+
+test('workflow board groups only saved workflow and leaves partial source evidence unrecorded',()=>{
+ const baseline=requirements(),rows=baseline.requirements.slice(0,2),workflow=new Map([[rows[0].id,{state:'done',purpose:'已交付标记',nextStep:'后续反馈关联原ID'}]]);
+ const html=renderPage('requirements-views.tsx','RequirementsBoard',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},workflow,progressMode:'workflow'});
+ assert.match(html,/data-requirements-progress="done"/);assert.match(html,/data-requirements-progress="unrecorded"/);assert.match(html,/下一步：后续反馈关联原ID/);assert.doesNotMatch(html,/data-requirements-progress="accepted"/);
 });

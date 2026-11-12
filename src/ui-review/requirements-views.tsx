@@ -9,15 +9,16 @@ import {Badge} from './ui/badge';
 import {Button} from './ui/button';
 import type {RequirementWorkflow} from '../requirements-candidate/domain';
 import {requirementSchedule,type PlannedDates} from '../requirements-candidate/planning';
+import {workflowProgressLabels,workflowState,developmentQueueOrder} from './requirements-progress';
 import styles from './requirements-page.module.css';
 
 export const implementationLabels:Record<ImplementationStatus,string>={not_started:'未开始',partial:'部分实现',implemented:'源码已实现'};
 export const acceptanceLabels:Record<Requirement['status'],string>={not_started:'尚未验收',in_progress:'开发中，未验收',awaiting_acceptance:'待本人验收',accepted:'已验收'};
-export const workflowLabels:Record<RequirementWorkflow['state'],string>={planned:'计划中',in_progress:'进行中',blocked:'有阻塞',awaiting_review:'待检查',done:'已完成（业务标记）'};
+export const workflowLabels:Record<RequirementWorkflow['state'],string>={planned:'待开发',in_progress:'进行中',blocked:'有阻塞',awaiting_review:'待工程检查',done:'开发完成'};
 export type RequirementWorkflowMap=ReadonlyMap<string,RequirementWorkflow|null|undefined>;
 export function RequirementWorkflowSummary({workflow}:{workflow?:RequirementWorkflow|null}){return workflow?<div className={styles.workflowSummary} data-requirement-workflow><Badge variant="secondary" className={styles.semanticBadge} data-workflow={workflow.state}>推进：{workflowLabels[workflow.state]}</Badge>{workflow.purpose?<span title={workflow.purpose}>{workflow.purpose}</span>:null}</div>:null;}
 export type RequirementView='table'|'board'|'gantt';
-export type RequirementGrouping='none'|'phase'|'implementation'|'priority'|'acceptance';
+export type RequirementGrouping='none'|'phase'|'implementation'|'priority'|'acceptance'|'workflow';
 export const requirementProgressLabels={not_started:'未开始',in_progress:'正在推进',implemented:'已实现，未验收',awaiting_acceptance:'待本人审查',accepted:'已验收',unknown:'待核验'} as const;
 /** Engineering evidence and explicit owner acceptance drive development columns.
  * Saved business workflow remains visible, without promoting its done marker. */
@@ -35,29 +36,31 @@ function RequirementHeader({column}:HeaderContext<typeof requirementFeatures,Req
  const label=column.columnDef.meta?.headerTitle,direction=column.getIsSorted();
  return <Button variant="ghost" className={styles.sort} onClick={column.getToggleSortingHandler()} aria-label={`按${label}排序`}>{label}<span aria-hidden="true">{direction==='asc'?'↑':direction==='desc'?'↓':'↕'}</span></Button>;
 }
-function RequirementTitle({item,onOpen,workflow}:{item:Requirement;onOpen:OpenRequirement;workflow?:RequirementWorkflow|null}){
- return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" data-slot="requirement-title-trigger" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id} title={item.id}>{item.id.startsWith('LO-')?item.id:'私有 · '+item.id.slice(0,8)}</span><span className={styles.titleText} title={item.title}>{item.title}</span></button><RequirementWorkflowSummary workflow={workflow}/></div>;
+function RequirementTitle({item,onOpen,workflow,queueOrder}:{item:Requirement;onOpen:OpenRequirement;workflow?:RequirementWorkflow|null;queueOrder?:number|null}){
+ return <div data-requirement-id={item.id} className={styles.requirementTitle}><button type="button" data-slot="requirement-title-trigger" className={styles.titleButton} onClick={event=>onOpen(item,event.currentTarget)} aria-label={`查看需求 ${item.id} ${item.title}`}><span className={styles.id} title={item.id}>{item.id.startsWith('LO-')?item.id:'私有 · '+item.id.slice(0,8)}{queueOrder?' · 顺序 '+queueOrder:''}</span><span className={styles.titleText} title={item.title}>{item.title}</span></button><RequirementWorkflowSummary workflow={workflow}/></div>;
 }
-export function RequirementsTable({rows,phases,onOpen,workflow,grouping='phase'}:ViewProps&{grouping?:RequirementGrouping}){
+export function RequirementsTable({rows,phases,onOpen,workflow,grouping='phase',planning}:ViewProps&{grouping?:RequirementGrouping;planning?:ReadonlyMap<string,{body:string}>}){
  const columns=useMemo<ColumnDef<typeof requirementFeatures,Requirement>[]>(()=>{
   const phaseTitles=new Map(phases.map(phase=>[phase.id,phase.title]));
-  return ([['title','需求',260],['phase','阶段',180],['priority','优先级',100],['implementation','开发进度',140],['acceptance','验收',170],['next','下一步',240]] as const).map(([id,title,size])=>({
+  return ([...(grouping==='workflow'?[['workflow','推进状态',130] as const]:[]),['title','需求',260],['phase','阶段',180],['priority','优先级',100],['implementation','源码进度',140],['acceptance','验收',170],['next','下一步',240]] as const).map(([id,title,size])=>({
    id,size,minSize:id==='priority'?90:120,header:RequirementHeader,meta:{headerTitle:title,cellClassName:styles.cell,fillWidth:id==='title'},
-   accessorFn:item=>id==='title'?item.title:id==='phase'?phaseTitles.get(item.roadmap?.phaseId??'')??'未排阶段':id==='priority'?item.roadmap?.priority??'待定':id==='implementation'?requirementProgressLabels[requirementProgress(item)]:id==='acceptance'?acceptanceLabels[item.status]:workflow?.get(item.id)?.nextStep??item.roadmap?.nextStep??'按验收条件验证',
-   cell:({row,getValue})=>row.getIsGrouped()?id==='title'?<span className={styles.phaseGroup} data-requirements-group={grouping} data-requirements-phase={grouping==='phase'?row.subRows[0]?.original.roadmap?.phaseId??'unassigned':undefined} data-phase-tone={phaseColor(row.subRows[0]?.original.roadmap?.phaseId??'')}><strong>{String(row.groupingValue)}</strong><span>{row.subRows.length} 项</span></span>:null:id==='title'?<RequirementTitle item={row.original} onOpen={onOpen} workflow={workflow?.get(row.original.id)}/>:id==='priority'||id==='implementation'||id==='acceptance'?<Badge variant="secondary" className={styles.semanticBadge} data-priority={id==='priority'?row.original.roadmap?.priority:undefined} data-implementation={id==='implementation'?row.original.roadmap?.implementation:undefined} data-acceptance={id==='acceptance'?row.original.status:undefined}>{String(getValue())}</Badge>:<span className={id==='next'?styles.nextCell:styles.value}>{String(getValue())}</span>,
+   accessorFn:item=>id==='workflow'?workflowProgressLabels[workflowState(item.id,workflow)]:id==='title'?item.title:id==='phase'?phaseTitles.get(item.roadmap?.phaseId??'')??'未排阶段':id==='priority'?item.roadmap?.priority??'待定':id==='implementation'?(item.roadmap?.implementation?implementationLabels[item.roadmap.implementation]:'待核验'):id==='acceptance'?acceptanceLabels[item.status]:workflow?.get(item.id)?.nextStep??item.roadmap?.nextStep??'按验收条件验证',
+   cell:({row,getValue})=>row.getIsGrouped()?id==='title'?<span className={styles.phaseGroup} data-requirements-group={grouping} data-requirements-phase={grouping==='phase'?row.subRows[0]?.original.roadmap?.phaseId??'unassigned':undefined} data-phase-tone={phaseColor(row.subRows[0]?.original.roadmap?.phaseId??'')}><strong>{String(row.groupingValue)}</strong><span>{row.subRows.length} 项</span></span>:null:id==='title'?<RequirementTitle item={row.original} queueOrder={developmentQueueOrder(planning?.get(row.original.id)?.body??'')} onOpen={onOpen} workflow={workflow?.get(row.original.id)}/>:id==='priority'||id==='implementation'||id==='acceptance'?<Badge variant="secondary" className={styles.semanticBadge} data-priority={id==='priority'?row.original.roadmap?.priority:undefined} data-implementation={id==='implementation'?row.original.roadmap?.implementation:undefined} data-acceptance={id==='acceptance'?row.original.status:undefined}>{String(getValue())}</Badge>:<span className={id==='next'?styles.nextCell:styles.value}>{String(getValue())}</span>,
   }));
- },[phases,onOpen,workflow,grouping]);
- const table=useTable({features:requirementFeatures,data:rows.toSorted((a,b)=>(phases.find(p=>p.id===a.roadmap?.phaseId)?.order??99)-(phases.find(p=>p.id===b.roadmap?.phaseId)?.order??99)),columns,getRowId:item=>item.id,state:{grouping:grouping==='none'?[]:[grouping],expanded:true,pagination:{pageIndex:0,pageSize:Math.max(rows.length+phases.length,1)}},groupedColumnMode:false,enableRowSelection:false,autoResetPageIndex:false});
+ },[phases,onOpen,workflow,grouping,planning]);
+ const table=useTable({features:requirementFeatures,data:rows.toSorted((a,b)=>(developmentQueueOrder(planning?.get(a.id)?.body??'')??Infinity)-(developmentQueueOrder(planning?.get(b.id)?.body??'')??Infinity)||(a.roadmap?.priority??'P9').localeCompare(b.roadmap?.priority??'P9')||(phases.find(p=>p.id===a.roadmap?.phaseId)?.order??99)-(phases.find(p=>p.id===b.roadmap?.phaseId)?.order??99)),columns,getRowId:item=>item.id,state:{grouping:grouping==='none'?[]:[grouping],expanded:true,pagination:{pageIndex:0,pageSize:Math.max(rows.length+phases.length,1)}},groupedColumnMode:false,enableRowSelection:false,autoResetPageIndex:false});
  return <div className={styles.tableContainer} data-requirements-grid="reui" aria-label="需求表格">
   <DataGridContainer className={styles.gridContainer}><DataGrid table={table} recordCount={rows.length} i18n={{labels:{empty:'没有匹配的需求',loading:'正在加载需求…',allRowsLoaded:'已显示全部需求'}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,columnsResizeMode:'onEnd',cellSelection:false}} tableClassNames={{base:styles.table,headerRow:styles.header,bodyRow:styles.row}}><DataGridTable/></DataGrid></DataGridContainer>
  </div>;
 }
-export function RequirementsBoard({rows,phases,onOpen,workflow}:ViewProps){
+export function RequirementsBoard({rows,phases,onOpen,workflow,progressMode='engineering'}:ViewProps&{progressMode?:'engineering'|'workflow'}){
  const phaseTitles=new Map(phases.map(phase=>[phase.id,phase.title]));
- const states=(Object.keys(requirementProgressLabels) as (keyof typeof requirementProgressLabels)[]).filter(state=>!['accepted','unknown'].includes(state)||rows.some(item=>requirementProgress(item)===state));
- return <div className={styles.board} aria-label="按开发进度查看需求">{states.map(state=>{
-  const items=rows.filter(item=>requirementProgress(item)===state);
-  return <section key={state} data-requirements-progress={state} className={styles.column} aria-label={requirementProgressLabels[state]}><header className={styles.columnHeader}><h3>{requirementProgressLabels[state]}</h3><span>{items.length}</span></header><div className={styles.cards}>{items.map(item=><article className={styles.card} key={item.id}><RequirementTitle item={item} onOpen={onOpen} workflow={workflow?.get(item.id)}/><div className={styles.badges}><span>{phaseTitles.get(item.roadmap?.phaseId??'')??'未排阶段'}</span><Badge variant="outline" className={styles.semanticBadge} data-priority={item.roadmap?.priority}>{item.roadmap?.priority??'待定'}</Badge><Badge variant="secondary" className={styles.semanticBadge} data-acceptance={item.status}>{acceptanceLabels[item.status]}</Badge></div></article>)}{items.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
+ const labels=progressMode==='workflow'?workflowProgressLabels:requirementProgressLabels;
+ const progress=(item:Requirement):string=>progressMode==='workflow'?workflowState(item.id,workflow):requirementProgress(item);
+ const states=progressMode==='workflow'?Object.keys(workflowProgressLabels):(Object.keys(requirementProgressLabels) as (keyof typeof requirementProgressLabels)[]).filter(state=>!['accepted','unknown'].includes(state)||rows.some(item=>requirementProgress(item)===state));
+ return <div className={styles.board} aria-label={progressMode==='workflow'?'按推进状态查看需求':'按开发进度查看需求'}>{states.map(state=>{
+  const items=rows.filter(item=>progress(item)===state);
+  return <section key={state} data-requirements-progress={state} className={styles.column} aria-label={labels[state as keyof typeof labels]}><header className={styles.columnHeader}><h3>{labels[state as keyof typeof labels]}</h3><span>{items.length}</span></header><div className={styles.cards}>{items.map(item=><article className={styles.card} key={item.id}><RequirementTitle item={item} onOpen={onOpen} workflow={workflow?.get(item.id)}/><div className={styles.badges}><span>{phaseTitles.get(item.roadmap?.phaseId??'')??'未排阶段'}</span><Badge variant="outline" className={styles.semanticBadge} data-priority={item.roadmap?.priority}>{item.roadmap?.priority??'待定'}</Badge><Badge variant="secondary" className={styles.semanticBadge} data-acceptance={item.status}>{acceptanceLabels[item.status]}</Badge></div>{workflow?.get(item.id)?.nextStep?<p className={styles.boardNext}>下一步：{workflow.get(item.id)!.nextStep}</p>:null}</article>)}{items.length===0?<p className={styles.empty}>没有匹配的需求</p>:null}</div></section>;
  })}</div>;
 }
 /** Date positions come from persistent fields; phase order never invents dates. */
