@@ -218,3 +218,46 @@ test('committed receipt remains distinct when independent readback becomes unava
   assert.equal(result.ok,true);assert.equal(result.data.entry.revision,1);assert.equal(result.readback.ok,false);assert.equal(result.verification.verified,false);assert.equal(result.verification.state,'READBACK_UNAVAILABLE');
  }finally{await client.close();}
 });
+
+test('compact discovery projects only the fresh catalog and selected schemas keep the full contract',async()=>{
+ const f=fixture(),client=await connect(f),readClient=await connect(f,reader);
+ const discover=(args:Record<string,unknown>)=>client.callTool({name:'lifeos_discover',arguments:args});
+ try{
+  const tools=(await client.listTools()).tools;
+  assert.deepEqual(tools.map(tool=>tool.name),['lifeos_discover','lifeos_call']);
+  const full=(await discover({})).structuredContent as any;
+  assert.equal(full.apiVersion,'2');assert.deepEqual(Object.keys(full).sort(),['apiVersion','operations']);
+  const before=f.requests.length;
+  const index=(await discover({view:'index'})).structuredContent as any;
+  assert.deepEqual(index,{apiVersion:'2',view:'index',operations:full.operations.map(({id,module,method,description}:any)=>({id,module,method,description}))});
+  assert.equal(f.requests.slice(before).filter(request=>request.path.endsWith('/v2/capabilities')).length,2);
+  assert.equal(JSON.stringify(index).includes('inputSchema'),false);
+  const selected=(await discover({operationId:'getTodo'})).structuredContent as any;
+  assert.deepEqual(selected,{apiVersion:'2',operation:full.operations.find((operation:any)=>operation.id==='getTodo')});
+  assert.deepEqual(selected.operation.inputSchema.properties.id,{type:'string',pattern:'^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',examples:['00000000-0000-4000-8000-000000000001']});
+  assert.deepEqual((tools[1].inputSchema as any).oneOf.find((branch:any)=>branch.properties.operationId.const==='getTodo').properties.arguments,selected.operation.inputSchema);
+  const readerIndex=(await readClient.callTool({name:'lifeos_discover',arguments:{view:'index'}})).structuredContent as any;
+  assert.equal(readerIndex.operations.some((operation:any)=>operation.id==='createTodo'),false);
+  assert.equal((await readClient.callTool({name:'lifeos_discover',arguments:{operationId:'createTodo'}})).isError,true);
+  f.set({writable:false});
+  assert.equal((await discover({operationId:'createTodo'})).isError,true);
+  assert.equal(((await discover({view:'index'})).structuredContent as any).operations.some((operation:any)=>operation.id==='createTodo'),false);
+  assert.equal((await call(client,'createTodo',{fields,idempotencyKey:'synthetic-compact-revoked'})).isError,true);
+  assert.equal(f.repository.rows.size,0);
+  f.set({revoked:true});await assert.rejects(discover({operationId:'getTodo'}));
+ }finally{await client.close();await readClient.close();}
+});
+
+test('compact discovery rejects conflicting, unknown and malformed selectors without advertising static operations',async()=>{
+ const f=fixture(),client=await connect(f);
+ try{
+  for(const args of [{view:'index',operationId:'getTodo'},{view:'full'},{view:null},{view:1},{operationId:1},{operationId:''},{operationId:'x'.repeat(101)},{extra:true}]){
+   const response=await client.callTool({name:'lifeos_discover',arguments:args});
+   assert.equal(response.isError,true,JSON.stringify(args));assert.equal((response.structuredContent as any).error,'INVALID_ARGUMENTS');
+  }
+  for(const operationId of ['manageApiKeys','commitTodoClassification','discoverV2']){
+   const response=await client.callTool({name:'lifeos_discover',arguments:{operationId}});
+   assert.deepEqual(response.structuredContent,{ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
+  }
+ }finally{await client.close();}
+});

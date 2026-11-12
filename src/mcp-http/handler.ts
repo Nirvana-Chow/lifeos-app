@@ -2,11 +2,12 @@ import {createMcpHandler,Server,ProtocolError} from '@modelcontextprotocol/serve
 import {ToolSchema} from '@modelcontextprotocol/core';
 import {z} from 'zod';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
+import {type CapabilityCatalog} from '../mcp-candidate/client.ts';
 import {argumentSchema} from '../mcp-candidate/schemas.ts';
 import {HttpBusinessClient,type BusinessDispatcher,type HttpOperationResult} from './business-client.ts';
 
 export const mcpHttpPath='/api/platform/mcp';
-const discoverSchema=z.strictObject({});
+const discoverSchema=z.union([z.strictObject({}),z.strictObject({view:z.literal('index')}),z.strictObject({operationId:z.string().min(1).max(100)})]);
 const callSchema=z.strictObject({operationId:z.string().min(1).max(100),arguments:z.record(z.string(),z.unknown())});
 const privateHeaders={'Cache-Control':'private, no-store',Vary:'Authorization, MCP-Protocol-Version','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow, noarchive'};
 const failure=(status:number,error:string,extra:Record<string,string>={})=>Response.json({error},{status,headers:{...privateHeaders,...extra}});
@@ -27,8 +28,21 @@ function serverFor(client:HttpBusinessClient,token:string){
  server.setRequestHandler('tools/call',async request=>{
   const input=request.params.arguments??{};
   if(request.params.name==='lifeos_discover'){
-   if(!discoverSchema.safeParse(input).success)return result({ok:false,status:400,error:'INVALID_ARGUMENTS'});
-   try{const catalog=await client.discover();return{content:[{type:'text' as const,text:'Current authorized operations and argument schemas are in structuredContent.'}],structuredContent:{apiVersion:'2',operations:catalog.operations.map(operation=>({...operation,inputSchema:z.toJSONSchema(argumentSchema(operation))}))},isError:false};}
+   const parsed=discoverSchema.safeParse(input);
+   if(!parsed.success)return result({ok:false,status:400,error:'INVALID_ARGUMENTS'});
+   try{const catalog=await client.discover();
+    const project=(operation:CapabilityCatalog['operations'][number])=>({...operation,inputSchema:z.toJSONSchema(argumentSchema(operation))});
+    let structuredContent:Record<string,unknown>;
+    if('operationId'in parsed.data){
+     const operationId=parsed.data.operationId;
+     const operation=catalog.operations.find(operation=>operation.id===operationId);
+     if(!operation)return result({ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
+     structuredContent={apiVersion:'2',operation:project(operation)};
+    }else if('view'in parsed.data){
+     structuredContent={apiVersion:'2',view:'index',operations:catalog.operations.map(({id,module,method,description})=>({id,module,method,description}))};
+    }else structuredContent={apiVersion:'2',operations:catalog.operations.map(project)};
+    return{content:[{type:'text' as const,text:'Current authorized operations and argument schemas are in structuredContent.'}],structuredContent,isError:false};
+   }
    catch{return result({ok:false,status:503,error:'API_DISCOVERY_UNAVAILABLE'});}
   }
   if(request.params.name!=='lifeos_call')return result({ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
