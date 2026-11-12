@@ -50,6 +50,32 @@ test('finite keyboard samples retain the original nine metrics and detect replac
   assert.deepEqual(calls,['handle','focus','skip-observation','Tab','skip-observation','Shift+Tab','skip-observation','dispose']);assert.deepEqual(metrics,[1,1,2,1,1,1,1,0,0]);assert.deepEqual(samples.at(-1),replace?(forwardSkip?[215,208,208]:[215,464,208]):(forwardSkip?[215,215,215]:[215,471,215]));assert.deepEqual(skipSamples,[[false],[false,forwardSkip],[false,forwardSkip,false]]);
  }
 });
+test('keyboard roundtrips stay in-page for a workspace last stop and a standalone first stop',async()=>{
+ for(const [position,direction] of [['last','previous-and-return'],['first','next-and-return']] as const){
+  for(const failure of [undefined,'target','focus-visible','outline'] as const){
+   const calls:string[]=[],body={matches:(_selector:string)=>false},neighbor={closest:()=>({}),matches:(_selector:string)=>false};let presses=0,documentFocused=true;
+   const target={isConnected:true,disabled:false,matches:(selector:string)=>selector===':focus-visible'&&!(presses===2&&failure==='focus-visible'),getBoundingClientRect:()=>({width:44,height:44})};
+   const stops=position==='last'?[neighbor,target]:[target,neighbor];
+   const document={activeElement:body,body,hasFocus:()=>documentFocused,visibilityState:'visible',querySelector:()=>null};
+   const getComputedStyle=()=>({outlineStyle:presses===2&&failure==='outline'?'none':'solid',visibility:'visible',display:'block'});
+   const focus={elementHandle:async()=>Object.assign(target,{dispose:async()=>{calls.push('dispose');}}),focus:async()=>{calls.push('focus');document.activeElement=target;},evaluate:async(fn:Function,arg:unknown)=>new Function('document','getComputedStyle','node','original',`return (${fn.toString()})(node,original)`)(document,getComputedStyle,target,arg)};
+   // Model the observed native asymmetry: forward at the last stop wraps to
+   // the first; backward at the first hands focus to the browser's controls.
+   const page={locator:()=>focus,keyboard:{press:async(key:string)=>{
+    calls.push(key);presses++;const index=stops.indexOf(document.activeElement as typeof target);
+    if(key==='Shift+Tab'&&index===0){document.activeElement=body;documentFocused=false;return;}
+    document.activeElement=stops[(index+(key==='Tab'?1:-1)+stops.length)%stops.length];
+    if(presses===2&&failure==='target')document.activeElement=neighbor;
+   }}};
+   let metrics:readonly number[]|undefined;const samples:number[][]=[],skipSamples:boolean[][]=[];
+   const run=()=>fixture.assertPrivateKeyboardFocus(page as never,(_stage,numbers)=>{metrics=numbers;},(values,skipTargets)=>{samples.push([...values]);skipSamples.push([...skipTargets]);},direction);
+   if(failure)await assert.rejects(run,/private keyboard focus/);else await run();
+   assert.deepEqual(calls,['focus',...(position==='last'?['Shift+Tab','Tab']:['Tab','Shift+Tab']),'dispose']);
+   assert.deepEqual(samples,[[215],[215,215],[215,215,215]]);assert.deepEqual(skipSamples,[[false],[false,false],[false,false,false]]);
+   assert.deepEqual(metrics,[1,1,2,Number(failure!=='target'),Number(failure!=='focus-visible'),Number(failure!=='outline'),1,failure==='target'?2:0,0]);
+  }
+ }
+});
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{
  assert.equal(fixture.privateCaptureCases.length,96);
  const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,96);

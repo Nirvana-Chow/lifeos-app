@@ -365,7 +365,7 @@ export function assertPrivateHeaderGeometry(surface:PrivatePresentationSurface,w
  // fixed-height row. Require its three real children, 44px minimum and no escape.
  if(surface!=='standalone-editor'||f.display!=='flex'||f.wrap!=='wrap'||f.gap!==12||!f.contained||f.childHeights.length!==3||f.childHeights.some(h=>!Number.isFinite(h)||h<=0)||!Number.isFinite(f.height)||f.height+1<Math.max(44,...f.childHeights)||f.height>f.childHeights.reduce((a,b)=>a+b,0)+f.gap*2+1)fail();
 }
-/** Diagnostic only: retain the original Tab -> Shift+Tab assertion. The finite
+/** Diagnostic only: sample initial, away and return focus. The finite
  * shape never includes page text, values, attributes, classes or record IDs. */
 export function projectPrivateKeyboardLifecycle(value:unknown):number[]|undefined{
  return Array.isArray(value)?value.slice(0,3).map(n=>typeof n==='number'&&Number.isInteger(n)&&n>=0&&n<=512?n:512):undefined;
@@ -379,7 +379,8 @@ export function projectPrivateKeyboardSkipTarget(value:unknown):boolean[]|undefi
  return samples;
 }
 type KeyboardObservation=(snapshots:readonly number[],skipTargets:readonly boolean[])=>void;
-export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark=()=>{},lifecycle?:KeyboardObservation){
+type KeyboardTraversal='next-and-return'|'previous-and-return';
+export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark=()=>{},lifecycle?:KeyboardObservation,traversal:KeyboardTraversal='next-and-return'){
  mark('keyboard');const focus=page.locator(themeButtonSelector);
  // Only the selected failing cell retains one node handle. Three existing shape
  // reads sample lifecycle; no listener, page state, DOM mutation or added wait.
@@ -394,9 +395,11 @@ export async function assertPrivateKeyboardFocus(page:Page,mark:PresentationMark
   return{...facts,lifecycle:flags.reduce((bits,value,index)=>bits|(Number(value)<<index),0),skipTarget:active===document.querySelector('.lo-skip')};
  },original).then(facts=>{if(lifecycle){snapshots.push(facts.lifecycle);if(typeof facts.skipTarget==='boolean')skipTargets.push(facts.skipTarget);lifecycle(snapshots,skipTargets);}return facts;});
  try{
- await focus.focus();const initial=await shape();await page.keyboard.press('Tab');const forward=await shape();await page.keyboard.press('Shift+Tab');const backward=await shape();
- mark('keyboard',[Number(initial.target),Number(forward.documentFocused),forward.activeKind,Number(backward.target),Number(backward.focusVisible),Number(backward.outline),Number(backward.documentFocused),backward.activeKind,Number(backward.disabled)]);
- assert.equal(backward.target&&backward.focusVisible&&backward.outline,true,'private keyboard focus');
+ // Stay between adjacent in-page stops: browser-chrome boundary traversal is
+ // direction-dependent and does not promise a symmetric document-edge wrap.
+ await focus.focus();const initial=await shape();await page.keyboard.press(traversal==='previous-and-return'?'Shift+Tab':'Tab');const away=await shape();await page.keyboard.press(traversal==='previous-and-return'?'Tab':'Shift+Tab');const returned=await shape();
+ mark('keyboard',[Number(initial.target),Number(away.documentFocused),away.activeKind,Number(returned.target),Number(returned.focusVisible),Number(returned.outline),Number(returned.documentFocused),returned.activeKind,Number(returned.disabled)]);
+ assert.equal(returned.target&&returned.focusVisible&&returned.outline,true,'private keyboard focus');
  }finally{await original?.dispose().catch(()=>{});}
 }
 async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'dark',mark:PresentationMark,dialog=false,surface:PrivatePresentationSurface='workspace',keyboardLifecycle?:KeyboardObservation){
@@ -442,7 +445,10 @@ async function measurePrivatePresentation(page:Page,width:number,theme:'light'|'
   await expect(page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true})).toBeVisible();
  }
  if(dialog){const button=page.getByRole('button',{name:facts.settings?'关闭':'返回页面',exact:true});await button.focus();await expect(button).toBeFocused();return;}
- await assertPrivateKeyboardFocus(page,mark,keyboardLifecycle);
+ // Workspace Header has skip/menu/brand predecessors. The standalone editor
+ // starts with ThemeSwitch and has a following return link. Dialogs retain
+ // their separate close-button focus check above.
+ await assertPrivateKeyboardFocus(page,mark,keyboardLifecycle,surface==='workspace'&&!dialog?'previous-and-return':'next-and-return');
 }
 export async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'){
