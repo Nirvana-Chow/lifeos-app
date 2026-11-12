@@ -1,0 +1,26 @@
+.classification {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px 8px;
+  font-size: var(--lo-font-meta);
+  line-height: 1.5;
+}
+
+.classification > div {
+  display: grid;
+  grid-template-columns: 2.5em minmax(0, 1fr);
+  gap: 8px;
+}
+
+.classification dt,
+.classification dd[data-unassociated] {
+  color: var(--muted-foreground);
+}
+
+.classification dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}

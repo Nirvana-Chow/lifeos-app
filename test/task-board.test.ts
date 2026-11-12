@@ -5,11 +5,12 @@ import ts from 'typescript';
 
 type Node={type:unknown;props:Record<string,any>};
 const find=(node:any,type:string):Node|undefined=>!node||typeof node!=='object'?undefined:Array.isArray(node)?node.map(child=>find(child,type)).find(Boolean):node.type===type?node:find(node.props?.children,type);
+const textContent=(node:any):string=>node==null?'':typeof node==='string'?node:Array.isArray(node)?node.map(textContent).join(''):typeof node==='object'?textContent(node.props?.children):String(node);
 function fixture(){
  let cursor=0;const values:any[]=[],writes:unknown[]=[];
  const react={useState(initial:any){const index=cursor++;if(!(index in values))values[index]=typeof initial==='function'?initial():initial;return[values[index],(value:any)=>values[index]=typeof value==='function'?value(values[index]):value];},useRef(initial:any){const index=cursor++;return values[index]??(values[index]={current:initial});},useMemo(fn:Function){return fn();},useEffect(){}};
  const jsx={jsx:(type:unknown,props:Record<string,unknown>)=>({type,props}),jsxs:(type:unknown,props:Record<string,unknown>)=>({type,props})};
- const module={exports:{} as any};const imports:Record<string,unknown>={react,'react/jsx-runtime':jsx,'lucide-react':{GripVertical:'grip'},'../personal-candidate/task-editor-state':{taskStatusLabels:{open:'未完成',in_progress:'进行中',done:'已完成',cancelled:'已取消'}},'./ui/button':{Button:'button'},'./reui/kanban':Object.fromEntries(['Kanban','KanbanBoard','KanbanColumn','KanbanColumnHandle','KanbanColumnContent','KanbanItem','KanbanItemHandle'].map(name=>[name,name]))};
+ const module={exports:{} as any};const imports:Record<string,unknown>={react,'react/jsx-runtime':jsx,'lucide-react':{GripVertical:'grip'},'../personal-candidate/task-editor-state':{taskStatusLabels:{open:'未完成',in_progress:'进行中',done:'已完成',cancelled:'已取消'}},'./ui/button':{Button:'button'},'./task-board.module.css':{default:{}},'./reui/kanban':Object.fromEntries(['Kanban','KanbanBoard','KanbanColumn','KanbanColumnHandle','KanbanColumnContent','KanbanItem','KanbanItemHandle'].map(name=>[name,name]))};
  const code=ts.transpileModule(readFileSync('src/ui-review/task-board.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  new Function('require','module','exports',code)((name:string)=>{assert.ok(name in imports,name);return imports[name];},module,module.exports);
  let props:any={tasks:[{id:'synthetic-task',revision:2,title:'合成任务',status:'open',dueOn:null}],writable:true,blocked:false,onSetTaskStatus:(...args:unknown[])=>writes.push(args),renderCard:()=>null};
@@ -42,4 +43,22 @@ test('scope change hides the previous drag preview on the first render before cl
  previous.onValueChange(previous.value);
  assert.deepEqual(Object.values(f.render().value).flat().map((task:any)=>task.id),['new-scope-task'],'late old-scope preview callbacks stay hidden');
  previous.onValueCommit(previous.value,f.meta());assert.deepEqual(f.writes,[]);
+});
+
+test('board cards label existing project and area references without writing classification',()=>{
+ const f=fixture();
+ const native=f.update({tasks:[{id:'synthetic-task',revision:2,title:'合成任务',status:'open',project:{id:'p',title:'合成项目'},area:{id:'a',title:'合成领域'}}]});
+ const classification=find(native.children,'dl');
+ assert.ok(classification,'cards expose their classification as a description list');
+ assert.equal(classification.props['aria-label'],'待办分类');
+ assert.match(textContent(classification),/项目合成项目领域合成领域/);
+ assert.deepEqual(f.writes,[]);
+});
+
+test('missing board references stay explicitly unassociated rather than implying inbox classification',()=>{
+ const f=fixture(),classification=find(f.render().children,'dl');
+ assert.ok(classification);
+ assert.match(textContent(classification),/项目未关联项目领域未关联领域/);
+ assert.equal(textContent(classification).includes('收件箱'),false);
+ assert.deepEqual(f.writes,[]);
 });

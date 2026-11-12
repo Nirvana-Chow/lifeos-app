@@ -6,6 +6,7 @@ import type {TaskRow,TaskStatus,LifeOSWorkspaceProps} from './contract';
 import {taskStatusLabels} from '../personal-candidate/task-editor-state';
 import {Kanban,KanbanBoard,KanbanColumn,KanbanColumnHandle,KanbanColumnContent,KanbanItem,KanbanItemHandle,type KanbanCommitMeta} from './reui/kanban';
 import {Button} from './ui/button';
+import styles from './task-board.module.css';
 
 const statuses:TaskStatus[]=['open','in_progress','done','cancelled'];
 type Arrangement={columns:TaskStatus[];cards:Record<string,string[]>};
@@ -62,6 +63,10 @@ export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,o
     <KanbanColumnContent value={status} className="lo-board-cards">{items.map(task=><KanbanItem key={task.id} value={task.id} className="lo-kanban-card" data-kanban-task={task.id} disabled={blocked||!writable||pendingTaskIds.includes(task.id)}>
      <div className="lo-board-card-tools"><KanbanItemHandle asChild><Button variant="ghost" className="lo-card-drag" aria-label={`拖动：${task.title}`} disabled={blocked||!writable||pendingTaskIds.includes(task.id)}><GripVertical size={16} aria-hidden="true"/></Button></KanbanItemHandle><label className="lo-board-move">移动到<select aria-label="移动到" value={task.status} disabled={blocked||!writable||!onSetTaskStatus||pendingTaskIds.includes(task.id)} onChange={event=>move(task,event.target.value as TaskStatus)}>{statuses.map(status=><option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select></label></div>
      {renderCard(task)}
+     <dl className={styles.classification} aria-label="待办分类">
+      <div><dt>项目</dt><dd data-unassociated={!task.project||undefined}>{task.project?.title??'未关联项目'}</dd></div>
+      <div><dt>领域</dt><dd data-unassociated={!task.area||undefined}>{task.area?.title??'未关联领域'}</dd></div>
+     </dl>
     </KanbanItem>)}{!items.length&&<div className="lo-board-empty">暂无待办</div>}</KanbanColumnContent>
    </KanbanColumn>)}</KanbanBoard>
   </Kanban>

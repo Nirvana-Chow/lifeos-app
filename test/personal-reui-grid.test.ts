@@ -126,6 +126,15 @@ test('native column handles can resize below their starting widths without chang
  assert.deepEqual(h.options().data,[task('a',4)]);
 });
 
+test('the required title column absorbs native filler space while meaningful columns remain available', () => {
+ const h=harness();
+ h.render({tasks:[task('a',4)],writable:false,onOpen(){}});
+ const columns=h.options().columns;
+ assert.deepEqual(columns.filter((column:any)=>column.meta.fillWidth).map((column:any)=>column.id),['title']);
+ assert.deepEqual(columns.map((column:any)=>column.id),['complete','title','status','due','project','area','detail']);
+ assert.equal(h.options().state.columnVisibility.title,undefined,'the content column remains visible by default');
+});
+
 test('table completion sends the original identity and remains disabled without write permission', () => {
  const h=harness(),calls:unknown[]=[];
  const props={tasks:[task('a',4)],writable:true,onOpen(){},onSetTaskStatus:(...args:unknown[])=>calls.push(args)};
