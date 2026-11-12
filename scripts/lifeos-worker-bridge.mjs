@@ -13,7 +13,10 @@ function bytes(path,privateFile=false,limit=8*1024*1024){
  try{const f=fstatSync(fd);if(f.ino!==s.ino||f.dev!==s.dev)throw Error();return readFileSync(fd);}finally{closeSync(fd);}
 }
 try{
- if(process.argv.length!==4||process.execArgv.length||process.env.NODE_OPTIONS||process.env.NODE_PATH||process.versions.node!=='24.18.0')throw Error();
+ const [major,minor]=process.versions.node.split('.').map(Number);
+ // The root/native host pins the actual Node executable and argv. Source/CI
+ // supports the repository's >=24.18 <25 engine, not one private-client minor.
+ if(process.argv.length!==4||process.execArgv.length||process.env.NODE_OPTIONS||process.env.NODE_PATH||major!==24||!Number.isInteger(minor)||minor<18)throw Error();
  const [bindingPath,expected]=process.argv.slice(2);if(!/^[a-f0-9]{64}$/.test(expected))throw Error();
  const raw=bytes(bindingPath,true,8192);if(digest(raw)!==expected)throw Error();
  const binding=JSON.parse(raw.toString('utf8')),root=binding.root;

@@ -67,7 +67,13 @@ async function fixture(){
  const binding={schemaVersion:1,assignment,host:runtime.host,jobDirectory:join(jobs,assignment.jobId),clientEntry:runtime.client.entry,root:bundle,manifestSHA256:sha256(manifest),gate:runtime.bridge.gate};
  const bindingPath=join(assignments,'stdio-binding.json'),raw=JSON.stringify(binding);await writeFile(bindingPath,raw,{mode:0o600});
  const calls=async()=>{try{return(await readFile(trace,'utf8')).trim().split('\n').filter(Boolean).map(v=>JSON.parse(v));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return[];throw error;}};
- async function connect(){const transport=new StdioClientTransport({command:node.binary,args:[runtime.bridge.entry.binary,bindingPath,sha256(raw)],stderr:'pipe',env:{PATH:'/usr/bin:/bin'}}),client=new Client({name:'synthetic-adoption-review',version:'1'});await client.connect(transport);return client;}
+ async function connect(reportedNodeVersion?:string){
+  // Only this fixture changes reported metadata; actual Node APIs remain24.18.
+  // Production native attestation still pins the actual Node executable/argv.
+  let args=[runtime.bridge.entry.binary,bindingPath,sha256(raw)];
+  if(reportedNodeVersion){const shim=join(root,'synthetic-node-metadata.mjs');await writeFile(shim,`import{pathToFileURL}from'node:url';Object.defineProperty(process.versions,'node',{value:${JSON.stringify(reportedNodeVersion)}});process.argv=[process.argv[0],...process.argv.slice(2)];await import(pathToFileURL(process.argv[1]).href);`);args=[shim,...args];}
+  const transport=new StdioClientTransport({command:node.binary,args,stderr:'pipe',env:{PATH:'/usr/bin:/bin'}}),client=new Client({name:'synthetic-adoption-review',version:'1'});await client.connect(transport);return client;
+ }
  return{root,bundle,runtime,bindingPath,raw,denied,state,statePath,calls,connect,providerQualification:await pin(summary),clean:()=>rm(root,{recursive:true,force:true})};
 }
 
@@ -95,6 +101,14 @@ test('actual guarded stdio adapter uses only four tools and the original wrapper
    await writeFile(f.denied,'synthetic peer revoked');assert.equal((await client.callTool({name:'read_assigned',arguments:{}})).isError,true);assert.equal((await f.calls()).length,count);
   }finally{await client.close();}
   const pending=JSON.parse(await readFile(join(f.runtime.jobsDirectory,assignment.jobId,'business-pending.json'),'utf8'));assert.equal(pending.pending.requestId,recoveryId);
+ }finally{await f.clean();}
+});
+
+test('bootstrap accepts the package Node24 line rather than confusing private-client24.18 pins with CI24.22 metadata',{timeout:30000},async()=>{
+ const f=await fixture();try{
+  await mkdir(join(f.runtime.jobsDirectory,assignment.jobId),{mode:0o700});
+  const client=await f.connect('24.22.1');try{assert.equal((await client.listTools()).tools.length,4);}finally{await client.close();}
+  assert.deepEqual(await f.calls(),[]);
  }finally{await f.clean();}
 });
 
