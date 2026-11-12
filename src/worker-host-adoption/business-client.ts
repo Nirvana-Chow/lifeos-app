@@ -13,7 +13,7 @@ export function createPinnedWorkerClient(options:{entry:CodePin;timeoutMs?:numbe
  async function invoke(args:string[],input:unknown,write:boolean):Promise<unknown>{
   await checkedPin(options.entry);
   return new Promise((resolve,reject)=>{
-   const child=spawn(options.entry.binary,args,{env:{PATH:'/usr/bin:/bin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8'},stdio:['pipe','pipe','pipe']});
+   const child=spawn(options.entry.binary,args,{env:{PATH:'/usr/bin:/bin',LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',NODE_ENV:'production'},stdio:['pipe','pipe','pipe']});
    let size=0,errors=0,spawned=false,closed=false,uncertain=false;const chunks:Buffer[]=[];
    const terminate=()=>{uncertain=true;child.kill('SIGTERM');};
    const timer=setTimeout(terminate,timeoutMs),hard=setTimeout(()=>{if(!closed){uncertain=true;child.kill('SIGKILL');}},timeoutMs+500);

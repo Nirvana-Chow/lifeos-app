@@ -72,13 +72,13 @@ async function fixture(){
   // Production native attestation still pins the actual Node executable/argv.
   let args=[runtime.bridge.entry.binary,bindingPath,sha256(raw)];
   if(reportedNodeVersion){const shim=join(root,'synthetic-node-metadata.mjs');await writeFile(shim,`import{pathToFileURL}from'node:url';Object.defineProperty(process.versions,'node',{value:${JSON.stringify(reportedNodeVersion)}});process.argv=[process.argv[0],...process.argv.slice(2)];await import(pathToFileURL(process.argv[1]).href);`);args=[shim,...args];}
-  const transport=new StdioClientTransport({command:node.binary,args,stderr:'pipe',env:{PATH:'/usr/bin:/bin'}}),client=new Client({name:'synthetic-adoption-review',version:'1'});await client.connect(transport);return client;
+  const transport=new StdioClientTransport({command:node.binary,args,stderr:'pipe',env:{PATH:'/usr/bin:/bin',NODE_ENV:'test'}}),client=new Client({name:'synthetic-adoption-review',version:'1'});await client.connect(transport);return client;
  }
  return{root,bundle,runtime,bindingPath,raw,denied,state,statePath,calls,connect,providerQualification:await pin(summary),clean:()=>rm(root,{recursive:true,force:true})};
 }
 
 test('actual bridge bootstrap rejects an untrusted binding before loading business code',()=>{
- const run=spawnSync(process.execPath,[entrySource,'/missing/synthetic-binding.json','a'.repeat(64)],{encoding:'utf8',env:{PATH:'/usr/bin:/bin'},timeout:3000});
+ const run=spawnSync(process.execPath,[entrySource,'/missing/synthetic-binding.json','a'.repeat(64)],{encoding:'utf8',env:{PATH:'/usr/bin:/bin',NODE_ENV:'test'},timeout:3000});
  assert.equal(run.status,78);assert.equal(run.stdout,'');assert.equal(run.stderr.trim(),'WORKER_BRIDGE_REJECTED');
 });
 
@@ -124,7 +124,7 @@ test('concrete prepare reaches the original owned launcher with fixed argv and n
 
 test('bootstrap rejects a changed binding, gate, module or extra code before wrapper or peer work',{timeout:30000},async()=>{
  const f=await fixture();try{
-  const launch=(digest=sha256(f.raw))=>spawnSync(f.runtime.node.binary,[f.runtime.bridge.entry.binary,f.bindingPath,digest],{encoding:'utf8',input:'',env:{PATH:'/usr/bin:/bin'},timeout:5000});
+  const launch=(digest=sha256(f.raw))=>spawnSync(f.runtime.node.binary,[f.runtime.bridge.entry.binary,f.bindingPath,digest],{encoding:'utf8',input:'',env:{PATH:'/usr/bin:/bin',NODE_ENV:'test'},timeout:5000});
   const rejected=(run:ReturnType<typeof launch>)=>{assert.equal(run.status,78,run.stderr);assert.equal(run.stdout,'');assert.equal(run.stderr.trim(),'WORKER_BRIDGE_REJECTED');};
   rejected(launch('0'.repeat(64)));
   const gate=f.runtime.bridge.gate.binary,originalGate=await readFile(gate);await writeFile(gate,Buffer.concat([originalGate,Buffer.from('\n// changed synthetic gate')]));rejected(launch());await writeFile(gate,originalGate);
