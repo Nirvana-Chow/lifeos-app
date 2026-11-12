@@ -68,10 +68,44 @@ async function fixture(root:string){
   symlink(join(source,'components'),join(root,'components')),
  ]);
  await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformPagePrincipal=async()=>({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true;\n');
+ await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],
   {cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  return server;
 }
+
+test('OPT-IN short Settings keeps security and logout reachable above the filing footer',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-short-settings-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Short Settings fixture startup timeout')),30000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('Short Settings fixture exited'));});});
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ for(const width of [1365,390])for(const height of [240,300]){
+  const page=await browser.newPage({viewport:{width,height},colorScheme:width===1365?'light':'dark'});page.setDefaultTimeout(5000);
+  try{
+   const writes=await installSyntheticReads(page,origin);
+   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:55_000});await readyHeading(page,'待办');await addSyntheticFooter(page);
+   if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+   await page.getByRole('button',{name:'设置',exact:true}).click();
+   const settings=page.locator('[data-settings-page]');await expect(settings).toBeVisible();
+   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+   const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+   await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
+   for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),settings.getByRole('button',{name:'保存密码',exact:true})]){
+    await control.scrollIntoViewIfNeeded();await expectAboveFooter(page,control);
+    assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings security control receives pointer input');
+   }
+   await categories.getByRole('button',{name:'通用',exact:true}).click();
+   const logout=page.getByRole('button',{name:'退出登录',exact:true});await logout.scrollIntoViewIfNeeded();await expectAboveFooter(page,logout);
+   assert.equal(await logout.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings logout receives pointer input');
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight===innerHeight&&document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'short Settings scroll stays inside the document');
+   for(let step=0;step<3;step++)await page.getByRole('button',{name:'后退',exact:true}).click();
+   await readyHeading(page,'待办');await expect(page).toHaveURL(origin+'/personal?page=tasks');
+   assert.equal(writes(),0,'short Settings browsing and history never mutate records');
+  }finally{await page.close();}
+ }
+});
 
 test('OPT-IN standalone settings preserves drafts/history and bounded task viewport geometry',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next.js fixture',timeout:240_000,
