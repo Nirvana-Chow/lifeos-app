@@ -226,3 +226,14 @@ settle(reservationId:string,input:Readonly<{status:'known'|'unknown';actualMinor
 八个capability映射唯一tasks1–8，原未覆盖关系图谱/事项工作流和其他业务以9–10显式接续，34ID逐项覆盖见[映射表](../specs/2026-11-05-personal-agent-requirements-coverage.md)。A1/A2以独立详细计划执行；typedcontext、intake、run/budget/MCP合同在各自入口定义，不让实现者选择第二编排或权限模型。ReviewFocus五类均有对应behaviortest；写SQL、发布或owner验收没有被计划existence勾成完成。
 
 当前是规划提交，没有产品行为/PG/Chrome/模型/MCP通过结论。接续者核对newchange apply instructions、原Issues及真实worktree后，从1.1开始持续实现；本计划不再要求owner先选执行菜单。用当前平台真实持续执行机制维护已启动目标，技术任务完成后进入下一已授权片；只有具体授权/材料/硬门禁缺口暂停相应动作。
+
+
+## 2026-11-12 LO-AGENT-001 / Issue35：公共Skill的server MCP合同
+
+沿现7.1/7.2/8.2更新既有四文件公开包，不建立第二需求或完成验收任务。基于main937，修正“仅旧三工具stdio candidate / 无MCP传输”的过期说明：启用的server端点为同API的两工具投影，无lifeos_retry或自动写重试；旧durable host的原command恢复保留独立资格。本地restriction始终优先，实际read-only host不能据目录/GET证明写资格，写仍需已采用durable runtime；未知写不得改key/正文或换transport重发。目标/CAS/原idem/独立GET保持原合同。
+
+只修改必要Skill/credential/自动生成的operations说明及其生成器、公开allowlist artifact和现publisher sequence2026111204→2026111205。无账号/个人路径/Key/执行安装命令/新依赖/授权或运行代码变化。Native现代协议与本机兼容proxy分开；readiness是一次资格过程，不强制每业务call重走，不承诺MCP自动省token/费用。
+
+验证使用既有包装、相对链接、更新序列/防回滚和维护合同检查；不为了文档重跑PG/Chrome/全build或额外触发CI。独立review、root串行main整合、同SHA一次完整CI/合法发布、实际Skill更新读回和本人体验分别保留；本片不勾7.1/7.2或其它原任务状态。
+
+本片本地检查：先观察既有生成reference/anonymous archive合同因尚未再生成而2fail/19pass；按既有两个生成器更新后，4份Skill focused测试21pass/0fail/0skip。Skill quick_validate、lock guard、git diff --check及OpenSpec1.16.0的personal-agent-foundation/unified-business-ui strict均通过。未写真实业务记录、安装Skill/MCP或更改授权，未运行本片CI/发布/host写资格/本人验收；独立review与root集成仍在后续。

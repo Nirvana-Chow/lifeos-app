@@ -4,6 +4,10 @@
 
 Legacy catalog API version `1`; the v2 catalog uses API version `2` and requiredScopes arrays. Business paths retain their listed versions.
 
+When enabled, the server MCP endpoint `/api/platform/mcp` exposes `lifeos_discover` and `lifeos_call` over the same API; there is no server `lifeos_retry`. Use only operations in both the current MCP discovery and this reviewed reference, within the user grant and the actual host qualification. An API row alone does not enable MCP access or write recovery.
+
+Read [the credential-runtime guide](credential-runtime.md) for server MCP versus durable-host recovery. Preserve target identity, original idempotency key, expectedRevision and independent GET readback across transports; never resend an uncertain write through a different transport.
+
 | ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
 | `snapshotJournal` | `GET` | `/v1/records/journal/snapshot` | `journal:read` | Read the complete current journal snapshot with source identities, fields and revisions, or fail without a partial inventory. |
