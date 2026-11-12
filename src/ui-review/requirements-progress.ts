@@ -1,3 +1,4 @@
+import {validateCalendarDate,validateCalendarZone} from '../calendar-candidate/domain.ts';
 import type {Requirement} from '../platform/requirements';
 import type {RequirementWorkflow} from '../requirements-candidate/domain';
 export const workflowProgressLabels={planned:'待开发',in_progress:'进行中',blocked:'有阻塞',awaiting_review:'待工程检查',done:'开发完成',unrecorded:'未梳理'} as const;
@@ -19,7 +20,14 @@ export function savedProgressEntries(body:string):{at:string;text:string}[]{
  const sections=body.split(/(?=^【[^\n]*】)/m);
  for(const section of sections){
   const match=section.match(/^【开发跟进 (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))】[ \t]*\r?\n([^]*)$/);
-  if(match&&Number.isFinite(Date.parse(match[1]))&&match[2].trim())entries.push({at:match[1],text:match[2].trim()});
+  if(!match||!match[2].trim())continue;
+  const at=match[1];
+  try{
+   validateCalendarDate(at.slice(0,10));
+   if(Number(at.slice(11,13))>23||Number(at.slice(14,16))>59||Number(at.slice(17,19))>59)continue;
+   validateCalendarZone(at.endsWith('Z')?'UTC':at.slice(-6));
+   if(Number.isFinite(Date.parse(at)))entries.push({at,text:match[2].trim()});
+  }catch{/* Invalid saved timestamp sections are not progress evidence. */}
  }
  return entries.toSorted((a,b)=>Date.parse(b.at)-Date.parse(a.at));
 }

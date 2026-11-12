@@ -18,3 +18,14 @@ test('saved progress only extracts strict dated sections, preserving text and la
  assert.deepEqual(savedProgressEntries(body),[{at:'2026-11-13T09:00:00Z',text:'继续下一项 <script>'},{at:'2026-11-12T08:30:00+08:00',text:'完成检查'}]);
  assert.deepEqual(savedProgressEntries('没有进度记录'),[]);
 });
+
+test('saved progress rejects nonexistent dates and invalid wall times or explicit offsets',()=>{
+ for(const at of ['2026-02-30T09:00:00+08:00','2026-02-29T09:00:00Z','1900-02-29T09:00:00Z','2026-04-31T09:00:00Z','0000-01-01T09:00:00Z','2026-13-01T09:00:00Z','2026-01-00T09:00:00Z','2026-11-13T24:00:00Z','2026-11-13T09:60:00Z','2026-11-13T09:00:60Z','2026-11-13T09:00:00+14:01','2026-11-13T09:00:00+15:00','2026-11-13T09:00:00+08:60','2026-11-13T09:00:00-00:00','2026-11-13T09:00:00','2026-11-13T09:00:00+0800']){
+  assert.deepEqual(savedProgressEntries(`【开发跟进 ${at}】\n无效时间不应显示`),[],at);
+ }
+});
+test('saved progress preserves valid leap dates and explicit ISO timestamps verbatim',()=>{
+ for(const at of ['2024-02-29T09:00:00+08:00','2000-02-29T23:59:59.999Z','2026-11-13T09:00:00+08:00','2026-11-13T09:00:00Z','2026-11-13T09:00:00+00:00','2026-11-13T09:00:00+14:00','2026-11-13T09:00:00-14:00']){
+  assert.deepEqual(savedProgressEntries(`【开发跟进 ${at}】\n原始记录`),[{at,text:'原始记录'}],at);
+ }
+});
