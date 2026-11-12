@@ -24,7 +24,7 @@
 - [x] Qualify the inherited adapter/durable-pending draft with focused tests; retain a three-operation wrapper adapter and private pending journal. Preserve original recovery IDs and never replay uncertain writes.
 - [x] Qualify the inherited fixed-argv/preparation draft with focused tests; retain concrete slot reservation, checked runtime preparation, live discovery/GET fence checks and single-use launch composition.
 - [x] Observe the missing-bootstrap failure, then implement/test the actual script and SDK stdio composition with synthetic executables, the reviewed code gate, native attestor, assigned channel and bounded original-wrapper calls.
-- [ ] Run focused original/new tests, types and diff checks, freeze a reviewable commit and obtain independent review. No deployment or adoption.
+- [x] Run focused original/new tests, types and diff checks, freeze reviewable commits and obtain independent review. No worker deployment or adoption.
 
 ## Source composition and focused evidence (2026-11-12)
 
@@ -41,6 +41,8 @@ Type verification is scoped to adoption modules/tests with the existing Node24/T
 CI declares Node24.22.1 while the private reviewed business client retains24.18.0. The bridge source accepts the repository engine >=24.18 <25; the root/native host still pins the actual executable/argv. A synthetic metadata-only24.22 bootstrap case was observed failing under the accidental24.18-only check, then passing after removing that redundant private-client minor restriction. This checks startup policy on actual24.18 APIs, not native24.22 execution; main CI remains the actual24.22 check. No runtime or dependency was installed or updated.
 
 Independent review of the initial source found one Important launch timing gap: provider evidence could expire or the owner could revoke client adoption during a slow discovery/GET, after the first gates but before the original launcher. Both were reproduced with the actual synthetic wrapper before fixing. `launchAdoptedWorker` now snapshots the same root pins/assignment at entry, then rechecks those fixed code pins, provider evidence and client adoption immediately before `startPreparedWorker`; it cannot select replacement authority during the wait. Two negative cases prove the launcher is never reached and the consumed slot cannot be reused. This closes that normal waiting window without changing original native/channel/client code or claiming atomic protection against hostile same-UID changes.
+
+Final source verification: five focused files25 tests/pass25/fail0/skip0; scoped TypeScript and diff checks pass. Independent fixed-SHA review of6459900..f148531 identified that one P2; review of the minimal fix f148531..8403c72 closed it with GO/no additional Important or Critical finding, independently rerunning nine bridge tests and scoped types. Source commits are d502e27, f148531 and8403c72. Actual provider/account/route/budget/tier, private final packaging/native-host qualification, model/worker activation and owner experience acceptance remain unverified and closed. These exclusions preserve the original OpenSpec5.2/5.4 unfinished gates.
 
 ## Native static evidence and remaining gates
 
