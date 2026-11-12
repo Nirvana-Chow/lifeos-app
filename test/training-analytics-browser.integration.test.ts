@@ -83,14 +83,29 @@ export default function Page(){return <main data-lifeos-surface="internal-traini
   await expect(trend.getByText('至少 1 / 10',{exact:true})).toBeVisible();
   await expect(trend.getByText('至少 2 / 10',{exact:true})).toBeVisible();
   await page.getByLabel('查看日期').selectOption('2026-11-07');
-  await expect(page.getByText('合成划船',{exact:true})).toBeVisible();
+  const detail = page.getByRole('region',{name:'日期明细'});
+  await expect(detail.getByText('合成划船',{exact:true})).toBeVisible();
   await page.getByLabel('统计范围').selectOption('chest');
-  await expect(page.getByText('合成划船',{exact:true})).toHaveCount(0);
+  await expect(detail.getByText('合成划船',{exact:true})).toHaveCount(0);
 
   await page.getByRole('button',{name:'日',exact:true}).click();
   await expect(summary.locator('dd').first()).toHaveText('未知');
   await page.getByRole('button',{name:'周',exact:true}).click();
   await page.getByLabel('统计范围').selectOption('all');
+  const library = page.getByRole('region',{name:'动作资料库'});
+  await library.locator('summary').click();
+  await expect(library.getByRole('heading',{name:'鸟狗式',exact:true})).toBeVisible();
+  const exerciseSearch = library.getByRole('searchbox',{name:'搜索动作或训练目的'});
+  await exerciseSearch.fill('合成未归类');
+  await expect(library.getByRole('heading',{level:4})).toHaveCount(1);
+  await expect(library.getByRole('heading',{name:'合成未归类',exact:true})).toBeVisible();
+  await expect(library.getByText(/用途资料待补充/)).toBeVisible();
+  await expect(library.getByRole('link')).toHaveCount(0);
+  await exerciseSearch.fill('腘绳肌');
+  await expect(library.getByRole('heading',{name:'杠铃罗马尼亚硬拉',exact:true})).toBeVisible();
+  await expect(library.getByRole('link')).toHaveAttribute('href','https://www.nasm.org/resource-center/exercise-library/romanian-deadlift-barbell');
+  await exerciseSearch.fill('');
+  await expect(library.getByRole('heading',{level:4})).toHaveCount(11);
   const reviewDirectory = process.env.LIFEOS_TRAINING_ANALYTICS_SCREENSHOT_DIR;
   if (reviewDirectory) await page.screenshot({path:join(reviewDirectory,'1366-light.png'),fullPage:true});
 
@@ -99,6 +114,7 @@ export default function Page(){return <main data-lifeos-surface="internal-traini
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true);
   const controlHeight = await page.getByLabel('统计范围').evaluate(node => node.getBoundingClientRect().height);
   assert.ok(controlHeight >= 44);
+  assert.ok(await exerciseSearch.evaluate(node => node.getBoundingClientRect().height) >= 44);
   await expect.poll(async () => {
     const facts = await page.getByRole('button',{name:'年',exact:true}).evaluate(node => {
       const panel = node.closest('section')!;
@@ -106,6 +122,12 @@ export default function Page(){return <main data-lifeos-surface="internal-traini
     });
     return renderedContrast(facts.foreground,facts.layers).contrast;
   }).toBeGreaterThanOrEqual(4.5);
+  const linkContrast = await library.getByRole('link').first().evaluate(node => {
+    const layers:{backgroundColor:string}[] = [];
+    for (let current:Element|null=node;current;current=current.parentElement) layers.push({backgroundColor:getComputedStyle(current).backgroundColor});
+    return {foreground:getComputedStyle(node).color,layers};
+  });
+  assert.ok(renderedContrast(linkContrast.foreground,linkContrast.layers).contrast >= 4.5,'exercise source links must remain readable in dark theme');
   assert.ok(await input.evaluate(node => {
     const control = node.getBoundingClientRect();
     const panel = node.closest('section')!.getBoundingClientRect();
@@ -114,6 +136,9 @@ export default function Page(){return <main data-lifeos-surface="internal-traini
   if (reviewDirectory) await page.screenshot({path:join(reviewDirectory,'390-dark.png'),fullPage:true});
   await page.getByRole('button',{name:'清除本次数据',exact:true}).click();
   await expect(summary).toHaveCount(0);
+  await expect(library.getByRole('heading',{name:'合成未归类',exact:true})).toHaveCount(0);
+  await expect(library.getByText(/本次文件已读/)).toHaveCount(0);
+  await expect(library.getByText('尚未载入训练文件，以下只展示动作资料。')).toBeVisible();
   await expect(page.getByText(/仅在此页面内分析/)).toBeVisible();
   await input.setInputFiles(file);
   await expect(summary).toBeVisible();

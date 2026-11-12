@@ -2,6 +2,7 @@
 
 import {type ChangeEvent,useId,useMemo,useRef,useState} from 'react';
 import {Button} from '../../ui-review/ui/button';
+import {ExerciseLibrary} from '../exercise-library/library';
 import {
   aggregateTrainingAnalytics,
   parseTrainingAnalyticsSnapshot,
@@ -259,5 +260,6 @@ export function TrainingAnalyticsPanel() {
         </> : <p className={styles.hint}>{day?.status === 'complete' ? '当日没有符合当前范围的已读完成组。' : '当前范围缺少可展示的当日完成组，实际训练仍未知。'}</p>}
       </section>
     </>}
+    <ExerciseLibrary source={source}/>
   </section>;
 }
