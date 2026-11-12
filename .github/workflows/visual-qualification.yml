@@ -4,24 +4,6 @@
 name: LifeOS visual and historical qualification
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'app/**/*.tsx'
-      - 'app/**/*.css'
-      - 'components/**'
-      - 'src/**/*.tsx'
-      - 'src/**/*.css'
-      - 'test/**/*browser*'
-      - 'test/helpers/personal-*.ts'
-      - 'test/helpers/task-grid-performance-fixture.ts'
-      - 'test/helpers/auth-theme-fixture-lifecycle.ts'
-      - 'scripts/synthetic-rendered-qualification.ts'
-      - 'scripts/client-bundle-evidence.mjs'
-      - 'scripts/attach-vtable-benchmark.py'
-      - 'scripts/ci/prepare-runner-cjk-fonts.sh'
-      - 'test/ci-cjk-fonts.test.ts'
-      - '.github/workflows/visual-qualification.yml'
   push:
     branches: [main]
     paths:
