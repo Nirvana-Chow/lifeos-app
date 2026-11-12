@@ -7,7 +7,7 @@ import {intersectDefinitions,localDefinitions} from './contracts.ts';
 const discoverSchema=z.union([z.strictObject({}),z.strictObject({view:z.literal('index')}),z.strictObject({operationId:z.string().min(1).max(100)})]);
 const callSchema=z.strictObject({operationId:z.string().min(1).max(100),arguments:z.record(z.string(),z.unknown())});
 function result(value:DurableMcpResult){
- return{content:[{type:'text' as const,text:value.outcome==='unknown'?'Outcome unknown. Preserve the complete original arguments and idempotency key. Recover only with the identical lifeos_call; a different key is a new command, not recovery.':value.ok?'The confirmed API receipt, server readback and separate local readback are in structuredContent.':value.error??'API_ERROR'}],structuredContent:value,isError:!value.ok};
+ return{content:[{type:'text' as const,text:value.outcome==='unknown'?'Outcome unknown. Preserve the complete original arguments and idempotency key. Recover only with the identical lifeos_call; a different key is a new command, not recovery.':value.ok?'The API result is available in structuredContent.':value.error??'API_ERROR'}],structuredContent:value,isError:!value.ok};
 }
 /** Official SDK adapter only. A separately reviewed host must inject the durable client. */
 export function createDurableServer({client}:{client:DurableMcpClient}):Server{
