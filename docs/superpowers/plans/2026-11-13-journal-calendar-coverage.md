@@ -51,11 +51,11 @@
 
 **Produces:** The row/reference and calendar/period interfaces above; no new network request.
 
-- [ ] Add failing tests for complete row/source/revision projection, original-reference mismatch, leap/cross-year/quarter boundaries, unknown/empty data, date purity and boundary navigation.
-- [ ] Run `node --test test/journal-period.test.ts test/personal-journal-history.test.ts`; observe the new behavior failing before implementation.
-- [ ] Implement the projection and pure date functions; reuse existing date validation/arithmetic.
-- [ ] Run the same focused command; expected: all enabled tests pass, no skips.
-- [ ] Commit with LO-JOURNAL-001 / LO-REPORT-001.
+- [x] Add failing tests for complete row/source/revision projection, original-reference mismatch, leap/cross-year/quarter boundaries, unknown/empty data, date purity and boundary navigation.
+- [x] Run `node --test test/journal-period.test.ts test/personal-journal-history.test.ts`; observe the new behavior failing before implementation.
+- [x] Implement the projection and pure date functions; reuse existing date validation/arithmetic.
+- [x] Run the same focused command; expected: all enabled tests pass, no skips.
+- [x] Commit with LO-JOURNAL-001 / LO-REPORT-001.
 
 ### Task 2: Calendar and period browsing
 
@@ -63,15 +63,25 @@
 
 **Produces:** Browseable calendar/period lists in the canonical route; unchanged editor and authority boundary.
 
-- [ ] Add an opt-in browser regression using the shipped composition and synthetic HTTP routes for day/month/period selection, unknown records, bounded lists, original links/versions, guard refusal, identity/auth changes and hidden/late response clearing.
-- [ ] Request Root's unique browser/Next slot, verify the allocated port is free, then run the new test against the pre-feature composition; expected: missing-calendar assertion fails.
-- [ ] Implement native controls, semantic/token CSS and composition. Re-read immediately clears old details; a changed reference requires fresh history.
-- [ ] Run focused tests, `npm run typecheck`, and the allocated synthetic browser command; expected: zero enabled failures/errors/skips. Reuse the existing original-history browser where applicable. No full build or suite without a new reason/slot.
-- [ ] Update this engineering evidence and commit with LO-JOURNAL-001 / LO-REPORT-001.
+- [x] Add an opt-in browser regression using the shipped composition and synthetic HTTP routes for day/month/period selection, unknown records, bounded lists, original links/versions, guard refusal, identity/auth changes and hidden/late response clearing.
+- [x] Request Root's unique browser/Next slot, verify the allocated port is free, then run the new test against the pre-feature composition; expected: missing-calendar assertion fails.
+- [x] Implement native controls, semantic/token CSS and composition. Re-read immediately clears old details; a changed reference requires fresh history.
+- [x] Run focused tests, `npm run typecheck`, and the allocated synthetic browser command; expected: zero enabled failures/errors/skips. Reuse the existing original-history browser where applicable. No full build or suite without a new reason/slot.
+- [x] Update this engineering evidence and commit with LO-JOURNAL-001 / LO-REPORT-001.
 
 ## Qualification record
 
 - Baseline `node --test test/personal-journal-history.test.ts`: 6 passed, 0 failed/skipped.
 - Worktree starts at remote default main `aa97063eeb7b6e23c35016302694b36cd7ed9b4f`, isolated branch `codex/LO-JOURNAL-001-calendar-coverage`; the dependency symlink targets only the approved storage-review worktree and its package-lock is identical.
 - Official OpenSpec release source was checked; installed 1.16.0 is deliberately retained at the project pin. No installation or tool update occurs.
+- RED was observed before implementation: 5 new focused-test failures and the missing-calendar browser assertion. During qualification, a synthetic fixture's union-field title locator and its background locator under the editor modal were corrected; the product's modal isolation remained unchanged.
+- Final `node --test test/journal-period.test.ts test/personal-journal-history.test.ts`: 11 passed, 0 failed/skipped, exit 0.
+- Final `npm run typecheck` and `git diff --check`: exit 0. No lint script exists; no lint result is claimed.
+- Final `RUN_JOURNAL_CALENDAR_BROWSER=1 RUN_JOURNAL_HISTORY_BROWSER=1 LIFEOS_TEST_CHROMIUM_PATH='<local Chrome executable>' node --test --test-concurrency=1 test/journal-calendar-browser.integration.test.ts test/personal-journal-history-browser.integration.test.ts`: 2 enabled tests passed, 0 failed/skipped, exit 0. Each ran 1365px/light and 390px/dark with an America/Los_Angeles client timezone. Tests used the shipped client composition in isolated synthetic HTTP fixtures, not production accounts, TLS/PG qualification or the live owner/MFA server gate.
+- Browser checks cover Enter activation, month and period selection, complete counts with shown/total pagination, unknown dates, empty data, canonical original links, independent original/current versions, dirty-draft refusal/preservation, superseded revision rejection, scope/401 clearing, hidden late-response rejection and document-width containment. The draft filter test dispatches the background filter's native event because the unchanged editor modal intentionally blocks normal pointer access to it.
+- The allocated 3007 fixture was stopped and its own temporary directory removed by test cleanup; subsequent `lsof` confirmed no listener. No screenshot aesthetic review, full build, full suite, database or production operation ran in this slice.
 - Independent technical review, PR/merge, fixed-main CI/build/private release, actual Native + HTTPS readback and owner acceptance are Root-owned and remain unclaimed here.
+
+## Owner review path after release
+
+Open 日记 on the actual deployed site. The month calendar marks saved dates with their record count; selecting a date shows its records, and 资料周期 changes the selected reference date to a natural day/week/month/quarter/year range. 日期未知的日记 remains visible separately. Each title opens an independently read original/current version; 来源引用 exposes its stable record/source IDs and read revision. Use 重新读取历史 to replace the snapshot after a save or source change. The panel provides source material and coverage; gallery, quotes, AI summaries and full-history acceptance remain outside this delivered slice.

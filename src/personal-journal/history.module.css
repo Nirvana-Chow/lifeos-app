@@ -12,6 +12,7 @@
 .excerpt{overflow-wrap:anywhere}
 .original{border-top:1px solid var(--border);padding-top:12px;margin-top:16px;max-height:60dvh;overflow:auto;scrollbar-width:thin}
 .original h3{font-size:16px;font-weight:600;margin:0}
+.original h3:focus-visible{outline:2px solid var(--ring);outline-offset:3px}
 .body{white-space:pre-wrap;overflow-wrap:anywhere}
 .identifier{font-size:12px;overflow-wrap:anywhere}
 .panel summary{cursor:pointer;min-height:32px;align-content:center}
