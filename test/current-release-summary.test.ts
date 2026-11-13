@@ -9,7 +9,7 @@ import {MemoryPort} from './helpers/platform.ts';
 const sha='d'.repeat(40);
 const files=['Dockerfile.platform-review','next.config.ts','package-lock.json','package.json','proxy.ts'].sort((a,b)=>a.localeCompare(b,'en')).map(path=>({path,sha256:'b'.repeat(64)}));
 const proof={version:1,sourceSha:sha,sourceTreeDigest:createHash('sha256').update(JSON.stringify(files)).digest('hex'),files};
-const changes=['待办支持按项目或领域分组，未分配项目或领域的事项单独展示。','待办支持多行预检、逐项编辑与选择，确认后按顺序保存并独立回读；批次非原子，失败或结果未确认时停止并保留原请求。','可搜索当前授权本人记录的标题与正文，查看覆盖范围，并打开独立读取的原记录只读详情；返回时保留搜索词。','菜谱库提供377道带来源的中外菜谱，支持按食材与分类筛选并查看步骤。','日记新增历史上的今天，可查看库内日期覆盖并打开原始记录。','导航按生活维度分组，设置入口更集中，总览可查看领域、项目与下一步。'];
+const changes=['待办支持按项目或领域分组，未分配项目或领域的事项单独展示。','待办支持多行预检、逐项编辑与选择，确认后按顺序保存并独立回读；批次非原子，失败或结果未确认时停止并保留原请求。','可搜索当前授权本人记录的标题与正文，查看覆盖范围，并打开独立读取的原记录只读详情；返回时保留搜索词。','存储审核支持站内进入与返回、按编号展开层级并单独选择待审叶项；保留已有决定和草稿，审核选择不执行文件删除。','菜谱库提供377道带来源的中外菜谱，支持按食材与分类筛选并查看步骤。','日记新增历史上的今天，可查看库内日期覆盖并打开原始记录。','导航按生活维度分组，设置入口更集中，总览可查看领域、项目与下一步。'];
 
 test('an actual image absent from static history receives its finite owner summary with exact source identity',()=>{
  const artifact=validateReleaseArtifact(proof,'synthetic-current-build',sha);assert.ok(artifact);
