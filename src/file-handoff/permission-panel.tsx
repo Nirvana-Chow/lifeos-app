@@ -14,7 +14,7 @@ export function FilePermissionPanel({grant,disabled,onLock,onSaved}:{grant:Grant
   try{const raw=sessionStorage.getItem(storageKey);if(raw){const value=filePermissionChangeSchema.parse(JSON.parse(raw));if(value.id!==grant.id)throw Error();pending.current=value;setOpen(true);setPhase('unknown');setMessage('上次文件授权结果未确认，请先核对当前状态。');onLock(true);}}catch{setMessage('本地恢复信息不可用，请核对当前文件授权。');}
   return()=>onLock(false);
  },[grant.id,storageKey,onLock]);
- function close(){if(locked)return;setOpen(false);onLock(false);trigger.current?.focus();}
+ function close(){if(locked)return;setOpen(false);onLock(false);}
  async function inspect(){
   if(!pending.current)return;setPhase('busy');
   try{const current=await readManagedFileGrant(grant.id),state=permissionReadback(pending.current,current);
@@ -35,7 +35,7 @@ export function FilePermissionPanel({grant,disabled,onLock,onSaved}:{grant:Grant
   }catch{setPhase('unknown');setMessage('文件授权结果未确认。请核对当前状态，不要重新创建或替换密钥。');}
  }
  return <><Button ref={trigger} type="button" variant="outline" disabled={disabled} onClick={()=>{original.current=grant;setRead(grant.fileHandoff?.scopes.includes('file-handoff:read')??false);setWrite(grant.fileHandoff?.scopes.includes('file-handoff:write')??false);setCodex(grant.fileHandoff?.consumer==='codex');setPhase('editing');setMessage('');setOpen(true);onLock(true);}}>文件权限</Button>
-  <Dialog open={open} onOpenChange={value=>{if(!value)close();}}><DialogContent className={styles.keyDialog} aria-busy={phase==='busy'} showCloseButton={!locked} onEscapeKeyDown={event=>{if(locked)event.preventDefault();}} onPointerDownOutside={event=>{if(locked)event.preventDefault();}}>
+  <Dialog open={open} onOpenChange={value=>{if(!value)close();}}><DialogContent className={styles.keyDialog} aria-busy={phase==='busy'} showCloseButton={!locked} onCloseAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>trigger.current?.focus());}} onEscapeKeyDown={event=>{if(locked)event.preventDefault();}} onPointerDownOutside={event=>{if(locked)event.preventDefault();}}>
    <DialogTitle>文件交接 · {grant.name}</DialogTitle><DialogDescription>文件权限单独授权，沿用这把密钥的本人空间与到期时间。旧全业务权限不会自动包含文件。</DialogDescription>
    <fieldset className={styles.scopeFields} disabled={phase!=='editing'}><legend>允许这把密钥</legend>
     <label><input type="checkbox" checked={read} onChange={event=>{setRead(event.target.checked);if(!event.target.checked){setWrite(false);setCodex(false);}}}/>读取元数据与下载已交接文件</label>
