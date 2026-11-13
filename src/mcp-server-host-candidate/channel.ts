@@ -1,6 +1,7 @@
 import {DiscoverResultSchema,CallToolResultSchema} from '@modelcontextprotocol/core';
 import type {z} from 'zod';
 import {isObject,validateHostCall} from './contracts.ts';
+import {FixedBrokerHttpError,httpStatus,retryAfterSeconds} from './broker-result.ts';
 
 type CallToolResult=z.infer<typeof CallToolResultSchema>;
 export type BrokerPort={
@@ -13,10 +14,10 @@ const protocol='2026-07-28',requestLimit=131072,responseLimit=8*1024*1024;
 const meta={'io.modelcontextprotocol/protocolVersion':protocol,'io.modelcontextprotocol/clientInfo':{name:'lifeos-server-durable-host',version:'1'},'io.modelcontextprotocol/clientCapabilities':{}};
 const fingerprintPattern=/^[a-f0-9]{64}$/;
 class ChannelError extends Error{
- readonly status:number;readonly outcome='unknown';readonly automaticRetry=false;
- constructor(code:string,status=0){super(code);this.status=status;}
+ readonly status:number;readonly retryAfterSeconds?:number;readonly outcome='unknown';readonly automaticRetry=false;
+ constructor(code:string,status=0,hint?:unknown){super(code);this.status=status;const seconds=retryAfterSeconds(hint);if(seconds!==undefined)this.retryAfterSeconds=seconds;}
 }
-const reject=(code:string,status=0):never=>{throw new ChannelError(code,status);};
+const reject=(code:string,status=0,hint?:unknown):never=>{throw new ChannelError(code,status,hint);};
 function discoverInput(input:unknown):DiscoveryInput{
  if(!isObject(input))return reject('INVALID_ARGUMENTS',400);
  const keys=Object.keys(input);
@@ -64,9 +65,10 @@ export function createMcpChannel(port:BrokerPort){
    if(current!==expectedFingerprint)reject('CREDENTIAL_BINDING_CHANGED',403);
    const out=await bounded(combined,()=>port.request({path:'/api/platform/mcp',method:'POST',encoded,expectedCredentialFingerprint:expectedFingerprint},combined));
    combined.throwIfAborted();
-   if(!isObject(out)||Object.keys(out).sort().join(',')!=='credentialFingerprint,data,status')return reject('BROKER_RESPONSE_BINDING_REJECTED');
+   if(!isObject(out)||Object.keys(out).filter(key=>key!=='retryAfterSeconds').sort().join(',')!=='credentialFingerprint,data,status')return reject('BROKER_RESPONSE_BINDING_REJECTED');
    if(out.credentialFingerprint!==expectedFingerprint)reject('CREDENTIAL_BINDING_CHANGED',403);
-   if(out.status!==200)reject(out.status===401?'AUTH_REQUIRED':out.status===403?'ACCESS_DENIED':'REMOTE_TRANSPORT_UNCONFIRMED',typeof out.status==='number'?out.status:0);
+   if(httpStatus(out.status)===undefined)reject('BROKER_RESPONSE_BINDING_REJECTED');
+   if(out.status!==200)reject(out.status===401?'AUTH_REQUIRED':out.status===403?'ACCESS_DENIED':'REMOTE_TRANSPORT_UNCONFIRMED',out.status as number,out.retryAfterSeconds);
    if(Buffer.byteLength(JSON.stringify(out))>responseLimit)reject('REMOTE_RESPONSE_TOO_LARGE');
    const response=out.data;
    if(!isObject(response)||Object.keys(response).sort().join(',')!=='id,jsonrpc,result'||response.jsonrpc!=='2.0'||response.id!==rpc.id||!isObject(response.result)||response.result.resultType!=='complete')return reject('REMOTE_JSONRPC_REJECTED');
@@ -74,7 +76,7 @@ export function createMcpChannel(port:BrokerPort){
    if(!parsed.success)reject('REMOTE_MCP_RESULT_INVALID');
    // Return original validated data: durable callers retain the exact business result.
    return response.result as CallToolResult;
-  }catch(error){if(error instanceof ChannelError)throw error;return reject('REMOTE_TRANSPORT_UNCONFIRMED');}
+  }catch(error){if(error instanceof ChannelError)throw error;if(error instanceof FixedBrokerHttpError)return reject(error.message,error.status,error.retryAfterSeconds);return reject('REMOTE_TRANSPORT_UNCONFIRMED');}
  }
  return{
   get credentialFingerprint(){return binding;},

@@ -1,10 +1,14 @@
 import {randomUUID} from 'node:crypto';
 import type {DurableStore} from '../mcp-candidate/native-store.mjs';
-import type {OperationResult,ReadbackResult} from '../mcp-candidate/client.ts';
+import type {OperationResult as ApiOperationResult,ReadbackResult as ApiReadbackResult} from '../mcp-candidate/client.ts';
 import {responseEntry,verifyReceipt,verifyCurrent} from '../mcp-candidate/semantic.mjs';
 import {canonicalJSON,intersectDefinitions,isObject,validateHostCall,localDefinitions as reviewedDefinitions,type OperationDefinition} from './contracts.ts';
 import type {createMcpChannel,DiscoveryInput} from './channel.ts';
+import {retryAfterSeconds} from './broker-result.ts';
 
+// MCP transport hints do not change the REST adapter's published result contract.
+type ReadbackResult=ApiReadbackResult&{retryAfterSeconds?:number};
+type OperationResult=ApiOperationResult&ReadbackResult&{readback?:ReadbackResult};
 export type DurableMcpResult=OperationResult&{serverReadback?:OperationResult['readback'];serverVerification?:OperationResult['verification']};
 type Channel=ReturnType<typeof createMcpChannel>;
 export type McpFrozenRequest={requestId:string;transport:'server-mcp-v1';operationId:string;definitionJSON:string;argsJSON:string;path:'/api/platform/mcp';encoded:string;key:string;businessPath:string;businessEncoded:string;before?:Record<string,unknown>};
@@ -14,8 +18,8 @@ class HostError extends Error{
 }
 function fail(code:string,status=0):never{throw new HostError(code,status);}
 function errorResult(error:unknown):ReadbackResult{
- const value=isObject(error)?error:undefined;
- return{ok:false,status:typeof value?.status==='number'?value.status:0,error:error instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)?error.message:'MCP_HOST_INTERRUPTED'};
+ const value=isObject(error)?error:undefined,seconds=retryAfterSeconds(value?.retryAfterSeconds);
+ return{ok:false,status:typeof value?.status==='number'&&Number.isInteger(value.status)&&value.status>=0&&value.status<=599?value.status:0,error:error instanceof Error&&/^[A-Z][A-Z0-9_]{0,79}$/.test(error.message)?error.message:'MCP_HOST_INTERRUPTED',...(seconds===undefined?{}:{retryAfterSeconds:seconds})};
 }
 /** A client of the reviewed store and fixed protocol channel; no runtime adoption or credential access. */
 export class DurableMcpClient{
@@ -48,7 +52,9 @@ export class DurableMcpClient{
   if(value.ok){
    if((value.status as number)<200||(value.status as number)>299||!isObject(value.data)||value.outcome!==undefined)fail('MCP_BUSINESS_RESULT_INVALID');
   }else if(typeof value.error!=='string'||! /^[A-Z][A-Z0-9_]{0,79}$/.test(value.error)||value.status!==0&&(value.status as number)<400)fail('MCP_BUSINESS_RESULT_INVALID');
-  return structuredClone(value) as OperationResult;
+  const result=structuredClone(value) as OperationResult,seconds=retryAfterSeconds(value.retryAfterSeconds);
+  delete result.retryAfterSeconds;if(!result.ok&&seconds!==undefined)result.retryAfterSeconds=seconds;
+  return result;
  }
  #unwrap(result:Awaited<ReturnType<Channel['call']>>):OperationResult{
   const value=this.#result(result.structuredContent);

@@ -166,6 +166,8 @@ export class LifeOSApiClient{
  async retry(requestId:string):Promise<OperationResult>{return this.#runtime.durable?this.#runtime.durable.exclusive(()=>this.#retry(requestId)):this.#retry(requestId);}
  async #retry(requestId:string):Promise<OperationResult>{
   const request=this.#pending.get(requestId)??this.#runtime.durable?.pending(requestId);if(!request)return{ok:false,status:404,error:'RECOVERY_NOT_FOUND'};
+  // REST's reviewed journal format is legacy untagged only. Never inspect or settle another transport.
+  if(Object.hasOwn(request,'transport'))return{ok:false,status:409,error:'FOREIGN_TRANSPORT_RECOVERY_REQUIRED'};
   try{
    await this.#before();const operation=(await this.#catalog()).operations.find(op=>op.id===request.operationId);
    if(!operation)throw new ApiError(403,'OPERATION_UNAVAILABLE');
