@@ -22,6 +22,7 @@ function load(file:string):any{
 const grid=load(resolve('src/ui-review/reui/data-grid.tsx')),renderer=load(resolve('src/ui-review/reui/data-grid-table.tsx'));
 const features=tanstack.tableFeatures({...grid.dataGridFeatures,columnGroupingFeature:tanstack.columnGroupingFeature,groupedRowModel:tanstack.createGroupedRowModel()});
 const data=[{id:'z',title:'Zulu',project:'one'},{id:'a',title:'Alpha',project:'one'},{id:'m',title:'Mike',project:'two'},{id:'q',title:'Quebec',project:'two'}];
+const explicitTextFilter={defaultColumn:{filterFn:(row:any,columnId:string,value:unknown)=>String(row.getValue(columnId)).toLowerCase().includes(String(value).toLowerCase())}};
 function render(state:Record<string,unknown>={},options:Record<string,unknown>={}){
  let table:any;
  function Fixture(){
@@ -41,7 +42,9 @@ test('group and leaf rows announce their distinct native display positions',()=>
  const value=render({grouping:['project'],expanded:true});assert.equal(value.rows.length,6);assertOrder(value);
 });
 test('sorted and filtered rows use the same order as native keyboard navigation',()=>{
- const value=render({sorting:[{id:'title',desc:false}],columnFilters:[{id:'title',value:'a'}]});assertOrder(value);
+ const value=render({sorting:[{id:'title',desc:false}],columnFilters:[{id:'title',value:'a'}]},explicitTextFilter);
+ assert.deepEqual(value.table.getFilteredRowModel().rows.map((row:any)=>row.id),['a']);
+ assert.deepEqual(value.rows,[{id:'a',aria:'2'}]);assertOrder(value);
 });
 test('pagination announces absolute pre-pagination positions rather than page-relative indexes',()=>{
  const value=render({sorting:[{id:'title',desc:false}],pagination:{pageIndex:1,pageSize:2}});assert.deepEqual(value.rows.map(row=>row.id),['q','z']);assertOrder(value);
@@ -50,7 +53,10 @@ test('top and bottom pinned rows retain native absolute positions without duplic
  const value=render({sorting:[{id:'title',desc:false}],pagination:{pageIndex:0,pageSize:2},rowPinning:{top:['z'],bottom:['a']}},{keepPinnedRows:true});assert.equal(value.rows[0].id,'z');assert.equal(value.rows.at(-1)?.id,'a');assertOrder(value);
 });
 test('a retained pinned row outside the filtered keyboard order receives no invented display index',()=>{
- const value=render({columnFilters:[{id:'title',value:'Alpha'}],rowPinning:{top:['z'],bottom:[]}},{keepPinnedRows:true});assert.ok(value.rows.some(row=>row.id==='z'));assertOrder(value);
+ const value=render({columnFilters:[{id:'title',value:'Alpha'}],rowPinning:{top:['z'],bottom:[]}},{...explicitTextFilter,keepPinnedRows:true});
+ assert.deepEqual(value.table.getFilteredRowModel().rows.map((row:any)=>row.id),['a']);
+ assert.equal(value.table.getRow('z',true).getDisplayIndex(),-1);
+ assert.deepEqual(value.rows,[{id:'z',aria:undefined},{id:'a',aria:'2'}]);assertOrder(value);
 });
 test('default ungrouped row indices remain unchanged',()=>{
  const value=render();assert.deepEqual(value.rows.map(row=>row.aria),['2','3','4','5']);assertOrder(value);
