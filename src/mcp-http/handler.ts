@@ -5,6 +5,7 @@ import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {type CapabilityCatalog} from '../mcp-candidate/client.ts';
 import {argumentSchema} from '../mcp-candidate/schemas.ts';
 import {HttpBusinessClient,type BusinessDispatcher,type HttpOperationResult} from './business-client.ts';
+import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
 
 export const mcpHttpPath='/api/platform/mcp';
 const discoverSchema=z.union([z.strictObject({}),z.strictObject({view:z.literal('index')}),z.strictObject({operationId:z.string().min(1).max(100)})]);
@@ -52,7 +53,7 @@ function serverFor(client:HttpBusinessClient,token:string){
 }
 
 /** A new closure and official SDK server per request; no session or credential cache. */
-export function createMcpHttpHandler(options:{enabled?:boolean;origin:string;dispatch:BusinessDispatcher}){
+export function createMcpHttpHandler(options:{enabled?:boolean;origin:string;dispatch:BusinessDispatcher;oauthResourceMetadata?:string}){
  const configured=new URL(options.origin);
  if(configured.protocol!=='https:'||configured.origin!==options.origin||configured.username||configured.password)throw Error('MCP_HTTP_CONFIG_INVALID');
  return async(request:Request):Promise<Response>=>{
@@ -62,13 +63,14 @@ export function createMcpHttpHandler(options:{enabled?:boolean;origin:string;dis
   try{assertLocalRequest(request,options.origin);if(request.headers.has('origin')&&request.headers.get('origin')!==options.origin)throw Error();}
   catch{return failure(403,'ORIGIN_DENIED');}
   if(request.method!=='POST')return failure(405,'METHOD_NOT_ALLOWED',{Allow:'POST'});
-  const token=/^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization')??'')?.[1];
-  if(!token)return failure(401,'AUTH_REQUIRED',{'WWW-Authenticate':'Bearer realm="LifeOS"'});
+  const token=readBusinessBearer(request.headers.get('authorization'));
+  const challenge='Bearer realm="LifeOS"'+(options.oauthResourceMetadata?', resource_metadata="'+options.oauthResourceMetadata+'"':'');
+  if(!token)return failure(401,'AUTH_REQUIRED',{'WWW-Authenticate':challenge});
   if(request.signal.aborted)return failure(400,'REQUEST_CANCELLED');
   const client=new HttpBusinessClient(options.origin,token,options.dispatch,request.signal);
   try{await client.discover();}catch(error){
    const status=error&&typeof error==='object'&&'status'in error?error.status:0;
-   return status===401?failure(401,'AUTH_REQUIRED',{'WWW-Authenticate':'Bearer realm="LifeOS"'}):status===403?failure(403,'ACCESS_DENIED'):failure(503,'MCP_API_UNAVAILABLE');
+   return status===401?failure(401,'AUTH_REQUIRED',{'WWW-Authenticate':challenge}):status===403?failure(403,'ACCESS_DENIED'):failure(503,'MCP_API_UNAVAILABLE');
   }
   const http=createMcpHandler(()=>serverFor(client,token),{legacy:'stateless',responseMode:'auto',maxRequestBodySize:131072,maxSubscriptions:0,keepAliveMs:0,onerror:()=>{}});
   try{

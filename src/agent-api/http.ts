@@ -1,3 +1,5 @@
+import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
+import type {OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
 import {createRequirementEventHandler,type NotificationWait} from '../requirement-events/http.ts';
 import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import type {RequirementEventService} from '../requirement-events/service.ts';
@@ -22,7 +24,7 @@ import type {AgentModules} from './config.ts';
 import type {OrganizationType} from '../personal-candidate/business.ts';
 import {organizationDetail,organizationSnapshot,completeOrganizationFields} from './organization.ts';
 
-type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
+type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence}>;
 type Options = {
   enabled?: boolean;
   modules?: AgentModules;
@@ -31,14 +33,14 @@ type Options = {
   config: PersonalConfig;
   repository: PlatformRepository;
   verify: (key: string) => Promise<Grant | null>;
-  readCurrentGrant?: (grantId: string) => Promise<Grant | null>;
+  readCurrentGrant?: (grantId: string,oauthFence?:OAuthGrantFence) => Promise<Grant | null>;
   operationAvailable?: (operationId: string) => boolean | Promise<boolean>;
   assertWritable: (grant: Grant) => Promise<void>;
   classification?: (authority:AuthorityService)=>ClassificationService;
   requirementEvents?:{service:RequirementEventService;ready:()=>Promise<boolean>;openNotifications:()=>Promise<NotificationWait>};
 };
 
-function respond(status: number, body: unknown, retryAfterSeconds?:number) {
+function respondBase(status: number, body: unknown, retryAfterSeconds?:number) {
   return Response.json(body, {status, headers: {
     'Cache-Control': 'private, no-store',
     Vary: 'Authorization',
@@ -81,6 +83,11 @@ export function createAgentHandler(options: Options) {
     try {return await options.operationAvailable?.(id) === true;} catch {return false;}
   };
   return async (request: Request): Promise<Response> => {
+    let currentOAuth:(()=>Promise<void>)|undefined;
+    const respond=async(status:number,body:unknown,retryAfterSeconds?:number):Promise<Response>=>{
+      if(status>=200&&status<300&&request.method==='GET'&&currentOAuth)try{await currentOAuth();}catch{return respondBase(403,{error:'ACCESS_DENIED'});}
+      return respondBase(status,body,retryAfterSeconds);
+    };
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
@@ -100,7 +107,7 @@ export function createAgentHandler(options: Options) {
     if (options.enabled !== true || !operation || operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy)||(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents')&&!modules.requirementEvents|| isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
-      const token = /^Bearer ([A-Za-z0-9_-]{1,256})$/.exec(request.headers.get('authorization') ?? '')?.[1];
+      const token = readBusinessBearer(request.headers.get('authorization'));
       if (!token) return respond(401, {error: 'AUTH_REQUIRED'});
       const grant = await options.verify(token);
       if (!grant) return respond(401, {error: 'AUTH_REQUIRED'});
@@ -110,14 +117,15 @@ export function createAgentHandler(options: Options) {
       const actor = await authority.resolveAgentActor(token);
       if (!actor) return respond(403, {error:'ACCESS_DENIED'});
       try {await authority.assertCurrentAuthority(actor, operation.id);} catch {return respond(403, {error:'ACCESS_DENIED'});}
+      if(actor.oauthFence)currentOAuth=async()=>{await authority.assertCurrentAuthority(actor,operation.id);};
       if (operation.id === 'discoverV2') {
-        const permitted = agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.module==='catalog' || actor.allowedOperationIds?.includes(entry.id)));
+        const permitted = agentOperations.filter(entry => entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy&&!actor.oauthFence || entry.module==='catalog' || actor.allowedOperationIds?.includes(entry.id)));
         const readiness = await Promise.all(permitted.map(entry => available(entry.id)));
-        return respond(200, {apiVersion:'2', ...(actor.businessDataPolicy?{authorization:{businessDataPolicy:actor.businessDataPolicy,scopes:actor.scopes}}:{}), operations:permitted.filter((_, index) => readiness[index]),eventTransports:(await Promise.all(agentEventTransports.map(async transport=>transport.requiredScopes.every(scope=>actor.scopes.includes(scope))&&(!actor.businessDataPolicy||actor.allowedOperationIds?.includes(transport.id))&&await available(transport.id)?transport:null))).filter(transport=>transport!==null)});
+        return respond(200, {apiVersion:'2', ...(actor.businessDataPolicy?{authorization:{businessDataPolicy:actor.businessDataPolicy,scopes:actor.scopes}}:{}), operations:permitted.filter((_, index) => readiness[index]),eventTransports:(await Promise.all(agentEventTransports.map(async transport=>transport.requiredScopes.every(scope=>actor.scopes.includes(scope))&&(!actor.businessDataPolicy&&!actor.oauthFence||actor.allowedOperationIds?.includes(transport.id))&&await available(transport.id)?transport:null))).filter(transport=>transport!==null)});
       }
       if (operation.id === 'discover') {
         return respond(200, {apiVersion: agentApiVersion,
-          operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
+          operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy&&!actor.oauthFence || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
       if(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents'){

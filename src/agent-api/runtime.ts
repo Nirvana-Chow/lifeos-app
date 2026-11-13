@@ -1,3 +1,5 @@
+import {resolveBusinessOAuthToken,readCurrentBusinessOAuthGrant} from '../business-mcp-oauth/runtime.ts';
+import type {OriginalGrant} from '../business-mcp-oauth/ledger.ts';
 import {PostgresRequirementEventStore} from '../requirement-events/postgres.ts';
 import {RequirementEventService} from '../requirement-events/service.ts';
 import {verifyRequirementEventReadiness} from '../requirement-events/readiness.ts';
@@ -229,6 +231,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       repository,
       ...(modules.classification?{classification:(authority:import('../agent-authority/service.ts').AuthorityService)=>new ClassificationService(repository,personal,{authority,assertReady:classificationReady,assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''),policyRevision:()=>classificationPolicyRevision(personal)})}:{}),
       verify: async token => {
+        if(token.includes('.'))return resolveBusinessOAuthToken(token,id=>readCurrentAgentGrant(verifier,id,policyOptions));
         const result = await auth.api.verifyApiKey({body: {key: token}});
         if (result.error?.code === 'RATE_LIMITED') throw new AgentRateLimitError(result.error);
         const key = result.key;
@@ -236,7 +239,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
         return readCurrentAgentGrant(verifier,key.id,policyOptions);
       },
-      readCurrentGrant: id => readCurrentAgentGrant(verifier, id,policyOptions),
+      readCurrentGrant: (id,oauthFence) => oauthFence?readCurrentBusinessOAuthGrant(id,oauthFence,key=>readCurrentAgentGrant(verifier,key,policyOptions)):readCurrentAgentGrant(verifier, id,policyOptions),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
         if(isRequirementEventOperation(id)||id==='streamRequirementEvents')try{await eventReady();}catch{return false;}
@@ -284,4 +287,12 @@ export async function getAgentGrantReader():Promise<AgentRuntime['readCurrentGra
  if(!platform||!personal||!config||!readAgentBusinessModules(process.env,personal).classification)return null;
  pending??=initialize(platform,personal,config).catch(error=>{pending=undefined;throw error;});
  return (await pending).readCurrentGrant;
+}
+
+/** Original, non-secret grant reader. OAuth never goes through the quota-counting API key verifier. */
+export async function getAgentBusinessGrantReader():Promise<((id:string)=>Promise<OriginalGrant|null>)|null>{
+ if(process.env.LIFEOS_AGENT_API_ENABLED!=='1')return null;
+ const platform=readPlatformConfig(process.env),personal=platform?readPersonalConfig(process.env,platform):null,config=platform?readAgentRuntimeConfig(process.env,platform,personal):null;
+ if(!platform||!personal||!config)return null;
+ pending??=initialize(platform,personal,config).catch(error=>{pending=undefined;throw error;});return(await pending).readCurrentGrant;
 }

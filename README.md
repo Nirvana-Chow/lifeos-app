@@ -53,6 +53,8 @@ python3 scripts/project-xunji-training-analytics.py --input-dir /path/to/xunji-f
 
 先读[项目开发规则](AGENTS.md)与[开发协作约定](docs/development/working-agreement.md)。需求通过已授权的业务 API 入原需求池，Issue/PR/OpenSpec 只保留工程映射；外部贡献先通过 Issue 明确问题、行为与验收。后续变更使用 feature 分支与 PR，commit 带需求 ID，不直推 main。独立领域由 Root 直接派子代理到各自 worktree，不继续派生；相关多需求可同轨成批。合并前做适用快速本地检查和独立技术复核，普通 PR 合并组合 main 后，只对固定 main SHA 跑一次全量原 CI/构建/私有自动发布/原 Native + HTTPS 独立读回，不重复 PR/main 长全量流水线；不绕分支保护，失败不发布、保留旧运行版并立即修复。复用现有组件和原生能力，保留单一 `package-lock.json`；变更应包含适用验证及清晰的未完成项。
 
+准备交付功能代码前，在实际开发执行环境（Mac、合格隔离服务器或云工作区）完成适用测试、类型检查及上面的完整生产构建和同产物检查，再进入正常 PR/CI/CD。资源不足转合格隔离环境，不能跳过；重构建排队，相同源码/依赖/环境证据可复用，变化后重新验证。纯文档按影响检查。详见[合并前本地审查](docs/development/working-agreement.md#合并前本地审查)；最终固定 main 的 CI 与发布读回仍须通过。
+
 仓库使用 OpenSpec；生成工作流位于 `.agents/skills/`，CLI 固定 `@fission-ai/openspec@1.16.0`。新需求先形成设计与任务，已有批准范围持续实施；工具状态不能代替功能、权限或真实验收。
 
 请只提交合成数据，清除截图、日志和配置中的私人内容。凭据、个人数据库、导出、备份和实际生活记录都不属于源码贡献范围。
