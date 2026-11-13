@@ -3,6 +3,7 @@ import {makeSupportCommand} from '../src/requirement-support-candidate/client.ts
 import {ownerModules,readReleaseNotice,verifiedModuleScope} from '../src/ui-review/owner-modules.ts';
 import * as selectors from '../src/ui-review/selectors.ts';
 import * as privateNavigation from '../src/workbench/private-navigation.ts';
+import * as workspaceHierarchy from '../src/ui-review/workspace-hierarchy.ts';
 const jsx={jsx:(type:unknown,props:Record<string,unknown>)=>({type,props}),jsxs:(type:unknown,props:Record<string,unknown>)=>({type,props}),Fragment:'fragment'};
 function nodes(tree:any,match:(node:any)=>boolean):any[]{if(!tree||typeof tree!=='object')return[];if(Array.isArray(tree))return tree.flatMap(n=>nodes(n,match));return[...(match(tree)?[tree]:[]),...nodes(tree.props?.children,match)];}
 function render(phase:'uncertain'|'rejected',withNotice=false,foreign=false){
@@ -33,7 +34,7 @@ test('workspace settings navigation hides support routes until owner scope and b
   const imports:Record<string,unknown>={
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
-   './selectors':selectors,'../workbench/private-navigation':privateNavigation,
+   './selectors':selectors,'./workspace-hierarchy':workspaceHierarchy,'../workbench/private-navigation':privateNavigation,
    './owner-module-navigation':{useOwnerModules:(enabled:boolean,currentScope:string|null)=>({links:enabled?ownerModules(value,currentScope):[],scope:verifiedModuleScope(value),path:'/personal/requirements/updates'}),OwnerModuleLinks:'owner-links'},
   };
   // Inspect the real workspace tree and capability mapper. JSX-only children
