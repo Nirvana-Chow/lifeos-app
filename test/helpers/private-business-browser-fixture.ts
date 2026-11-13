@@ -313,7 +313,9 @@ export async function verifyPrivateAppearanceAndDrafts(f:PrivateFixture){
  catch(error){try{console.error('PRIVATE_APPEARANCE_FAILURE '+JSON.stringify(projectPrivateAppearanceFailure(phase,error)));}catch{}throw error;}
 }
 
-export async function verifyPrivateStorageReview({page,browser,context}:PrivateFixture){
+export async function verifyPrivateStorageReview({page,browser,context}:Pick<PrivateFixture,'page'|'browser'|'context'>,origin:string=privateOrigin){
+ const base=new URL(origin);
+ assert.ok(origin===privateOrigin||base.protocol==='http:'&&base.hostname==='127.0.0.1'&&Number(base.port)>=1024&&base.origin===origin,'isolated storage fixture origin');
  const path='/personal/storage-review',api='/api/platform/personal/storage-review';
  const choices=[{id:'FIXTURE-KEEP',decision:'keep'},{id:'FIXTURE-TRASH',decision:'trash'},{id:'FIXTURE-DEFER',decision:'defer'}];
  const protectedId='FIXTURE-PROTECTED';
@@ -327,7 +329,7 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   const method=request.method();
   if(method==='GET'||method==='HEAD')return;
   const url=new URL(request.url());
-  mutations.push(url.origin===privateOrigin&&url.pathname===api?method:'unexpected');
+  mutations.push(url.origin===origin&&url.pathname===api?method:'unexpected');
  };
  const verifyChoices=async(target:Page)=>{
   for(const {id,decision} of choices)await expect(target.locator(`[data-id="${id}"] input[value="${decision}"]`)).toBeChecked();
@@ -336,7 +338,7 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
  };
  page.on('request',recordMutation);
  try{
-  assert.equal((await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
+  assert.equal((await page.goto(origin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
   await expect(page.getByRole('heading',{level:1,name:'存储审核',exact:true})).toBeVisible();
   await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');
   phase='import';
@@ -364,23 +366,29 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   phase='independent-readback';
   independent.setDefaultTimeout(5000);
   independent.setDefaultNavigationTimeout(10000);
-  await independent.addCookies(await context.cookies(privateOrigin));
+  await independent.addCookies(await context.cookies(origin));
   const reader=await independent.newPage();
-  await reader.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});
+  await reader.goto(origin+path,{waitUntil:'domcontentloaded'});
   await expect(reader.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
   await verifyChoices(reader);
   assert.deepEqual(await privateRead(reader,api),{review:{revision:4,checklist,decisions:choices}});
   phase='session-loss';
   await independent.clearCookies();
+  const deniedRequests:{method:string;path:string}[]=[];
+  independent.on('request',request=>{
+   const url=new URL(request.url());
+   if((request.method()!=='GET'&&request.method()!=='HEAD')||url.origin!==origin||url.pathname.startsWith('/api/platform/'))deniedRequests.push({method:request.method(),path:url.origin===origin?url.pathname:'unexpected-origin'});
+  });
   const [denied]=await Promise.all([
-   reader.waitForResponse(response=>response.url()===privateOrigin+api&&response.request().method()==='GET'),
+   reader.waitForResponse(response=>response.url()===origin+'/api/platform/personal/status'&&response.request().method()==='GET'),
    reader.getByRole('button',{name:'打开 LifeOS 清单',exact:true}).click(),
   ]);
   assert.equal(denied.status(),401);
   await expect(reader.getByRole('link',{name:'重新登录',exact:true})).toBeVisible();
   await expect(reader.locator('#list [data-id]')).toHaveCount(0);
   await reader.reload({waitUntil:'domcontentloaded'});
-  await reader.waitForURL(privateOrigin+'/login');
+  await reader.waitForURL(origin+'/login');
+  assert.deepEqual(deniedRequests,[{method:'GET',path:'/api/platform/personal/status'}],'session denial must stop before storage reads or any writes');
  }catch(error){console.log('PRIVATE_STORAGE_REVIEW_FAILURE '+phase);throw error;}
  finally{await independent.close();}
 }
