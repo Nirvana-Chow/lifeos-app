@@ -228,7 +228,8 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
 export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  await expect(navigation.getByRole('button')).toHaveText(['总览','事项']);
- await expect(navigation.getByRole('link')).toHaveText(['日记','做饭']);
+ await expect(navigation.getByRole('link')).toHaveText(['搜索本人记录','日记','做饭']);
+ await expect(navigation.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
  await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
  await expect(navigation.locator('summary')).toHaveCount(0);
