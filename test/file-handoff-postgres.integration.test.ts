@@ -42,7 +42,7 @@ test('OPT-IN fresh restricted PostgreSQL file bytes, receipts, fences, CAS and u
   const identity=(await admin.query("SELECT current_setting('server_version_num') AS version,current_setting('data_directory') AS data,current_database() AS database,current_user AS role,inet_server_port() AS port,host(inet_server_addr()) AS address")).rows[0];
   assert.match(identity.address,/^(?:10\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|192\.168\.)/);
   assert.deepEqual({...identity,address:'docker-private'},{version:'170011',data:'/var/lib/postgresql/data',database:url.pathname.slice(1),role:'postgres',port:5432,address:'docker-private'});
-  const sourceDigest=createHash('sha256').update(JSON.stringify(await Promise.all(sqlFiles.map(async name=>({name,text:await readFile('db/'+name,'utf8')}))))).digest('hex');
+  const sourceDigest=createHash('sha256').update(JSON.stringify(await Promise.all(sqlFiles.map(async name=>({name,text:await readFile(name,'utf8')}))))).digest('hex');
   assert.deepEqual((await admin.query('SELECT fixture_id,source_digest,source_sha,lock_digest,container_id,image_id FROM file_handoff_fixture.identity')).rows,[{fixture_id:env.LIFEOS_FILE_HANDOFF_FIXTURE_ID,source_digest:sourceDigest,source_sha:sourceSha,lock_digest:createHash('sha256').update(await readFile('package-lock.json')).digest('hex'),container_id:env.LIFEOS_FILE_HANDOFF_CONTAINER_ID,image_id:env.LIFEOS_FILE_HANDOFF_IMAGE_ID}]);
   const tables=['file_handoff','file_handoff_command'];
   for(const name of tables){
