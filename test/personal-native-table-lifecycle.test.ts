@@ -72,7 +72,7 @@ function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='gri
     '../personal-candidate/task-editor-state': stateModule,
     '../personal-candidate/task-grid-editor': gridEditorModule,
   });
-  const hostModule = load(new URL('../src/personal-candidate/connected-workspace.tsx', import.meta.url), { 'react/jsx-runtime': jsx, react: hostHooks.react, 'react-dom': { flushSync: (fn: () => void) => fn() }, './workspace-controller': { PersonalWorkspaceController }, './task-editor': { TaskEditor: () => null }, './task-editor.module.css': { default: {} }, './editor': editorModule, './task-editor-state': stateModule, './task-cell-draft': draftModule });
+  const hostModule = load(new URL('../src/personal-candidate/connected-workspace.tsx', import.meta.url), { 'react/jsx-runtime': jsx, react: hostHooks.react, 'react-dom': { flushSync: (fn: () => void) => fn() }, './workspace-controller': { PersonalWorkspaceController }, './task-batch-editor': {TaskBatchEditor:()=>null}, './task-editor': { TaskEditor: () => null }, './task-editor.module.css': { default: {} }, './editor': editorModule, './task-editor-state': stateModule, './task-cell-draft': draftModule });
   let visited = new Set<string>();
   function visit(node: any, path = 'root') {
     if (!node || typeof node !== 'object') return;
