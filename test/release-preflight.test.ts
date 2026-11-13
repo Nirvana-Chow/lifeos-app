@@ -130,7 +130,7 @@ test('exported candidate identities and hash maps require actual strings without
 });
 test('real CLI ignores replacement ancestry without changing the caller replacement refs',()=>{
  const dir=mkdtempSync(join(tmpdir(),'lifeos-preflight-ancestry-'));try{
-  const env={PATH:process.env.PATH,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
+  const env={PATH:process.env.PATH,NODE_ENV:'test' as const,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'};
   const git=(...a:string[])=>execFileSync('git',['-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid',...a],{cwd:dir,env,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   git('init','-qb','main');for(const p of [...WORKFLOW_PATHS,...OVERLAY_PATHS]){mkdirSync(join(dir,p,'..'),{recursive:true});writeFileSync(join(dir,p),'synthetic '+p);}
   git('add','.');git('commit','-qm','origin');const origin=git('rev-parse','HEAD');
