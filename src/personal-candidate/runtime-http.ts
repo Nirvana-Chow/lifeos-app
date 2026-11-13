@@ -1,4 +1,6 @@
 import {PersonalFinanceService} from '../personal-finance/service.ts';
+import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
+import {handleFileHandoffRequest} from '../file-handoff/http.ts';
 import {handlePersonalFinance} from '../personal-finance/http.ts';
 import {PersonalCalendarService} from '../calendar-candidate/personal-service.ts';
 import {handlePersonalCalendar} from '../calendar-candidate/personal-http.ts';
@@ -35,7 +37,7 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -55,10 +57,19 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     return respond({configured:true,writable,loginAllowed:options.config.readonlyLoginApproved===true||writable,https:new URL(options.config.baseURL).protocol==='https:',transport:options.config.transport??'https',origin:options.config.baseURL,userAccepted:false});
    }
    await assertOwner();
+   if(url.pathname==='/api/platform/personal/file-handoffs'||url.pathname.startsWith('/api/platform/personal/file-handoffs/')){
+    if(!options.fileHandoff)return respond({error:{code:'NOT_FOUND',message:'文件交接尚未开放。'}},404);
+    if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','文件网页入口仅限本人会话。');
+    const actor=await options.fileHandoff.authority.resolveOwnerActor(request.headers);if(!actor)throw new PlatformError(403,'OWNER_ONLY','需要当前本人 MFA 会话。');
+    return(await handleFileHandoffRequest(request,{mount:'/api/platform/personal/file-handoffs',session:options.fileHandoff.runtime.forOwner(actor),current:async(write)=>{
+     await assertOwner();await options.fileHandoff!.authority.assertCurrentAuthority(actor,write?'acknowledgeFileHandoff':url.pathname.endsWith('/content')?'downloadFileHandoff':'getFileHandoff');
+     if(write){if(request.headers.get('origin')!==options.config.baseURL)throw new PlatformError(403,'ORIGIN_DENIED','文件确认需要相同来源。');await options.assertWritable();}
+    }}))!;
+   }
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status'){
     if(request.method!=='GET'||url.search)return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此状态仅可读取。'}},405);
     let writable=false;try{await options.assertWritable();writable=true;}catch{/* Only this capability is unavailable; never leak the permit path or contents. */}
-    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,mediaEnabled:options.storageVerified&&options.config.mediaEnabled===true,careerEnabled:options.storageVerified&&options.config.careerEnabled===true,portfolioEnabled:options.storageVerified&&options.config.portfolioEnabled===true,cookingEnabled:options.storageVerified&&options.config.cookingEnabled===true,healthEnabled:options.config.healthEnabled===true,peopleEnabled:options.config.peopleEnabled===true,financeEnabled:options.config.financeEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,storageReviewEnabled:options.storageVerified,writable,aiEnabled:false,userAccepted:false});
+    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,mediaEnabled:options.storageVerified&&options.config.mediaEnabled===true,careerEnabled:options.storageVerified&&options.config.careerEnabled===true,portfolioEnabled:options.storageVerified&&options.config.portfolioEnabled===true,cookingEnabled:options.storageVerified&&options.config.cookingEnabled===true,healthEnabled:options.config.healthEnabled===true,peopleEnabled:options.config.peopleEnabled===true,financeEnabled:options.config.financeEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,storageReviewEnabled:options.storageVerified,fileHandoffEnabled:!!options.fileHandoff,writable,aiEnabled:false,userAccepted:false});
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');

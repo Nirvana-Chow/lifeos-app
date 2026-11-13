@@ -12,13 +12,17 @@ export class FileHandoffService{
   const claim=await this.options.repository.reserve(actor,input,key);
   // A confirmed command is historical evidence; recover it without reusing an expired URL.
   if(claim.duplicate)return{entry:publicFile(claim.entry),duplicate:true};
+  if(claim.recoveryToken){
+   try{const blob=await this.options.blobs.inspect(claim.entry.id,claim.recoveryToken);return await this.options.repository.reconcile(actor,claim.entry.id,claim.recoveryToken,blob);}
+   catch(error){if(error instanceof FileHandoffError&&['FILE_ACCESS_DENIED','FILE_TARGET_UNAVAILABLE','FILE_TRANSFER_LEASE_LOST'].includes(error.code))throw error;throw new FileHandoffError(503,'FILE_HANDOFF_OUTCOME_UNKNOWN',claim.entry.id);}
+  }
   if(!claim.token)fail(409,'FILE_TRANSFER_BUSY');
   let persisted=false,source:Awaited<ReturnType<PinnedFileSource['download']>>|undefined;
   try{
    source=await this.options.source.download(input.file.download_url,signal);
    const blob=await this.options.blobs.put(claim.entry.id,claim.token,source.body,signal);persisted=true;
    return await this.options.repository.publish(actor,claim.entry.id,claim.token,blob);
-  }catch(error){if(error instanceof FileHandoffError&&error.code==='FILE_STORAGE_OUTCOME_UNKNOWN')persisted=true;throw error;}
+  }catch(error){if(error instanceof FileHandoffError&&error.code==='FILE_STORAGE_OUTCOME_UNKNOWN')persisted=true;if(error instanceof FileHandoffError)throw new FileHandoffError(error.status,error.code,claim.entry.id);throw error;}
   finally{
    source?.close();
    // Once bytes exist, retain the original and claim for durable receipt reconciliation.

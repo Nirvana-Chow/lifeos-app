@@ -13,20 +13,21 @@ import {PinnedFileSource} from '../src/file-handoff/source.ts';
 import {FileHandoffError,type FileHandoffActor,type StageFileInput} from '../src/file-handoff/contracts.ts';
 import {PostgresPlatformRepository,verifyRestrictedPool,type SqlClient,type SqlPool} from '../src/platform/postgres.ts';
 import {RequirementsService} from '../src/requirements-candidate/service.ts';
-import type {Transaction,StoredEntry} from '../src/platform/contracts.ts';
+import {readPlatformEntryOnClient} from '../src/platform/postgres.ts';
+import {qualifyFileFixture,fileFixtureSqlFiles} from './helpers/file-handoff-stage-pg.ts';
 import {requirements} from '../src/platform/requirements.ts';
 
 const ownerId='file-handoff-fixture-owner',spaceId='file-handoff-fixture-space';
 const actor:FileHandoffActor={ownerId,spaceId,authorityRef:'synthetic-file-authority'};
-const sqlFiles=['0001_platform_candidate.sql','0002_platform_inbox.sql','0022_file_handoff.proposed.sql'];
+const sqlFiles=fileFixtureSqlFiles;
 
 // Separately prepared fresh target only. This runner never creates schemas, roles or grants.
 test('OPT-IN fresh restricted PostgreSQL file bytes, receipts, fences, CAS and unknown outcomes',{
  skip:process.env.RUN_FILE_HANDOFF_POSTGRES_TESTS!=='1'&&'No separately approved fresh file-handoff PostgreSQL fixture',timeout:90000,
 },async t=>{
- const env=process.env;
- assert.equal(env.LIFEOS_FILE_HANDOFF_TEST_APPROVAL,'approved-isolated-file-handoff-v1');assert.ok(process.execArgv.includes('--test-isolation=none'));assert.notEqual(env.CI,'true');assert.notEqual(env.GITHUB_ACTIONS,'true');
- assert.match(env.LIFEOS_FILE_HANDOFF_FIXTURE_ID??'',/^file-handoff-v1-[a-z0-9-]{8,80}$/);
+ await qualifyFileFixture();const env=process.env;
+ assert.equal(env.LIFEOS_FILE_HANDOFF_TEST_APPROVAL,'approved-isolated-file-handoff-v2');assert.ok(process.execArgv.includes('--test-isolation=none'));assert.notEqual(env.CI,'true');assert.notEqual(env.GITHUB_ACTIONS,'true');
+ assert.match(env.LIFEOS_FILE_HANDOFF_FIXTURE_ID??'',/^file-handoff-v2-[a-z0-9-]{8,80}$/);
  assert.match(env.LIFEOS_FILE_HANDOFF_CONTAINER_ID??'',/^[a-f0-9]{12,64}$/);assert.match(env.LIFEOS_FILE_HANDOFF_IMAGE_ID??'',/^sha256:[a-f0-9]{64}$/);assert.ok(env.LIFEOS_FILE_HANDOFF_FORWARD_SESSION);
  const sourceSha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();assert.equal(env.LIFEOS_FILE_HANDOFF_SOURCE_SHA,sourceSha);
  execFileSync('git',['diff','--quiet','HEAD','--','src/file-handoff','db/0022_file_handoff.proposed.sql','test/file-handoff*.test.ts']);
@@ -42,7 +43,7 @@ test('OPT-IN fresh restricted PostgreSQL file bytes, receipts, fences, CAS and u
   assert.match(identity.address,/^(?:10\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|192\.168\.)/);
   assert.deepEqual({...identity,address:'docker-private'},{version:'170011',data:'/var/lib/postgresql/data',database:url.pathname.slice(1),role:'postgres',port:5432,address:'docker-private'});
   const sourceDigest=createHash('sha256').update(JSON.stringify(await Promise.all(sqlFiles.map(async name=>({name,text:await readFile('db/'+name,'utf8')}))))).digest('hex');
-  assert.deepEqual((await admin.query('SELECT fixture_id,source_digest,source_sha,container_id,image_id FROM file_handoff_fixture.identity')).rows,[{fixture_id:env.LIFEOS_FILE_HANDOFF_FIXTURE_ID,source_digest:sourceDigest,source_sha:sourceSha,container_id:env.LIFEOS_FILE_HANDOFF_CONTAINER_ID,image_id:env.LIFEOS_FILE_HANDOFF_IMAGE_ID}]);
+  assert.deepEqual((await admin.query('SELECT fixture_id,source_digest,source_sha,lock_digest,container_id,image_id FROM file_handoff_fixture.identity')).rows,[{fixture_id:env.LIFEOS_FILE_HANDOFF_FIXTURE_ID,source_digest:sourceDigest,source_sha:sourceSha,lock_digest:createHash('sha256').update(await readFile('package-lock.json')).digest('hex'),container_id:env.LIFEOS_FILE_HANDOFF_CONTAINER_ID,image_id:env.LIFEOS_FILE_HANDOFF_IMAGE_ID}]);
   const tables=['file_handoff','file_handoff_command'];
   for(const name of tables){
    const acl=(await pool.query(`SELECT relrowsecurity AS rls,relforcerowsecurity AS forced,has_table_privilege(current_user,oid,'SELECT') AND has_table_privilege(current_user,oid,'INSERT') AND has_table_privilege(current_user,oid,'UPDATE') AS required,has_table_privilege(current_user,oid,'DELETE,TRUNCATE,REFERENCES,TRIGGER') AS excessive FROM pg_class WHERE oid=$1::regclass`,['lifeos_platform.'+name])).rows;
@@ -59,11 +60,7 @@ test('OPT-IN fresh restricted PostgreSQL file bytes, receipts, fences, CAS and u
     if(!row||row.enabled!==true||!Array.isArray(row.operations)||!row.operations.includes(operation))throw new FileHandoffError(403,'FILE_ACCESS_DENIED');
    },
    readTarget:async(client,a,id)=>{
-    const tx={get:async(kind:string,recordId:string)=>{
-     const row=(await client.query('SELECT r.*,s.external_id,s.version AS source_version,s.as_of,s.original FROM lifeos_platform.platform_record r JOIN lifeos_platform.platform_source s ON s.owner_id=r.owner_id AND s.id=r.source_id WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3::uuid',[a.ownerId,kind,recordId])).rows[0];
-     if(!row)return null;
-     return{id:row.id,ownerId:row.owner_id,kind:row.kind,draft:row.draft,source:{id:row.source_id,system:'website',externalId:row.external_id,version:row.source_version,asOf:(row.as_of as Date).toISOString(),original:row.original},revision:row.revision,createdAt:(row.created_at as Date).toISOString(),updatedAt:(row.updated_at as Date).toISOString(),syncState:'draft',externalStatus:null} as StoredEntry;
-    }} as unknown as Transaction;
+    const tx={get:(kind:Parameters<typeof readPlatformEntryOnClient>[2],recordId:string)=>readPlatformEntryOnClient(client,a.ownerId,kind,recordId,true)};
     try{const value=await native.getInTransaction(a.ownerId,id,tx);return value.sourceId?{id:value.id,sourceId:value.sourceId,revision:value.revision}:null;}catch{return null;}
    },
   };
@@ -107,8 +104,10 @@ test('OPT-IN fresh restricted PostgreSQL file bytes, receipts, fences, CAS and u
    await admin.query('UPDATE file_handoff_fixture.authority SET enabled=false WHERE id=$1',[actor.authorityRef]);
    await assert.rejects(repository.publish(actor,claim.entry.id,claim.token!,blob),{code:'FILE_ACCESS_DENIED'});await assert.rejects(service.get(actor,claim.entry.id),{code:'FILE_ACCESS_DENIED'});
    await admin.query('UPDATE file_handoff_fixture.authority SET enabled=true WHERE id=$1',[actor.authorityRef]);await admin.query("UPDATE lifeos_platform.file_handoff SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1::uuid",[claim.entry.id]);
-   const before=downloads;await assert.rejects(service.stage(actor,input,key),{code:'FILE_HANDOFF_OUTCOME_UNKNOWN'});assert.equal(downloads,before);assert.deepEqual(await blobs.read(blob),original);assert.equal((await service.get(actor,claim.entry.id)).entry.state,'pending');
+   const before=downloads,reconciled=await service.stage(actor,input,key);assert.equal(reconciled.entry.id,claim.entry.id);assert.equal(downloads,before);assert.deepEqual(await blobs.read(blob),original);assert.equal((await service.get(actor,claim.entry.id)).entry.state,'ready');
    await assert.rejects(repository.publish(actor,claim.entry.id,claim.token!,blob),{code:'FILE_TRANSFER_LEASE_LOST'});
+   const missingKey=randomUUID(),missing=await repository.reserve(actor,input,missingKey);await admin.query("UPDATE lifeos_platform.file_handoff SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1::uuid",[missing.entry.id]);
+   await assert.rejects(service.stage(actor,input,missingKey),(error:any)=>{assert.equal(error.code,'FILE_HANDOFF_OUTCOME_UNKNOWN');assert.equal(error.handoffId,missing.entry.id);return true;});assert.equal(downloads,before);assert.equal((await service.get(actor,missing.entry.id)).entry.state,'pending');
   });
   for(const name of tables){assert.equal((await pool.query('SELECT * FROM lifeos_platform.'+name)).rowCount,0);await assert.rejects(pool.query('DELETE FROM lifeos_platform.'+name),{code:'42501'});}
   assert.equal((await readdir(directory)).some(name=>name.startsWith('.tmp-')),false);

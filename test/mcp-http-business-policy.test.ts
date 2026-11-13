@@ -16,6 +16,7 @@ const executionCalls=[
  {label:'progress',operationId:'updateRequirementExecution',args:{id:lease.id,action:'progress',lease,input:{fields:requirementFields,expectedRevision:1,baselineBinding:null},idempotencyKey:'synthetic-denied-progress'}},
 ];
 const allowedIds=[
+ 'stageFileHandoff','getFileHandoff',
  'listTodos','snapshotTodos','getTodo','createTodo','updateTodo',
  'snapshotOrganization','getOrganization','createOrganization','updateOrganization',
  'snapshotRequirements','getRequirement','createRequirement','updateRequirement',
@@ -86,7 +87,8 @@ test('official HTTP tools and raw calls share the business policy even when exec
  t.after(()=>client.close());
  const tools=await client.listTools();
  const branches=(tools.tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as any).oneOf;
- assert.deepEqual(branches.map((branch:any)=>branch.properties.operationId.const).sort(),[...allowedIds].sort());
+ assert.deepEqual(branches.map((branch:any)=>branch.properties.operationId.const).sort(),allowedIds.filter(id=>id!=='stageFileHandoff').sort());
+ assert.deepEqual(tools.tools.find(tool=>tool.name==='lifeos_stage_file')?._meta?.['openai/fileParams'],['file']);
  const selected=await client.callTool({name:'lifeos_discover',arguments:{operationId:'claimRequirementExecution'}});
  assert.deepEqual(selected.structuredContent,{ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
  for(const {operationId,args} of executionCalls){
@@ -97,6 +99,7 @@ test('official HTTP tools and raw calls share the business policy even when exec
 });
 
 const deniedRoutes=[
+ ['GET','/v1/file-handoffs/'+id+'/content'],['POST','/v1/file-handoffs/'+id+'/acknowledgments'],
  ['POST','/v1/requirement-events/claims'],['PATCH','/v1/requirement-events/claims/'+lease.id],['GET','/v1/requirement-events/stream'],
  ['POST','/v1/todo-classifications/commit'],['POST','/v1/coding-agents/launch'],['POST','/v1/deployments'],
  ['GET','/v1/account/api-keys'],['POST','/v1/auth/sign-out'],['GET','/v1/capabilities'],

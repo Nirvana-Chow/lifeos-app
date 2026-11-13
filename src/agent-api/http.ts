@@ -1,4 +1,7 @@
 import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
+import type {FilePermission} from '../file-handoff/authorization.ts';
+import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
+import {handleFileHandoffRequest} from '../file-handoff/http.ts';
 import type {OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
 import {createRequirementEventHandler,type NotificationWait} from '../requirement-events/http.ts';
 import {isRequirementEventOperation} from '../requirement-events/operations.ts';
@@ -24,8 +27,9 @@ import type {AgentModules} from './config.ts';
 import type {OrganizationType} from '../personal-candidate/business.ts';
 import {organizationDetail,organizationSnapshot,completeOrganizationFields} from './organization.ts';
 
-type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence}>;
+type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence;fileHandoff?:FilePermission}>;
 type Options = {
+  fileHandoff?:FileHandoffRuntime;
   enabled?: boolean;
   modules?: AgentModules;
   mountPath?: '/api/platform/agent';
@@ -72,6 +76,7 @@ export function createAgentHandler(options: Options) {
   const available = async (id:string) => {
     if (id === 'discover' || id === 'discoverV2') return true;
     const operation = agentCapabilityOperations.find(entry => entry.id === id);
+    if(operation?.module==='fileHandoff'){if(!modules.fileHandoff||!options.fileHandoff||options.fenceWrites!==true)return false;try{if(!await options.fileHandoff.ready())return false;}catch{return false;}}
     if(isRequirementEventOperation(id)||id==='streamRequirementEvents'){if(!modules.requirementEvents||!options.requirementEvents)return false;try{if(!await options.requirementEvents.ready())return false;}catch{return false;}}
     if(operation?.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||options.fenceWrites!==true))return false;
     if(operation&&isRecordModule(operation.module)&&operation.id.startsWith('snapshot')&&!options.repository.readCurrentSnapshot)return false;
@@ -92,6 +97,7 @@ export function createAgentHandler(options: Options) {
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
     const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions))?$/.exec(route);
+    const fileRoute=/^\/v1\/file-handoffs\/([a-f0-9-]{36})(?:\/(content|acknowledgments))?$/.exec(route);
     const executionRoute=/^\/v1\/requirement-events\/claims\/([a-f0-9-]{36})$/.exec(route);
     const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
@@ -102,7 +108,7 @@ export function createAgentHandler(options: Options) {
     const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
     const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
     const organizationId=organizationRoute?.[2];
-    const template=executionRoute?'/v1/requirement-events/claims/{id}':storageRoute?'/v1/storage-reviews/{id}'+(storageRoute[2]?'/'+storageRoute[2]:''):personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const template=fileRoute?'/v1/file-handoffs/{id}'+(fileRoute[2]?'/'+fileRoute[2]:''):executionRoute?'/v1/requirement-events/claims/{id}':storageRoute?'/v1/storage-reviews/{id}'+(storageRoute[2]?'/'+storageRoute[2]:''):personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
     const operation = agentCapabilityOperations.find(entry => entry.method === request.method && entry.path === template);
     if (options.enabled !== true || !operation || operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy)||(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents')&&!modules.requirementEvents|| isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
@@ -128,6 +134,11 @@ export function createAgentHandler(options: Options) {
           operations: agentOperations.filter(entry => 'scope' in entry && entry.requiredScopes.every(scope => actor.scopes.includes(scope)) && (!actor.businessDataPolicy&&!actor.oauthFence || entry.id==='discover' || actor.allowedOperationIds?.includes(entry.id))).map(({id,method,path,description,...rest}) => ({id,method,path,scope:'scope' in rest ? rest.scope : undefined,description}))});
       }
       if (!await available(operation.id)) return respond(503, {error:'AGENT_OPERATION_UNAVAILABLE'});
+      if(operation.module==='fileHandoff')return (await handleFileHandoffRequest(request,{mount:mount+'/v1/file-handoffs',session:options.fileHandoff!.forAgent(actor),allowStage:true,current:async(write)=>{
+        if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
+        try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}
+        if(write)await options.assertWritable(grant);
+      }}))!;
       if(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents'){
         // Policy-aware readCurrentGrant also computes metadata readiness using
         // the business pool. Inside a held writer transaction, current grant

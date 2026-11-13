@@ -1,4 +1,7 @@
 import {resolveBusinessOAuthToken,readCurrentBusinessOAuthGrant} from '../business-mcp-oauth/runtime.ts';
+import {extendFileGrant} from '../file-handoff/authorization.ts';
+import {readFileHandoffConfig} from '../file-handoff/config.ts';
+import {createFileHandoffRuntime,type FileHandoffRuntime} from '../file-handoff/runtime.ts';
 import type {OriginalGrant} from '../business-mcp-oauth/ledger.ts';
 import {PostgresRequirementEventStore} from '../requirement-events/postgres.ts';
 import {RequirementEventService} from '../requirement-events/service.ts';
@@ -39,7 +42,7 @@ function failure(status: 403 | 404 | 503, code: string): Response {
 
 type GrantLookupPool = {query:(sql:string,values:string[])=>Promise<{rows:unknown[]}>};
 /** Read only current non-secret grant fields; never invoke the quota-counting verifier. */
-export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, policyOptions?:()=>Promise<Omit<PolicyResolutionOptions,'now'>>) {
+export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, policyOptions?:()=>Promise<Omit<PolicyResolutionOptions,'now'>>,filesEnabled=false) {
   const {rows} = await pool.query('SELECT id, "referenceId", metadata, permissions, enabled, "expiresAt" FROM lifeos_agent.apikey WHERE id = $1', [id]);
   if (rows.length !== 1 || !rows[0] || typeof rows[0] !== 'object') return null;
   const row = rows[0] as Record<string,unknown>;
@@ -58,13 +61,17 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
       if(!policyGrant)return null;
     }
     const policy=policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,allowedOperationIds:policyGrant.allowedOperationIds}:{};
-    return {grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly OperationScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
+    const base={grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly OperationScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
+    if(!filesEnabled)return base;
+    const permission=(await pool.query('SELECT lifeos_agent.read_file_handoff_permission($1,$2,$3) AS value',[id,row.referenceId,metadata.spaceId])).rows[0] as {value?:unknown}|undefined;
+    return extendFileGrant(base,permission?.value,true);
   } catch {return null;}
 }
 
 /** Read-only readiness uses the same live business permit as the write guard. */
 export function agentOperationAvailable(id:string, personal:PersonalConfig, fenceReady:boolean, modules:AgentModules={organization:false,classification:false}):boolean {
   const operation = agentCapabilityOperations.find(entry => entry.id === id);
+  if(operation?.module==='fileHandoff'&&(!modules.fileHandoff||!fenceReady))return false;
   if((isRequirementEventOperation(id)||id==='streamRequirementEvents')&&!modules.requirementEvents)return false;
   if (!operation || operation.module === 'catalog') return false;
   if(operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||!fenceReady))return false;
@@ -209,6 +216,8 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
     const openEventNotifications=singleRequirementNotifications(async()=>{await eventReady();notifications??=new Pool({...limits,max:1,connectionString:platform.databaseURL,options:'-c search_path=pg_catalog,lifeos_platform'});return openRequirementNotifications(notifications as SqlPool);});
     const eventService=modules.requirementEvents?new RequirementEventService(new PostgresRequirementEventStore(business as SqlPool,true)):undefined;
     const repository=new PostgresPlatformRepository(business as SqlPool,true,true,modules,modules.requirementEvents===true);
+    let fileHandoff:FileHandoffRuntime|undefined;
+    if(modules.fileHandoff)try{const fileConfig=readFileHandoffConfig(process.env);if(fileConfig)fileHandoff=await createFileHandoffRuntime(business as SqlPool,personal,fileConfig,modules.businessDataPolicy,async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''));}catch{/* Optional file readiness never substitutes for legacy business authority. */}
     const classificationReady=async()=>{await verifyAgentBusinessReadiness(business);await verifyClassificationPool(business as SqlPool);};
     const policyOptions=modules.businessDataPolicy?async()=>{
       const catalog=await readBusinessPolicyCatalog(verifier);
@@ -223,6 +232,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
     }:undefined;
     const handler=createAgentHandler({
       enabled: true,
+      ...(fileHandoff?{fileHandoff}:{}),
       ...(eventService?{requirementEvents:{service:eventService,ready:async()=>{try{await eventReady();return true;}catch{return false;}},openNotifications:openEventNotifications}}:{}),
       modules,
       fenceWrites: true,
@@ -231,17 +241,18 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       repository,
       ...(modules.classification?{classification:(authority:import('../agent-authority/service.ts').AuthorityService)=>new ClassificationService(repository,personal,{authority,assertReady:classificationReady,assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''),policyRevision:()=>classificationPolicyRevision(personal)})}:{}),
       verify: async token => {
-        if(token.includes('.'))return resolveBusinessOAuthToken(token,id=>readCurrentAgentGrant(verifier,id,policyOptions));
+        if(token.includes('.'))return resolveBusinessOAuthToken(token,id=>readCurrentAgentGrant(verifier,id,policyOptions,!!fileHandoff));
         const result = await auth.api.verifyApiKey({body: {key: token}});
         if (result.error?.code === 'RATE_LIMITED') throw new AgentRateLimitError(result.error);
         const key = result.key;
         const spaceId = key?.metadata?.spaceId;
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
-        return readCurrentAgentGrant(verifier,key.id,policyOptions);
+        return readCurrentAgentGrant(verifier,key.id,policyOptions,!!fileHandoff);
       },
-      readCurrentGrant: (id,oauthFence) => oauthFence?readCurrentBusinessOAuthGrant(id,oauthFence,key=>readCurrentAgentGrant(verifier,key,policyOptions)):readCurrentAgentGrant(verifier, id,policyOptions),
+      readCurrentGrant: (id,oauthFence) => oauthFence?readCurrentBusinessOAuthGrant(id,oauthFence,key=>readCurrentAgentGrant(verifier,key,policyOptions,!!fileHandoff)):readCurrentAgentGrant(verifier,id,policyOptions,!!fileHandoff),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
+        if(agentCapabilityOperations.find(op=>op.id===id)?.module==='fileHandoff')return !!fileHandoff&&await fileHandoff.ready();
         if(isRequirementEventOperation(id)||id==='streamRequirementEvents')try{await eventReady();}catch{return false;}
         if(agentCapabilityOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
         if(agentCapabilityOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
@@ -250,7 +261,7 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
       },
       assertWritable: async () => requirePersonalBusinessWrite(personal, process.env.LIFEOS_REVIEW_GIT_SHA ?? ''),
     });
-    return{handler:modules.organization||modules.businessDataPolicy?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id,policyOptions)};
+    return{handler:modules.organization||modules.businessDataPolicy?async request=>{await verifyAgentBusinessReadiness(business);return handler(request);}:handler,readCurrentGrant:id=>readCurrentAgentGrant(verifier,id,policyOptions,!!fileHandoff)};
   } catch (error) {
     await Promise.allSettled([business.end(), verifier.end(),...(notifications?[notifications.end()]:[])]);
     throw error;

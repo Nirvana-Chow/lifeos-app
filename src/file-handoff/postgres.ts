@@ -58,17 +58,17 @@ export class PostgresFileHandoffs implements FileHandoffRepository{
   }catch{return fail(503,'FILE_RECEIPT_INVALID');}
  }
  async reserve(actor:FileHandoffActor,value:StageFileInput,key:string){
-  this.check(actor);const input=stageFileSchema.parse(value),digest=stageDigest(input);
-  return this.transaction(actor,'stageFileHandoff',async client=>{
+  this.check(actor);const input=stageFileSchema.parse(value),digest=stageDigest(input);let handoffId:string|undefined;
+  try{return await this.transaction(actor,'stageFileHandoff',async client=>{
    const prior=await this.command(client,actor,key);
    if(prior){
     if(prior.action!=='stage'||prior.intent_digest!==digest)fail(409,'FILE_COMMAND_CONFLICT');
-    const row=await this.row(client,actor,String(prior.file_id),true),entry=decode(row);await this.target(client,actor,entry.target.id,entry.target.sourceId);
+    const row=await this.row(client,actor,String(prior.file_id),true),entry=decode(row);handoffId=entry.id;await this.target(client,actor,entry.target.id,entry.target.sourceId);
     if(prior.response!==null){const saved=this.receipt(prior.response,entry);return{entry:{...saved,blob:entry.blob},token:null,duplicate:true};}
     if(entry.state!=='pending')fail(503,'FILE_RECEIPT_INVALID');if(row.lease_live===true)fail(409,'FILE_TRANSFER_BUSY');
     // A dead process may already have published bytes. Never replace that original
     // by refetching an expiring URL; only an explicitly released attempt is retryable.
-    if(row.transfer_token!==null)fail(503,'FILE_HANDOFF_OUTCOME_UNKNOWN');
+    if(row.transfer_token!==null)return{entry,token:null,recoveryToken:String(row.transfer_token),duplicate:false};
     const token=randomUUID();await client.query("UPDATE lifeos_platform.file_handoff SET transfer_token=$4::uuid,lease_until=clock_timestamp()+($5::double precision*interval '1 millisecond') WHERE owner_id=$1 AND space_id=$2 AND id=$3::uuid",[actor.ownerId,actor.spaceId,entry.id,token,this.leaseMs]);return{entry,token,duplicate:false};
    }
    const target=await this.target(client,actor,input.requirementId);
@@ -76,20 +76,31 @@ export class PostgresFileHandoffs implements FileHandoffRepository{
    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['file-handoff-capacity-v1',actor.ownerId,actor.spaceId])]);
    const usage=(await client.query("SELECT count(*)::int AS count,coalesce(sum(CASE WHEN state='ready' THEN byte_length ELSE $3 END),0)::text AS bytes FROM lifeos_platform.file_handoff WHERE owner_id=$1 AND space_id=$2",[actor.ownerId,actor.spaceId,this.maxBytes])).rows[0];
    if(!usage||Number(usage.count)>=128||!Number.isSafeInteger(Number(usage.bytes))||Number(usage.bytes)+this.maxBytes>this.maxReservedBytes)fail(503,'FILE_STORAGE_CAPACITY_UNAVAILABLE');
-   const id=randomUUID(),token=randomUUID();
+   const id=randomUUID(),token=randomUUID();handoffId=id;
    const row=(await client.query("INSERT INTO lifeos_platform.file_handoff(owner_id,space_id,id,authority_ref,command_key,source_file_id,name,mime_type,target,retention,transfer_token,lease_until) VALUES($1,$2,$3::uuid,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::uuid,clock_timestamp()+($12::double precision*interval '1 millisecond')) RETURNING *",[actor.ownerId,actor.spaceId,id,actor.authorityRef,key,input.file.file_id,input.file.file_name??'ChatGPT-file.bin',input.file.mime_type??'application/octet-stream',JSON.stringify(target),JSON.stringify(input.retention),token,this.leaseMs])).rows[0];
    await client.query("INSERT INTO lifeos_platform.file_handoff_command(owner_id,space_id,authority_ref,command_key,action,intent_digest,file_id,response) VALUES($1,$2,$3,$4,'stage',$5,$6::uuid,NULL)",[actor.ownerId,actor.spaceId,actor.authorityRef,key,digest,id]);return{entry:decode(row),token,duplicate:false};
-  });
+  });}catch(error){if(error instanceof FileHandoffError&&['FILE_HANDOFF_OUTCOME_UNKNOWN','FILE_TRANSFER_BUSY'].includes(error.code))throw new FileHandoffError(error.status,error.code,handoffId);throw error;}
  }
  async publish(actor:FileHandoffActor,id:string,token:string,blob:BlobReceipt){
+  return this.complete(actor,id,token,blob,false);
+ }
+ async reconcile(actor:FileHandoffActor,id:string,previousToken:string,blob:BlobReceipt){
+  return this.complete(actor,id,previousToken,blob,true);
+ }
+ private async complete(actor:FileHandoffActor,id:string,token:string,blob:BlobReceipt,recover:boolean){
   if(blob.key!==id+'.'+token+'.blob'||!/^[a-f0-9]{64}$/.test(blob.sha256)||!Number.isInteger(blob.bytes)||blob.bytes<0||blob.bytes>this.maxBytes)fail(400,'FILE_BLOB_INVALID');
   return this.transaction(actor,'stageFileHandoff',async client=>{
    const initial=await this.row(client,actor,id);if(initial.authority_ref!==actor.authorityRef)fail(403,'FILE_ACCESS_DENIED');
    const command=await this.command(client,actor,String(initial.command_key));
    const row=await this.row(client,actor,id,true),entry=decode(row);
-   if(!command||command.action!=='stage'||command.file_id!==id||row.state!=='pending'||row.transfer_token!==token||row.lease_live!==true)fail(409,'FILE_TRANSFER_LEASE_LOST');
+   if(!command||command.action!=='stage'||command.file_id!==id||row.state!=='pending'||row.transfer_token!==token||row.lease_live!==!recover)fail(409,'FILE_TRANSFER_LEASE_LOST');
    await this.target(client,actor,entry.target.id,entry.target.sourceId);
-   const saved=decode((await client.query("UPDATE lifeos_platform.file_handoff SET state='ready',revision=revision+1,blob_key=$4,sha256=$5,byte_length=$6,received_at=clock_timestamp(),transfer_token=NULL,lease_until=NULL WHERE owner_id=$1 AND space_id=$2 AND id=$3::uuid RETURNING *",[actor.ownerId,actor.spaceId,id,blob.key,blob.sha256,blob.bytes])).rows[0]);
+   // Existing complete bytes are immutable. A fresh token fences the old writer
+   // before ready is committed; a missing/partial original never reaches this path.
+   const completingToken=recover?randomUUID():token;
+   if(recover)await client.query('UPDATE lifeos_platform.file_handoff SET transfer_token=$4::uuid WHERE owner_id=$1 AND space_id=$2 AND id=$3::uuid',[actor.ownerId,actor.spaceId,id,completingToken]);
+   const completed=await client.query("UPDATE lifeos_platform.file_handoff SET state='ready',revision=revision+1,blob_key=$4,sha256=$5,byte_length=$6,received_at=clock_timestamp(),transfer_token=NULL,lease_until=NULL WHERE owner_id=$1 AND space_id=$2 AND id=$3::uuid AND state='pending' AND transfer_token=$7::uuid AND ($8::boolean OR lease_until>clock_timestamp()) RETURNING *",[actor.ownerId,actor.spaceId,id,blob.key,blob.sha256,blob.bytes,completingToken,recover]);
+   if(completed.rows.length!==1)fail(409,'FILE_TRANSFER_LEASE_LOST');const saved=decode(completed.rows[0]);
    const response={entry:publicFile(saved),duplicate:false};await client.query('UPDATE lifeos_platform.file_handoff_command SET response=$5::jsonb WHERE owner_id=$1 AND space_id=$2 AND authority_ref=$3 AND command_key=$4',[actor.ownerId,actor.spaceId,actor.authorityRef,String(initial.command_key),JSON.stringify(response)]);return response;
   });
  }

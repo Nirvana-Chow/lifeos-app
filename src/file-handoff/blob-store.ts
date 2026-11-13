@@ -15,6 +15,7 @@ export class PrivateFileBlobs{
   if(!info.isDirectory()||info.uid!==process.getuid?.()||info.mode&0o077||await realpath(this.directory)!==this.directory)fail(503,'FILE_STORAGE_CONFIG_INVALID');
  }
  private async syncDirectory(){const fd=await open(this.directory,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);try{await fd.sync();}finally{await fd.close();}}
+ async checkReady(){try{await this.checkedDirectory();}catch{fail(503,'FILE_STORAGE_CONFIG_INVALID');}}
  async put(id:string,token:string,body:AsyncIterable<Uint8Array>,signal?:AbortSignal):Promise<BlobReceipt>{
   try{return await this.write(id,token,body,signal);}catch(error){if(error instanceof FileHandoffError)throw error;throw new FileHandoffError(503,'FILE_STORAGE_UNAVAILABLE');}
  }
@@ -41,12 +42,19 @@ export class PrivateFileBlobs{
  }
  async read(blob:BlobReceipt):Promise<Buffer>{
   if(!/^[a-f0-9-]{36}\.[a-f0-9-]{36}\.blob$/.test(blob.key)||!checksumSchema.safeParse(blob.sha256).success||!Number.isInteger(blob.bytes)||blob.bytes<0||blob.bytes>this.maxBytes)fail(503,'FILE_BLOB_UNAVAILABLE');
+  return(await this.verified(blob.key,blob)).bytes;
+ }
+ async inspect(id:string,token:string):Promise<BlobReceipt>{
+  if(!fileIdSchema.safeParse(id).success||!fileIdSchema.safeParse(token).success)fail(503,'FILE_BLOB_UNAVAILABLE');
+  return(await this.verified(id+'.'+token+'.blob')).blob;
+ }
+ private async verified(key:string,expected?:BlobReceipt){
   try{
-   await this.checkedDirectory();const fd=await open(join(this.directory,blob.key),constants.O_RDONLY|constants.O_NOFOLLOW);
-   try{const info=await fd.stat();if(!info.isFile()||info.uid!==process.getuid?.()||info.nlink!==1||info.mode&0o077||info.size!==blob.bytes)fail(503,'FILE_BLOB_UNAVAILABLE');
-    const bounded=Buffer.alloc(blob.bytes+1);let size=0;
+   await this.checkedDirectory();const fd=await open(join(this.directory,key),constants.O_RDONLY|constants.O_NOFOLLOW);
+   try{const info=await fd.stat();if(!info.isFile()||info.uid!==process.getuid?.()||info.nlink!==1||info.mode&0o077||info.size<0||info.size>this.maxBytes||expected&&info.size!==expected.bytes)fail(503,'FILE_BLOB_UNAVAILABLE');
+    const bounded=Buffer.alloc(info.size+1);let size=0;
     while(size<bounded.length){const read=await fd.read(bounded,size,bounded.length-size);if(!read.bytesRead)break;size+=read.bytesRead;}
-    const bytes=bounded.subarray(0,size);if(bytes.length!==blob.bytes||createHash('sha256').update(bytes).digest('hex')!==blob.sha256)fail(503,'FILE_BLOB_UNAVAILABLE');return bytes;
+    const bytes=bounded.subarray(0,size),sha256=createHash('sha256').update(bytes).digest('hex');if(size!==info.size||expected&&sha256!==expected.sha256)fail(503,'FILE_BLOB_UNAVAILABLE');return{bytes,blob:{key,sha256,bytes:size}};
    }finally{await fd.close();}
   }catch{throw new FileHandoffError(503,'FILE_BLOB_UNAVAILABLE');}
  }

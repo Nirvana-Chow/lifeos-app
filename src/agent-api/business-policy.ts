@@ -2,6 +2,7 @@ import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {normalizeAgentScopes,agentScopes} from './scopes.ts';
 import type {OperationScope} from './personal-operation-registry.ts';
 import {decodeAgentPermissions} from './scopes.ts';
+import {filePermissionSchema,type FilePermission} from '../file-handoff/permission-contracts.ts';
 
 export const allPersonalBusinessPolicy = 'all-personal-business-v1' as const;
 export type BusinessDataPolicy = typeof allPersonalBusinessPolicy;
@@ -41,7 +42,14 @@ export function resolveBusinessPolicyGrant(row:PolicyGrantRow,options:PolicyReso
 }
 
 /** New effective scopes can only originate from reviewed, explicitly allowed server operations. */
-export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[]}):readonly OperationScope[]{
+export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[];fileHandoff?:FilePermission}):readonly OperationScope[]{
+ if(grant.fileHandoff){
+  const proof=filePermissionSchema.parse(grant.fileHandoff),scopes=grant.scopes.filter(scope=>scope.startsWith('file-handoff:'));
+  if(scopes.length!==proof.scopes.length||!scopes.every(scope=>proof.scopes.includes(scope as never)))throw Error('Invalid file permission');
+  const{fileHandoff:_,...base}=grant;
+  const original=normalizeOperationGrantScopes({...base,scopes:grant.scopes.filter(scope=>!scope.startsWith('file-handoff:')),allowedOperationIds:grant.allowedOperationIds?.filter(id=>!['stageFileHandoff','getFileHandoff','downloadFileHandoff','acknowledgeFileHandoff'].includes(id))});
+  return Object.freeze([...original,...scopes].sort()) as readonly OperationScope[];
+ }
  if(!grant.businessDataPolicy)return normalizeAgentScopes(grant.scopes);
  if(grant.businessDataPolicy!==allPersonalBusinessPolicy||!Array.isArray(grant.scopes)||new Set(grant.scopes).size!==grant.scopes.length||!Array.isArray(grant.allowedOperationIds)||new Set(grant.allowedOperationIds).size!==grant.allowedOperationIds.length)throw Error('Invalid policy grant');
  const allowed=grant.allowedOperationIds.map(id=>{const operation=agentOperations.find(op=>op.id===id);if(!operation||policyAuthorizationScopes(operation)===null)throw Error('Invalid policy operation');return operation;});

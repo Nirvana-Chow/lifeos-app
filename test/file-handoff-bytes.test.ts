@@ -55,3 +55,9 @@ test('failure after atomic publication preserves the original and reports an unk
  await assert.rejects(store.put(id,attempt,chunks(Buffer.from('unique original'))),{code:'FILE_STORAGE_OUTCOME_UNKNOWN'});
  assert.deepEqual(await readdir(root),[id+'.'+attempt+'.blob']);assert.equal((await readFile(join(root,id+'.'+attempt+'.blob'))).toString(),'unique original');
 });
+test('reconciliation inspects only the complete immutable known original and computes actual checksum/bytes',async t=>{
+ const {PrivateFileBlobs}=await implementation(),root=await directory(t),store=new PrivateFileBlobs({directory:root,maxBytes:64});
+ const saved=await store.put(id,attempt,chunks(Buffer.from('original to reconcile')));
+ assert.equal(typeof (store as any).inspect,'function');assert.deepEqual(await (store as any).inspect(id,attempt),saved);
+ await assert.rejects((store as any).inspect(id,'00000000-0000-4000-8000-000000000003'),{code:'FILE_BLOB_UNAVAILABLE'});
+});

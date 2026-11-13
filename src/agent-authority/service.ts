@@ -3,8 +3,9 @@ import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
 import {agentCapabilityOperations as agentOperations} from '../agent-api/capabilities.ts';
 import type {AuthoritySourceRef,TrustedActor,TrustedAgentActor,TrustedOwnerActor} from './contracts.ts';
 import {sameOAuthFence,type OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
+import type {FilePermission} from '../file-handoff/authorization.ts';
 type Owner = Readonly<{ownerId:string;spaceId:string;sessionRef:string}>;
-type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly OperationScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence}>;
+type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly OperationScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence;fileHandoff?:FilePermission}>;
 type Deps = Readonly<{ownerId:string;spaceId:string;verifyOwner:(headers:Headers)=>Promise<Owner|null>;verifyAgent:(key:string)=>Promise<Agent|null>;readCurrentAgent?:(grantId:string,oauthFence?:OAuthGrantFence)=>Promise<Agent|null>}>;
 export class AuthorityService {
   private readonly issued = new WeakMap<object, () => Promise<Owner|Agent|null>>();
@@ -24,7 +25,7 @@ export class AuthorityService {
     if (!this.bound(grant) || !grant?.grantId) return null;
     let scopes: readonly OperationScope[];
     try {scopes = normalizeOperationGrantScopes(grant);} catch {return null;}
-    const actor = Object.freeze({kind:'agent-grant',ownerId:grant.ownerId,spaceId:grant.spaceId,grantId:grant.grantId,scopes,...(grant.businessDataPolicy?{businessDataPolicy:grant.businessDataPolicy}:{}),...(grant.businessDataPolicy||grant.oauthFence?{allowedOperationIds:Object.freeze([...(grant.allowedOperationIds??[])])}:{}),...(grant.oauthFence?{oauthFence:Object.freeze({...grant.oauthFence})}:{})}) as TrustedAgentActor;
+    const actor = Object.freeze({kind:'agent-grant',ownerId:grant.ownerId,spaceId:grant.spaceId,grantId:grant.grantId,scopes,...(grant.businessDataPolicy?{businessDataPolicy:grant.businessDataPolicy}:{}),...(grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff?{allowedOperationIds:Object.freeze([...(grant.allowedOperationIds??[])])}:{}),...(grant.oauthFence?{oauthFence:Object.freeze({...grant.oauthFence})}:{}),...(grant.fileHandoff?{fileHandoff:Object.freeze(structuredClone(grant.fileHandoff))}:{})}) as TrustedAgentActor;
     this.issued.set(actor, () => this.deps.readCurrentAgent?.(grant.grantId,actor.oauthFence) ?? Promise.resolve(null)); return actor;
   }
   /** Non-secret producer snapshot, read only while the caller holds its grant fence. */
@@ -50,6 +51,7 @@ export class AuthorityService {
       if (!current || !('sessionRef' in current) || current.sessionRef !== actor.sessionRef) throw Error('Authority unavailable');
     } else if (actor.kind === 'agent-grant') {
       if (!current || !('grantId' in current) || current.grantId !== actor.grantId) throw Error('Authority unavailable');
+      if(JSON.stringify(actor.fileHandoff)!==JSON.stringify(current.fileHandoff))throw Error('Authority unavailable');
       if(!sameOAuthFence(actor.oauthFence,current.oauthFence)||actor.oauthFence&&operationId!=='discoverV2'&&operationId!=='discover'&&(!actor.allowedOperationIds?.includes(operationId)||!current.allowedOperationIds?.includes(operationId)))throw Error('Authority unavailable');
       let scopes: readonly OperationScope[];
       try {scopes = normalizeOperationGrantScopes(current);} catch {throw Error('Authority unavailable');}

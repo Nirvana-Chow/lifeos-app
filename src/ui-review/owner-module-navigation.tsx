@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {FolderCheck,Search,CalendarDays,NotebookPen,HeartPulse,Users,Wallet,BookOpen,ChefHat,BriefcaseBusiness,Landmark,Map as MapIcon,MessageSquare,History} from 'lucide-react';
+import {FileDown,FolderCheck,Search,CalendarDays,NotebookPen,HeartPulse,Users,Wallet,BookOpen,ChefHat,BriefcaseBusiness,Landmark,Map as MapIcon,MessageSquare,History} from 'lucide-react';
 import {ownerModules,verifiedModuleScope,type OwnerModuleLink} from './owner-modules';
 import {supportJSON} from './requirement-support-hooks';
-const icons={'storage-review':FolderCheck,search:Search,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
+const icons={'file-handoffs':FileDown,'storage-review':FolderCheck,search:Search,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
 /** Status composes existing owner capabilities; it grants no write authority. */
 export function useOwnerModules(enabled:boolean,scope:string|null){
  const [value,setValue]=useState<unknown>(null),[path,setPath]=useState('');

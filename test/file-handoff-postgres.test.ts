@@ -30,14 +30,14 @@ test('arbitrary requirement text is never accepted as a verified target and cann
  const store=new PostgresFileHandoffs({connect:async()=>client},{enabled:true,ownerId:actor.ownerId,spaceId:actor.spaceId},{authorize:async()=>{},readTarget:async(seen,a,id)=>{assert.equal(seen,client);assert.deepEqual(a,actor);assert.equal(id,'LO-FILES-001');return null;}});
  await assert.rejects(store.reserve(actor,input,'synthetic-target'),{code:'FILE_TARGET_UNAVAILABLE'});assert.equal(calls.some(sql=>/^\s*(?:INSERT|UPDATE)\b/.test(sql)),false);assert.equal(calls.at(-1),'ROLLBACK');
 });
-test('an expired unconfirmed transfer is unknown rather than silently replacing potentially persisted original bytes',async()=>{
+test('an expired transfer returns an inspect-only recovery token and never permits a replacement download',async()=>{
  const {PostgresFileHandoffs}=await implementation(),calls:string[]=[];
  const id='00000000-0000-4000-8000-000000000001',token='00000000-0000-4000-8000-000000000002',sourceId='00000000-0000-4000-8000-000000000003';
  const target={id:input.requirementId,sourceId,revision:1},row={id,revision:1,state:'pending',source_file_id:input.file.file_id,name:'ChatGPT-file.bin',mime_type:'application/octet-stream',target,retention:input.retention,sha256:null,byte_length:null,blob_key:null,created_at:new Date(),received_at:null,acknowledgments:{},lease_live:false,transfer_token:token as string|null};
  const prior={action:'stage',intent_digest:stageDigest(input),file_id:id,response:null};
  const client:SqlClient={query:async sql=>{calls.push(sql);return{rows:sql.startsWith('SELECT * FROM lifeos_platform.file_handoff_command')?[prior]:sql.startsWith('SELECT *,lease_until')?[row]:[],rowCount:0};},release:()=>{}};
  const store=new PostgresFileHandoffs({connect:async()=>client},{enabled:true,ownerId:actor.ownerId,spaceId:actor.spaceId},{authorize:async()=>{},readTarget:async()=>target});
- await assert.rejects(store.reserve(actor,input,'synthetic-unknown-transfer'),{code:'FILE_HANDOFF_OUTCOME_UNKNOWN'});assert.equal(calls.some(sql=>/^\s*(INSERT|UPDATE)\b/.test(sql)),false);
+ const uncertain=await store.reserve(actor,input,'synthetic-unknown-transfer');assert.equal(uncertain.token,null);assert.equal((uncertain as any).recoveryToken,token);assert.equal(calls.some(sql=>/^\s*(INSERT|UPDATE)\b/.test(sql)),false);
  // A released attempt explicitly confirmed that no completed blob was returned.
  row.transfer_token=null;calls.length=0;const retry=await store.reserve(actor,input,'synthetic-unknown-transfer');
  assert.equal(retry.duplicate,false);assert.ok(retry.token);assert.notEqual(retry.token,token);assert.equal(calls.filter(sql=>sql.startsWith('UPDATE lifeos_platform.file_handoff SET transfer_token')).length,1);
@@ -62,4 +62,17 @@ test('acknowledgment requires a trusted consumer, current revision and exact ind
  await assert.rejects(store.acknowledge({...actor,consumer:'codex'},{...ack,bytes:11},'synthetic-wrong-bytes'),{code:'FILE_ACK_MISMATCH'});
  await assert.rejects(store.acknowledge({...actor,consumer:'codex'},{...ack,sha256:'b'.repeat(64)},'synthetic-wrong-sha'),{code:'FILE_ACK_MISMATCH'});
  assert.equal(calls.some(sql=>/^\s*(INSERT|UPDATE)\b/.test(sql)),false);
+});
+
+test('a lost reservation COMMIT keeps a safe original handoff ID without leaking the SQL error',async()=>{
+ const {PostgresFileHandoffs}=await implementation(),sourceId='00000000-0000-4000-8000-000000000003';let allocated='';
+ const client:SqlClient={query:async(sql,values=[])=>{
+  if(sql==='COMMIT')throw Error('synthetic private endpoint and raw SQL');
+  if(sql.includes('AS count'))return{rows:[{count:0,bytes:'0'}],rowCount:1};
+  if(sql.startsWith('INSERT INTO lifeos_platform.file_handoff(')){
+   allocated=String(values[2]);return{rows:[{id:allocated,revision:1,state:'pending',source_file_id:input.file.file_id,name:'ChatGPT-file.bin',mime_type:'application/octet-stream',target:{id:input.requirementId,sourceId,revision:1},retention:input.retention,sha256:null,byte_length:null,blob_key:null,created_at:new Date(),received_at:null,acknowledgments:{}}],rowCount:1};
+  }return{rows:[],rowCount:0};
+ },release:()=>{}};
+ const store=new PostgresFileHandoffs({connect:async()=>client},{enabled:true,ownerId:actor.ownerId,spaceId:actor.spaceId},{authorize:async()=>{},readTarget:async()=>({id:input.requirementId,sourceId,revision:1})});
+ await assert.rejects(store.reserve(actor,input,'synthetic-unknown-commit'),(error:any)=>{assert.equal(error.code,'FILE_HANDOFF_OUTCOME_UNKNOWN');assert.equal(error.handoffId,allocated);assert.equal(error.message.includes('private endpoint'),false);return true;});
 });

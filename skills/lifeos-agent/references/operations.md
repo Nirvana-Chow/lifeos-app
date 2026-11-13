@@ -5,6 +5,7 @@
 Legacy catalog API version `1`; the v2 catalog uses API version `2` and requiredScopes arrays. Business paths retain their listed versions.
 
 When enabled, the server MCP endpoint `/api/platform/mcp` exposes `lifeos_discover` and `lifeos_call` over the same API; there is no server `lifeos_retry`. Use only operations in both the current MCP discovery and this reviewed reference, within the user grant and the actual host qualification. An API row alone does not enable MCP access or write recovery.
+The independently enabled file-handoff-v1 permission may additionally expose the dedicated lifeos_stage_file top-level official file tool. Old grants and all-personal-business-v1 exclude it. Binary download and trusted-consumer acknowledgment require the dedicated website/adopted native receiver; they are never generic server MCP JSON calls.
 Business MCP does not expose `claimRequirementExecution`, `updateRequirementExecution` (renew/progress) or `commitTodoClassification`. OAuth connections additionally exclude `previewTodoClassification`; the existing API Key/native preview contract is unchanged and still requires current authorization and discovery. The API rows below retain those separately scoped original consumers.
 Server MCP discovery accepts `{}` for the unchanged full version-2 catalog; `{"view":"index"}` returns `{apiVersion:"2",view:"index",operations:[{id,module,method,description}]}` without schemas; `{"operationId":"getTodo"}` returns `{apiVersion:"2",operation:{...currentDescriptor,inputSchema}}` for exactly that currently advertised operation. Selectors are mutually exclusive; unknown keys, views, IDs or invalid types fail closed. Fetch an exact schema before constructing arguments. All views use fresh authorization; no view grants execution authority. Initial tools/list still advertises full call schemas. This optional projection makes no token, billing or native-host compatibility claim.
 
@@ -12,6 +13,10 @@ Read [the credential-runtime guide](credential-runtime.md) for server MCP versus
 
 | ID | Method | Path | Required scopes | Purpose |
 | --- | --- | --- | --- | --- |
+| `stageFileHandoff` | `POST` | `/v1/file-handoffs` | `file-handoff:read, file-handoff:write` | Explicitly receive one real ChatGPT file into bounded authorized staging. Preserve the original command key; verify receipt by independent GET. |
+| `getFileHandoff` | `GET` | `/v1/file-handoffs/{id}` | `file-handoff:read` | Independently read current handoff metadata, checksum, bytes and acknowledgments by its original ID. |
+| `downloadFileHandoff` | `GET` | `/v1/file-handoffs/{id}/content` | `file-handoff:read` | Download actual verified original bytes through an authorized binary client; never serialize file contents as Base64 or pass them through a model. |
+| `acknowledgeFileHandoff` | `POST` | `/v1/file-handoffs/{id}/acknowledgments` | `file-handoff:read, file-handoff:write` | Record a trusted website/Codex consumer acknowledgment after it independently downloads and verifies SHA256 and bytes, with current revision and original command key. |
 | `snapshotJournal` | `GET` | `/v1/records/journal/snapshot` | `journal:read` | Read the complete current journal snapshot with source identities, fields and revisions, or fail without a partial inventory. |
 | `getJournal` | `GET` | `/v1/records/journal/{id}` | `journal:read` | Read one owner journal record with complete fields and its current revision. |
 | `createJournal` | `POST` | `/v1/records/journal` | `journal:read, journal:write` | Create one journal record through the native owner writer with complete fields and an idempotency key. |

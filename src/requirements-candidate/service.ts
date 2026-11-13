@@ -93,7 +93,7 @@ export class RequirementsService{
   const entry:StoredEntry={id,ownerId:owner,kind:'inbox',draft,source:{id:randomUUID(),system:'website',externalId:id,version:1,asOf:now,original:{marker:requirementMarker,schema:2,type:'requirement',spaceId:this.config.spaceId,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};
   await guard();await tx.write(entry,raw,true);return entry;
  }
- async getInTransaction(owner:string,id:string,tx:Transaction):Promise<RequirementItem>{
+ async getInTransaction(owner:string,id:string,tx:Pick<Transaction,'get'>):Promise<RequirementItem>{
   this.owner(owner);id=requirementId(id);const recordId=id.startsWith('LO-')?requirementIdentity(owner,this.config.spaceId,id):id,row=await tx.get('inbox',recordId);
   if(row&&!this.matches(row,owner,id))return missing();return this.project(id,row?publicEntry(row):null);
  }

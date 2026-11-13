@@ -19,6 +19,7 @@ async function fixture(t:TestContext){
   publish:async(_a,id,claim,blob)=>{if(revoked)throw new FileHandoffError(403,'FILE_ACCESS_DENIED');assert.equal(id,row?.id);assert.equal(claim,token);publishes++;row={...row!,revision:2,state:'ready',sha256:blob.sha256,bytes:blob.bytes,blob,receivedAt:new Date().toISOString()};if(loseReceipt){loseReceipt=false;throw new FileHandoffError(503,'FILE_HANDOFF_OUTCOME_UNKNOWN');}return{entry:publicFile(row),duplicate:false};},
   release:async()=>{},get:async(a,id)=>{if(revoked||a.ownerId!==actor.ownerId)throw new FileHandoffError(403,'FILE_ACCESS_DENIED');assert.equal(id,row?.id);return structuredClone(row!);},
   acknowledge:async()=>{throw Error('covered by PostgreSQL fixture');},
+  reconcile:async()=>{throw Error('covered by PostgreSQL fixture');},
  };
  const source=new PinnedFileSource({allowedOrigins:['https://synthetic-files.example.invalid'],maxBytes:128,timeoutMs:1000},{lookup:async()=>[{address:'8.8.8.8',family:4}],open:async()=>{downloads++;if(revokeOnOpen)revoked=true;return{status:200,length:null,mimeType:'text/plain',encoding:null,body:(async function*(){yield Buffer.from('real synthetic file bytes\n');})(),close:()=>{}};}});
  const blobs=new PrivateFileBlobs({directory,maxBytes:128}),service=new FileHandoffService({enabled:true,repository,source,blobs});
@@ -67,4 +68,22 @@ test('uncertain filesystem publication never releases a claim as a safely retrya
  (f.blobs as unknown as {syncDirectory:()=>Promise<void>}).syncDirectory=async()=>{throw Error('synthetic fsync failure');};
  await assert.rejects(f.service.stage(actor,input,'synthetic-storage-unknown'));
  assert.equal(released,0);assert.equal(f.publishes(),0);assert.equal((await readdir(f.directory)).length,1);assert.equal(f.current()!.state,'pending');
+});
+
+test('expired uncertain staging reconciles only the actual complete original and never redownloads a replacement URL',async t=>{
+ const f=await fixture(t),claim=await f.repository.reserve(actor,input,'synthetic-complete-original');assert.ok(claim.token);
+ const blob=await f.blobs.put(claim.entry.id,claim.token,(async function*(){yield Buffer.from('real synthetic file bytes\n');})());
+ f.repository.reserve=async a=>{await f.repository.get(a,claim.entry.id);return{entry:f.current()!,token:null,recoveryToken:claim.token!,duplicate:false};};
+ f.repository.reconcile=async(a,id,previousToken,original)=>{assert.deepEqual(original,blob);assert.equal(previousToken,claim.token);return f.repository.publish(a,id,previousToken,original);};
+ const recovered=await f.service.stage(actor,{...input,file:{...input.file,download_url:'https://synthetic-files.example.invalid/new?signature=another-url'}},'synthetic-complete-original');
+ assert.equal(recovered.entry.id,claim.entry.id);assert.equal(recovered.entry.sha256,blob.sha256);assert.equal(f.downloads(),0);assert.equal((await f.service.download(actor,claim.entry.id)).bytes.toString(),'real synthetic file bytes\n');
+});
+
+test('expiry with no completed original remains unknown and retained; revocation blocks reconciliation',async t=>{
+ const f=await fixture(t),claim=await f.repository.reserve(actor,input,'synthetic-missing-original');let reconciles=0;
+ f.repository.reserve=async a=>{await f.repository.get(a,claim.entry.id);return{entry:f.current()!,token:null,recoveryToken:claim.token!,duplicate:false};};
+ f.repository.reconcile=async()=>{reconciles++;throw Error('no complete original');};
+ for(let i=0;i<2;i++)await assert.rejects(f.service.stage(actor,input,'synthetic-missing-original'),(error:any)=>{assert.equal(error.code,'FILE_HANDOFF_OUTCOME_UNKNOWN');assert.equal(error.handoffId,claim.entry.id);return true;});
+ assert.equal(f.downloads(),0);assert.equal(reconciles,0);assert.equal(f.current()!.state,'pending');assert.equal((await readdir(f.directory)).length,0);
+ f.set({revoked:true});await assert.rejects(f.service.stage(actor,input,'synthetic-missing-original'),{code:'FILE_ACCESS_DENIED'});assert.equal(reconciles,0);
 });
