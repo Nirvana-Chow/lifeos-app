@@ -1,6 +1,6 @@
 import {object} from '../platform/domain.ts';
 import {personalTypes} from '../personal-candidate/business.ts';
-import {readSearchSelection,searchRow,type SearchSelection,type SearchRow,type SearchCoverage} from './model.ts';
+import {readSearchSelection,searchRow,searchCalendarRow,type SearchSelection,type SearchRow,type SearchCoverage} from './model.ts';
 export type PersonalSearchData={query:string;rows:SearchRow[];coverage:SearchCoverage;detail:SearchRow|null;detailUnavailable:boolean};
 type Fetcher=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 export class PersonalSearchError extends Error{readonly kind:'auth'|'unavailable';constructor(kind:'auth'|'unavailable',message:string){super(message);this.kind=kind;}}
@@ -16,7 +16,7 @@ export async function loadPersonalSearch(query:string,selection:SearchSelection|
  const c=value.coverage;if(!c||!Array.isArray(c.types)||c.types.some((type:unknown)=>!personalTypes.includes(type as never))||new Set(c.types).size!==c.types.length||!Number.isInteger(c.scanned)||c.scanned<value.items.length||c.scanned>10000||c.matched!==value.items.length)throw unavailable();
  let rows:SearchRow[],detail:SearchRow|null=null,detailUnavailable=false;
  try{rows=value.items.map((entry:unknown)=>searchRow(entry,before.spaceId,query));if(new Set(rows.map(row=>row.id)).size!==rows.length||rows.some(row=>!c.types.includes(row.type)))throw unavailable();}catch{throw unavailable();}
- if(selection){const original=await read(selection.type+'/'+selection.id,true);if(original===null)detailUnavailable=true;else{try{detail=searchRow(object(original,['entry']).entry,before.spaceId,query);if(detail.id!==selection.id||detail.type!==selection.type)throw unavailable();const found=rows.find(row=>row.id===detail!.id);if(found&&found.sourceId!==detail.sourceId)throw unavailable();}catch{throw unavailable();}}}
+ if(selection){const original=await read(selection.type+'/'+selection.id,true);if(original===null)detailUnavailable=true;else{try{const entry=object(original,['entry']).entry;detail=selection.type==='calendar'?searchCalendarRow(entry,before.spaceId,query):searchRow(entry,before.spaceId,query);if(detail.id!==selection.id||detail.type!==selection.type)throw unavailable();const found=rows.find(row=>row.id===detail!.id);if(found&&found.sourceId!==detail.sourceId)throw unavailable();}catch{throw unavailable();}}}
  const after=await identity();if(before.ownerId!==after.ownerId||before.spaceId!==after.spaceId)throw auth();
  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
  return{query,rows,coverage:c,detail,detailUnavailable};
