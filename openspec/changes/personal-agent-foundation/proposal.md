@@ -6,6 +6,8 @@ LifeOS currently exposes individual business tools without a durable personal as
 
 ## What Changes
 
+Owner continuation (2026-11-14) supersedes conflicting local-only and no-new-executor restrictions: deliver ChatGPT business access + the existing LifeOS ticket system + controlled multi-device Codex execution in already authorized resources. Preserve the current primary Goal and register its in-flight/manual/subagent occupancy before dispatch. Prefer usable HTTPS MCP with actual supported OAuth/install/web/phone operations; ordinary programs perform scheduling, heartbeat, retry and sync without idle model calls. Keep business tools separate from engineering execution and production authority. The [complete engineering contract](../../../docs/superpowers/plans/2026-11-14-business-mcp-controlled-execution.md) maps devices, requirement-change acknowledgment, real file handoff, authorized history/sync, independent restore and development-environment production-build acceptance to the original IDs. All historical decisions below and unfinished tasks remain evidence; conflicting priorities are superseded, not silently erased.
+
 Current owner priority (2026-11-05 live review): requirements/matters first, then usable personal business data with API/Skill, then the durable Agent and modular extensions. Retain the candidates below as later architecture, not a prerequisite blocking the data system. See the [refinement specification](../../../docs/superpowers/specs/2026-11-05-owner-review-refinement.md).
 
 - Establish a single LangGraph JS orchestrator with a PostgreSQL checkpointer and a mature PostgreSQL worker; retain AI SDK as the bounded model/structured-output client and the existing business services as the authoritative writers.
