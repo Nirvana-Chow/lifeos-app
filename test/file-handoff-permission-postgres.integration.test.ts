@@ -15,6 +15,8 @@ test('OPT-IN fresh split-owner file permissions, native runtime and same-transac
  const original=async()=>await readCurrentAgentGrant(verifier,grantId,undefined,true) as OriginalGrant|null,fileConfig={directory,allowedOrigins:['https://synthetic-files.example.invalid'],maxBytes:128,maxReservedBytes:32768,timeoutMs:1000};
  try{
   await verifyFileHandoffPool(runtime as SqlPool);await verifyFilePermissionPool(manager as SqlPool,'lifeos_agent_key_manager');await verifyFilePermissionPool(verifier as SqlPool,'lifeos_agent_verifier');
+  assert.equal((await admin.query('SELECT enabled FROM lifeos_agent.oauth_business_control')).rows[0].enabled,false,'Native files must work before independent OAuth activation');
+  await assert.rejects(runtime.query('SELECT lifeos_agent.file_handoff_identity_ready($1,$2)',[ownerId,spaceId]),{code:'42501'});
   await t.test('native FK triggers coexist with the exact owned immutable-original guards; an additional user trigger is rejected',async()=>{
    const client=await admin.connect();try{
     await client.query('BEGIN');await client.query("CREATE FUNCTION file_handoff_fixture.extra_user_trigger() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN NEW;END$$;CREATE TRIGGER unexpected_file_mutator BEFORE UPDATE ON lifeos_platform.file_handoff FOR EACH ROW EXECUTE FUNCTION file_handoff_fixture.extra_user_trigger()");

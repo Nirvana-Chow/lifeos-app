@@ -43,7 +43,7 @@ export async function createFileHandoffRuntime(pool:SqlPool,personal:PersonalCon
    const actor:FileHandoffActor=Object.freeze({ownerId:owner.ownerId,spaceId:owner.spaceId,authorityRef:'owner:'+sha256(JSON.stringify([owner.ownerId,owner.spaceId])),consumer:'website'});bound(actor);
    return session(actor,async(client,seen,operation)=>{
     if(seen!==actor)fail(403,'FILE_ACCESS_DENIED');await beginAuthority(client);if(['stageFileHandoff','acknowledgeFileHandoff'].includes(operation))await assertWritable();
-    const result=await client.query('SELECT lifeos_agent.assert_file_handoff_owner($1,$2,$3) AS allowed',[owner.sessionRef,actor.ownerId,actor.spaceId]);if(result.rows[0]?.allowed!==true)fail(403,'FILE_ACCESS_DENIED');
+    const result=await client.query('SELECT lifeos_agent.assert_file_handoff_owner($1,$2,$3,$4) AS allowed',[owner.sessionRef,actor.ownerId,actor.spaceId,personal.ownerEmail]);if(result.rows[0]?.allowed!==true)fail(403,'FILE_ACCESS_DENIED');
    });
   },
  };

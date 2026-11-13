@@ -23,13 +23,25 @@ REVOKE ALL ON lifeos_agent.file_handoff_permission,lifeos_agent.file_handoff_per
 REVOKE ALL ON SEQUENCE lifeos_agent.file_handoff_permission_audit_id_seq FROM PUBLIC,lifeos_agent_key_manager,lifeos_agent_verifier,lifeos_platform_candidate_runtime;
 
 CREATE FUNCTION lifeos_agent.file_handoff_permissions_version() RETURNS text LANGUAGE sql SET search_path=pg_catalog,pg_temp AS $$SELECT 'file-handoff-v1'::text$$;
+-- Native file authority uses the original owner/MFA records without requiring
+-- the independently activated OAuth delegation service to be enabled.
+CREATE FUNCTION lifeos_agent.file_handoff_identity_ready(o text,s text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+ IF NOT lifeos_agent.key_management_binding_matches(o,s) THEN RETURN false;END IF;
+ PERFORM 1 FROM lifeos_platform.platform_user WHERE id=o AND "twoFactorEnabled" IS TRUE FOR SHARE;
+ IF NOT FOUND THEN RETURN false;END IF;
+ PERFORM 1 FROM lifeos_platform.platform_two_factor WHERE "userId"=o AND verified IS TRUE FOR SHARE;
+ RETURN FOUND;
+END $$;
 CREATE FUNCTION lifeos_agent.read_file_handoff_permission(g text,o text,s text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
 DECLARE k lifeos_agent.apikey%ROWTYPE;p lifeos_agent.file_handoff_permission%ROWTYPE;v jsonb;BEGIN
- IF NOT lifeos_agent.key_management_binding_matches(o,s) OR NOT lifeos_agent.oauth_business_identity_ready(o) THEN RETURN NULL;END IF;
+ IF NOT lifeos_agent.key_management_binding_matches(o,s) THEN RETURN NULL;END IF;
  SELECT * INTO k FROM lifeos_agent.apikey WHERE id=g FOR SHARE;
  IF NOT FOUND OR k.enabled IS NOT TRUE OR k."referenceId" IS DISTINCT FROM o OR k.metadata::jsonb->>'spaceId' IS DISTINCT FROM s OR k."expiresAt" IS NULL OR k."expiresAt"<=clock_timestamp() OR NOT lifeos_agent.valid_business_permissions(k.permissions::jsonb) THEN RETURN NULL;END IF;
  SELECT * INTO p FROM lifeos_agent.file_handoff_permission WHERE grant_id=g AND owner_id=o AND space_id=s FOR SHARE;
  IF NOT FOUND THEN RETURN NULL;END IF;
+ -- Original transaction gate -> key -> file permission -> native identity.
+ IF NOT lifeos_agent.file_handoff_identity_ready(o,s) THEN RETURN NULL;END IF;
  v:=jsonb_build_object('version','file-handoff-v1','revision',p.revision,'scopes',p.scopes,'consumer',p.consumer);
  RETURN v||jsonb_build_object('digest',encode(sha256(convert_to(v::text,'UTF8')),'hex'));
 END $$;
@@ -57,12 +69,16 @@ DECLARE b lifeos_agent.key_management_binding%ROWTYPE;k lifeos_agent.apikey%ROWT
  INSERT INTO lifeos_agent.file_handoff_permission VALUES(g,b.owner_id,b.space_id,expected_revision+1,new_scopes,new_consumer)
  ON CONFLICT(grant_id) DO UPDATE SET revision=EXCLUDED.revision,scopes=EXCLUDED.scopes,consumer=EXCLUDED.consumer;
  after_state:=lifeos_agent.read_file_handoff_permission(g,b.owner_id,b.space_id);
+ IF after_state IS NULL THEN RAISE EXCEPTION 'Current file identity unavailable' USING ERRCODE='LG403';END IF;
  INSERT INTO lifeos_agent.file_handoff_permission_audit(grant_id,owner_id,space_id,before_state,after_state) VALUES(g,b.owner_id,b.space_id,before_state,after_state);
  RETURN after_state;
 END $$;
-CREATE FUNCTION lifeos_agent.assert_file_handoff_owner(session_id text,o text,s text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
-BEGIN
- RETURN lifeos_agent.key_management_binding_matches(o,s) AND lifeos_agent.oauth_business_owner_ready(session_id,o);
+CREATE FUNCTION lifeos_agent.assert_file_handoff_owner(session_id text,o text,s text,email text) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE current_token text;BEGIN
+ IF NOT lifeos_agent.key_management_binding_matches(o,s) THEN RETURN false;END IF;
+ SELECT token INTO current_token FROM lifeos_platform.platform_session WHERE id=session_id AND "userId"=o AND "expiresAt">clock_timestamp() AND "mfaVerified" IS TRUE FOR SHARE;
+ IF NOT FOUND OR NOT lifeos_agent.file_handoff_identity_ready(o,s) THEN RETURN false;END IF;
+ RETURN lifeos_agent.verify_management_session(current_token,o,email);
 END $$;
 -- Preserve the original provider/ledger implementation. File-enabled consent and
 -- token publication additionally hold the current explicit file permission row.
@@ -87,11 +103,11 @@ DECLARE required text[];p jsonb;BEGIN
  RETURN lifeos_agent.register_oauth_business_token(g,o,s,token_id,claims,grant_type);
 END $$;
 REVOKE ALL ON FUNCTION lifeos_agent.file_handoff_permissions_version(),lifeos_agent.read_file_handoff_permission(text,text,text),lifeos_agent.assert_file_handoff_permission(text,text,text,integer,text[],text,text),lifeos_agent.set_file_handoff_permission(text,text,text,integer,text[],text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION lifeos_agent.assert_file_handoff_owner(text,text,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lifeos_agent.file_handoff_identity_ready(text,text),lifeos_agent.assert_file_handoff_owner(text,text,text,text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lifeos_agent.approve_file_handoff_oauth_binding(text,text,text,text,text,text[]),lifeos_agent.register_file_handoff_oauth_token(text,text,text,text,jsonb,text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION lifeos_agent.file_handoff_permissions_version(),lifeos_agent.read_file_handoff_permission(text,text,text) TO lifeos_agent_key_manager,lifeos_agent_verifier,lifeos_platform_candidate_runtime;
 GRANT EXECUTE ON FUNCTION lifeos_agent.assert_file_handoff_permission(text,text,text,integer,text[],text,text) TO lifeos_platform_candidate_runtime;
-GRANT EXECUTE ON FUNCTION lifeos_agent.assert_file_handoff_owner(text,text,text) TO lifeos_platform_candidate_runtime;
+GRANT EXECUTE ON FUNCTION lifeos_agent.assert_file_handoff_owner(text,text,text,text) TO lifeos_platform_candidate_runtime;
 GRANT EXECUTE ON FUNCTION lifeos_agent.approve_file_handoff_oauth_binding(text,text,text,text,text,text[]),lifeos_agent.register_file_handoff_oauth_token(text,text,text,text,jsonb,text) TO lifeos_platform_candidate_runtime;
 GRANT EXECUTE ON FUNCTION lifeos_agent.set_file_handoff_permission(text,text,text,integer,text[],text) TO lifeos_agent_key_manager;
 -- These new IDs do not enter the old automatic business-policy registry.
