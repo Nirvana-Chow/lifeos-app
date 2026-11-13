@@ -7,6 +7,8 @@ import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {assertPrivateFixtureNavigation} from './helpers/private-business-browser-fixture.ts';
+import {MemoryPort} from './helpers/platform.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 
 test('OPT-IN desktop hierarchy preserves authorized destinations, real domain relations, settings history and responsive keyboard access',{skip:process.env.RUN_WORKSPACE_HIERARCHY_BROWSER_TESTS!=='1'&&'Requires isolated synthetic Next/Chrome fixture',timeout:120000},async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-hierarchy-'));
@@ -22,7 +24,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
  const page=await browser.newPage({viewport:{width:1365,height:900}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  let enabled=true;
- await page.route('**/api/platform/**',route=>route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}}));
+ await page.route('**/api/platform/**',route=>route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}}));
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
  await expect(nav.getByRole('group',{name:'生活记录'}).getByRole('link',{name:'日记',exact:true})).toBeVisible();
@@ -49,7 +51,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  assert.deepEqual(errors,[]);
 });
 
-test('OPT-IN exact private navigation oracle accepts only the enabled three-link owner surface',{skip:process.env.RUN_WORKSPACE_HIERARCHY_BROWSER_TESTS!=='1'&&'Requires isolated synthetic Next/Chrome fixture',timeout:120000},async t=>{
+test('OPT-IN exact private navigation oracle accepts only the enabled four-link owner surface',{skip:process.env.RUN_WORKSPACE_HIERARCHY_BROWSER_TESTS!=='1'&&'Requires isolated synthetic Next/Chrome fixture',timeout:120000},async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-navigation-oracle-'));
  let browser:Browser|undefined,browserServer:BrowserServer|undefined,browserProcess:FixtureProcess|undefined,server:FixtureProcess|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server}));
@@ -61,14 +63,22 @@ test('OPT-IN exact private navigation oracle accepts only the enabled three-link
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout')),30000);const check=()=>{const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);child.stdout.off('data',check);accept(match[0]);}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit'));});check();});
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
- const page=await browser.newPage({viewport:{width:1365,height:900}}),errors:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));let enabled=true;
- await page.route('**/api/platform/**',route=>{if(route.request().method()!=='GET')writes.push(route.request().method());return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'navigation-owner',spaceId:'navigation-space',storageVerified:true,allowedTypes:['todo','journal','project','domain','topic']}: {scope:'closed'}});});
+ const page=await browser.newPage({viewport:{width:1365,height:900}}),errors:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));let enabled=true,advertised=true,statusReads=0;
+ const config={ownerId:'navigation-owner',ownerEmail:'navigation@example.invalid',spaceId:'navigation-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic']} as const;
+ const handler=createPersonalPlatformHandler({config,repository:new MemoryPort(),storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{}});
+ await page.route('**/api/platform/**',async route=>{
+  const request=route.request();if(request.method()!=='GET')writes.push(request.method());
+  if(!enabled)return route.fulfill({headers:{'cache-control':'private, no-store'},json:{scope:'closed'}});
+  const response=await handler(new Request(request.url(),{method:request.method(),headers:{...request.headers(),host:new URL(origin).host}}));assert.ok(response);
+  let body=await response.text();if(['/api/platform/personal/status','/api/platform/status'].includes(new URL(request.url()).pathname)){const value=JSON.parse(body);assert.equal(value.storageReviewEnabled,true);statusReads++;if(!advertised){delete value.storageReviewEnabled;body=JSON.stringify(value);}}
+  return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body});
+ });
  const open=async(width=1365)=>{await page.setViewportSize({width,height:844});await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
  for(const width of [1365,390]){await open(width);await assertPrivateFixtureNavigation(page);t.diagnostic('original navigation oracle passed '+width);}
- for(const change of ['extra','href','missing','order','closed']){
-  enabled=change!=='closed';await open();
-  if(change!=='closed')await page.getByRole('navigation',{name:'主导航',exact:true}).evaluate((nav,change)=>{const search=nav.querySelector('a[href="/personal/search"]')!;if(change==='extra'){const link=document.createElement('a');link.href='/personal/extra';link.textContent='额外入口';nav.append(link);}else if(change==='href')search.setAttribute('href','/personal/search/extra');else if(change==='missing')search.remove();else nav.append(search);},change);
-  await assert.rejects(assertPrivateFixtureNavigation(page),change==='href'?/toHaveAttribute/:/toHaveText/);t.diagnostic('strict navigation rejection: '+change);
+ for(const change of ['extra','href','missing','order','storage-href','storage-missing','unadvertised','closed']){
+  enabled=change!=='closed';advertised=change!=='unadvertised';await open();
+  if(change!=='closed'&&change!=='unadvertised')await page.getByRole('navigation',{name:'主导航',exact:true}).evaluate((nav,change)=>{const search=nav.querySelector('a[href="/personal/search"]')!,storage=nav.querySelector('a[href="/personal/storage-review"]')!;if(change==='extra'){const link=document.createElement('a');link.href='/personal/extra';link.textContent='额外入口';nav.append(link);}else if(change==='href')search.setAttribute('href','/personal/search/extra');else if(change==='missing')search.remove();else if(change==='storage-href')storage.setAttribute('href','/personal/storage-review/extra');else if(change==='storage-missing')storage.remove();else nav.append(search);},change);
+  await assert.rejects(assertPrivateFixtureNavigation(page),change.endsWith('href')?/toHaveAttribute/:/toHaveText/);t.diagnostic('strict navigation rejection: '+change);
  }
- assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
+ assert.ok(statusReads>0);assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
 });

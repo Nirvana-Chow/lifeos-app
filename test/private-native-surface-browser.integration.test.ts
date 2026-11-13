@@ -8,7 +8,7 @@ import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test'
 import {readyHeading,assertPrivateFixtureNavigation} from './helpers/private-business-browser-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
-test('OPT-IN private route oracle accepts native closed surfaces and only the granted journal link',{
+test('OPT-IN private route oracle accepts native closed surfaces and only the advertised owner links',{
  skip:process.env.RUN_PRIVATE_NATIVE_SURFACE_BROWSER_TESTS!=='1'&&'Requires disposable read-only Next/Chrome fixture',timeout:120000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-private-native-'));
@@ -33,7 +33,7 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
   await page.route('**/api/platform/**',async route=>{
    const request=route.request(),path=new URL(request.url()).pathname;requests.push(request.method()+' '+path);
    if(request.method()!=='GET')return route.abort();
-   const body=path==='/api/platform/personal/status'?{scope:'personal-manual-candidate',ownerId:'personal-review-user',spaceId:'personal-review-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}:path==='/api/platform/personal/finance/status'?{scope:'personal-finance-v1',configured:false,writable:false}:path==='/api/platform/personal/calendar/status'?{scope:'personal-calendar-v1',configured:false,writable:false}:null;
+   const body=path==='/api/platform/personal/status'?{scope:'personal-manual-candidate',ownerId:'personal-review-user',spaceId:'personal-review-space',storageVerified:true,storageReviewEnabled:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}:path==='/api/platform/personal/finance/status'?{scope:'personal-finance-v1',configured:false,writable:false}:path==='/api/platform/personal/calendar/status'?{scope:'personal-calendar-v1',configured:false,writable:false}:null;
    if(!body)return route.abort();
    await route.fulfill({status:200,headers:{'cache-control':'private, no-store'},json:body});
   });

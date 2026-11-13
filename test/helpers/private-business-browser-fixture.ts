@@ -52,7 +52,7 @@ export async function withPrivateBrowserFixture<T>(handoff:PrivateBrowserHandoff
  let browser:Browser|undefined,context:BrowserContext|undefined,untrust:(()=>void)|undefined;
  try{
   untrust=trustFixtureCA(join(process.env.RUNNER_TEMP!,'recovery-tls','ca.crt'));browser=await chromium.launch({channel:'chrome',headless:true,args:privateBrowserArgs});context=await browser.newContext({viewport:{width:1365,height:900},colorScheme:'light'});context.setDefaultTimeout(5000);context.setDefaultNavigationTimeout(10000);await context.addCookies(handoff.cookies);const page=await context.newPage();await page.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});
-  const status=await privateRead(page,'/api/platform/personal/status');assert.equal(status.ownerId,'personal-review-user');assert.equal(status.scope,'personal-manual-candidate');assert.equal(status.spaceId,handoff.spaceId);assert.equal(status.storageVerified,true);assert.equal(status.writable,true);assert.deepEqual(status.allowedTypes,['todo','journal','project','domain','topic']);await assertPrivateReceipts(page,handoff.entries);
+  const status=await privateRead(page,'/api/platform/personal/status');assert.equal(status.ownerId,'personal-review-user');assert.equal(status.scope,'personal-manual-candidate');assert.equal(status.spaceId,handoff.spaceId);assert.equal(status.storageVerified,true);assert.equal(status.storageReviewEnabled,true);assert.equal(status.writable,true);assert.deepEqual(status.allowedTypes,['todo','journal','project','domain','topic']);await assertPrivateReceipts(page,handoff.entries);
   return await run({browser,context,page,entries:handoff.entries});
  }finally{let failed=false;try{await context?.close();}catch{failed=true;}try{await browser?.close();}catch{failed=true;}try{untrust?.();}catch{failed=true;}if(failed)throw Error('BROWSER_FIXTURE_CLEANUP_FAILED');}
 }
@@ -228,10 +228,11 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
 export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  await expect(navigation.getByRole('button')).toHaveText(['总览','事项']);
- await expect(navigation.getByRole('link')).toHaveText(['搜索本人记录','日记','做饭']);
+ await expect(navigation.getByRole('link')).toHaveText(['搜索本人记录','日记','做饭','存储审核']);
  await expect(navigation.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
  await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
+ await expect(navigation.getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await expect(navigation.locator('summary')).toHaveCount(0);
  const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
  // The TLS fixture binds workspace state to URLs; the native surface fixture
