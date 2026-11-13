@@ -36,6 +36,7 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
     if(expired||expirePost)return route.fulfill({status:401,json:{error:{code:'UNAUTHORIZED'}},headers});
     const duplicate=receipts.has(key);let entry=receipts.get(key);
     if(!entry){const id=crypto.randomUUID();entry={id,kind:'todo',revision:1,draft:normalizePersonalFields('todo',body.fields),source:{id:crypto.randomUUID(),system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type:'todo',input:body}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null};entries.push(entry);receipts.set(key,entry);}
+    if(body.fields.title==='合成原单条待确认'&&!duplicate)return route.abort();
     return route.fulfill({status:duplicate?200:201,json:{entry,duplicate},headers});
    }
    if(url.pathname.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin},headers});
@@ -74,6 +75,13 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await dialog.getByRole('button',{name:'清空批次'}).click();await expect(dialog.getByLabel('原始输入（最多50行）')).toBeVisible();
   await dialog.getByLabel('原始输入（最多50行）').focus();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
+  await page.getByRole('button',{name:'新建待办',exact:true}).click();await page.getByRole('button',{name:'多行录入',exact:true}).click();
+  await dialog.getByLabel('原始输入（最多50行）').fill('合成保留未尝试批次');await dialog.getByRole('button',{name:'预检条目'}).click();
+  page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'关闭并保留',exact:true}).click();await expect(dialog).toHaveCount(0);
+  await page.getByRole('button',{name:'新建待办',exact:true}).click();const single=page.getByRole('dialog',{name:'新建待办',exact:true});await single.getByLabel('标题',{exact:true}).fill('合成原单条待确认');await single.getByRole('button',{name:'保存待办',exact:true}).click();await expect(single.getByRole('button',{name:'重试同一请求',exact:true})).toBeEnabled();
+  assert.equal(calls.length,6);page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
+  await page.getByRole('button',{name:'重试同一请求',exact:true}).click();await expect(page.getByRole('button',{name:'重试同一请求',exact:true})).toHaveCount(0);assert.equal(calls.length,7);assert.deepEqual(calls[5],calls[6]);assert.equal(entries.length,4);
+  await page.getByRole('button',{name:'新建待办',exact:true}).click();await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,7);
   assert.deepEqual(errors,[]);console.log('TASK_BATCH_BROWSER_PASS '+JSON.stringify({calls:calls.length,records:entries.length,readbacks,desktop:true,mobile:true,keyboard:true}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });

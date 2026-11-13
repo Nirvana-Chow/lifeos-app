@@ -28,3 +28,18 @@ test('an exact historical receipt can complete when independent GET observes a l
  await session.submit(makePersonalCommand(binding,'journal',null,{title:'Original',text:'First authorized input',occurredOn:null},'record-newer-replay',true));assert.equal(session.getSnapshot().phase,'uncertain');
  lose=false;await session.retry();assert.equal(session.getSnapshot().phase,'saved');assert.equal(session.getSnapshot().saved?.revision,1);assert.equal(session.getSnapshot().observed?.revision,2);assert.equal(store.size,0);assert.equal(repo.rows.size,1);
 });
+test('cancelled or invalidated attempt late auth failure cannot revoke a newer binding',async()=>{
+ for(const stop of ['cancel','invalidateBinding'] as const)for(const stage of ['post','get','status'])for(const code of [401,403]){
+  let release!:()=>void,started!:()=>void,lost=0;
+  const gate=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>started=r),repo=new MemoryPort(),service=new PersonalService(repo,config);
+  const binding={ownerId:config.ownerId,spaceId:config.spaceId};
+  const session=new PersonalMutationSession({binding,onAuthorizationLost:()=>lost++,fetcher:async(input,init)=>{
+   const here=init?.method==='POST'?'post':String(input).endsWith('/status')?'status':'get';
+   if(here===stage){started();await gate;return Response.json({error:{code:'UNAUTHORIZED'}},{status:code});}
+   if(here==='post')return Response.json(await service.mutate(config.ownerId,'journal',null,JSON.parse(String(init?.body)),new Headers(init?.headers).get('idempotency-key')!),{status:201});
+   return Response.json({entry:await service.get(config.ownerId,'journal',String(input).split('/').at(-1)!)});
+  }});
+  const command=makePersonalCommand(binding,'journal',null,{title:'Synthetic',text:'Synthetic body',occurredOn:null},'late-auth-cancelled',true),pending=session.submit(command,true);
+  await entered;session[stop]();release();await pending;assert.equal(lost,0,stop+stage+code);assert.equal(session.getSnapshot().phase,'uncertain');assert.deepEqual(session.getSnapshot().pending,command);
+ }
+});

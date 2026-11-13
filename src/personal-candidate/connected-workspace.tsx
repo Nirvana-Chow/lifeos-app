@@ -49,7 +49,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  // A draft stays in component memory while concealed, scoped to its original verified owner and space.
  const verifiedBinding=controller.current?.getEditorBinding()??null;
  const concealed=!verifiedBinding||!editor||!sameBinding(editor.binding,verifiedBinding);
- useEffect(()=>{if(!verifiedBinding)return;const scope=JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]);if(restoredBatchScope.current===scope)return;restoredBatchScope.current=scope;try{if(window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId))){setEditor(null);setBatchBinding(verifiedBinding);}else setBatchBinding(null);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
+ useEffect(()=>{if(!verifiedBinding)return;const scope=JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]);if(restoredBatchScope.current===scope)return;restoredBatchScope.current=scope;setBatchBinding(null);try{const retained=window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId));const host=controller.current;const matching=!host?.getSnapshot().uncertain||retained&&JSON.parse(retained).rows?.some((row:{command:unknown})=>host?.matchesPendingBatchCommand(row.command));if(retained&&matching){setEditor(null);setBatchBinding(verifiedBinding);}else setBatchBinding(null);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
  const selectedId=editor?.target.mode==='edit'?editor.target.task.id:null;
  const selectedTask=!concealed&&selectedId&&snapshot.state.status==='ready'
   ?snapshot.state.data.tasks.find(task=>task.id===selectedId)
@@ -124,6 +124,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   writable={snapshot.access.writable===true} saving={snapshot.saving} error={snapshot.mutationError}
   onSave={async command=>commandStorage.current?await controller.current?.saveBatchTask(command)??null:null}
   onClose={()=>{setBatchBinding(null);queueMicrotask(()=>returnFocus.current?.isConnected&&returnFocus.current.focus());}}
+  canSubmit={commands=>{const host=controller.current;return !!host&&(host.matchesPendingBatchCommand(null)||commands.some(command=>host.matchesPendingBatchCommand(command)));}}
   isUncertain={()=>{const current=controller.current?.getSnapshot();return current?.uncertain===true||current?.state.status!=='ready';}}
   onStop={()=>controller.current?.cancel()} closeGuard={batchCloseGuard}/>}
 
