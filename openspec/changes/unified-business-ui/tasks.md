@@ -171,3 +171,9 @@ The feature integration preserves author commits. Its finite capture registry ad
 The integration regression observed RED before the finite-source/summary alignment, then 48 focused tests passed with zero failures or skips; TypeScript and strict OpenSpec validation passed. The full default suite and browser/build qualification are reserved for the original fixed-main pipeline; unchanged final author-browser evidence is reused.
 
 Combined-tree point review, the full original fixed-main CI/build, existing private automatic publication, original Native + HTTPS runtime/readback and owner experience acceptance remain pending. Earlier failed runs, remaining renderer/performance/recovery work and original 2.1/3.1/3.2 acceptance boundaries are preserved. No workflow, dependency, schema, permission, production trust or real business record is changed by this checkpoint.
+
+## Local review gate clarification (2026-11-14; LO-OPS-001 / Issue #30)
+
+Continue the same 1.2/3.1/3.2 mapping and preserve every preceding task ID, checkbox and historical result. The owner explicitly requires proportionate local checks and independent review before merge, covering affected original product routes/consumers, fixture configuration and applicable permission/save/unknown-result/recovery boundaries. Fix locally reproducible failures before CI; align stale oracles with verified contracts without weakening assertions, removing guards or increasing timeouts to hide failures. See the [local review gate](../../../docs/development/working-agreement.md#合并前本地审查).
+
+This documentation change retains feature PRs, branch protection and the full original pipeline once per fixed combined main SHA, existing private publication and Native + HTTPS readback. It changes no workflow or tooling and does not complete a product, deployment or owner-acceptance gate.
