@@ -46,7 +46,10 @@ export class PrivateFileBlobs{
  }
  async inspect(id:string,token:string):Promise<BlobReceipt>{
   if(!fileIdSchema.safeParse(id).success||!fileIdSchema.safeParse(token).success)fail(503,'FILE_BLOB_UNAVAILABLE');
-  return(await this.verified(id+'.'+token+'.blob')).blob;
+  const result=await this.verified(id+'.'+token+'.blob');
+  // A published name can survive a failed prior fsync without being durable yet.
+  try{await this.syncDirectory();}catch{throw new FileHandoffError(503,'FILE_STORAGE_OUTCOME_UNKNOWN');}
+  return result.blob;
  }
  private async verified(key:string,expected?:BlobReceipt){
   try{

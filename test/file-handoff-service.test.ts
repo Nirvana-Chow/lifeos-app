@@ -87,3 +87,13 @@ test('expiry with no completed original remains unknown and retained; revocation
  assert.equal(f.downloads(),0);assert.equal(reconciles,0);assert.equal(f.current()!.state,'pending');assert.equal((await readdir(f.directory)).length,0);
  f.set({revoked:true});await assert.rejects(f.service.stage(actor,input,'synthetic-missing-original'),{code:'FILE_ACCESS_DENIED'});assert.equal(reconciles,0);
 });
+
+test('an uncertain published original cannot become ready until directory durability succeeds on recovery',async t=>{
+ const f=await fixture(t),store=f.blobs as unknown as {syncDirectory:()=>Promise<void>},sync=store.syncDirectory.bind(store);let blocked=true,syncAttempts=0,reconciles=0;
+ store.syncDirectory=async()=>{syncAttempts++;if(blocked)throw Error('synthetic persistent directory fsync failure');await sync();};
+ const key='synthetic-durable-original';await assert.rejects(f.service.stage(actor,input,key),{code:'FILE_STORAGE_OUTCOME_UNKNOWN'});const pending=f.current()!,names=await readdir(f.directory),token=names[0].split('.')[1];assert.equal(syncAttempts,1);
+ f.repository.reserve=async()=>({entry:f.current()!,token:null,...(f.current()!.state==='pending'?{recoveryToken:token}:{}),duplicate:f.current()!.state==='ready'});
+ f.repository.reconcile=async(a,id,claim,blob)=>{reconciles++;return f.repository.publish(a,id,claim,blob);};
+ await assert.rejects(f.service.stage(actor,input,key),(error:any)=>{assert.equal(error.code,'FILE_HANDOFF_OUTCOME_UNKNOWN');assert.equal(error.handoffId,pending.id);return true;});assert.equal(syncAttempts,2);assert.equal(reconciles,0);assert.equal(f.current()!.state,'pending');assert.equal(f.downloads(),1);assert.deepEqual(await readdir(f.directory),names);
+ blocked=false;const recovered=await f.service.stage(actor,input,key);assert.equal(recovered.entry.state,'ready');assert.equal(recovered.entry.id,pending.id);assert.equal(syncAttempts,3);assert.equal(reconciles,1);assert.equal(f.downloads(),1);assert.equal((await f.service.download(actor,pending.id)).bytes.toString(),'real synthetic file bytes\n');assert.equal((await f.service.stage(actor,input,key)).duplicate,true);
+});

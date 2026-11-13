@@ -47,7 +47,9 @@ export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];bu
   const proof=filePermissionSchema.parse(grant.fileHandoff),scopes=grant.scopes.filter(scope=>scope.startsWith('file-handoff:'));
   if(scopes.length!==proof.scopes.length||!scopes.every(scope=>proof.scopes.includes(scope as never)))throw Error('Invalid file permission');
   const{fileHandoff:_,...base}=grant;
-  const original=normalizeOperationGrantScopes({...base,scopes:grant.scopes.filter(scope=>!scope.startsWith('file-handoff:')),allowedOperationIds:grant.allowedOperationIds?.filter(id=>!['stageFileHandoff','getFileHandoff','downloadFileHandoff','acknowledgeFileHandoff'].includes(id))});
+  const ordinaryScopes=grant.scopes.filter(scope=>!scope.startsWith('file-handoff:'));
+  // Only this already-validated explicit file proof can have no legacy scope intersection.
+  const original=!ordinaryScopes.length&&base.businessDataPolicy===undefined?[]:normalizeOperationGrantScopes({...base,scopes:ordinaryScopes,allowedOperationIds:grant.allowedOperationIds?.filter(id=>!['stageFileHandoff','getFileHandoff','downloadFileHandoff','acknowledgeFileHandoff'].includes(id))});
   return Object.freeze([...original,...scopes].sort()) as readonly OperationScope[];
  }
  if(!grant.businessDataPolicy)return normalizeAgentScopes(grant.scopes);

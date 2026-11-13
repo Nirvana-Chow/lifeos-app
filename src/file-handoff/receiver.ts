@@ -36,8 +36,8 @@ export class FileReceiver{
  async #receiveBytes(request:Transfer,entry:FileEntry){
   await this.#blobs.checkReady();const target=join(this.#options.directory,request.filename),opaque=join(this.#options.directory,request.id+'.'+request.token+'.blob'),destination=await this.#exists(target),staged=await this.#exists(opaque);
   if(destination){
-   if(staged){if(destination.dev!==staged.dev||destination.ino!==staged.ino)fail(503,'FILE_LOCAL_OUTCOME_UNKNOWN');await this.#readLocal(request,2);await unlink(opaque);await this.#sync();}
-   await this.#readLocal(request);return;
+   if(staged){if(destination.dev!==staged.dev||destination.ino!==staged.ino)fail(503,'FILE_LOCAL_OUTCOME_UNKNOWN');await this.#readLocal(request,2);await unlink(opaque);}
+   await this.#readLocal(request);await this.#sync();return;
   }
   if(!staged){
    const path='/v1/file-handoffs/'+request.id+'/content',result=await this.#options.nativeBinaryRequest(path);

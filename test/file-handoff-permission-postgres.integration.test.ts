@@ -1,8 +1,9 @@
+import {Client,StreamableHTTPClientTransport} from '@modelcontextprotocol/client';import {createAgentHandler} from '../src/agent-api/http.ts';import {createMcpHttpHandler} from '../src/mcp-http/handler.ts';
 import test from 'node:test';import assert from 'node:assert/strict';import {randomUUID} from 'node:crypto';import {mkdtemp,realpath,rm} from 'node:fs/promises';import {join} from 'node:path';import {tmpdir} from 'node:os';import {setTimeout as delay} from 'node:timers/promises';
 import {qualifyFileFixture,fileFixturePool,fileFixture as fixture} from './helpers/file-handoff-stage-pg.ts';
 import {verifyFilePermissionPool,verifyFileHandoffPool} from '../src/file-handoff/readiness.ts';import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';import {AuthorityService} from '../src/agent-authority/service.ts';import {fileActor} from '../src/file-handoff/authorization.ts';
 import {createFileHandoffRuntime} from '../src/file-handoff/runtime.ts';import {PostgresFileHandoffs} from '../src/file-handoff/postgres.ts';import {PrivateFileBlobs} from '../src/file-handoff/blob-store.ts';import {PinnedFileSource} from '../src/file-handoff/source.ts';import {FileHandoffService} from '../src/file-handoff/service.ts';import {FileHandoffError} from '../src/file-handoff/contracts.ts';
-import {lockCurrentAgentGrant,readPlatformEntryOnClient,PostgresPlatformRepository,type SqlPool,type SqlClient} from '../src/platform/postgres.ts';import {RequirementsService} from '../src/requirements-candidate/service.ts';import {requirements} from '../src/platform/requirements.ts';import {fileHandoffOperations} from '../src/file-handoff/operations.ts';import {BusinessOAuthLedger,intersectOAuthGrant,type OriginalGrant} from '../src/business-mcp-oauth/ledger.ts';
+import {lockCurrentAgentGrant,readPlatformEntryOnClient,PostgresPlatformRepository,type SqlPool,type SqlClient} from '../src/platform/postgres.ts';import {RequirementsService} from '../src/requirements-candidate/service.ts';import {requirements} from '../src/platform/requirements.ts';import {fileHandoffOperations} from '../src/file-handoff/operations.ts';import {BusinessOAuthLedger,intersectOAuthGrant,tokenIdentity,type OriginalGrant} from '../src/business-mcp-oauth/ledger.ts';
 
 async function waitBlocked(admin:ReturnType<typeof fileFixturePool>,pid:()=>number,blocker:number){const end=Date.now()+4000;while(Date.now()<end){if(pid()>0&&(await admin.query('SELECT $2::int=ANY(pg_blocking_pids($1)) AS blocked',[pid(),blocker])).rows[0].blocked)return;await delay(10);}assert.fail('Expected actual PostgreSQL current-permission lock barrier');}
 
@@ -75,6 +76,27 @@ test('OPT-IN fresh split-owner file permissions, native runtime and same-transac
    // Synthetic verified-claim seam; official signature/PKCE are qualified by the original OAuth suite, not this fixture.
    const state=await ledger.register('synthetic-file-token',claims,'authorization_code');assert.ok(state);const current=intersectOAuthGrant(state,(await original())!)!;assert.equal(fileActor(current).consumer,undefined);assert.deepEqual(current.allowedOperationIds,['stageFileHandoff','getFileHandoff']);
    const sameNamespace=fileActor(current).authorityRef;assert.equal(sameNamespace,actor.authorityRef);
+   // Keep only the source transport synthetic. The actual runtime authority,
+   // original SQL repository, target reader and binary store remain unchanged.
+   const readOAuth=async(tokenId:string)=>{const latest=await ledger.read(tokenId);return latest?intersectOAuthGrant(latest,await original()):null;};
+   const scopedRuntime={...files,forAgent:(seen:Parameters<typeof files.forAgent>[0])=>{const session=files.forAgent(seen),ports=(session.service as unknown as {options:ConstructorParameters<typeof FileHandoffService>[0]}).options;return{...session,service:new FileHandoffService({...ports,source})};}};
+   const agentHTTP=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,config:personal,repository:{},modules:{organization:false,classification:false,fileHandoff:true},fileHandoff:scopedRuntime,verify:async(token:string)=>readOAuth(tokenIdentity(token)),readCurrentGrant:async(_id:string,seenFence?:typeof state.oauthFence)=>seenFence?readOAuth(seenFence.tokenId):null,assertWritable:async()=>{},operationAvailable:()=>true} as any);
+   const mcp=createMcpHttpHandler({enabled:true,origin:personal.baseURL,dispatch:agentHTTP}),mcpClient=new Client({name:'synthetic-pg-file-only-oauth',version:'1'},{versionNegotiation:{mode:{pin:'2026-07-28'}}});
+   try{
+    await mcpClient.connect(new StreamableHTTPClientTransport(new URL(personal.baseURL+'/api/platform/mcp'),{requestInit:{headers:{authorization:'Bearer synthetic-file-token'}},fetch:async(input,init)=>{const request=new Request(input,init);request.headers.set('host','lifeos.nirvanachow.com');return mcp(request);}}));
+    const tools=(await mcpClient.listTools()).tools;assert.equal(tools.some(tool=>tool.name==='lifeos_stage_file'),true);assert.equal(JSON.stringify(tools).includes('createTodo'),false);
+    const staged=await mcpClient.callTool({name:'lifeos_stage_file',arguments:{...input,idempotencyKey:'synthetic-pg-file-only-command'}});assert.equal((staged.structuredContent as any).ok,true);assert.equal((staged.structuredContent as any).verification.verified,true);const receivedId=(staged.structuredContent as any).data.entry.id;
+    const independent=await mcpClient.callTool({name:'lifeos_call',arguments:{operationId:'getFileHandoff',arguments:{id:receivedId}}});assert.equal((independent.structuredContent as any).ok,true);assert.equal((independent.structuredContent as any).data.entry.id,receivedId);
+   }finally{await mcpClient.close();}
+   const readonlyState=await ledger.register('synthetic-file-readonly-token',{...claims,scope:'file-handoff:read offline_access'},'refresh_token');assert.ok(readonlyState);
+   const readonlyClient=new Client({name:'synthetic-pg-file-readonly-oauth',version:'1'},{versionNegotiation:{mode:{pin:'2026-07-28'}}});
+   try{
+    await readonlyClient.connect(new StreamableHTTPClientTransport(new URL(personal.baseURL+'/api/platform/mcp'),{requestInit:{headers:{authorization:'Bearer synthetic-file-readonly-token'}},fetch:async(input,init)=>{const request=new Request(input,init);request.headers.set('host','lifeos.nirvanachow.com');return mcp(request);}}));
+    const tools=(await readonlyClient.listTools()).tools;assert.equal(tools.some(tool=>tool.name==='lifeos_stage_file'),false);assert.equal(JSON.stringify(tools).includes('getTodo'),false);
+    const read=await readonlyClient.callTool({name:'lifeos_call',arguments:{operationId:'getFileHandoff',arguments:{id:saved.entry.id}}});assert.equal((read.structuredContent as any).ok,true);const before=downloads;
+    const denied=await readonlyClient.callTool({name:'lifeos_stage_file',arguments:{...input,idempotencyKey:'synthetic-pg-readonly-no-stage'}});assert.equal((denied.structuredContent as any).ok,false);assert.equal(downloads,before);
+   }finally{await readonlyClient.close();}
+
    await set(3,[]);await assert.rejects(ledger.approve(sessionId,clientId,oauth.scopes),/DENIED/);assert.equal(await ledger.register('synthetic-file-refreshed-token',claims,'refresh_token'),null);
    const sql=await runtime.connect();try{await sql.query('BEGIN');assert.equal(await lockCurrentAgentGrant(sql as SqlClient,ownerId,{...current,operationId:'stageFileHandoff'},['file-handoff:read','file-handoff:write']),false);await sql.query('ROLLBACK');}finally{sql.release();}
    assert.equal((await owner.service.get(owner.actor,saved.entry.id)).entry.revision,4);
