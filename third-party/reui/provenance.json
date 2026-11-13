@@ -21,7 +21,8 @@
       "adaptations": [
         "Local attribution header identifies upstream commit, copyright, full license path and this provenance file; sourceSha256 remains the upstream content hash",
         "Relative imports use existing cn and Button; local Radix Checkbox and Lucide Spinner",
-        "Plus icon replaces upstream docs-only IconPlaceholder"
+        "Plus icon replaces upstream docs-only IconPlaceholder",
+        "ARIA row indices use native memoized display positions shared with keyboard navigation across grouping, sorting, filtering, pagination and pinned rows"
       ]
     },
     {
