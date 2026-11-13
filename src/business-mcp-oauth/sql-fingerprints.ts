@@ -1,0 +1,16 @@
+// Reviewed proposed0021 function bodies; runtime parity is part of activation readiness.
+export const oauthSqlFingerprints={
+ "oauth_business_statement_gate": "d015899f41a4f1c94969de6afc50e7a0f248a292b8c1bdd688d3bbc202347087",
+ "oauth_business_identity_ready": "66fb7cd8423155161456fccecc4f421b3e7eccc6e83f9f9b69b43918354822ec",
+ "oauth_business_owner_ready": "9573b1587c70e2b7cc68acf08b30f8849548ef9d60a1983d01b4cfe654816432",
+ "oauth_business_code_guard": "d51219b32f87527e210f36b278e6736bec53e796e776c331333ff6bc526fea9f",
+ "oauth_business_invalidate": "1f68d849c66da0c78bf5ddd3a81d03c6a30986b29d37b85039517fd3433af413",
+ "oauth_business_security_invalidate": "6be77ae406a6be5f9f526a453d6968328eaca1cd5237415baec2697fe4081e31",
+ "approve_oauth_business_binding": "3173933616fc0be604816f1a19f003530fe13d00d941672a609fe099b81ed807",
+ "read_oauth_business_token": "aa825051937db81d612c4227289f62dce93622ae1fe3de1c05c71d2d8318e285",
+ "register_oauth_business_token": "9b46dc7a0d1c4305a105fff8b729ecae8907db43f3555d19957f50d57977b85f",
+ "assert_oauth_business_grant": "50bf1f109441223438ccf1a4c1a9d93fbb0246ab2f1d283e9484bb7fbc03af9c",
+ "revoke_oauth_business_token": "2d66791bd82b18baf43c0ff792f21a8c2047c8281f019a7dd18105cf25349c5f",
+ "oauth_business_activation": "0b2d9fdb7fc3bbd11525d07faf354461e776fcb15d7db2d930a619d4a841281c",
+ "oauth_business_version": "db41def6a1ff324c64e84b9869dc0b8d4779b5c3e7d8994b0504d72428416f7a"
+} as const;

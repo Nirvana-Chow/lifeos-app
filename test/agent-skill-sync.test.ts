@@ -40,6 +40,6 @@ test('portable Skill prefers v2 discovery and limits fallback to a 404 legacy ca
   const reference=renderAgentOperations();
   assert.match(reference,/Required scopes/);
   for(const operation of agentOperations) for(const scope of operation.requiredScopes) {
-    assert.ok(reference.split('\n').find(line=>line.includes('`'+operation.id+'`'))?.includes(scope));
+    assert.ok(reference.split('\n').find(line=>line.startsWith('| `'+operation.id+'` |'))?.includes(scope));
   }
 });

@@ -6,6 +6,57 @@ Provide durable and bounded assistant runs whose progress, waits, cancellation a
 
 ## ADDED Requirements
 
+### Requirement: Controlled engineering execution preserves current work
+
+Engineering scheduling SHALL register existing Goals/manual/subagent occupancy before admission and run only approved dependency-ready tasks. Ordinary programs SHALL schedule/heartbeat/retry/sync without idle model calls. One bounded task SHALL have one valid executor; parallelism requires separate accepted subtasks. Retries/device changes SHALL retain new attempts with prior evidence.
+
+#### Scenario: An execution environment is added
+
+- **WHEN** Mac, server Codex or Cloud is connected
+- **THEN** start/resume/status/cancel/result are each verified, dot remains a candidate until tested, and attempts retain task/content version/device/session-or-cloud-task/workspace/branch/state/results
+
+#### Scenario: A current primary Goal already owns work
+
+- **WHEN** controlled scheduling is enabled
+- **THEN** its ownership and capacity are preserved rather than claiming, interrupting or duplicating the same broad Goal
+
+### Requirement: Capacity and loss of contact are fenced
+
+Capacity SHALL reflect actual load/current occupancy and reserved unknowns, with task/subagent/build-test/model limits and production reservations. Workspaces MUST NOT replace task locks or shared-resource coordination. Offline devices SHALL receive no new tasks. Invalidated executors SHALL be unable to update progress, merge or publish. Reconnect reconciliation, pause, drain and safe cancellation SHALL be supported.
+
+#### Scenario: Devices compete for a build or execution slot
+
+- **WHEN** a new task would exceed measured or reserved capacity
+- **THEN** it waits without affecting the existing website/database; the scheduler does not infer capacity from device count or ignore manual tasks and shared ports/databases
+
+#### Scenario: A disconnected executor's lease expires
+
+- **WHEN** the server has not established the old process and result outcome
+- **THEN** it holds takeover for reconciliation and does not run a second copy on another device
+
+### Requirement: Requirement changes have explicit adoption
+
+Material content changes SHALL persist a new content version/change event and notify the existing executor. Saved, pending delivery, pending acknowledgment and adopted SHALL be distinct; the executor SHALL record its adopted version at safe checkpoints. Unaffected work may continue, but delivery SHALL recheck current content and refuse completion against unhandled changes. Progress and notification acknowledgments MUST NOT create new admission.
+
+#### Scenario: An owner changes an in-flight task
+
+- **WHEN** the current executor has not adopted the new content version
+- **THEN** the change remains visible as unhandled and old-version work cannot be declared complete or dispatched as a duplicate task
+
+### Requirement: Engineering delivery includes development-environment production build
+
+Functional source SHALL pass applicable types/tests and a full production build with same-output checks in its qualified development environment before PR/CI/CD. Heavy builds SHALL queue; only unchanged source/dependency/environment evidence may be reused. Fixed-main checks/artifacts, serialized publication, failed-release protection and runtime readback remain mandatory. Documentation-only edits receive appropriate checks.
+
+#### Scenario: The current environment lacks build resources
+
+- **WHEN** the Mac, isolated server or cloud workspace cannot build safely
+- **THEN** validation moves to a qualified isolated environment rather than skipping, and changed source/dependencies/environment invalidate prior evidence
+
+#### Scenario: A development build fails
+
+- **WHEN** the prepared delivery source fails its production build
+- **THEN** it is repaired and reverified before entering the release path; a later CI build is not substituted for that missing result
+
 ### Requirement: Runs expose a bounded observable lifecycle
 
 A run SHALL bind a goal, source selection, authority and policy versions, model configuration and explicit limits. The website SHALL expose actual stage, evidence/proposal counts, wait/failure reason and receipts without internal model thoughts or invented progress percentages. Initial limits SHALL be20 nodes,6 model calls,20 read/preview tools and ten active minutes unless a stricter approved policy applies.

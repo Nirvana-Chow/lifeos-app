@@ -6,6 +6,34 @@ Move explicitly authorized personal source packages into typed LifeOS records wi
 
 ## ADDED Requirements
 
+### Requirement: Programmatic synchronization preserves one authoritative writer
+
+LifeOS SHALL persist its own full business body/fields/source versions in its database. Specialized Apple/training/finance sources SHALL retain their existing authority rather than defaulting to dual-primary writes. Programs SHALL use available events, incremental APIs or controlled file imports with stable IDs, deduplication, conflicts, deletion semantics, independent readback and visible pending/as-of state.
+
+#### Scenario: LifeOS receives a financial statement
+
+- **WHEN** a statement is stored but no verified Qianji import/API readback exists
+- **THEN** it is not reported as Qianji bookkeeping success or used to overwrite that specialized source
+
+#### Scenario: Both sides modify the same authoritative field
+
+- **WHEN** synchronization observes divergent source versions
+- **THEN** it preserves the authority and conflict for reconciliation rather than applying dual-primary last-write-wins
+
+### Requirement: History migration has server-independent backup and restore
+
+Authorized history SHALL be inventoried, backed up, sample-validated and imported in idempotent batches preserving originals/body/time/IDs/source versions/relations. Database, necessary files and sync checkpoints SHALL have backup independent of the business server, with actual restore/reconciliation in a qualified independent environment. Company content and the complete Photos library MUST remain excluded.
+
+#### Scenario: The only backup is on the business server
+
+- **WHEN** restore succeeds only from another directory or database on that same server
+- **THEN** independent backup and restore acceptance remains unmet and expansion of sensitive migration is held
+
+#### Scenario: An original record is absent from the selected inventory
+
+- **WHEN** an authorized history batch has missing source material
+- **THEN** coverage identifies that gap without fabricated content or removal of unique old-source evidence
+
 ### Requirement: Migration starts from an immutable authorized package
 
 A migration SHALL identify a fixed source package, content digest, source versions, authorized selection, coverage and mapper version. Credentials, runtime configuration, executable workflows and company material MUST be excluded. Package existence alone SHALL NOT authorize application.

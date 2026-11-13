@@ -6,6 +6,8 @@ import {Pool} from 'pg';
 import {verifyRequirementEventReadiness} from '../src/requirement-events/readiness.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';
+import {AuthorityService} from '../src/agent-authority/service.ts';
+import {eventOperations} from '../src/requirement-events/contracts.ts';
 import {PostgresRequirementEventStore} from '../src/requirement-events/postgres.ts';
 import {RequirementEventService} from '../src/requirement-events/service.ts';
 import {RequirementsService} from '../src/requirements-candidate/service.ts';
@@ -149,6 +151,29 @@ test('OPT-IN requirement transaction outbox rollback, receipt dedupe and lease f
    const catalog=await(await send('/v2/capabilities')).json();assert.equal(catalog.eventTransports[0].transport,'sse');assert.equal(catalog.operations.some((op:any)=>op.id==='streamRequirementEvents'),false);
    const claim=await send('/v1/requirement-events/claims','POST',{requirementId:created.entry.id,workDigest:work.work_digest,holderId:'synthetic-api-mac'},'synthetic-event-api-claim');assert.equal(claim.status,200);const claimed=(await claim.json()).lease;
    const current=await(await send('/v1/requirements/'+created.entry.id)).json();assert.equal(current.execution.lease.id,claimed.id);assert.equal(current.execution.leaseActive,true);
+   // Expiry is observable loss of authority, not evidence that the old process
+   // stopped. Exercise the real restricted query before its page limit and the
+   // original HTTP claim/receipt path; no synthetic takeover is authorized.
+   const authority=new AuthorityService({ownerId:config.ownerId,spaceId:config.spaceId,verifyOwner:async()=>null,verifyAgent:async()=>readCurrentAgentGrant(verifier,grantId),readCurrentAgent:id=>readCurrentAgentGrant(verifier,id)});
+   const actor=await authority.resolveAgentActor('synthetic-event-request');assert.ok(actor);
+   await admin.query("UPDATE lifeos_platform.requirement_work SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE requirement_id=$1",[created.entry.id]);
+   try{
+    const expired=(await admin.query('SELECT * FROM lifeos_platform.requirement_work WHERE requirement_id=$1',[created.entry.id])).rows;
+    assert.deepEqual(await events.store.transaction(actor,eventOperations.stream,tx=>tx.ready(1)),[],'Expired running work must be excluded by the actual SQL query before LIMIT');
+    const held=await send('/v1/requirement-events/claims','POST',{requirementId:created.entry.id,workDigest:work.work_digest,holderId:'synthetic-replacement-server'},'synthetic-event-expired-reclaim');
+    assert.equal(held.status,409);assert.deepEqual(await held.json(),{error:'EXECUTION_RECONCILIATION_REQUIRED'});
+    assert.deepEqual((await admin.query('SELECT * FROM lifeos_platform.requirement_work WHERE requirement_id=$1',[created.entry.id])).rows,expired,'No attempt, fence, old lease or progress changes before reconciliation');
+    assert.equal((await admin.query("SELECT count(*)::int AS n FROM lifeos_platform.requirement_claim_command WHERE command_key='synthetic-event-expired-reclaim'")).rows[0].n,0);
+    const recovered=await send('/v1/requirement-events/claims','POST',{requirementId:created.entry.id,workDigest:work.work_digest,holderId:'synthetic-api-mac'},'synthetic-event-api-claim');
+    assert.equal(recovered.status,200);assert.deepEqual((await recovered.json()).lease,claimed,'Original command can recover its historical receipt without acquiring another lease');
+    const observed=await(await send('/v1/requirements/'+created.entry.id)).json();assert.equal(observed.execution.leaseActive,false);assert.equal(observed.execution.lease.id,claimed.id);
+    assert.equal((await send('/v1/requirement-events/claims/'+claimed.id,'PATCH',{action:'renew',lease:claimed},'synthetic-event-expired-renew')).status,409);
+    assert.deepEqual((await admin.query('SELECT * FROM lifeos_platform.requirement_work WHERE requirement_id=$1',[created.entry.id])).rows,expired);
+   }finally{
+    // Restore only this fixture's injected clock condition for independent
+    // original cases below; this is not a production reconciliation operation.
+    await admin.query('UPDATE lifeos_platform.requirement_work SET lease_expires_at=$1 WHERE requirement_id=$2 AND lease_id=$3',[new Date(claimed.expiresAt).toISOString(),created.entry.id,claimed.id]);
+   }
    const admissions=[];
    for(const original of [legacyPrivate,legacyPublic]){
     const read=await(await send('/v1/requirements/'+original.id)).json();assert.equal(read.execution.admissionEligible,true);assert.equal(await eventCount(original.id),0,'GET does not backfill or admit legacy records');
