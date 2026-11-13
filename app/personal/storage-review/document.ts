@@ -199,13 +199,22 @@ function parseSnapshot(value) {
   if (decisions.size !== value.decisions.length) throw Error('LifeOS 返回的决定无效。');
   return {revision:value.revision,checklist,decisions:[...decisions].map(([id,decision])=>({id,decision}))};
 }
-async function requestReview(method='GET',body) {
-  const options = {method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)};
+function freezeReviewCommand(method,body) {
+  return Object.freeze({url:REVIEW_API,method,body:JSON.stringify(body),key:crypto.randomUUID()});
+}
+function decisionMatches(snapshot,pending) {
+  const original = JSON.parse(pending.command.body);
+  return snapshot && snapshot.revision > original.expectedRevision && snapshot.checklist.revision === pending.checklistRevision &&
+    (snapshot.decisions.find(row=>row.id===pending.id)?.decision ?? null) === pending.decision;
+}
+async function requestReview(method='GET',body,command) {
+  if (body && !command) command = freezeReviewCommand(method,body);
+  const options = {method:command?.method ?? method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)};
   if (body) {
-    options.headers = {'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()};
-    options.body = JSON.stringify(body);
+    options.headers = {'Content-Type':'application/json','Idempotency-Key':command.key};
+    options.body = command.body;
   }
-  const response = await fetch(REVIEW_API,options);
+  const response = await fetch(command?.url ?? REVIEW_API,options);
   if (!response.ok) throw Object.assign(Error('LifeOS 请求未成功。'),{status:response.status});
   const data = await response.json();
   return parseSnapshot(data.review);
@@ -224,6 +233,8 @@ function syncControls() {
   if (pending && synced) {
     const latest = choices.get(pending.id);
     byId('pending-description').textContent = pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。请核对后重试或放弃；本次输入仅保留在当前页面。';
+    byId('pending-description').textContent += pending.outcome === 'rejected' ? ' 原请求已明确拒绝，可按最新版本重新确认。' : pending.outcome === 'confirmed' ? ' 原请求已收到确认，读回后不会重复写入。' : ' 原请求结果未知，重试只会恢复原请求，不会覆盖为新的决定。';
+    byId('retry-decision').textContent = pending.outcome === 'rejected' ? '按最新版本重新确认' : pending.outcome === 'confirmed' ? '确认原请求结果' : '按原请求重试确认';
     byId('retry-decision').disabled = busy || uncertain || !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending');
     byId('discard-decision').disabled = busy;
   }
@@ -266,26 +277,36 @@ async function openServer(automatic=false) {
     syncControls();
   }
 }
-async function writeServer(method,body,match) {
+async function writeServer(method,body,match,command) {
   busy = true;
   syncStatus = 'saving';
   syncControls();
   announce('正在保存并读回 LifeOS…');
   let failure;
-  try { await requestReview(method,body); }
-  catch (error) { failure = error; }
+  const pending = pendingDecision;
+  const priorUnknown = pending?.outcome === 'unknown';
+  try {
+    const receipt = await requestReview(method,body,command);
+    if (pending) pending.outcome = match(receipt) ? 'confirmed' : 'unknown';
+  } catch (error) {
+    failure = error;
+    if (pending) pending.outcome = !priorUnknown && error?.status === 409 ? 'rejected' : 'unknown';
+  }
   try {
     const fresh = await requestReview();
     remote = fresh;
     uncertain = false;
     sessionDenied = false;
     const agrees = fresh && match(fresh);
-    syncStatus = agrees ? 'saved' : 'error';
-    if (agrees) pendingDecision = null;
+    const confirmed = pending?.outcome === 'confirmed';
+    syncStatus = agrees || confirmed ? 'saved' : 'error';
+    if (agrees || confirmed) pendingDecision = null;
     if (fresh && (synced || agrees)) useReview(fresh.checklist,fresh,false);
     if (agrees) {
       announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : '决定已保存，并已读回 LifeOS。');
-    } else if (failure?.status === 409) {
+    } else if (confirmed) {
+      announce('原请求已确认；最新服务器决定已有变化，已显示最新状态。可另行选择新的决定。');
+    } else if (pending?.outcome === 'rejected' || !pending && failure?.status === 409) {
       announce('LifeOS 清单已变化，已读回最新状态。请核对后重试。');
     } else {
       announce('已读回 LifeOS，但未确认本次保存。请核对后重试。');
@@ -323,10 +344,10 @@ async function choose(item,decision) {
   if (synced) {
     const expectedRevision = remote.revision;
     const checklistRevision = review.revision;
-    pendingDecision = {id:item.id,decision,checklistRevision};
-    await writeServer('PATCH',{expectedRevision,checklistRevision,id:item.id,decision},snapshot=>
-      snapshot.revision>expectedRevision && snapshot.checklist.revision===checklistRevision &&
-      (snapshot.decisions.find(row=>row.id===item.id)?.decision ?? null)===decision);
+    const body = {expectedRevision,checklistRevision,id:item.id,decision};
+    const pending = {id:item.id,decision,checklistRevision,command:freezeReviewCommand('PATCH',body),outcome:'new'};
+    pendingDecision = pending;
+    await writeServer('PATCH',body,snapshot=>decisionMatches(snapshot,pending),pending.command);
   } else {
     if (decision === null) choices.delete(item.id);
     else choices.set(item.id,decision);
@@ -441,14 +462,25 @@ byId('group-filter').addEventListener('change',render);
 byId('discard-decision').addEventListener('click',()=>{
   if (busy) return; pendingDecision = null; syncStatus = uncertain ? 'error' : 'saved'; render(); announce(uncertain ? '已放弃本次输入，保存结果仍需重新读回确认。' : '已放弃本次输入，当前显示最近读回的服务器决定。');
 });
-byId('retry-decision').addEventListener('click',()=>{
+async function retryDecision() {
   if (!pendingDecision || !canEdit() || review.revision !== pendingDecision.checklistRevision) return;
   const pending = pendingDecision;
   const item = review.items.find(item=>item.id===pending.id && item.status==='pending');
   if (!item) return;
-  pendingDecision = null;
-  if ((choices.get(item.id) ?? null) === pending.decision) {syncStatus = 'saved'; render(); announce('读回的决定已与本次输入一致。');return;}
-  void choose(item,pending.decision);
+  if (decisionMatches(remote,pending) || pending.outcome === 'confirmed') {
+    pendingDecision = null; syncStatus = 'saved'; render();
+    announce(decisionMatches(remote,pending) ? '读回的决定已与本次输入一致。' : '原请求已确认；最新服务器决定已有变化，已显示最新状态。可另行选择新的决定。');
+    return;
+  }
+  if (pending.outcome === 'rejected') {
+    pendingDecision = null;
+    await choose(item,pending.decision);
+  } else {
+    await writeServer(pending.command.method,JSON.parse(pending.command.body),snapshot=>decisionMatches(snapshot,pending),pending.command);
+  }
+}
+byId('retry-decision').addEventListener('click',()=>{
+  void retryDecision();
 });
 byId('compact').addEventListener('click',()=>{
   compact = !compact;
