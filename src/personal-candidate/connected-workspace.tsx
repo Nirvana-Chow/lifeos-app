@@ -34,6 +34,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const[snapshot,setSnapshot]=useState<ControllerSnapshot>({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null});
  const[editor,setEditor]=useState<EditorContext|null>(null),initialOpened=useRef(false),returnFocus=useRef<HTMLElement|null>(null);
  const[batchBinding,setBatchBinding]=useState<PersonalBinding|null>(null);
+ const restoredBatchScope=useRef<string|null>(null);
  const batchCloseGuard=useRef<(()=>boolean)|null>(null);
  const editorCloseGuard=useRef<(()=>boolean)|null>(null);
  useEffect(()=>{let storage:Storage|undefined;try{storage=window.sessionStorage;}catch{/* Without reliable command retention, mutation will be disabled below. */}
@@ -48,7 +49,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  // A draft stays in component memory while concealed, scoped to its original verified owner and space.
  const verifiedBinding=controller.current?.getEditorBinding()??null;
  const concealed=!verifiedBinding||!editor||!sameBinding(editor.binding,verifiedBinding);
- useEffect(()=>{if(!verifiedBinding)return;try{if(window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId)))setBatchBinding(verifiedBinding);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
+ useEffect(()=>{if(!verifiedBinding)return;const scope=JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]);if(restoredBatchScope.current===scope)return;restoredBatchScope.current=scope;try{if(window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId))){setEditor(null);setBatchBinding(verifiedBinding);}else setBatchBinding(null);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
  const selectedId=editor?.target.mode==='edit'?editor.target.task.id:null;
  const selectedTask=!concealed&&selectedId&&snapshot.state.status==='ready'
   ?snapshot.state.data.tasks.find(task=>task.id===selectedId)

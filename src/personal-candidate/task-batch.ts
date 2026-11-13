@@ -1,4 +1,5 @@
 import {makePersonalCommand,type PersonalCommand,type PersonalBinding} from './client.ts';
+import {validateTodo} from '../platform/domain.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type BatchRow={title:string;selected:boolean;state:'pending'|'unknown'|'failed'|'verified';command:PersonalCommand|null;receipt:Pick<PublicEntry,'id'|'revision'>|null};
@@ -9,7 +10,7 @@ export class TaskBatch {
  private binding:PersonalBinding;private storage:Store;private key:()=>string;
  constructor(binding:PersonalBinding,storage:Store,key:()=>string){this.binding=binding;this.storage=storage;this.key=key;this.storageKey='lifeos.personal.todo-batch.v1:'+encodeURIComponent(binding.ownerId)+':'+encodeURIComponent(binding.spaceId);const saved=storage.getItem(this.storageKey);if(saved){const parsed=JSON.parse(saved);if(!Array.isArray(parsed.rows)||parsed.rows.length>50||typeof parsed.raw!=='string')throw Error('批次草稿无法核对，请保留当前页面。');this.raw=parsed.raw;this.rows=parsed.rows;for(const row of this.rows){if(typeof row.title!=='string'||typeof row.selected!=='boolean'||!['pending','unknown','failed','verified'].includes(row.state))throw Error('批次草稿无效。');if(row.command){const expected=this.command(row.title,row.command.key);if(JSON.stringify(expected)!==JSON.stringify(row.command))throw Error('保留的行请求无法核对。');}if(row.state==='unknown'&&!row.command)throw Error('保留的行请求缺失。');}}
  }
- private command(title:string,key:string){return makePersonalCommand(this.binding,'todo',null,{title,notes:'',dueOn:null,status:'open'},key,true);}
+ private command(title:string,key:string){return makePersonalCommand(this.binding,'todo',null,validateTodo({title,notes:'',dueOn:null,status:'open'}),key,true);}
  private keep(){const value=JSON.stringify({raw:this.raw,rows:this.rows});this.storage.setItem(this.storageKey,value);if(this.storage.getItem(this.storageKey)!==value)throw Error('无法保留批次，尚未继续发送。');}
  draft(raw:string){if(this.busy||this.rows.length)return;this.raw=raw;this.keep();}
  preview(raw:string){if(this.rows.some(r=>r.command)||this.busy)throw Error('请先完成原批次。');const lines=raw.split(/\r\n|\n|\r/);if(lines.length>50)throw Error('每批最多50行，请分批录入。');this.raw=raw;this.rows=lines.map(title=>({title,selected:true,state:'pending',command:null,receipt:null}));this.keep();}

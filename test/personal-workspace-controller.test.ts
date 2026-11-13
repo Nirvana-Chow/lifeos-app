@@ -146,3 +146,6 @@ test('batch readback failure retains exact command across reload and does not sk
  const second=create();await second.refresh();assert.equal(second.getSnapshot().uncertain,true);expired=true;assert.equal(await second.saveBatchTask(command),null);assert.equal(second.getSnapshot().uncertain,true);assert.equal(f.writes.length,2);
  expired=false;readback=true;const saved=await second.saveBatchTask(command);assert.equal(saved?.id,'44444444-4444-4444-8444-444444444444');assert.equal(second.getSnapshot().uncertain,false);assert.equal(reads.length,3);assert.deepEqual(f.writes[0],f.writes[1]);assert.deepEqual(f.writes[1],f.writes[2]);assert.equal(f.storage.size,0);
 });
+test('batch preflight preserves raw input while following the single writer title normalization',async()=>{
+ const {TaskBatch}=await import('../src/personal-candidate/task-batch.ts');const f=fixture();await f.controller.refresh();const store=new Map<string,string>();const batch=new TaskBatch({ownerId:'fixture-owner',spaceId:'fixture-space'},{getItem:k=>store.get(k)??null,setItem:(k,v)=>{store.set(k,v);},removeItem:k=>{store.delete(k);}},()=>crypto.randomUUID());batch.preview('  明天交稿  ');await batch.run(c=>f.controller.saveBatchTask(c));assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.fields.title,'明天交稿');assert.equal(batch.raw,'  明天交稿  ');
+});

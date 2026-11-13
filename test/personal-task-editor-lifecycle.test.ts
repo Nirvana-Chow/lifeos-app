@@ -195,3 +195,7 @@ test('new task exposes optional project and domain directly and hides business l
  assert.equal(find(tree,n=>n.type==='details'),undefined);assert.equal(find(tree,n=>n.type==='legend'&&text(n)==='主题'),undefined);
  }finally{h.dispose();}
 });
+
+test('a retained closed batch cannot replace a dirty single-task editor after same-owner visibility refresh',async()=>{
+ const f=fixture();f.storage.set('lifeos.personal.todo-batch.v1:fixture-owner:fixture-space',JSON.stringify({raw:'Synthetic retained batch',rows:[]}));const h=harness(f);h.render();await flush();h.render();h.actions().onOpenTask({id:f.id,revision:3});let tree=h.render();find(tree,n=>n.type==='input'&&n.props.maxLength===240)!.props.onChange({target:{value:'Retain single editor draft'}});h.render();h.hidden();h.visible();await flush();tree=h.render();assert.equal(find(tree,n=>n.type==='input'&&n.props.maxLength===240)?.props.value,'Retain single editor draft');assert.equal(f.writes.length,0);h.dispose();
+});
