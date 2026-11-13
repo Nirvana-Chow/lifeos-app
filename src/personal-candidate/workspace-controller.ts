@@ -88,12 +88,19 @@ export class PersonalWorkspaceController{
   if(context.priorStatus!==undefined&&observed.revision===saved.revision){this.undo={id:saved.id,revision:saved.revision,status:context.priorStatus,deadline:this.now()+10000};}
   this.emit({state:{status:'ready',data:checked.data},undoDeadline:this.undo?.deadline??null});this.pending=null;return structuredClone(saved);
  }
+ async saveBatchTask(command:PersonalCommand):Promise<PublicEntry|null>{
+  if(!this.binding||command.ownerId!==this.binding.ownerId||command.spaceId!==this.binding.spaceId||command.type!=='todo'||command.id!==null)return null;
+  if(this.value.uncertain){const pending=this.session?.getSnapshot().pending;if(!pending||canonical(pending)!==canonical(command))return null;return this.retry(true);}
+  const fields=command.body.fields;
+  if(!('title'in fields)||!('notes'in fields))return null;
+  return this.save(null,{title:fields.title,text:fields.notes,date:'',status:'open'},undefined,command);
+ }
  async saveTask(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields):Promise<PublicEntry|null>{
   const entry=task?this.getTaskEntry(task):null,previous=entry&&this.binding?editorFromEntry(entry,this.binding.spaceId).fields:null;
   const priorStatus=previous&&previous.status!==fields.status&&canonical({...previous,status:fields.status})===canonical(fields)?previous.status:undefined;
   return this.save(task,fields,priorStatus);
  }
- private async save(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields,priorStatus?:WorkspaceTask['status']):Promise<PublicEntry|null>{
+ private async save(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields,priorStatus?:WorkspaceTask['status'],batchCommand?:PersonalCommand):Promise<PublicEntry|null>{
   if(this.planningReadbackRequired){this.emit({mutationError:'排期回读尚未确认，请先重新读取当前记录。'});return null;}
   if(this.busy||this.value.saving||this.value.uncertain||this.value.state.status!=='ready'||!this.value.access.writable||!this.value.access.allowedTypes?.includes('todo')||!this.binding||!this.session)return null;
   const entry=task?this.getTaskEntry(task):null;if(task&&!entry){this.emit({mutationError:'记录不存在或版本已变化，请重新读取后再操作。'});return null;}
@@ -103,8 +110,9 @@ export class PersonalWorkspaceController{
    for(const {type,link} of personalReferences(draft)){const target=this.entries.find(e=>e.id===link.id);if(!target||target.source.id!==link.sourceId||target.revision!==link.revision||editorFromEntry(target,binding.spaceId).type!==type)throw Error('关联记录或版本已变化，请重新选择后保存。');}
    const check=await this.json('/api/platform/personal/status',preflight.signal);if(token!==this.generation||session!==this.session)return null;
    if(!check.response.ok||!obj(check.body)||check.body.scope!=='personal-manual-candidate'||check.body.ownerId!==binding.ownerId||check.body.spaceId!==binding.spaceId||check.body.storageVerified!==true||check.body.writable!==true||!Array.isArray(check.body.allowedTypes)||!check.body.allowedTypes.includes('todo')){this.suspend();this.emit({state:{status:'forbidden',message:'会话或写入权限已变化，请重新登录核对。'}});return null;}
-   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,this.options.key(),true,task?.revision);
-   this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
+   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision);
+   if(batchCommand&&canonical(command)!==canonical(batchCommand))throw Error('保留的行请求内容不符，未发送。');
+   this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,!!batchCommand);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
   }catch(error){if(token===this.generation)this.emit({mutationError:error instanceof Error?error.message:'操作未确认，请重新读取核对。'});return null;}
   finally{if(this.preflight===preflight)this.preflight=null;if(session===this.session&&token===this.generation)this.busy=false;if(session===this.session&&token===this.generation&&this.value.saving&&session.getSnapshot().phase!=='saving'){const state=session.getSnapshot();if(state.phase==='idle'||state.phase==='saved')this.emit({saving:false,pendingTaskIds:[]});else this.readMutation();}}
  }
@@ -117,14 +125,14 @@ export class PersonalWorkspaceController{
   const entry=this.getTaskEntry(undo);if(!entry){this.clearUndo();this.emit({mutationError:'记录已变化，无法撤销旧操作。'});return;}
   const fields=editorFromEntry(entry,this.binding!.spaceId).fields;await this.save(undo,{...fields,status:undo.status});
  }
- async retry():Promise<PublicEntry|null>{
+ async retry(verifyReadback=false):Promise<PublicEntry|null>{
   const session=this.session;if(!session||!this.binding||this.value.state.status!=='ready'||this.value.saving||this.busy)return null;
   const command=session.getSnapshot().pending;if(!command)return null;
   const current=command.id?this.entries.find(e=>e.id===command.id)??null:null;
   const context=this.pending?{...this.pending,generation:this.generation}:{command,base:current,generation:this.generation,session};
   // Retry preserves the original command and key; it never creates a second mutation.
   let failure:string|null=null;
-  try{this.busy=true;await session.retry();return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
+  try{this.busy=true;await session.retry(verifyReadback);return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
  }
  cancel(){++this.generation;this.preflight?.abort();this.preflight=null;this.busy=false;this.clearUndo();this.session?.cancel();this.readMutation();}
  async logout(){this.suspend();try{const response=await this.options.fetcher('/api/platform/auth/sign-out',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});if(!response.ok)throw Error();this.emit({state:{status:'forbidden',message:'已退出。'},access:{authenticated:false,writable:false,loginAllowed:true}});}catch{this.emit({state:{status:'error',message:'退出结果未确认，请重试退出。'}});}}

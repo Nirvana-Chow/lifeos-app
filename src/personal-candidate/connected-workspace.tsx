@@ -5,6 +5,7 @@ import type{PersonalBinding}from'./client';
 import{useEffect,useRef,useState,type ReactNode}from'react';
 import{PersonalWorkspaceController,type ControllerSnapshot}from'./workspace-controller';
 import{TaskEditor}from'./task-editor';
+import{TaskBatchEditor}from'./task-batch-editor';
 import editorStyles from './task-editor.module.css';
 import{editorFromEntry,type PersonalEditorFields}from'./editor';
 import{resolveTaskTarget,type TaskIdentity,type TaskTarget}from'./task-editor-state';
@@ -32,6 +33,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const cellDrafts=useRef(new TaskCellDraftMemory()).current;
  const[snapshot,setSnapshot]=useState<ControllerSnapshot>({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null});
  const[editor,setEditor]=useState<EditorContext|null>(null),initialOpened=useRef(false),returnFocus=useRef<HTMLElement|null>(null);
+ const[batchBinding,setBatchBinding]=useState<PersonalBinding|null>(null);
+ const batchCloseGuard=useRef<(()=>boolean)|null>(null);
  const editorCloseGuard=useRef<(()=>boolean)|null>(null);
  useEffect(()=>{let storage:Storage|undefined;try{storage=window.sessionStorage;}catch{/* Without reliable command retention, mutation will be disabled below. */}
   commandStorage.current=!!storage;
@@ -45,6 +48,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  // A draft stays in component memory while concealed, scoped to its original verified owner and space.
  const verifiedBinding=controller.current?.getEditorBinding()??null;
  const concealed=!verifiedBinding||!editor||!sameBinding(editor.binding,verifiedBinding);
+ useEffect(()=>{if(!verifiedBinding)return;try{if(window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId)))setBatchBinding(verifiedBinding);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
  const selectedId=editor?.target.mode==='edit'?editor.target.task.id:null;
  const selectedTask=!concealed&&selectedId&&snapshot.state.status==='ready'
   ?snapshot.state.data.tasks.find(task=>task.id===selectedId)
@@ -57,8 +61,9 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   cellDrafts.captureCurrent();
   if(cellDrafts.hasDraft()&&!window.confirm('放弃尚未保存的修改？'))return false;
   if(editorCloseGuard.current?.()===false)return false;
+  if(batchCloseGuard.current?.()===false)return false;
   cellDrafts.discardCurrent();
-  setEditor(null);
+  setEditor(null);setBatchBinding(null);
   return true;
  };
  const navigate=(url:string)=>{if(beforeNavigate())window.location.assign(url);};
@@ -85,6 +90,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   writable={snapshot.access.writable===true} saving={snapshot.saving} uncertain={snapshot.uncertain}
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}
   onStopWaiting={()=>controller.current?.cancel()}
+  onBatch={()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
   closeGuard={editorCloseGuard}
  />;
  return <>{children({
@@ -110,6 +116,14 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   },
  })}
  {editorContent}
- {(!editor||concealed)&&snapshot.uncertain&&<section role="alert" className={editorStyles.recovery}><p>保存结果尚未确认，原请求已保留。</p><button onClick={async()=>{if(await retry())close();}} disabled={snapshot.saving}>重试同一请求</button></section>}
- {(!editor||concealed)&&snapshot.saving&&<button onClick={()=>controller.current?.cancel()}>停止等待并保留请求</button>}</>;
+ {batchBinding&&<TaskBatchEditor key={JSON.stringify(batchBinding)} binding={batchBinding}
+  concealed={!verifiedBinding||!sameBinding(batchBinding,verifiedBinding)}
+  writable={snapshot.access.writable===true} saving={snapshot.saving} error={snapshot.mutationError}
+  onSave={async command=>commandStorage.current?await controller.current?.saveBatchTask(command)??null:null}
+  onClose={()=>{setBatchBinding(null);queueMicrotask(()=>returnFocus.current?.isConnected&&returnFocus.current.focus());}}
+  isUncertain={()=>controller.current?.getSnapshot().uncertain===true}
+  onStop={()=>controller.current?.cancel()} closeGuard={batchCloseGuard}/>}
+
+ {!batchBinding&&(!editor||concealed)&&snapshot.uncertain&&<section role="alert" className={editorStyles.recovery}><p>保存结果尚未确认，原请求已保留。</p><button onClick={async()=>{if(await retry())close();}} disabled={snapshot.saving}>重试同一请求</button></section>}
+ {!batchBinding&&(!editor||concealed)&&snapshot.saving&&<button onClick={()=>controller.current?.cancel()}>停止等待并保留请求</button>}</>;
 }
