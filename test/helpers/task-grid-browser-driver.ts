@@ -23,6 +23,17 @@ export const taskGridInput = (page: Page) => taskGridRoot(page).getByRole('textb
 export const taskGridTitleCell = (page: Page, title: string) => taskGridRoot(page).getByRole('gridcell', { name: title, exact: true });
 export const taskGridViewport = (page: Page) => taskGridRoot(page).locator('[data-slot="data-grid-table-viewport"]');
 
+/** Explicit full-field fixture setup; an automatic checked state alone is not a saved choice. */
+export async function showTaskGridReferenceColumns(page:Page):Promise<void>{
+  const grid=taskGridRoot(page),columns=grid.getByRole('button',{name:'列设置',exact:true});
+  await columns.click();
+  for(const label of ['项目','领域']){
+    const choice=grid.getByRole('checkbox',{name:`显示${label}列`,exact:true});
+    await choice.uncheck();await choice.check();
+  }
+  await columns.click();
+}
+
 /** Native virtual rows only: neither the old canvas nor any text fallback can satisfy this oracle. */
 export async function requireTaskGrid(page: Page, title: string, expectedRows = 1): Promise<void> {
   await expect.poll(async () => reuiGridRendered(await page.evaluate(({ title, expectedRows }) => {

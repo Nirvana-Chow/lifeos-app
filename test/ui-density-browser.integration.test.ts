@@ -7,6 +7,7 @@ import {join,resolve} from 'node:path';
 import test from 'node:test';
 import {chromium,expect} from '@playwright/test';
 import {renderedContrast} from './helpers/personal-contrast.ts';
+import {showTaskGridReferenceColumns} from './helpers/task-grid-browser-driver.ts';
 
 // Internal synthetic fixture. It is never owner-data delivery or a production writer.
 test('OPT-IN dense appearances and stable owner-scoped native column editing',{
@@ -24,11 +25,16 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1366,height:768}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
  const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();
+ await expect(grid.locator('thead th[data-col-id]')).toHaveCount(5);
+ await showTaskGridReferenceColumns(page);await expect(grid.locator('thead th[data-col-id]')).toHaveCount(7);
  assert.equal(await grid.locator('thead th').first().innerText(),'完成','completion leads the native table');
  const columns=grid.getByRole('button',{name:'列设置',exact:true});await columns.click();await grid.getByRole('button',{name:'向前移动状态列',exact:true}).click();await grid.getByRole('checkbox',{name:'显示项目列',exact:true}).uncheck();await columns.click();
  const status=grid.locator('tr[data-row-id="synthetic-0"] td[data-col-id="status"]');await status.dblclick();await grid.getByLabel('编辑状态',{exact:true}).selectOption({label:'进行中'});await page.keyboard.press('Enter');await expect(status).toHaveText('进行中');
  const title=grid.locator('tr[data-row-id="synthetic-0"] td[data-col-id="title"]');await title.dblclick();await grid.getByLabel('编辑待办',{exact:true}).fill('合成标题已编辑');await page.keyboard.press('Enter');await expect(title).toHaveText('合成标题已编辑');assert.equal(await page.getByLabel('合成写入次数').innerText(),'2');
  await page.reload({waitUntil:'networkidle'});await expect(grid.locator('thead th').nth(1)).toContainText('状态');assert.equal(await grid.locator('thead th[data-col-id="project"]').count(),0);
+ await page.getByRole('button',{name:'切换合成账号',exact:true}).click();await expect(grid.locator('thead th').nth(1)).toContainText('待办');await expect(grid.locator('thead th[data-col-id]')).toHaveCount(5);
+ await showTaskGridReferenceColumns(page);await expect(grid.getByRole('columnheader',{name:/项目/})).toHaveCount(1);await expect(grid.locator('thead th[data-col-id]')).toHaveCount(7);
+ await page.getByRole('button',{name:'切换合成账号',exact:true}).click();await expect(grid.locator('thead th').nth(1)).toContainText('状态');await expect(grid.locator('thead th[data-col-id="project"]')).toHaveCount(0);await expect(grid.locator('thead th[data-col-id="area"]')).toHaveCount(1);
  await page.getByRole('button',{name:'切换合成账号',exact:true}).click();await expect(grid.locator('thead th').nth(1)).toContainText('待办');await expect(grid.getByRole('columnheader',{name:/项目/})).toHaveCount(1);
  // Layout measurements use computed styles, actual geometry and composited colors.
  await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.locator('[data-settings-page]');
