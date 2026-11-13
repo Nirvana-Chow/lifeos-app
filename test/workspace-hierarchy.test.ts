@@ -25,3 +25,8 @@ test('domain overview associates active projects by stable identity and retains 
  assert.equal(projects.length,5);
  assert.deepEqual(hierarchy.overviewDomains([],[]),[]);
 });
+
+test('search is discoverable in the authorized navigation grouping',()=>{
+ const search={id:'search',label:'搜索本人记录',href:'/personal/search'} as OwnerModuleLink;
+ assert.deepEqual(hierarchy.groupWorkspaceModules([search]).flatMap(group=>group.links),[search]);
+});

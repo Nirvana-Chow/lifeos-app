@@ -27,3 +27,9 @@ test('new business links appear only for the exact verified module flags',()=>{
  assert.deepEqual(ownerModules({...status,storageVerified:false,...flags},scope),[]);
  for(const key of Object.keys(flags))assert.equal(ownerModules({...status,[key]:false},scope).some(row=>expected.slice(1).includes(row.href)),false);
 });
+
+test('owner search link requires verified scope and an advertised readable owner record type',()=>{
+ const enabled={...status,allowedTypes:['todo','journal']};
+ assert.deepEqual(ownerModules(enabled,scope).find(link=>link.id==='search'),{id:'search',label:'搜索本人记录',href:'/personal/search'});
+ for(const value of [status,{...enabled,storageVerified:false},{...enabled,allowedTypes:[]},{...enabled,allowedTypes:['unknown']},{...enabled,ownerId:'owner-b'}])assert.equal(ownerModules(value,scope).some(link=>link.id==='search'),false);
+});

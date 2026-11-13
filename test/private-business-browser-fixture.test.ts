@@ -13,11 +13,46 @@ import {presentationDensity} from './helpers/personal-workspace-browser-fixture.
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
 import {PersonalFinanceService} from '../src/personal-finance/service.ts';
 import {readPersonalFinanceStatus} from '../src/personal-finance/client.ts';
+import {groupWorkspaceModules,overviewDomains} from '../src/ui-review/workspace-hierarchy.ts';
+import {ownerModules} from '../src/ui-review/owner-modules.ts';
 
 test('missing private handoff fails before trust launch or body access',async()=>{
  let touched=false;
  await assert.rejects(fixture.withPrivateBrowserFixture(undefined,async()=>{touched=true;}),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
  assert.equal(touched,false);
+});
+type ReadyNode={role:string;name?:string;level?:number;parent?:string;attributes?:Record<string,string>;visible?:boolean;enabled?:boolean};
+function readySurface(nodes:ReadyNode[]){
+ const locate=(found:ReadyNode[])=>({_apiName:'Locator',_selector:'synthetic-ready-surface',count:async()=>found.length,
+  getByRole:(role:string,options:{name?:string;exact?:boolean;level?:number}={})=>locate(nodes.filter(node=>node.parent===found[0]?.role&&node.role===role&&(!options.name||node.name===options.name)&&(!options.level||node.level===options.level))),
+  async _expect(expression:string,options:{expectedNumber?:number;expressionArg?:string;expectedText?:{string?:string}[]}){
+   const one=found.length===1;let matches:boolean,received:unknown;
+   if(expression==='to.have.count'){received=found.length;matches=received===options.expectedNumber;}
+   else if(expression==='to.be.visible'){received=one&&found[0].visible!==false;matches=received===true;}
+   else if(expression==='to.be.enabled'){received=one&&found[0].enabled!==false;matches=received===true;}
+   else if(expression==='to.have.attribute.value'){received=one?found[0].attributes?.[options.expressionArg!]:undefined;matches=one&&received===options.expectedText?.[0]?.string;}
+   else throw Error('Unsupported ready-surface assertion: '+expression);
+   return{matches,received,log:[],timedOut:!matches};
+  },
+ });
+ return{getByRole:(role:string,options:{name?:string;exact?:boolean;level?:number}={})=>locate(nodes.filter(node=>node.role===role&&(!options.name||node.name===options.name)&&(!options.level||node.level===options.level))),locator:(selector:string)=>{assert.equal(selector,'.lo-shell');return locate([{role:'shell'}]);}};
+}
+const searchReadyNodes=():ReadyNode[]=>[
+ {role:'heading',level:1,name:'搜索本人记录'},
+ {role:'search',attributes:{action:'/personal/search',method:'get'}},
+ {role:'textbox',parent:'search',name:'搜索标题与正文',attributes:{name:'q',maxlength:'240'}},
+ {role:'button',parent:'search',name:'搜索',attributes:{type:'submit'}},
+];
+test('the original route-ready oracle accepts the exact read-only search surface',async()=>{
+ const destination=fixture.privateDestinations.find(([id])=>id==='search');assert.ok(destination);
+ await fixture.readyHeading(readySurface(searchReadyNodes()) as never,destination[2]);
+});
+test('the real route-ready oracle rejects incomplete or writable search and retains the todo requirement elsewhere',async()=>{
+ const changes:((nodes:ReadyNode[])=>void)[]=[nodes=>{nodes[0].name='统一搜索';},nodes=>{nodes.splice(1,1);},nodes=>{nodes[1].attributes!.action='/personal';},nodes=>{nodes[1].attributes!.method='post';},nodes=>{nodes.splice(2,1);},nodes=>{nodes[2].enabled=false;},nodes=>{nodes[2].attributes!.name='other';},nodes=>{nodes[2].attributes!.maxlength='1000';},nodes=>{nodes[3].enabled=false;},nodes=>{nodes[3].attributes!.type='button';},nodes=>{nodes[3].parent='outside';},nodes=>{nodes.push({role:'button',name:'新建待办'});}];
+ for(const change of changes){const nodes=searchReadyNodes();change(nodes);await assert.rejects(fixture.readyHeading(readySurface(nodes) as never,'搜索本人记录'));}
+ const overview:ReadyNode[]=[{role:'heading',level:1,name:'总览'},{role:'button',name:'新建待办'}];
+ await fixture.readyHeading(readySurface(overview) as never,'总览');
+ await assert.rejects(fixture.readyHeading(readySurface(overview.slice(0,1)) as never,'总览'));
 });
 test('keyboard lifecycle diagnostics contain at most three bounded integer snapshots and no private values',()=>{
  const secret='private-keyboard-secret';
@@ -186,6 +221,20 @@ test('independent destination literals cover the actual frozen map and source pa
  assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,values:[],texts:['unapproved grid body'],editable:[],recordIds:[]},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
  assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'/private/body.txt']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
 });
+test('authorized workspace hierarchy labels pass the finite capture guard without admitting private text',()=>{
+ const status={scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,allowedTypes:['journal'],calendarEnabled:true,financeEnabled:true};
+ const groups=groupWorkspaceModules(ownerModules(status,null));
+ assert.deepEqual(groups.filter(group=>group.links.length).map(group=>group.label),['安排与推进','生活记录','长期积累']);
+ const domains=overviewDomains([],[{id:'synthetic-project',title:'private project sentinel',revision:1,stage:'active',nextStep:null,area:null}]);
+ assert.equal(domains[0].title,'未关联领域');
+ const facts={forbidden:0,values:[],texts:[...groups.map(group=>group.label),domains[0].title],editable:[],recordIds:[]};
+ const texts=fixture.captureSourceText();
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
+ for(const change of [{texts:[...facts.texts,'private project sentinel']},{texts:[...facts.texts,'生活记录 private body']},{values:['private value']},{editable:['private body']},{recordIds:['foreign-record']},{forbidden:1}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+ }
+ assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/personal-search/README.md']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
+});
 test('private handoff rejects arbitrary records before any lifecycle IO',()=>{
  const handoff={origin:'https://review.example.test',ownerId:'personal-review-user',spaceId:'personal-review-space',sourceSha:'a'.repeat(40),cookies:[{name:'__Secure-lifeos-platform-candidate.session_token',value:'fixture-memory-only',domain:'review.example.test',path:'/',secure:true,httpOnly:true,sameSite:'Strict',expires:Date.now()/1000+60}],entries:[{id:'a'},{id:'b'},{id:'c'}]};
  assert.throws(()=>fixture.assertPrivateHandoff(handoff as never),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
@@ -231,6 +280,19 @@ function renderRealComponent(file:string,name:string,props:Record<string,unknown
  }
  return renderToStaticMarkup(React.createElement(load(file)[name],props));
 }
+test('reviewed batch and search copy passes the finite guard while private additions stay denied',()=>{
+ const links=ownerModules({scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,allowedTypes:['todo']},null);
+ const search=links.find(link=>link.id==='search');assert.ok(search);
+ const html=renderRealComponent('src/personal-search/view.tsx','PersonalSearchView',{query:'',selection:null,state:{phase:'loading'},onRetry:()=>{}});
+ const rendered=Array.from(html.matchAll(/>([^<]+)</g),match=>match[1].trim()).filter(Boolean);
+ const facts={forbidden:0,values:[],texts:[search.label,...rendered,'多行录入待办','预检条目','确认顺序保存','原记录链接无效，未读取其他记录。'],editable:[],recordIds:[]};
+ const texts=fixture.captureSourceText();
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
+ for(const change of [{texts:[...facts.texts,'搜索本人记录 private body']},{texts:[...facts.texts,'多行录入待办 private body']},{values:['private value']},{editable:['private body']},{recordIds:['foreign-record']},{forbidden:1}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+ }
+ assert.throws(()=>fixture.captureSourceText(fixture.privateCaptureSources.map(path=>path==='src/ui-review/workspace.tsx'?'src/personal-search/README.md':path)),/PRIVATE_CAPTURE_SOURCE_DENIED/);
+});
 test('real appearance palette SSR passes only the exact public capture allowlist',()=>{
  const html=renderRealComponent('src/workbench/theme-switch.tsx','AppearanceSettings',{});
  const radios=Array.from(html.matchAll(/<input\b[^>]*\btype="radio"[^>]*>/g),match=>match[0].match(/\bvalue="([^"]*)"/)?.[1]??'');
