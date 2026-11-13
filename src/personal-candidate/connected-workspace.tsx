@@ -68,6 +68,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   return true;
  };
  const navigate=(url:string)=>{if(beforeNavigate())window.location.assign(url);};
+ const login=()=>{if(batchBinding&&!verifiedBinding)window.location.assign('/login');else navigate('/login');};
+ const refresh=()=>{if(batchBinding&&!verifiedBinding)void controller.current?.refresh();else if(beforeNavigate())void controller.current?.refresh();};
  const open=(next:TaskTarget,trigger?:HTMLElement)=>{
   const host=controller.current,binding=host?.getEditorBinding();
   if(!binding||!beforeNavigate())return false;
@@ -97,8 +99,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  return <>{children({
   ...snapshot,
   viewPreferenceScope:verifiedBinding?JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]):null,
-  onRefresh:()=>{if(beforeNavigate())void controller.current?.refresh();},
-  onLogin:()=>navigate('/login'),
+  onRefresh:refresh,
+  onLogin:login,
   onLogout:()=>{if(beforeNavigate())void controller.current?.logout();},
   onCreateTask:()=>open({mode:'create'}),
   onOpenTask:(task,trigger)=>open({mode:'edit',task},trigger),
@@ -122,9 +124,10 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   writable={snapshot.access.writable===true} saving={snapshot.saving} error={snapshot.mutationError}
   onSave={async command=>commandStorage.current?await controller.current?.saveBatchTask(command)??null:null}
   onClose={()=>{setBatchBinding(null);queueMicrotask(()=>returnFocus.current?.isConnected&&returnFocus.current.focus());}}
-  isUncertain={()=>controller.current?.getSnapshot().uncertain===true}
+  isUncertain={()=>{const current=controller.current?.getSnapshot();return current?.uncertain===true||current?.state.status!=='ready';}}
   onStop={()=>controller.current?.cancel()} closeGuard={batchCloseGuard}/>}
 
+ {batchBinding&&!verifiedBinding&&<section role="alert" className={editorStyles.recovery}><p>当前身份尚未核实，批次内容已隐藏，原请求已保留。</p><button onClick={login}>前往登录</button><button onClick={refresh}>重新验证本人身份</button></section>}
  {!batchBinding&&(!editor||concealed)&&snapshot.uncertain&&<section role="alert" className={editorStyles.recovery}><p>保存结果尚未确认，原请求已保留。</p><button onClick={async()=>{if(await retry())close();}} disabled={snapshot.saving}>重试同一请求</button></section>}
  {!batchBinding&&(!editor||concealed)&&snapshot.saving&&<button onClick={()=>controller.current?.cancel()}>停止等待并保留请求</button>}</>;
 }

@@ -26,13 +26,14 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(9000);
   const ownerId='synthetic-planning-owner',spaceId='synthetic-batch-space';
   const entries:any[]=[],receipts=new Map<string,any>(),calls:{key:string;body:any}[]=[],errors:string[]=[];
-  let readbacks=0,loseSecond=true,expired=false;
+  let readbacks=0,loseSecond=true,expired=false,expirePost=false;
   page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/login',route=>route.fulfill({contentType:'text/html',body:'<html><body>synthetic login destination</body></html>'}));
   await page.route('**/api/platform/personal/**',async route=>{
    const request=route.request(),url=new URL(request.url()),headers={'cache-control':'private, no-store'};
    if(request.method()==='POST'){
     const key=request.headers()['idempotency-key'],body=request.postDataJSON();calls.push({key,body});
-    if(expired)return route.fulfill({status:401,json:{error:{code:'UNAUTHORIZED'}},headers});
+    if(expired||expirePost)return route.fulfill({status:401,json:{error:{code:'UNAUTHORIZED'}},headers});
     const duplicate=receipts.has(key);let entry=receipts.get(key);
     if(!entry){const id=crypto.randomUUID();entry={id,kind:'todo',revision:1,draft:normalizePersonalFields('todo',body.fields),source:{id:crypto.randomUUID(),system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type:'todo',input:body}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null};entries.push(entry);receipts.set(key,entry);}
     return route.fulfill({status:duplicate?200:201,json:{entry,duplicate},headers});
@@ -61,9 +62,12 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});
   await expect(dialog).toBeVisible();await expect(dialog.getByText('第1项 · 已保存并回读',{exact:true})).toBeVisible();
   expired=true;await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
-  await expect.poll(()=>calls.length).toBe(3);await expect(dialog.getByRole('button',{name:'核对原请求并继续'})).toBeEnabled();
+  await expect(dialog).toHaveCount(0);assert.equal(calls.length,2);await expect(page.getByRole('textbox',{name:'第3项标题',exact:true})).toHaveCount(0);
+  expired=false;page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toBeVisible();
+  expirePost=true;await dialog.getByRole('button',{name:'核对原请求并继续'}).click();await expect.poll(()=>calls.length).toBe(3);await expect(dialog).toHaveCount(0);
   assert.deepEqual(calls[1],calls[2]);assert.equal(entries.length,2);
-  expired=false;loseSecond=false;await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
+  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'前往登录',exact:true}).click();await page.waitForURL(origin+'/login');assert.equal(calls.length,3);
+  expirePost=false;loseSecond=false;await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
   await expect(dialog.getByText('第4项 · 已保存并回读',{exact:true})).toBeVisible();
   assert.equal(calls.length,5);assert.deepEqual(calls[1],calls[3]);assert.equal(entries.length,3);
   assert.equal(calls.filter(c=>c.key===calls[0].key).length,1);

@@ -143,9 +143,19 @@ test('batch readback failure retains exact command across reload and does not sk
  const create=()=>new PersonalWorkspaceController({fetcher,origin:'http://127.0.0.1:3331',storage,today:()=> '2026-10-27',key:()=>crypto.randomUUID()});
  const command=makePersonalCommand({ownerId:'fixture-owner',spaceId:'fixture-space'},'todo',null,{title:'明天交稿',notes:'',dueOn:null,status:'open'},'batch-exact-original',true);
  const first=create();await first.refresh();assert.equal(await first.saveBatchTask(command),null);assert.equal(first.getSnapshot().uncertain,true);assert.equal(reads.length,1);assert.equal(f.writes.length,1);first.suspend();
- const second=create();await second.refresh();assert.equal(second.getSnapshot().uncertain,true);expired=true;assert.equal(await second.saveBatchTask(command),null);assert.equal(second.getSnapshot().uncertain,true);assert.equal(f.writes.length,2);
- expired=false;readback=true;const saved=await second.saveBatchTask(command);assert.equal(saved?.id,'44444444-4444-4444-8444-444444444444');assert.equal(second.getSnapshot().uncertain,false);assert.equal(reads.length,3);assert.deepEqual(f.writes[0],f.writes[1]);assert.deepEqual(f.writes[1],f.writes[2]);assert.equal(f.storage.size,0);
+ const second=create();await second.refresh();assert.equal(second.getSnapshot().uncertain,true);expired=true;assert.equal(await second.saveBatchTask(command),null);assert.notEqual(second.getSnapshot().state.status,'ready');assert.equal(f.writes.length,1);
+ expired=false;readback=true;await second.refresh();const saved=await second.saveBatchTask(command);assert.equal(saved?.id,'44444444-4444-4444-8444-444444444444');assert.equal(second.getSnapshot().uncertain,false);assert.equal(reads.length,2);assert.deepEqual(f.writes[0],f.writes[1]);assert.equal(f.storage.size,0);
 });
 test('batch preflight preserves raw input while following the single writer title normalization',async()=>{
  const {TaskBatch}=await import('../src/personal-candidate/task-batch.ts');const f=fixture();await f.controller.refresh();const store=new Map<string,string>();const batch=new TaskBatch({ownerId:'fixture-owner',spaceId:'fixture-space'},{getItem:k=>store.get(k)??null,setItem:(k,v)=>{store.set(k,v);},removeItem:k=>{store.delete(k);}},()=>crypto.randomUUID());batch.preview('  明天交稿  ');await batch.run(c=>f.controller.saveBatchTask(c));assert.equal(f.writes.length,1);assert.equal(f.writes[0].body.fields.title,'明天交稿');assert.equal(batch.raw,'  明天交稿  ');
+});
+
+test('batch status and POST/GET authorization loss conceal private projections while preserving original command',async()=>{
+ for(const loss of ['preflight','post','get'] as const){
+  const f=fixture();let triggered=false;const fetcher:typeof fetch=async(input,init)=>{const path=String(input);if(triggered&&loss==='preflight'&&path.endsWith('/status'))return Response.json({}, {status:401});if(triggered&&loss==='post'&&init?.method==='POST')return Response.json({error:{code:'UNAUTHORIZED'}},{status:401});if(triggered&&loss==='get'&&path.includes('/todo/')&&!init?.method)return Response.json({error:{code:'FORBIDDEN'}},{status:403});return f.fetcher(input,init);};
+  const c=new PersonalWorkspaceController({fetcher,origin:'http://127.0.0.1:3331',storage:{getItem:k=>f.storage.get(k)??null,setItem:(k,v)=>{f.storage.set(k,v);},removeItem:k=>{f.storage.delete(k);}},today:()=> '2026-10-27',key:()=>crypto.randomUUID()});await c.refresh();
+  const command=makePersonalCommand({ownerId:'fixture-owner',spaceId:'fixture-space'},'todo',null,{title:'Private batch content',notes:'',dueOn:null,status:'open'},'batch-auth-boundary',true);
+  if(loss==='preflight'){f.lose();await c.saveBatchTask(command);assert.equal(c.getSnapshot().uncertain,true);}
+  triggered=true;await c.saveBatchTask(command);assert.notEqual(c.getSnapshot().state.status,'ready',loss);assert.equal(c.getEditorBinding(),null,loss);if(loss!=='preflight')assert.equal(f.storage.size,1,'POST/GET loss preserves writer command');
+ }
 });
