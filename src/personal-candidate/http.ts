@@ -27,5 +27,7 @@ export async function handlePersonalRequest(request:Request,owner:string,baseURL
  if(request.method==='GET'){const value=history&&id?await service.history(owner,personalType,id,limit):id?{entry:await service.get(owner,personalType,id)}:await service.list(owner,personalType,limit);await guard();return respond(value);}
  if(request.headers.get('origin')!==new URL(baseURL).origin)throw new PlatformError(403,'ORIGIN_DENIED','本人空间保存需要相同来源。');
  await guard(true);const input=await readJSONBody(request),key=request.headers.get('idempotency-key')??'';
- const result=await service.mutate(owner,personalType,id,input,key,()=>guard(true));return respond(result,!id&&!result.duplicate?201:200);
+ const result=await service.mutate(owner,personalType,id,input,key,()=>guard(true));
+ // A historical receipt or committed result still requires the current owner before disclosure.
+ await guard();return respond(result,!id&&!result.duplicate?201:200);
 }
