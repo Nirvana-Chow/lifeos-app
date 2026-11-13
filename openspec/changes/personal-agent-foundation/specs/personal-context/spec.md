@@ -6,6 +6,20 @@ Make authorized personal evidence, confirmed goals and preferences, and model in
 
 ## ADDED Requirements
 
+### Requirement: Structured and full-text retrieval precede optional RAG
+
+The system SHALL deliver structured queries, full-text retrieval and source/version provenance before RAG enhancement. Embedding/reranking SHALL be evaluated against actual retrieval quality without automatically purchasing services. Indexes and generated summaries SHALL remain rebuildable derivatives, never replacements for original records.
+
+#### Scenario: Only a vector-search demonstration exists
+
+- **WHEN** source/version-backed structured and full-text queries are not delivered
+- **THEN** RAG or synthetic embedding results do not satisfy the base retrieval requirement
+
+#### Scenario: A derived index is lost
+
+- **WHEN** an index or generated summary must be rebuilt
+- **THEN** preserved original records and source versions remain available as authority
+
 ### Requirement: Evidence and judgment remain distinct
 
 The system SHALL distinguish source evidence, owner-confirmed context, model inference and proposed action. Each item SHALL retain source identity/version, relevant time precision and its confirmation or inference status. A generated inference MUST NOT silently become a confirmed fact.
