@@ -99,6 +99,65 @@ test('visual re-run after required verification cannot borrow the earlier succes
  const h=harness();let changed=false;const api=async(path:string)=>{if(path.includes('/runs/11/attempts/1/jobs'))changed=true;if(path==='/actions/runs/11'&&changed)return {...evidence('visual',2).run,conclusion:'failure'};return h.api(path);};await assert.rejects(gate.waitForReleaseQualification(h.input,{...h,api}));
 });
 
+test('a new required run while visual waits invalidates the cached successful run',async()=>{
+ const h=harness({pendingVisual:true});const api=async(path:string)=>{
+  if(path.includes('/workflows/20/runs?')&&h.now()>0)return {workflow_runs:[{...evidence('required').run,id:12,status:'queued',conclusion:null},evidence('required').run]};
+  return h.api(path);
+ };
+ await assert.rejects(gate.waitForReleaseQualification(h.input,{...h,api}),/QUALIFICATION_NOT_COMPLETED/);
+ assert.equal(h.now(),2400000);
+});
+test('an index advertising attempt2 cannot qualify direct attempt1 and its old jobs',async()=>{
+ const h=harness();const api=async(path:string)=>path.includes('/workflows/21/runs?')?{workflow_runs:[evidence('visual',2).run]}:h.api(path);
+ await assert.rejects(gate.waitForReleaseQualification(h.input,{...h,api}),/QUALIFICATION_NOT_COMPLETED/);
+ assert.equal(h.now(),2400000);assert.ok(!h.calls.some(path=>path.includes('/runs/11/attempts/1/jobs')));
+});
+
+for(const direction of ['index-ahead','direct-ahead'] as const)test(`temporary ${direction} attempt metadata waits and then converges`,async()=>{
+ const h=harness();const api=async(path:string)=>{
+  const e=evidence('visual',2);
+  if(path.includes('/workflows/21/runs?'))return {workflow_runs:[direction==='direct-ahead'&&h.now()===0?evidence('visual').run:e.run]};
+  if(path==='/actions/runs/11')return direction==='index-ahead'&&h.now()===0?evidence('visual').run:e.run;
+  if(path.includes('/runs/11/attempts/2/jobs'))return e.jobs;
+  return h.api(path);
+ };
+ const result=await gate.waitForReleaseQualification(h.input,{...h,api});
+ assert.equal(result.visualRunAttempt,2);assert.deepEqual(h.sleeps,[20000]);
+ assert.ok(!h.calls.some(path=>path.includes('/runs/11/attempts/1/jobs')));
+});
+test('closing index attempt change clears cached jobs until direct metadata converges',async()=>{
+ const h=harness();let indexes=0;const api=async(path:string)=>{
+  const e=evidence('required',2);
+  if(path.includes('/workflows/20/runs?'))return {workflow_runs:[++indexes===1?evidence('required').run:e.run]};
+  if(path==='/actions/runs/10')return h.now()===0?evidence('required').run:e.run;
+  if(path.includes('/runs/10/attempts/2/jobs'))return e.jobs;
+  return h.api(path);
+ };
+ const result=await gate.waitForReleaseQualification(h.input,{...h,api});
+ assert.equal(result.attempt,2);assert.deepEqual(h.sleeps,[20000]);
+});
+for(const conclusion of ['success','failure'] as const)test(`new required run must itself reach ${conclusion} before closing`,async()=>{
+ const h=harness({pendingVisual:true});const api=async(path:string)=>{
+  if(h.now()>0){
+   const e=evidence('required');e.run.id=12;e.run.html_url='https://github.com/Nirvana-Chow/lifeos-app/actions/runs/12';
+   for(const job of e.jobs.jobs){job.run_id=12;job.id+=20;job.html_url=e.run.html_url+'/job/'+job.id;}
+   if(h.now()<40000){e.run.status='queued';e.run.conclusion='';}else e.run.conclusion=conclusion;
+   if(path.includes('/workflows/20/runs?'))return {workflow_runs:[e.run,evidence('required').run]};
+   if(path==='/actions/runs/12')return e.run;
+   if(path.includes('/runs/12/attempts/1/jobs'))return e.jobs;
+  }
+  return h.api(path);
+ };
+ if(conclusion==='failure')await assert.rejects(gate.waitForReleaseQualification(h.input,{...h,api}));
+ else assert.equal((await gate.waitForReleaseQualification(h.input,{...h,api})).qualificationRunId,12);
+ assert.deepEqual(h.sleeps,[20000,20000]);assert.equal(h.now(),40000);
+});
+test('stable latest indexes close without sleeping and are independently reread',async()=>{
+ const h=harness();const result=await gate.waitForReleaseQualification(h.input,h);
+ assert.equal(result.qualificationRunId,10);assert.equal(result.visualRunId,11);assert.deepEqual(h.sleeps,[]);
+ for(const id of [20,21])assert.equal(h.calls.filter(path=>path.includes(`/workflows/${id}/runs?`)).length,2);
+});
+
 test('native glob scope matches every declared positive visual path, with literal behavioral boundaries',()=>{
  const workflow=readFileSync(new URL('../.github/workflows/visual-qualification.yml',import.meta.url),'utf8');const section=workflow.split('    paths:\n')[1]!.split('  workflow_dispatch:')[0]!;
  const declared=[...section.matchAll(/^      - '([^']+)'$/gm)].map(m=>m[1]);assert.deepEqual([...gate.VISUAL_PATHS],declared);

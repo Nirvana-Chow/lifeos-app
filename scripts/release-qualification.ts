@@ -130,16 +130,25 @@ export async function waitForReleaseQualification(input:GateInput,deps:GateDepen
    confirmed(guards.length===1&&guards[0].status==='completed'&&guards[0].conclusion==='success','VISUAL_CAPTURE_GUARD_UNCONFIRMED');
   }
  };
+ const latest=async(target:Target)=>{
+  const index=await get(`/actions/workflows/${target.workflowId}/runs?head_sha=${input.sha}&per_page=10`);
+  confirmed(Array.isArray(index.workflow_runs)&&index.workflow_runs.length<=10&&index.workflow_runs.every((r:Row)=>r&&Number.isSafeInteger(r.id)&&r.id>0));
+  const run=(index.workflow_runs as Row[]).filter(r=>r.head_sha===input.sha&&r.event===input.event).sort((a,b)=>b.id-a.id)[0];
+  if(run){
+   confirmed(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0);
+   if(run.status==='completed')confirmed(run.conclusion==='success');
+  }
+  return run;
+ };
  while(deps.now()<deadline){
   for(const target of targets){
    if(verified.has(target))continue;
-   const index=await get(`/actions/workflows/${target.workflowId}/runs?head_sha=${input.sha}&per_page=10`);
-   confirmed(Array.isArray(index.workflow_runs)&&index.workflow_runs.length<=10&&index.workflow_runs.every((r:Row)=>r&&Number.isSafeInteger(r.id)&&r.id>0));
-   const run=(index.workflow_runs as Row[]).filter(r=>r.head_sha===input.sha&&r.event===input.event).sort((a,b)=>b.id-a.id)[0];
+   const run=await latest(target);
    if(run?.status!=='completed')continue;
    // The list is only an index. Read the actual current attempt before jobs.
    const current=await get('/actions/runs/'+run.id);confirmed(current.id===run.id);
-   if(current.status!=='completed')continue;
+   if(current.status==='completed')confirmed(current.conclusion==='success');
+   if(current.run_attempt!==run.run_attempt||current.status!=='completed')continue;
    confirmed(Number.isSafeInteger(current.run_attempt)&&current.run_attempt>0);
    const jobs=await get(`/actions/runs/${current.id}/attempts/${current.run_attempt}/jobs?per_page=100`);validate(target,current,jobs);
    const after=await get('/actions/runs/'+current.id);
@@ -147,11 +156,14 @@ export async function waitForReleaseQualification(input:GateInput,deps:GateDepen
    validate(target,after,jobs);verified.set(target,{run:after,jobs});
   }
   if(verified.size===targets.length){
-   // One workflow may be rerun while the other is pending. Do not borrow its
-   // previously successful attempt when closing the combined release gate.
+   // Rejoin each latest index with the direct run and cached jobs before
+   // closing. New runs and temporarily inconsistent API views must wait.
    for(const [target,evidence] of verified){
-    const current=await get('/actions/runs/'+evidence.run.id);
-    if(current.run_attempt!==evidence.run.run_attempt||current.status!=='completed'){verified.delete(target);continue;}
+    const run=await latest(target);
+    if(!run||run.id!==evidence.run.id||run.run_attempt!==evidence.run.run_attempt||run.status!=='completed'){verified.delete(target);continue;}
+    const current=await get('/actions/runs/'+run.id);confirmed(current.id===run.id);
+    if(current.status==='completed')confirmed(current.conclusion==='success');
+    if(current.run_attempt!==run.run_attempt||current.status!=='completed'){verified.delete(target);continue;}
     validate(target,current,evidence.jobs);
    }
    if(verified.size===targets.length){
