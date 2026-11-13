@@ -206,6 +206,7 @@ test('every private business alias uses the native owner MFA principal gate befo
  const jsx=(type:unknown,props:unknown)=>{rendered++;return{type,props};};
  const imports:Record<string,unknown>={
   '../../../src/personal-candidate/record-page':{PersonalRecordPage:'record-page'},'../../../src/calendar-candidate/personal-page':{PersonalCalendarPage:'calendar-page'},'../../../src/personal-finance/page':{PersonalFinancePage:'finance-page'},
+  '../../../src/personal-journal/page':{JournalRecordPage:'journal-page'},
   'react/jsx-runtime':{jsx,jsxs:jsx},'next/headers':{headers:async()=>new Headers(cookie?{cookie}:{})},
   'next/navigation':{redirect:(url:string)=>{throw Error('REDIRECT '+url);},notFound:()=>{throw Error('NOT_FOUND');}},
   '../../../src/platform/runtime':{readPlatformPagePrincipal:(headers:Headers)=>authentication.readOwnerPrincipal(f.auth,config,headers)},
