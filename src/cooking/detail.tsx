@@ -45,18 +45,25 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
           <ArrowLeft aria-hidden="true" size={17} />返回菜谱
         </Link>
         <p className={styles.meta}>{categoryLabel} · 难度 {recipe.difficulty}/5</p>
+        {recipe.originalName && <p className={styles.meta}>{recipe.originalName} · {recipe.cuisine}</p>}
         <nav className={styles.recipeNav} aria-label="菜谱章节">
           {sections.map(section => (
             <a key={section.id} className={styles.recipeLink} href={`#${section.id}`}>{section.title}</a>
           ))}
         </nav>
         <div className={styles.footer}>
-          <CookingRecordAction recipeId={recipe.id} />
-          <span>来源：HowToCook 1.6.0</span>
+          {!recipe.referenceOnly && <CookingRecordAction recipeId={recipe.id} />}
+          <span>来源：{recipe.attribution?.label ?? 'HowToCook 1.6.0'}</span>
           <a href={recipe.sourceUrl} target="_blank" rel="noreferrer">
             查看原菜谱<ExternalLink aria-hidden="true" size={14} />
           </a>
+          {recipe.attribution && <>
+            <a href={recipe.attribution.authorsUrl} target="_blank" rel="noreferrer">原作者与修订记录</a>
+            <a href={recipe.attribution.licenseUrl} target="_blank" rel="noreferrer">{recipe.attribution.license}</a>
+          </>}
         </div>
+        {recipe.attribution && <p className={styles.meta}>{recipe.attribution.changes}</p>}
+        {recipe.referenceOnly && <p className={styles.meta}>参考菜谱，暂不支持关联做饭记录。</p>}
       </header>
 
       {sections.map(section => (

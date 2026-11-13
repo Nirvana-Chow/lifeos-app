@@ -75,7 +75,9 @@ export function rankRecipes(
   const matches: RecipeMatch[] = [];
   for (const recipe of recipes) {
     if (category && recipe.category !== category) continue;
-    if (nameQuery && !normalize(recipe.name).includes(nameQuery)) continue;
+    if (nameQuery && ![recipe.name, recipe.originalName, recipe.cuisine].some(
+      value => value && normalize(value).includes(nameQuery),
+    )) continue;
     const sourceIngredients = terms.length ? recipe.ingredients.map(normalize) : [];
     const matchedIngredients = terms.filter(({ key }) => sourceIngredients.some(
       ingredient => ingredientMatches(ingredient, key),

@@ -108,6 +108,7 @@ export function CookingWorkspace({ recipes, categories }: {
                   <span className={styles.pickCopy}>
                     <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
                     <strong>{recipe.name}</strong>
+                    {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
                     {matchedIngredients.length > 0 && (
                       <span className={styles.match}>匹配 {matchedIngredients.join('、')}</span>
                     )}
@@ -129,11 +130,11 @@ export function CookingWorkspace({ recipes, categories }: {
         <div className={styles.sectionHead}>
           <div className={styles.sectionIntro}>
             <h2 id="cooking-catalog-heading" ref={catalogHeading} tabIndex={-1}>菜谱库</h2>
-            <p role="status">{catalog.length} 道{ingredients.length || category || keyword.trim() ? '匹配菜谱' : '菜谱'}</p>
+            <p role="status">{catalog.length} 道{ingredients.length || category || keyword.trim() ? '匹配菜谱' : '中外菜谱'}</p>
           </div>
           <label className={styles.search}>
             搜索菜名
-            <input type="search" maxLength={80} placeholder="例如：红烧排骨" value={keyword}
+            <input type="search" maxLength={80} placeholder="菜名、原名或地区，例如：意大利" value={keyword}
               onChange={event => {
                 setKeyword(event.target.value);
                 setPage(0);
@@ -149,6 +150,7 @@ export function CookingWorkspace({ recipes, categories }: {
                 <Link className={styles.catalogLink} href={`/personal/cooking/${recipe.id}`} prefetch={false}>
                   <strong>{recipe.name}</strong>
                   <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
+                  {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
                 </Link>
               </li>
             ))}
