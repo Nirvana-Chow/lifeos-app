@@ -1,6 +1,6 @@
 import {execFileSync,spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {constants,openSync,fstatSync,readFileSync,closeSync} from 'node:fs';
+import {constants,openSync,fstatSync,readSync,closeSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 /** Manual source-only advisory; never a publication or deployment gate. */
@@ -95,8 +95,8 @@ function main(args:string[]){
  try{
   if(args.length!==6||args[0]!=='--candidate'||args[2]!=='--metadata'||args[4]!=='--metadata-sha256')throw Error('CLI_ARGUMENTS_INVALID');
   const candidate=readGitCandidate(process.cwd(),args[1]!);
-  const fd=openSync(args[3]!,constants.O_RDONLY|constants.O_NOFOLLOW);let raw:string;
-  try{const st=fstatSync(fd);if(!st.isFile()||st.size>65536)throw Error('METADATA_INVALID');raw=readFileSync(fd,'utf8');}finally{closeSync(fd);}
+  const fd=openSync(args[3]!,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);let raw:string;
+  try{const st=fstatSync(fd);if(!st.isFile()||st.size>65536)throw Error('METADATA_INVALID');const bytes=Buffer.alloc(65537),count=readSync(fd,bytes,0,bytes.length,0);if(count>65536)throw Error('METADATA_INVALID');raw=bytes.subarray(0,count).toString('utf8');}finally{closeSync(fd);}
   output=checkReleasePreflight({candidate,metadataText:raw,expectedMetadataSha256:args[5],now:Date.now(),ahead:(base,head)=>{
    const r=spawnSync('git',['merge-base','--is-ancestor',base,head],{cwd:process.cwd(),stdio:'ignore'});return r.status===0?true:r.status===1?false:undefined;
   }});
