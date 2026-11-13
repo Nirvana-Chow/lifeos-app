@@ -86,7 +86,7 @@ export function createAgentHandler(options: Options) {
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
     const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions))?$/.exec(route);
     const executionRoute=/^\/v1\/requirement-events\/claims\/([a-f0-9-]{36})$/.exec(route);
-    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
+    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
     const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];

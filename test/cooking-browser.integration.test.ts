@@ -4,8 +4,10 @@ import {cp,mkdir,mkdtemp,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
-import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
+import {chromium,expect,type Browser,type BrowserServer,type Route} from '@playwright/test';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
+import {MemoryPort} from './helpers/platform.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 
 test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  skip:process.env.RUN_COOKING_BROWSER_TESTS!=='1'&&'Requires native Chrome and an isolated synthetic Next fixture',
@@ -48,8 +50,10 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await page.route(origin+'/api/platform/status',route=>route.fulfill({status:200,contentType:'application/json',body:'{}'}));
  await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',storageVerified:true,ownerId:'synthetic-cooking',spaceId:'synthetic-space'}}));
  const errors:string[]=[],writes:string[]=[],remote:string[]=[];
- page.on('pageerror',error=>errors.push(error.message));
- page.on('request',req=>{if(!['GET','HEAD'].includes(req.method()))writes.push(req.method());if(!req.url().startsWith(origin+'/'))remote.push(req.url());});
+ const collectError=(message:string)=>{errors.push(message);};
+ const collectRemote=(url:string)=>{if(!url.startsWith(origin+'/'))remote.push(url);};
+ page.on('pageerror',error=>collectError(error.message));
+ page.on('request',req=>{if(!['GET','HEAD'].includes(req.method()))writes.push(req.method()+' '+new URL(req.url()).pathname);collectRemote(req.url());});
  await page.goto(origin+'/personal/cooking',{timeout:65_000});
  if(process.env.LIFEOS_COOKING_EVIDENCE_DIR){
   const folder=resolve(process.env.LIFEOS_COOKING_EVIDENCE_DIR);
@@ -105,4 +109,82 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  assert.deepEqual(errors,[]);
  assert.deepEqual(writes,[]);
  assert.deepEqual(remote,[]);
+
+ if(process.env.RUN_COOKING_LOG_BROWSER_TESTS==='1')await t.test('cooking record survives an unknown response and a browser refresh',async()=>{
+  const ownerId='synthetic-cooking',ownerEmail='cooking-fixture@example.invalid',spaceId='synthetic-space';
+  const repository=new MemoryPort();
+  let sessionValid=true;
+  repository.readCurrentSnapshot=async owner=>structuredClone([...repository.rows.values()].filter(row=>row.ownerId===owner));
+  const handle=createPersonalPlatformHandler({
+   config:{ownerId,ownerEmail,spaceId,databaseName:'synthetic',allowedTypes:['todo','journal'],approval:'personal-manual-v1',baseURL:origin,cookingEnabled:true},
+   repository,storageVerified:true,assertWritable:async()=>{},
+   sessions:{read:async headers=>sessionValid&&headers.get('x-synthetic-fixture')==='cooking'?{userId:ownerId,email:ownerEmail}:null},
+  });
+  await page.unroute(origin+'/api/platform/personal/status');
+  const posts:{key:string;body:string}[]=[];
+  let loseNextResponse=true;
+  const nativeRequest=async (route:Route)=>{
+   const req=route.request(),headers=await req.allHeaders(),body=req.postData();
+   const response=await handle(new Request(req.url(),{method:req.method(),headers:{...headers,host:new URL(origin).host},...(body?{body}:{})}));
+   if(req.method()==='POST'&&new URL(req.url()).pathname==='/api/platform/personal/cooking'){
+    posts.push({key:headers['idempotency-key']??'',body:body??''});
+    if(loseNextResponse&&response.status===201){loseNextResponse=false;await route.abort();return;}
+   }
+   await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+  };
+  await page.route(origin+'/api/platform/personal/**',nativeRequest);
+  await page.goto(origin+path);
+  await page.getByRole('link',{name:'记录这次',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'做饭历史',exact:true})).toBeVisible();
+  await expect(page.getByLabel('菜名',{exact:true})).toHaveValue('西红柿炒鸡蛋');
+  const date=page.getByLabel('做饭日期',{exact:true});
+  await expect(date).toHaveValue('');
+  await date.fill('2031-05-07');
+  await page.getByLabel('做饭笔记（选填）').fill('合成试做：下次少放盐。');
+  await page.getByRole('button',{name:'确认保存',exact:true}).click();
+  const recover=page.getByRole('button',{name:'继续确认上次保存',exact:true});
+  await expect(recover).toBeVisible();
+  assert.equal(repository.rows.size,1);
+  page.once('dialog',dialog=>void dialog.accept());
+  await page.reload();
+  await expect(recover).toBeVisible();
+  await recover.click();
+  await expect(page.getByText('已保存这次做饭记录。',{exact:true})).toBeVisible();
+  assert.equal(repository.rows.size,1);
+  assert.equal(repository.receipts.size,1);
+  assert.equal(posts.length,2);
+  assert.ok(posts[0]!.key);
+  assert.deepEqual(posts[0],posts[1]);
+  await page.reload();
+  const history=page.getByRole('region',{name:'做过的菜'});
+  const saved=history.getByRole('button',{name:/西红柿炒鸡蛋.*2031-05-07/});
+  await expect(saved).toBeVisible();
+  await saved.click();
+  await expect(page.getByLabel('做饭笔记（选填）')).toHaveValue('合成试做：下次少放盐。');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+  await expect(page.getByText('照片待接入。',{exact:true})).toBeVisible();
+  await expect(page.locator('input[type=file]')).toHaveCount(0);
+  if(process.env.LIFEOS_COOKING_EVIDENCE_DIR)await page.screenshot({path:join(resolve(process.env.LIFEOS_COOKING_EVIDENCE_DIR),'history-mobile-dark.png'),fullPage:true});
+  const desktop=await browser!.newPage({viewport:{width:1365,height:900},colorScheme:'light',extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+  try{
+   desktop.on('pageerror',error=>collectError(error.message));
+   desktop.on('request',req=>collectRemote(req.url()));
+   await desktop.route(origin+'/api/platform/status',route=>route.fulfill({json:{}}));
+   await desktop.route(origin+'/api/platform/personal/**',nativeRequest);
+   await desktop.goto(origin+'/personal/cooking/history',{timeout:65_000});
+   await desktop.getByRole('region',{name:'做过的菜'}).getByRole('button',{name:/西红柿炒鸡蛋.*2031-05-07/}).click();
+   await expect(desktop.getByLabel('做饭笔记（选填）')).toHaveValue('合成试做：下次少放盐。');
+   await expect(desktop.getByText('照片待接入。',{exact:true})).toBeVisible();
+   assert.equal(await desktop.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+   if(process.env.LIFEOS_COOKING_EVIDENCE_DIR)await desktop.screenshot({path:join(resolve(process.env.LIFEOS_COOKING_EVIDENCE_DIR),'history-desktop-light.png'),fullPage:true});
+  }finally{await desktop.close();}
+  await page.getByLabel('做饭笔记（选填）').fill('这个修改没有得到授权。');
+  sessionValid=false;
+  await page.getByRole('button',{name:'确认保存',exact:true}).click();
+  await expect(history).toHaveCount(0);
+  await expect(page.getByLabel('菜名',{exact:true})).toHaveCount(0);
+  assert.equal(repository.historyRows.length,1);
+  assert.deepEqual(errors,[]);
+  assert.deepEqual(remote,[]);
+ });
 });

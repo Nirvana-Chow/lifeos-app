@@ -1,0 +1,136 @@
+.workbench {
+  display: grid;
+  gap: 16px;
+  width: min(100%, 46rem);
+  min-width: 0;
+  color: var(--foreground);
+  font: var(--lo-font-body);
+}
+
+.workbench :is(p, h2) {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.workbench h2 {
+  font-size: var(--lo-font-section);
+}
+
+.workbench button,
+.workbench :is(a, input, textarea) {
+  min-height: var(--lo-control-height);
+  font: var(--lo-font-body);
+}
+
+.workbench :is(a, button, input, textarea, h2):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--lo-link);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: clamp(12px, 3vw, 20px);
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--card);
+}
+
+.panel form,
+.fields,
+.fields label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fields {
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.fields label {
+  gap: 4px;
+  font-weight: 550;
+}
+
+.fields :is(input, textarea) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--input);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+}
+
+.fields textarea {
+  resize: vertical;
+}
+
+.fields :is(input, textarea):disabled {
+  opacity: 1;
+  background: var(--muted);
+}
+
+.rows {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+  text-align: left;
+}
+
+.row:hover:not(:disabled) {
+  background: var(--lo-hover);
+}
+
+.row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta,
+.row time {
+  color: var(--muted-foreground);
+  font-size: var(--lo-font-meta);
+}
+
+.error {
+  color: var(--danger);
+}

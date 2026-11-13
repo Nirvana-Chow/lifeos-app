@@ -81,6 +81,14 @@ const portfolio=z.xor([
  z.strictObject({...portfolioBase,portfolioKind:z.literal('asset'),assetType:z.enum(assetTypes),valuationMinor:minor,valuationOn:optionalDate,account:pin.nullable().describe('Current owner portfolio account pin, or null.')}),
  z.strictObject({...portfolioBase,portfolioKind:z.literal('investment'),symbol:text(80).nullable(),name:text(240).nullable(),quantity:z.string().max(80).regex(/^\d+(?:\.\d+)?$/).nullable().describe('Exact nonnegative decimal string; no exponent or rounding.'),costMinor:minor,valuationMinor:minor,asOf:optionalDate,account:pin.nullable().describe('Current owner portfolio account pin, or null.'),asset:pin.nullable().describe('Current owner portfolio asset pin, or null; cannot be the same ID as account.')}),
 ]) satisfies z.ZodType<PortfolioPersonal>;
+const cooking = z.strictObject({
+ type:z.literal('cooking'),
+ schemaVersion:z.literal(1),
+ recipe:z.strictObject({
+  id:z.string().regex(/^[a-f0-9]{16}$/),
+  sourceUrl:text(2048,true).regex(/^https:\/\/github\.com\/Anduin2017\/HowToCook\/blob\/[a-f0-9]{40}\/dishes\//),
+ }).nullable().describe('Use the exact recipe ID and source URL from the LifeOS catalog, or null for a manually named dish. The server verifies the recipe pin.'),
+});
 const record=(personal:z.ZodType,occurredOn:z.ZodType=optionalDate)=>z.strictObject({title:text(240,true),text:text(16384),occurredOn,personal});
 const account=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/).meta({examples:['synthetic-account']});
 const financeBase={amountMinor:z.number().int().min(1).max(1_000_000_000_000).describe('Positive integer minor units: CNY 分 (fen); 100 = CNY 1.00. No implicit conversion.'),currency:z.literal('CNY'),occurredOn:date,category:text(80,true).nullable(),notes:text(16384)};
@@ -108,6 +116,7 @@ export function writeFieldsSchema(module:string,patch:boolean):z.ZodType{
   case 'media':return record(media);
   case 'career':return record(career);
   case 'portfolio':return record(portfolio);
+  case 'cooking':return record(cooking,date);
   case 'todo':{
    const base={title:text(240,true),notes:text(16384),dueOn:optionalDate,status:z.enum(['open','in_progress','done','cancelled']),personal:relations.nullable()};
    return patch?z.strictObject({...base,...planning}):z.strictObject({...base,notes:base.notes.optional(),dueOn:base.dueOn.optional(),status:base.status.optional(),personal:relations.optional().describe('Omit for an unclassified new todo, or supply a relations object. Null clears relations only on PATCH.'),...planning});

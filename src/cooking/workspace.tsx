@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Button } from '../ui-review/ui/button';
 import type { RecipeSummary } from './catalog';
 import { ingredientTerms, rankRecipes, suggestionGroup } from './filter';
+import { CookingRecordAction } from './log-action';
 import styles from './workspace.module.css';
 
 const pageSize = 9;
@@ -175,7 +176,7 @@ export function CookingWorkspace({ recipes, categories }: {
         <a href="https://github.com/Anduin2017/HowToCook/tree/1.6.0/tips" target="_blank" rel="noreferrer">
           下厨基础：备料、厨具与技巧
         </a>
-        <span>做饭记录与照片待接入。</span>
+        <CookingRecordAction />
       </footer>
     </div>
   );

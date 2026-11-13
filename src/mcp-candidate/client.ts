@@ -22,7 +22,7 @@ const supported=(operation:Operation)=>policyOperationScopes(operation)!==null&&
  /^\/v1\/organization\/(?:snapshot|\{type\}(?:\/\{id\})?)$/.test(operation.path)||
  /^\/v1\/requirement-events\/claims(?:\/\{id\})?$/.test(operation.path)||
  /^\/v1\/requirements(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
- /^\/v1\/records\/(?:journal|calendar|health|person|finance|media|career|portfolio)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
+ /^\/v1\/records\/(?:journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/feedback(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/storage-reviews(?:\/(?:snapshot|\{id\})(?:\/(?:checklist|decisions))?)?$/.test(operation.path)||
  /^\/v1\/todo-classifications\/(?:preview|commit)$/.test(operation.path));

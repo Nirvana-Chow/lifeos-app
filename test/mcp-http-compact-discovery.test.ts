@@ -6,7 +6,9 @@ import {createMcpHttpHandler} from '../src/mcp-http/handler.ts';
 
 const origin='https://lifeos.nirvanachow.com';
 const excluded=new Set(['discover','discoverV2','commitTodoClassification','previewTodoClassification','claimRequirementExecution','updateRequirementExecution']);
-const catalog53=agentOperations.filter(operation=>!excluded.has(operation.id));
+const catalog57=agentOperations.filter(operation=>!excluded.has(operation.id));
+// Preserve the existing cooking-closed catalog as a distinct compatibility case.
+const catalog53=catalog57.filter(operation=>operation.module!=='cooking');
 const catalog5=catalog53.filter(operation=>operation.module==='todo');
 async function fixture(operations:typeof catalog53){
  let current=operations,requests=0;
@@ -24,7 +26,7 @@ async function fixture(operations:typeof catalog53){
  return{rpc,close:()=>client.close(),set:(next:typeof catalog53)=>{current=next;},requests:()=>requests};
 }
 
-for(const [count,operations] of [[5,catalog5],[53,catalog53]] as const)test(`offline ${count}-operation catalog retains full schemas with optional compact projections`,async t=>{
+for(const [count,operations] of [[5,catalog5],[53,catalog53],[57,catalog57]] as const)test(`offline ${count}-operation catalog retains full schemas with optional compact projections`,async t=>{
  assert.equal(operations.length,count);
  const f=await fixture(operations);t.after(()=>f.close());
  const full=await f.rpc('tools/call',{name:'lifeos_discover',arguments:{}});
