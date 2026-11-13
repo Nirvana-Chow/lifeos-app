@@ -42,16 +42,58 @@ test('media evidence remains unverified even when its body or processed state me
  assert.equal(label(item),'');
 });
 test('return navigation retains a busy or unconfirmed command and allows a settled review',()=>{
- const context:any={busy:false,pendingDecision:null,uncertain:false,announce(){}};
+ const context:any={busy:false,pendingDecision:null,uncertain:false,synced:true,localSaved:true,choices:new Map(),pendingRetained:false,announce(){}};
  const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
  let blocked=0;const event={preventDefault(){blocked++;}};
  guard(event);assert.equal(blocked,0);
  for(const key of ['busy','pendingDecision','uncertain']){context[key]=true;guard(event);context[key]=false;}
  assert.equal(blocked,3);
 });
+test('only an explicit leave confirmation can abandon choices that failed local persistence',()=>{
+ let confirms=0,blocked=0;let leave=false;
+ const choices=new Map([['S-1','keep']]);
+ const context={busy:false,pendingDecision:null,uncertain:false,synced:false,localSaved:false,choices,announce(){},confirm:()=>{confirms++;return leave;}};
+ const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
+ const event={preventDefault(){blocked++;}};
+ guard(event);assert.equal(blocked,1);assert.equal(confirms,1);assert.equal(choices.get('S-1'),'keep');
+ leave=true;guard(event);assert.equal(blocked,1);assert.equal(confirms,2);
+});
+test('a retained unknown command can leave for return or login without being cleared or resent',()=>{
+ let blocked=0,confirmed=0;
+ const pending={id:'S-1',outcome:'unknown',command:{key:'original-key'}};
+ const context:any={busy:false,pendingDecision:pending,uncertain:true,synced:true,localSaved:true,choices:new Map(),pendingRetained:true,retainPendingDecision:()=>true,announce(){},confirm:()=>{confirmed++;return true;}};
+ const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
+ guard({preventDefault(){blocked++;}});assert.equal(blocked,0);assert.equal(confirmed,1);assert.equal(context.pendingDecision,pending);assert.equal(context.uncertain,true);
+});
+test('session recovery retains exact command bytes under its verified owner scope and rejects foreign or malformed records',()=>{
+ const storage=new Map<string,string>();
+ const context:any={REVIEW_API:'/api/platform/personal/storage-review',reviewScope:'["owner","space"]',syncStatus:'saved',uncertain:false,pendingRetained:false,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1',scope:'["owner","space"]',outcome:'unknown',command:{url:'/api/platform/personal/storage-review',method:'PATCH',body:'{"expectedRevision":1,"checklistRevision":"synthetic-v1","id":"S-1","decision":"keep"}',key:'original-command-key'}},OWN:(v:object,k:string)=>Object.hasOwn(v,k),DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},sessionStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value),removeItem:(key:string)=>storage.delete(key)}};
+ const functions=['reviewRecoveryKey','parsePendingReview','retainPendingDecision','restorePendingDecision'].map(fn).join('\n');
+ const api=runInNewContext(functions+'; ({keep:retainPendingDecision,restore:restorePendingDecision})',context);
+ const command=context.pendingDecision.command;assert.equal(api.keep(),true);context.pendingDecision=null;api.restore();assert.deepEqual(JSON.parse(JSON.stringify(context.pendingDecision.command)),command);assert.equal(context.pendingDecision.outcome,'unknown');
+ context.reviewScope='["other","space"]';context.pendingDecision=null;api.restore();assert.equal(context.pendingDecision,null);
+ context.reviewScope='["owner","space"]';const key=[...storage.keys()][0];const raw=JSON.parse(storage.get(key)!);raw.pending.command.url='https://foreign.invalid/';storage.set(key,JSON.stringify(raw));assert.throws(()=>api.restore());
+});
+test('retained checklist requests restore their original POST payload and independent match rule',()=>{
+ const checklist={schema:1,revision:'synthetic-post-v1',items:[item]};
+ const command={url:'/api/platform/personal/storage-review',method:'POST',body:JSON.stringify({expectedRevision:null,checklist}),key:'synthetic-post-key'};
+ const pending={scope:'synthetic-scope',id:'__checklist__',decision:null,checklistRevision:checklist.revision,outcome:'new',command};
+ const context={REVIEW_API:command.url,OWN:(v:object,k:string)=>Object.hasOwn(v,k),DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},KINDS:{folder:'文件夹'},STATUS:{pending:'待审'}};
+ const api=runInNewContext(['parseReview','parsePendingReview','decisionMatches'].map(fn).join('\n')+'; ({parse:parsePendingReview,matches:decisionMatches})',context);
+ const restored=api.parse(JSON.stringify({schema:1,scope:pending.scope,pending}),pending.scope);
+ assert.equal(restored.outcome,'unknown');assert.deepEqual(JSON.parse(JSON.stringify(restored.command)),command);
+ assert.equal(api.matches({revision:1,checklist},restored),true);assert.equal(api.matches({revision:2,checklist:{...checklist,revision:'other'}},restored),false);
+});
+test('owner generation changes reject a late review response without reviving old private state',async()=>{
+ let finish!:(response:Response)=>void;
+ const context:any={REVIEW_API:'/api/platform/personal/storage-review',reviewScope:'owner-scope',reviewGeneration:1,readReviewScope:async()=> 'owner-scope',AbortSignal,fetch:()=>new Promise<Response>(resolve=>{finish=resolve;}),parseSnapshot:(value:unknown)=>value};
+ const request=runInNewContext(fn('requestReview')+'; requestReview',context);
+ const response=request();context.reviewGeneration++;context.reviewScope=null;finish(Response.json({review:{private:'synthetic old owner'}}));
+ await assert.rejects(response,{status:403});
+});
 test('group parents and unknown identities cannot send a decision while standalone folders remain writable',async()=>{
  const records=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'LEAF'}];let writes=0;
- const context:any={review:{items:records,revision:'v1'},choices:new Map([['G43','trash']]),canEdit:()=>true,synced:false,store(){writes++;},render(){},focusDecision(){}};
+ const context:any={review:{items:records,revision:'v1'},pendingDecision:null,choices:new Map([['G43','trash']]),canEdit:()=>true,synced:false,store(){writes++;},render(){},focusDecision(){}};
  const choose=runInNewContext(fn('reviewTree')+'\n'+fn('choose')+'; choose',context);
  await choose(records[0],'keep');await choose({...item,id:'unknown'},'trash');
  assert.equal(writes,0);assert.equal(context.choices.get('G43'),'trash');
@@ -67,7 +109,7 @@ test('selected and group filters distinguish undecided from defer',()=>{
 async function writeCase(status:number|null,readbackFails=false){
  const original={revision:1,checklist:{revision:'synthetic-v1'},decisions:[]};
  const fresh={...original,revision:2};const notices:string[]=[];let shown:unknown;
- const context:any={busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
+ const context:any={busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',retainPendingDecision:()=>true,clearPendingDecision(){context.pendingDecision=null;},syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
  await runInNewContext(fn('writeServer')+'; writeServer',context)('PATCH',{},()=>false);
  return {context,notices,shown};
 }
@@ -84,10 +126,11 @@ test('desktop ledger and mobile cards retain scoped controls',()=>{
 
 function recoveryFixture(){
  const nodes=new Map<string,any>(),listeners=new Map<string,Function>(),wire:any[]=[],notices:string[]=[];
+ const storage=new Map<string,string>(),scope='["synthetic-owner","synthetic-space"]';
  let key=0,failRead=true,patchMode:'lost'|'conflict'|'receipt'|'reject'='lost';
  const snapshot=(revision:number,decision?:string)=>({revision,checklist:{revision:'wire-v1',items:[item,{...item,id:'S-2'}]},decisions:[...(decision?[{id:'S-1',decision}]:[]),{id:'S-2',decision:'trash'}]});
  let fresh=snapshot(1),receipt=snapshot(2,'keep');
- const context:any={REVIEW_API:'/api/platform/personal/storage-review',review:fresh.checklist,choices:new Map(),remote:fresh,synced:true,busy:false,uncertain:false,sessionDenied:false,localSaved:true,pendingDecision:null,syncStatus:'saved',AbortSignal,crypto:{randomUUID:()=>`synthetic-key-${++key}`},DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},
+ const context:any={REVIEW_API:'/api/platform/personal/storage-review',reviewScope:scope,reviewGeneration:0,recoveryBlocked:false,pendingRetained:false,readReviewScope:async()=>scope,sessionStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value),removeItem:(key:string)=>storage.delete(key)},OWN:(v:object,k:string)=>Object.hasOwn(v,k),review:fresh.checklist,choices:new Map(),remote:fresh,synced:true,busy:false,uncertain:false,sessionDenied:false,localSaved:true,pendingDecision:null,syncStatus:'saved',AbortSignal,crypto:{randomUUID:()=>`synthetic-key-${++key}`},DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},
   byId:(id:string)=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false,focus(){},addEventListener:(_:string,fn:Function)=>listeners.set(id,fn)});return nodes.get(id);},syncControls(){},render(){},focusDecision(){},canEdit:()=>!context.busy&&!context.uncertain,announce:(value:string)=>notices.push(value),isSessionDenial:()=>false,hideDeniedServerReview(){},parseSnapshot:(value:unknown)=>value,
   useReview:(review:any,s:any)=>{context.review=review;context.choices=new Map(s.decisions.map((row:any)=>[row.id,row.decision]));},
   fetch:async(url:string,options:any)=>{
@@ -98,7 +141,7 @@ function recoveryFixture(){
    return Response.json({review:receipt});
   },
  };
- const functions=['reviewTree','requestReview','writeServer','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
+ const functions=['reviewRecoveryKey','parsePendingReview','retainPendingDecision','restorePendingDecision','clearPendingDecision','reviewTree','requestReview','writeServer','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
  const handlers=['retry-decision','discard-decision'].map(id=>{const start=script.indexOf("byId('"+id+"').addEventListener(");return script.slice(start,script.indexOf('\n});',start)+4);}).join('\n');
  runInNewContext(functions+'\n'+handlers+'\nObject.assign(globalThis,{choose,openServer});',context);
  const click=async(id:string)=>{await listeners.get(id)!();for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
@@ -108,6 +151,12 @@ test('unknown response replay freezes original URL method body and key after mis
  const f=recoveryFixture();await f.context.choose(item,'keep');assert.equal(f.context.uncertain,true);
  f.setRead(false);f.setFresh(f.snapshot(3,'defer'));await f.context.openServer();f.setPatch('receipt');await f.click('retry-decision');
  assert.equal(f.wire.length,2);assert.deepEqual(f.wire[1],f.wire[0]);assert.equal(f.context.choices.get('S-1'),'defer');assert.equal(f.context.choices.get('S-2'),'trash');assert.equal(f.context.pendingDecision,null);assert.ok(f.notices.some(value=>value.includes('原请求已确认')&&value.includes('最新')));
+});
+test('keeping unknown input never clears its frozen command and persistence failure sends no request',async()=>{
+ const f=recoveryFixture();await f.context.choose(item,'keep');const original=f.context.pendingDecision.command;
+ await f.click('discard-decision');assert.equal(f.context.pendingDecision.command,original);assert.equal(f.context.uncertain,true);assert.equal(f.wire.length,1);assert.equal(f.context.pendingRetained,true);
+ const g=recoveryFixture();g.context.sessionStorage.setItem=()=>{throw Error('synthetic storage denied');};await g.context.choose(item,'keep');
+ assert.equal(g.wire.length,0);assert.equal(g.context.pendingDecision.outcome,'new');assert.equal(g.context.pendingRetained,false);await g.click('discard-decision');assert.equal(g.context.pendingDecision,null);assert.equal(g.wire.length,0);
 });
 test('first explicit 409 allows owner rebase with fresh revision and new key; cancel never writes',async()=>{
  const f=recoveryFixture();f.setRead(false);f.setPatch('conflict');f.setFresh(f.snapshot(2,'defer'));await f.context.choose(item,'keep');

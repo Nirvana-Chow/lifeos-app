@@ -196,11 +196,71 @@ let review, choices = new Map(), compact = false;
 const collapsedBranches = new Set();
 let pendingDecision = null, syncStatus = 'saved';
 let remote, synced = false, busy = false, uncertain = false, localSaved = true, sessionDenied = false;
+let reviewScope = null, pendingRetained = false, recoveryBlocked = false, reviewGeneration = 0;
 function announce(text) { byId('notice').textContent = text; }
 function guardReviewNavigation(event) {
-  if (!busy && !pendingDecision && !uncertain) return;
+  if (!busy && !synced && !localSaved && choices.size) {
+    if (confirm('本机决定尚未持久保存。取消后可先导出；继续离开将放弃仅在内存中的决定。仍要离开吗？')) return;
+  } else if (!busy && pendingDecision && pendingRetained && retainPendingDecision()) {
+    if (confirm('原请求已保留在本标签页的会话存储中，结果仍需核对。返回审核页或重新登录后可恢复同一请求，不会自动重发。仍要离开吗？')) return;
+  } else if (!busy && pendingDecision?.outcome === 'new') {
+    if (confirm('本次请求尚未发送，也未能可靠保存在本机。继续离开将放弃这份未提交草稿。仍要离开吗？')) return;
+  } else if (!busy && !pendingDecision && !uncertain) return;
   event.preventDefault();
-  announce('请先确认保存结果或放弃待确认的输入，再返回 LifeOS。');
+  announce(busy ? '正在保存或读回，请稍后返回 LifeOS。' : '已留在页面。未保存的决定可先导出；待核请求须可靠保留后才能离开。');
+}
+function reviewRecoveryKey(scope) {
+  return 'lifeos.storage-review.pending.v1:'+encodeURIComponent(scope);
+}
+function parsePendingReview(raw,scope) {
+  if (typeof raw !== 'string' || raw.length > 262144) throw Error('本机恢复记录无效。');
+  const value = JSON.parse(raw), pending = value?.pending, command = pending?.command;
+  const keys = (object,allowed)=>object && typeof object==='object' && !Array.isArray(object) && Object.keys(object).sort().join(',')===allowed.sort().join(',');
+  if (!keys(value,['schema','scope','pending']) || value.schema!==1 || value.scope!==scope || !keys(pending,['id','decision','checklistRevision','scope','command','outcome']) || pending.scope!==scope || !['new','unknown','rejected','confirmed'].includes(pending.outcome) || !keys(command,['url','method','body','key']) || command.url!==REVIEW_API || !['PATCH','POST'].includes(command.method) || typeof command.body!=='string' || command.body.length>131072 || typeof command.key!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(command.key)) throw Error('本机恢复请求无效。');
+  const body = JSON.parse(command.body);
+  if (command.method==='PATCH') {
+    if (!keys(body,['expectedRevision','checklistRevision','id','decision']) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<1 || typeof body.id!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.id) || typeof body.checklistRevision!=='string' || !body.checklistRevision.trim() || body.checklistRevision.length>250 || !(body.decision===null || typeof body.decision==='string' && OWN(DECISIONS,body.decision)) || pending.id!==body.id || pending.decision!==body.decision || pending.checklistRevision!==body.checklistRevision) throw Error('本机决定恢复请求无效。');
+  } else {
+    if (!keys(body,['expectedRevision','checklist']) || !(body.expectedRevision===null || Number.isSafeInteger(body.expectedRevision) && body.expectedRevision>0) || pending.id!=='__checklist__' || pending.decision!==null || pending.checklistRevision!==body.checklist?.revision || parseReview(body.checklist).items.length>500) throw Error('本机清单恢复请求无效。');
+  }
+  return {...pending,outcome:pending.outcome==='new'?'unknown':pending.outcome,command:Object.freeze({...command})};
+}
+function retainPendingDecision() {
+  pendingRetained = false;
+  if (!pendingDecision?.scope) return false;
+  try {
+    const key = reviewRecoveryKey(pendingDecision.scope), raw = JSON.stringify({schema:1,scope:pendingDecision.scope,pending:pendingDecision});
+    const old = sessionStorage.getItem(key);
+    if (old && JSON.stringify(parsePendingReview(old,pendingDecision.scope).command)!==JSON.stringify(pendingDecision.command)) throw Error('另有待核请求。');
+    sessionStorage.setItem(key,raw);
+    pendingRetained = sessionStorage.getItem(key)===raw;
+  } catch {
+    try { const raw=sessionStorage.getItem(reviewRecoveryKey(pendingDecision.scope)); pendingRetained=!!raw && JSON.stringify(parsePendingReview(raw,pendingDecision.scope).command)===JSON.stringify(pendingDecision.command); } catch {}
+  }
+  return pendingRetained;
+}
+function restorePendingDecision() {
+  const raw = sessionStorage.getItem(reviewRecoveryKey(reviewScope));
+  pendingDecision = raw===null ? null : parsePendingReview(raw,reviewScope);
+  pendingRetained = !!pendingDecision;
+  if (pendingDecision) { uncertain=!['new','rejected'].includes(pendingDecision.outcome); syncStatus='error'; }
+}
+function clearPendingDecision() {
+  if (pendingDecision?.scope) {
+    try {
+      const key = reviewRecoveryKey(pendingDecision.scope), raw = sessionStorage.getItem(key);
+      if (raw && JSON.stringify(parsePendingReview(raw,pendingDecision.scope).command)===JSON.stringify(pendingDecision.command)) sessionStorage.removeItem(key);
+    } catch {}
+  }
+  pendingDecision = null;
+  pendingRetained = false;
+}
+async function readReviewScope() {
+  const response = await fetch('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)});
+  if (!response.ok) throw Object.assign(Error('本人空间尚未确认。'),{status:response.status});
+  const value = await response.json();
+  if (value?.scope!=='personal-manual-candidate' || value.storageVerified!==true || value.storageReviewEnabled!==true || typeof value.ownerId!=='string' || !value.ownerId || typeof value.spaceId!=='string' || !value.spaceId) throw Error('存储审核空间尚未确认。');
+  return JSON.stringify([value.ownerId,value.spaceId]);
 }
 function useReview(next, snapshot, resetFilters=true) {
   synced = Boolean(snapshot);
@@ -252,11 +312,14 @@ function freezeReviewCommand(method,body) {
 }
 function decisionMatches(snapshot,pending) {
   const original = JSON.parse(pending.command.body);
+  if (pending.command.method==='POST') return snapshot && JSON.stringify(snapshot.checklist)===JSON.stringify(original.checklist);
   return snapshot && snapshot.revision > original.expectedRevision && snapshot.checklist.revision === pending.checklistRevision &&
     (snapshot.decisions.find(row=>row.id===pending.id)?.decision ?? null) === pending.decision;
 }
 async function requestReview(method='GET',body,command) {
   if (body && !command) command = freezeReviewCommand(method,body);
+  const generation = reviewGeneration, scope = reviewScope;
+  if (command && (!scope || scope!==pendingDecision?.scope || await readReviewScope()!==scope)) throw Object.assign(Error('本人空间已变化。'),{status:403});
   const options = {method:command?.method ?? method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)};
   if (body) {
     options.headers = {'Content-Type':'application/json','Idempotency-Key':command.key};
@@ -265,34 +328,42 @@ async function requestReview(method='GET',body,command) {
   const response = await fetch(command?.url ?? REVIEW_API,options);
   if (!response.ok) throw Object.assign(Error('LifeOS 请求未成功。'),{status:response.status});
   const data = await response.json();
+  const currentScope = scope ? await readReviewScope() : null;
+  if (generation!==reviewGeneration || scope!==reviewScope || currentScope!==scope) throw Object.assign(Error('本人空间已变化。'),{status:403});
   return parseSnapshot(data.review);
 }
-function canEdit() { return !busy && (!synced || !uncertain && !!remote); }
+function canEdit() { return !busy && !recoveryBlocked && (!synced || !uncertain && !!remote); }
 function syncControls() {
   byId('open-server').disabled = busy;
-  byId('save-server').disabled = busy || synced || uncertain || remote === undefined || !review.items.length;
-  byId('sync-login').hidden = !sessionDenied;
+  byId('save-server').disabled = busy || synced || uncertain || !!pendingDecision || remote === undefined || !review.items.length;
+  byId('sync-login').hidden = !sessionDenied && !pendingDecision && !uncertain;
   byId('import').disabled = busy || !!pendingDecision;
   byId('file').disabled = busy || !!pendingDecision;
   byId('sync-state').textContent = (synced ? ({saving:'LifeOS 清单 · 正在保存并读回',saved:'LifeOS 已保存清单',error:'LifeOS 清单 · 保存未确认'}[syncStatus]) : '本机预览') + (uncertain ? ' · 请先重新读回' : '');
   byId('sync-state').parentElement.dataset.sync = syncStatus;
   const pending = pendingDecision;
-  byId('pending-input').hidden = !pending || !synced;
-  if (pending && synced) {
+  byId('pending-input').hidden = !pending || sessionDenied;
+  if (pending && !sessionDenied) {
     const latest = choices.get(pending.id);
-    byId('pending-description').textContent = pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。请核对后重试或放弃；本次输入仅保留在当前页面。';
+    byId('pending-description').textContent = pending.command.method==='POST' ? '本次清单保存尚未确认。' : pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。';
+    byId('pending-description').textContent += pendingRetained ? ' 原请求已保留在本标签页的会话存储；可确认后返回或重新登录，回来后显式恢复同一请求。' : ' 原请求未能可靠保存在本机；请保留当前页面。';
+    if (pending.outcome==='new') byId('pending-description').textContent += ' 尚未发送；这是未提交草稿。';
     byId('pending-description').textContent += pending.outcome === 'rejected' ? ' 原请求已明确拒绝，可按最新版本重新确认。' : pending.outcome === 'confirmed' ? ' 原请求已收到确认，读回后不会重复写入。' : ' 原请求结果未知，重试只会恢复原请求，不会覆盖为新的决定。';
     byId('retry-decision').textContent = pending.outcome === 'rejected' ? '按最新版本重新确认' : pending.outcome === 'confirmed' ? '确认原请求结果' : '按原请求重试确认';
-    byId('retry-decision').disabled = busy || uncertain || !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending');
+    byId('retry-decision').disabled = busy || uncertain || recoveryBlocked || (pending.command.method==='POST' ? remote===undefined : !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending'));
     byId('discard-decision').disabled = busy;
+    byId('discard-decision').textContent = ['new','rejected'].includes(pending.outcome) ? '放弃本次输入' : '保留原请求，稍后核对';
   }
   for (const input of byId('list').querySelectorAll('.choices input,.choices button')) input.disabled = !canEdit() || !!pendingDecision;
 }
 const isSessionDenial = error => error?.status === 401 || error?.status === 403;
 function hideDeniedServerReview() {
+  reviewGeneration++;
+  reviewScope = null;
   remote = undefined;
-  uncertain = false;
+  uncertain = !!pendingDecision && !['new','rejected'].includes(pendingDecision.outcome);
   sessionDenied = true;
+  byId('pending-description').textContent = '';
   if (synced) {
     const dialog = byId('copy-dialog');
     if (dialog.open) dialog.close();
@@ -305,15 +376,26 @@ async function openServer(automatic=false) {
   if (busy) return;
   if (!automatic && !synced && choices.size && !confirm(localSaved ? '切换到 LifeOS 清单？本机决定仍保存在原清单版本。' : '本机决定尚未持久保存。可先取消并导出。仍切换到 LifeOS 清单吗？')) return;
   busy = true;
+  const generation = ++reviewGeneration;
   syncControls();
   try {
+    const scope = await readReviewScope();
+    if (generation!==reviewGeneration) return;
+    if (scope!==reviewScope) {
+      if (reviewScope && synced) useReview(parseReview({schema:1,revision:'empty',items:[]}));
+      reviewScope = scope;
+      pendingDecision = null;
+      pendingRetained = false;
+      try { restorePendingDecision(); recoveryBlocked=false; } catch { recoveryBlocked=true; }
+    }
     remote = await requestReview();
+    if (generation!==reviewGeneration) return;
     uncertain = false;
     sessionDenied = false;
     if (remote) {
       useReview(remote.checklist,remote);
       syncStatus = pendingDecision ? 'error' : 'saved';
-      announce(pendingDecision ? '已读回最新决定，请核对待确认的输入。' : '已打开 LifeOS 清单和服务器决定。');
+      announce(recoveryBlocked ? '本机会话恢复记录无法读取，已停止写入。现有本机记录未清除，可稍后重新登录核对。' : pendingDecision ? '已读回最新决定，请核对待确认的输入。' : '已打开 LifeOS 清单和服务器决定。');
     } else {
       announce('LifeOS 暂无保存的清单。可导入并保存，也可仅在本机审核。');
     }
@@ -335,10 +417,10 @@ async function writeServer(method,body,match,command) {
   const priorUnknown = pending?.outcome === 'unknown';
   try {
     const receipt = await requestReview(method,body,command);
-    if (pending) pending.outcome = match(receipt) ? 'confirmed' : 'unknown';
+    if (pending) { pending.outcome = match(receipt) ? 'confirmed' : 'unknown'; retainPendingDecision(); }
   } catch (error) {
     failure = error;
-    if (pending) pending.outcome = !priorUnknown && error?.status === 409 ? 'rejected' : 'unknown';
+    if (pending) { pending.outcome = !priorUnknown && error?.status === 409 ? 'rejected' : 'unknown'; retainPendingDecision(); }
   }
   try {
     const fresh = await requestReview();
@@ -348,7 +430,7 @@ async function writeServer(method,body,match,command) {
     const agrees = fresh && match(fresh);
     const confirmed = pending?.outcome === 'confirmed';
     syncStatus = agrees || confirmed ? 'saved' : 'error';
-    if (agrees || confirmed) pendingDecision = null;
+    if (agrees || confirmed) clearPendingDecision();
     if (fresh && (synced || agrees)) useReview(fresh.checklist,fresh,false);
     if (agrees) {
       announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : '决定已保存，并已读回 LifeOS。');
@@ -372,7 +454,7 @@ async function writeServer(method,body,match,command) {
   }
 }
 async function savePreview() {
-  if (busy || synced || uncertain || remote === undefined || !review.items.length) return;
+  if (busy || synced || uncertain || pendingDecision || recoveryBlocked || remote === undefined || !review.items.length) return;
   const checklist = review;
   const expectedRevision = remote?.revision ?? null;
   if (choices.size && !confirm(localSaved ? '本机决定将继续保留在浏览器，保存清单时不会同步这些决定。可先取消并导出。继续保存清单吗？' : '本机决定尚未持久保存，保存清单时不会同步这些决定。可先取消并导出。仍继续保存清单吗？')) return;
@@ -381,13 +463,18 @@ async function savePreview() {
     announce('清单超过 LifeOS 保存上限。仍可在本机审核和导出。');
     return;
   }
-  await writeServer('POST',{expectedRevision,checklist},snapshot=>JSON.stringify(snapshot.checklist)===JSON.stringify(checklist));
+  const body = {expectedRevision,checklist};
+  const pending = {id:'__checklist__',decision:null,checklistRevision:checklist.revision,scope:reviewScope,command:freezeReviewCommand('POST',body),outcome:'new'};
+  pendingDecision = pending;
+  if (!retainPendingDecision()) { render(); announce('原请求无法在本机保留，清单尚未发送。可重试或明确放弃未提交草稿。'); return; }
+  await writeServer('POST',body,snapshot=>decisionMatches(snapshot,pending),pending.command);
 }
 function focusDecision(id,decision) {
   const row = [...byId('list').querySelectorAll('.row')].find(node=>node.dataset.id===id);
   (row && [...row.querySelectorAll('.choices input')].find(input=>input.value===decision) || row?.querySelector('.choices input') || byId('filter')).focus();
 }
 async function choose(item,decision) {
+  if (pendingDecision) return;
   const node = reviewTree(review.items).nodes.get(item.id);
   if (!node || node.children.length) return;
   item = node.item;
@@ -396,8 +483,9 @@ async function choose(item,decision) {
     const expectedRevision = remote.revision;
     const checklistRevision = review.revision;
     const body = {expectedRevision,checklistRevision,id:item.id,decision};
-    const pending = {id:item.id,decision,checklistRevision,command:freezeReviewCommand('PATCH',body),outcome:'new'};
+    const pending = {id:item.id,decision,checklistRevision,scope:reviewScope,command:freezeReviewCommand('PATCH',body),outcome:'new'};
     pendingDecision = pending;
+    if (!retainPendingDecision()) { render(); announce('原请求无法在本机保留，决定尚未发送。可重试或明确放弃未提交草稿。'); return; }
     await writeServer('PATCH',body,snapshot=>decisionMatches(snapshot,pending),pending.command);
   } else {
     if (decision === null) choices.delete(item.id);
@@ -525,27 +613,33 @@ function render() {
   }
   syncControls();
 }
-for (const link of document.querySelectorAll('.return-nav a')) link.addEventListener('click',guardReviewNavigation);
+for (const link of document.querySelectorAll('.return-nav a,#sync-login')) link.addEventListener('click',guardReviewNavigation);
 byId('search').addEventListener('input',render);
 byId('filter').addEventListener('change',render);
 byId('group-filter').addEventListener('change',render);
 byId('discard-decision').addEventListener('click',()=>{
-  if (busy) return; pendingDecision = null; syncStatus = uncertain ? 'error' : 'saved'; render(); announce(uncertain ? '已放弃本次输入，保存结果仍需重新读回确认。' : '已放弃本次输入，当前显示最近读回的服务器决定。');
+  if (busy) return;
+  if (pendingDecision && !['new','rejected'].includes(pendingDecision.outcome)) {
+    retainPendingDecision(); render(); announce(pendingRetained ? '原请求已保留，保存结果仍未知。可确认后返回或重新登录，稍后恢复同一请求。' : '原请求结果仍未知，未能可靠保留。请保留当前页面，恢复会话存储后再离开。'); return;
+  }
+  clearPendingDecision(); syncStatus = uncertain ? 'error' : 'saved'; render(); announce('已放弃未提交或已明确拒绝的输入，当前显示最近读回的服务器决定。');
 });
 async function retryDecision() {
-  if (!pendingDecision || !canEdit() || review.revision !== pendingDecision.checklistRevision) return;
+  if (!pendingDecision || !canEdit() || pendingDecision.command.method!=='POST' && review.revision !== pendingDecision.checklistRevision) return;
   const pending = pendingDecision;
   const item = review.items.find(item=>item.id===pending.id && item.status==='pending');
-  if (!item) return;
+  if (pending.command.method!=='POST' && !item) return;
   if (decisionMatches(remote,pending) || pending.outcome === 'confirmed') {
-    pendingDecision = null; syncStatus = 'saved'; render();
+    clearPendingDecision(); syncStatus = 'saved'; render();
     announce(decisionMatches(remote,pending) ? '读回的决定已与本次输入一致。' : '原请求已确认；最新服务器决定已有变化，已显示最新状态。可另行选择新的决定。');
     return;
   }
   if (pending.outcome === 'rejected') {
-    pendingDecision = null;
-    await choose(item,pending.decision);
+    clearPendingDecision();
+    if (pending.command.method==='POST') { announce('清单请求已明确拒绝。请核对最新清单，重新导入并确认保存。'); render(); }
+    else await choose(item,pending.decision);
   } else {
+    if (!retainPendingDecision()) { render(); announce('原请求无法在本机保留，尚未继续发送。请保留当前页面。'); return; }
     await writeServer(pending.command.method,JSON.parse(pending.command.body),snapshot=>decisionMatches(snapshot,pending),pending.command);
   }
 }
