@@ -13,6 +13,8 @@ import {presentationDensity} from './helpers/personal-workspace-browser-fixture.
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
 import {PersonalFinanceService} from '../src/personal-finance/service.ts';
 import {readPersonalFinanceStatus} from '../src/personal-finance/client.ts';
+import {groupWorkspaceModules,overviewDomains} from '../src/ui-review/workspace-hierarchy.ts';
+import {ownerModules} from '../src/ui-review/owner-modules.ts';
 
 test('missing private handoff fails before trust launch or body access',async()=>{
  let touched=false;
@@ -185,6 +187,20 @@ test('independent destination literals cover the actual frozen map and source pa
  assert.throws(()=>fixture.captureSourceText(fixture.privateCaptureSources.map(path=>path==='src/ui-review/task-grid.tsx'?'src/ui-review/reui/data-grid.tsx':path)),/PRIVATE_CAPTURE_SOURCE_DENIED/);
  assert.throws(()=>fixture.assertPrivateCaptureContent({forbidden:0,values:[],texts:['unapproved grid body'],editable:[],recordIds:[]},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
  assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'/private/body.txt']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
+});
+test('authorized workspace hierarchy labels pass the finite capture guard without admitting private text',()=>{
+ const status={scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,allowedTypes:['journal'],calendarEnabled:true,financeEnabled:true};
+ const groups=groupWorkspaceModules(ownerModules(status,null));
+ assert.deepEqual(groups.filter(group=>group.links.length).map(group=>group.label),['安排与推进','生活记录','长期积累']);
+ const domains=overviewDomains([],[{id:'synthetic-project',title:'private project sentinel',revision:1,stage:'active',nextStep:null,area:null}]);
+ assert.equal(domains[0].title,'未关联领域');
+ const facts={forbidden:0,values:[],texts:[...groups.map(group=>group.label),domains[0].title],editable:[],recordIds:[]};
+ const texts=fixture.captureSourceText();
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
+ for(const change of [{texts:[...facts.texts,'private project sentinel']},{texts:[...facts.texts,'生活记录 private body']},{values:['private value']},{editable:['private body']},{recordIds:['foreign-record']},{forbidden:1}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+ }
+ assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/ui-review/owner-modules.ts']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
 });
 test('private handoff rejects arbitrary records before any lifecycle IO',()=>{
  const handoff={origin:'https://review.example.test',ownerId:'personal-review-user',spaceId:'personal-review-space',sourceSha:'a'.repeat(40),cookies:[{name:'__Secure-lifeos-platform-candidate.session_token',value:'fixture-memory-only',domain:'review.example.test',path:'/',secure:true,httpOnly:true,sameSite:'Strict',expires:Date.now()/1000+60}],entries:[{id:'a'},{id:'b'},{id:'c'}]};
