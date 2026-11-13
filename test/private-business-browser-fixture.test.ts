@@ -200,7 +200,7 @@ test('authorized workspace hierarchy labels pass the finite capture guard withou
  for(const change of [{texts:[...facts.texts,'private project sentinel']},{texts:[...facts.texts,'生活记录 private body']},{values:['private value']},{editable:['private body']},{recordIds:['foreign-record']},{forbidden:1}]){
   assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
  }
- assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/ui-review/owner-modules.ts']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
+ assert.throws(()=>fixture.captureSourceText([...fixture.privateCaptureSources,'src/personal-search/README.md']),/PRIVATE_CAPTURE_SOURCE_DENIED/);
 });
 test('private handoff rejects arbitrary records before any lifecycle IO',()=>{
  const handoff={origin:'https://review.example.test',ownerId:'personal-review-user',spaceId:'personal-review-space',sourceSha:'a'.repeat(40),cookies:[{name:'__Secure-lifeos-platform-candidate.session_token',value:'fixture-memory-only',domain:'review.example.test',path:'/',secure:true,httpOnly:true,sameSite:'Strict',expires:Date.now()/1000+60}],entries:[{id:'a'},{id:'b'},{id:'c'}]};
@@ -247,6 +247,19 @@ function renderRealComponent(file:string,name:string,props:Record<string,unknown
  }
  return renderToStaticMarkup(React.createElement(load(file)[name],props));
 }
+test('reviewed batch and search copy passes the finite guard while private additions stay denied',()=>{
+ const links=ownerModules({scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,allowedTypes:['todo']},null);
+ const search=links.find(link=>link.id==='search');assert.ok(search);
+ const html=renderRealComponent('src/personal-search/view.tsx','PersonalSearchView',{query:'',selection:null,state:{phase:'loading'},onRetry:()=>{}});
+ const rendered=Array.from(html.matchAll(/>([^<]+)</g),match=>match[1].trim()).filter(Boolean);
+ const facts={forbidden:0,values:[],texts:[search.label,...rendered,'多行录入待办','预检条目','确认顺序保存','原记录链接无效，未读取其他记录。'],editable:[],recordIds:[]};
+ const texts=fixture.captureSourceText();
+ assert.doesNotThrow(()=>fixture.assertPrivateCaptureContent(facts,texts,new Set(),[]));
+ for(const change of [{texts:[...facts.texts,'搜索本人记录 private body']},{texts:[...facts.texts,'多行录入待办 private body']},{values:['private value']},{editable:['private body']},{recordIds:['foreign-record']},{forbidden:1}]){
+  assert.throws(()=>fixture.assertPrivateCaptureContent({...facts,...change},texts,new Set(),[]),/PRIVATE_CAPTURE_DENIED/);
+ }
+ assert.throws(()=>fixture.captureSourceText(fixture.privateCaptureSources.map(path=>path==='src/ui-review/workspace.tsx'?'src/personal-search/README.md':path)),/PRIVATE_CAPTURE_SOURCE_DENIED/);
+});
 test('real appearance palette SSR passes only the exact public capture allowlist',()=>{
  const html=renderRealComponent('src/workbench/theme-switch.tsx','AppearanceSettings',{});
  const radios=Array.from(html.matchAll(/<input\b[^>]*\btype="radio"[^>]*>/g),match=>match[0].match(/\bvalue="([^"]*)"/)?.[1]??'');

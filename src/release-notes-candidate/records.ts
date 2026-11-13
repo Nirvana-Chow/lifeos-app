@@ -1,9 +1,9 @@
 /** Reviewed copy shipped in this image. Runtime proof supplies identity, never a self-referential future SHA. */
 export const currentReleaseSummary={
  id:'owner-workspace-20261113',
- title:'待办分组、菜谱与日记历史更新',
- changes:['待办支持按项目或领域分组，未分配项目或领域的事项单独展示。','菜谱库提供377道带来源的中外菜谱，支持按食材与分类筛选并查看步骤。','日记新增历史上的今天，可查看库内日期覆盖并打开原始记录。','导航按生活维度分组，设置入口更集中，总览可查看领域、项目与下一步。'],
- requirementIds:['LO-TASK-001','LO-PROJECT-001','LO-COOK-001','LO-JOURNAL-001','LO-VERSION-001','LO-UI-001','LO-OVERVIEW-001'],
+ title:'待办多行预检与本人记录搜索',
+ changes:['待办支持按项目或领域分组，未分配项目或领域的事项单独展示。','待办支持多行预检、逐项编辑与选择，确认后按顺序保存并独立回读；批次非原子，失败或结果未确认时停止并保留原请求。','可搜索当前授权本人记录的标题与正文，查看覆盖范围，并打开独立读取的原记录只读详情；返回时保留搜索词。','菜谱库提供377道带来源的中外菜谱，支持按食材与分类筛选并查看步骤。','日记新增历史上的今天，可查看库内日期覆盖并打开原始记录。','导航按生活维度分组，设置入口更集中，总览可查看领域、项目与下一步。'],
+ requirementIds:['LO-TASK-001','LO-CAPTURE-001','LO-SEARCH-001','LO-PROJECT-001','LO-COOK-001','LO-JOURNAL-001','LO-VERSION-001','LO-UI-001','LO-OVERVIEW-001'],
 };
 /** Public source records. These are neither deployment receipts nor owner acceptance. */
 export const publicReleaseRecords=[{

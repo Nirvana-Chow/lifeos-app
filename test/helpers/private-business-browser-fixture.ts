@@ -131,12 +131,13 @@ export function projectPrivateAppearanceFailure(phase:unknown,error:unknown){
 // The text source set is finite and reviewed. AST literals/JSX text are admitted
 // exactly, never source prefixes, arbitrary file paths or body-derived expected data.
 export const privateCaptureSources=[
- 'src/ui-review/workspace.tsx','src/ui-review/workspace-hierarchy.ts','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/category-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
+ 'src/ui-review/workspace.tsx','src/ui-review/workspace-hierarchy.ts','src/ui-review/owner-modules.ts','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/category-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
  'src/workbench/shell.tsx','src/workbench/navigation.ts','src/workbench/draft-workspace.tsx','src/workbench/draft-contract.ts','src/workbench/domain.tsx','src/workbench/empty-state.tsx','src/workbench/entry-preview.tsx','src/workbench/entry-fields.ts','src/workbench/workflow.tsx','src/workbench/settings.tsx','src/workbench/theme-switch.tsx',
- 'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/connected-workspace.tsx',
+ 'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/task-batch-editor.tsx','src/personal-candidate/connected-workspace.tsx',
  'src/personal-candidate/privacy.tsx','src/personal-candidate/live-workspace.tsx','app/layout.tsx','app/personal/[...section]/page.tsx',
  'src/personal-candidate/record-workbench.tsx','src/personal-candidate/record-modules.ts',
  'src/personal-finance/workbench.tsx','src/personal-finance/client.ts',
+ 'src/personal-search/page.tsx','src/personal-search/view.tsx',
 ] as const;
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
