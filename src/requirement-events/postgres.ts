@@ -41,7 +41,7 @@ export class PostgresRequirementEventStore implements EventStore{
      const events=rows.map(row=>({cursor:String(row.cursor),requirementId:String(row.requirement_id),sourceId:String(row.source_id),revision:Number(row.record_revision),workDigest:String(row.work_digest),state:row.dispatch_state as WorkEvent['state']}));
      return{events,cursor:events.at(-1)?.cursor??last,reset};
     },
-    ready:async limit=>(await client.query('SELECT '+columns+` FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND attempts<3 AND (dispatch_state='ready' OR dispatch_state='running' AND lease_expires_at<=clock_timestamp()) ORDER BY requirement_id LIMIT $3`,[...values,limit])).rows.map(decodeWork),
+    ready:async limit=>(await client.query('SELECT '+columns+` FROM lifeos_platform.requirement_work WHERE owner_id=$1 AND space_id=$2 AND attempts<3 AND dispatch_state='ready' AND lease_id IS NULL ORDER BY requirement_id LIMIT $3`,[...values,limit])).rows.map(decodeWork),
     claimReceipt:async requestId=>{const receipt=await readExecutionCommand(client,owner,{spaceId:space,grantId:actor.grantId,key:requestId});return receipt?{digest:receipt.digest,lease:receipt.response as ExecutionLease}:null;},
     saveClaimReceipt:async(requestId,receipt)=>saveExecutionCommand(client,owner,{spaceId:space,grantId:actor.grantId,key:requestId},receipt.digest,receipt.lease)
    };

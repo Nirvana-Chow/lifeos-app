@@ -19,23 +19,32 @@ class Store implements EventStore{
 }
 const ticket=():Work=>({requirementId:id,sourceId,revision:1,workDigest:'a'.repeat(64),state:'ready',attempts:0,fence:0,lease:null});
 
-test('claims have a single writer and expiry/reclaim fences the old worker with a finite retry budget',async()=>{
+test('expired running work cannot be claimed before old execution reconciliation',async()=>{
  const store=new Store(),work=ticket();store.rows.set(id,work);const service=new RequirementEventService(store);
  const [first,second]=await Promise.allSettled([service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'synthetic-mac',requestId:'claim-request-001'}),service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'other-mac',requestId:'claim-request-002'})]);
  assert.equal(first.status,'fulfilled');assert.equal(second.status,'rejected');if(first.status!=='fulfilled')throw Error('missing claim');
  const lease=first.value;assert.deepEqual(await service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'synthetic-mac',requestId:'claim-request-001'}),lease);
- store.now+=120001;const replacement=await service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'other-mac',requestId:'claim-request-003'});assert.ok(replacement.fence>lease.fence);
- await assert.rejects(service.renew(actor,lease));await service.renew(actor,replacement);
+ store.now+=120001;const expired=structuredClone(store.rows.get(id)),claimsBefore=structuredClone(store.claims);
+ await assert.rejects(service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'other-mac',requestId:'claim-request-003'}),{code:'EXECUTION_RECONCILIATION_REQUIRED'});
+ assert.deepEqual(store.rows.get(id),expired,'expiry alone must not change attempt, fence, old lease or state');assert.deepEqual(store.claims,claimsBefore,'no replacement claim receipt is created');
+ await assert.rejects(service.renew(actor,lease),{code:'EXECUTION_LEASE_LOST'});
  assert.deepEqual(await service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'synthetic-mac',requestId:'claim-request-001'}),lease,'lost old claim returns its historical receipt, never silently acquires a new lease');
- store.now+=120001;await service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'third-mac',requestId:'claim-request-004'});
- store.now+=120001;await assert.rejects(service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'fourth-mac',requestId:'claim-request-005'}),{code:'EXECUTION_ATTEMPTS_EXHAUSTED'});
+ assert.equal((await service.inspect(actor,id))?.leaseActive,false);assert.deepEqual(store.rows.get(id),expired);
 });
-test('stream replay is scoped and expired leases are offered without starting a model',async()=>{
+test('stream replay excludes expired running work while preserving its last lease',async()=>{
  const store=new Store();store.rows.set(id,ticket());const service=new RequirementEventService(store);
  const initial=await service.batch(actor,'0');assert.equal(initial.ready.length,1);
  const lease=await service.claim(actor,{requirementId:id,workDigest:ticket().workDigest,holderId:'synthetic-mac',requestId:'claim-request-001'});
- assert.equal((await service.batch(actor,'0')).ready.length,0);store.now+=120001;assert.equal((await service.batch(actor,'0')).ready.length,1);
+ assert.equal((await service.batch(actor,'0')).ready.length,0);store.now+=120001;assert.equal((await service.batch(actor,'0')).ready.length,0);
+ assert.deepEqual(store.rows.get(id)?.lease,lease);assert.equal(store.rows.get(id)?.state,'running');
  store.allowed=false;await assert.rejects(service.batch(actor,'0'));await assert.rejects(service.renew(actor,lease));
+});
+test('already-ready work retains prior attempt and fencing budget on its final permitted claim',async()=>{
+ const store=new Store(),work={...ticket(),attempts:2,fence:7};store.rows.set(id,work);const service=new RequirementEventService(store);
+ const lease=await service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'synthetic-mac',requestId:'claim-request-final'});
+ assert.equal(lease.fence,8);assert.equal(store.rows.get(id)?.attempts,3);await service.renew(actor,lease);
+ store.now+=120001;await assert.rejects(service.claim(actor,{requirementId:id,workDigest:work.workDigest,holderId:'other-mac',requestId:'claim-request-over-budget'}),{code:'EXECUTION_ATTEMPTS_EXHAUSTED'});
+ assert.equal(store.rows.get(id)?.attempts,3);assert.equal(store.rows.get(id)?.fence,8);
 });
 test('fenced progress uses the original requirement writer and permits historical receipt recovery after lease expiry',async()=>{
  const repo=new MemoryPort(),transaction=repo.transaction.bind(repo);let live=true,checks=0;
