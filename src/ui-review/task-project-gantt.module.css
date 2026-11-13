@@ -5,3 +5,6 @@
 @media(max-width:680px){.gantt>header{padding:12px}.gantt>header h2{flex-basis:100%}.gantt>header button{margin-left:0}}
 
 .row :is(a,button){display:flex;align-items:center;min-height:var(--lo-control-height);padding:4px 0}
+
+.todo .timeline{min-width:0}.todo .row>*{min-width:0}.milestone{position:absolute;top:6px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:var(--lo-link);border:1px solid var(--foreground)}.unscheduled{padding:16px}.metadata{color:var(--muted-foreground);overflow-wrap:anywhere}
+@media(max-width:680px){.todo .row{grid-template-columns:minmax(0,1fr);gap:0;padding:8px 0}.todo .scale{margin-left:0}.todo .timeline,.todo .unscheduled{padding:12px}.todo .metadata{padding:4px 0}}
