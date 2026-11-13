@@ -33,3 +33,9 @@ test('owner search link requires verified scope and an advertised readable owner
  assert.deepEqual(ownerModules(enabled,scope).find(link=>link.id==='search'),{id:'search',label:'搜索本人记录',href:'/personal/search'});
  for(const value of [status,{...enabled,storageVerified:false},{...enabled,allowedTypes:[]},{...enabled,allowedTypes:['unknown']},{...enabled,ownerId:'owner-b'}])assert.equal(ownerModules(value,scope).some(link=>link.id==='search'),false);
 });
+
+test('storage review link requires an exact advertised service and matching verified owner scope',()=>{
+ const enabled={...status,storageReviewEnabled:true};
+ assert.deepEqual(ownerModules(enabled,scope).find(link=>link.id==='storage-review'),{id:'storage-review',label:'存储审核',href:'/personal/storage-review'});
+ for(const value of [status,{...enabled,storageReviewEnabled:'true'},{...enabled,storageVerified:false},{...enabled,ownerId:'other'}])assert.equal(ownerModules(value,scope).some(link=>link.id==='storage-review'),false);
+});

@@ -11,13 +11,15 @@ export const reviewDocument = `<!doctype html>
 :root{color-scheme:light;--ink:#18253a;--muted:#50627a;--surface:#fff;--paper:#f1f5fa;--line:#cbd6e3;--accent:#234cc0;--navy:#192c50;--keep:#135840;--keep-bg:#e6f5ec;--trash:#8a3625;--trash-bg:#fff0e9;--defer:#624500;--defer-bg:#fff5cf;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);line-height:1.55}.wrap{width:min(1480px,calc(100% - 48px));margin:auto}.mast{background:var(--navy);color:#fff;padding:40px 0 34px;border-bottom:6px solid #8ba8f7}.mast .wrap{display:grid;grid-template-columns:1fr minmax(230px,310px);gap:32px;align-items:end}.eyebrow{margin:0 0 5px;font-size:.85rem;color:#c9d8fa}.mast h1{font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.05em;line-height:1.08;margin:0 0 12px}.mast p{margin:0;max-width:55ch}.mast .summary{margin-top:10px;color:#dce6fc;white-space:pre-wrap;overflow-wrap:anywhere}.progress-box{padding:14px 17px;border:1px solid #6c83b2;border-radius:9px}.progress-box strong{font-size:1.3rem;font-variant-numeric:tabular-nums}.progress-box span{display:block;color:#dce6fc;font-size:.86rem}progress{display:block;width:100%;margin-top:8px;accent-color:#9ab5ff;height:9px}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:18px 0 12px}.search{flex:1 1 230px}.filter{flex:0 1 166px}.controls label{display:block;color:var(--muted);font-size:.83rem;margin-bottom:4px}.controls input,.controls select,button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:7px;background:var(--surface);min-height:44px;padding:7px 12px}.controls input,.controls select{width:100%}button{cursor:pointer}button:hover{border-color:var(--accent);color:var(--accent)}button:disabled{cursor:default;opacity:.6}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #3d6ee4;outline-offset:3px}.actions{display:flex;gap:7px;flex-wrap:wrap}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}.primary:hover{background:#173d9c;color:#fff}.meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;border-bottom:1px solid var(--line);padding-bottom:11px;color:var(--muted);font-size:.88rem}.note{min-height:1.6rem;margin:10px 0;color:var(--muted);font-size:.9rem}.group{margin:0 0 24px}.group h2{font-size:1rem;margin:0 0 7px;color:var(--navy);overflow-wrap:anywhere}.rows{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;padding:15px 16px;align-items:start;border-left:4px solid transparent}.row+.row{border-top:1px solid var(--line)}.row[data-decision=keep]{border-left-color:#28795c}.row[data-decision=trash]{border-left-color:#b55742}.row[data-decision=defer]{border-left-color:#a4771d}.row[data-status=protected],.row[data-status=processed]{background:#f8fafd}.icon{display:grid;place-items:center;height:36px;width:36px;border-radius:8px;color:var(--navy);background:#e9effb}.icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.rowhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 4px}.id{color:var(--accent);font-size:.82rem;font-weight:700}.row h3{font-size:1rem;line-height:1.42;margin:0;overflow-wrap:anywhere}.status{font-size:.76rem;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 7px;white-space:nowrap}.body,.question{overflow-wrap:anywhere;white-space:pre-wrap;margin:6px 0 0;color:var(--muted);font-size:.9rem}.question{color:var(--ink)}details{margin-top:5px}summary{cursor:pointer;color:var(--accent);font-size:.85rem;min-height:30px;align-content:center}.choices{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.choices label{position:relative;cursor:pointer}.choices input{position:absolute;opacity:0;width:1px;height:1px}.choices span{display:grid;place-items:center;padding:6px 9px;min-height:38px;background:#fff;border:1px solid var(--line);border-radius:6px;font-size:.84rem;white-space:nowrap}.choices input:focus-visible+span{outline:3px solid #3d6ee4;outline-offset:2px}.choices input[value=keep]:checked+span{color:var(--keep);background:var(--keep-bg);border-color:var(--keep);font-weight:700}.choices input[value=trash]:checked+span{color:var(--trash);background:var(--trash-bg);border-color:var(--trash);font-weight:700}.choices input[value=defer]:checked+span{color:var(--defer);background:var(--defer-bg);border-color:var(--defer);font-weight:700}.empty{padding:30px 18px;background:#fff;border:1px dashed var(--line);border-radius:8px;color:var(--muted)}footer{padding:6px 0 32px;color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}dialog{width:min(550px,calc(100% - 32px));border:1px solid var(--line);border-radius:10px;padding:20px;color:var(--ink);background:var(--surface)}dialog::backdrop{background:#192c5088}dialog textarea{display:block;width:100%;min-height:180px;margin:12px 0;border:1px solid var(--line);font:inherit;padding:8px}
 .pending-input{margin:12px 0;padding:16px;border:1px solid #a4771d;border-radius:8px;background:var(--defer-bg)}.pending-input[hidden]{display:none}.pending-input p{margin:6px 0 12px;overflow-wrap:anywhere}.ledger-head{display:grid;grid-template-columns:minmax(230px,1fr) minmax(280px,1.4fr) 260px;gap:24px;padding:12px 16px;color:var(--muted);font-size:.82rem}.group h2{padding:12px 0 2px}.row{grid-template-columns:36px minmax(0,1fr) 260px;gap:12px}.row-content{display:grid;grid-template-columns:minmax(160px,.8fr) minmax(240px,1.4fr);gap:24px}.rowhead{display:block}.rowhead .id{display:block;margin-bottom:4px}.rowhead .status{display:inline-block;margin-top:6px}.body{margin-top:0}.choices span{min-height:44px}.choices button{font-size:.8rem}.readonly{color:var(--muted);font-size:.85rem}.meta a{align-self:center}.note{padding:8px 0}.meta[data-sync=error]{color:var(--trash)}
+.return-nav{display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:20px}.return-nav a{color:#fff;min-height:44px;display:inline-flex;align-items:center}.return-nav a:focus-visible{outline:3px solid #9ab5ff;outline-offset:3px}.directory-children{margin:0;border-top:1px solid var(--line)}.directory-children>summary{padding:8px 16px;min-height:44px;font-weight:600}.child-rows{margin-left:20px;border-left:2px solid var(--line)}.row[data-context=true]{background:var(--paper)}.status{white-space:normal;overflow-wrap:anywhere}.evidence{margin:8px 0 0;color:var(--defer);font-size:.88rem;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:1100px){.ledger-head{display:none}.row-content{display:block}.rowhead{display:flex}.rowhead .id{margin:0}.rowhead .status{margin:0}.body{margin-top:6px}.row{grid-template-columns:36px minmax(0,1fr) 230px}}
 @media(max-width:720px){.wrap{width:calc(100% - 28px)}.mast{padding:26px 0 22px}.mast .wrap{grid-template-columns:1fr;gap:15px}.controls{gap:8px}.search{flex-basis:52%}.filter{flex:1 1 110px}.actions{width:100%}.row{grid-template-columns:32px minmax(0,1fr);padding:12px 10px;gap:8px}.icon{width:30px;height:30px}.choices,.readonly{grid-column:2}.choices span{min-height:44px}.row h3{font-size:.96rem}}
+@media(max-width:720px){.child-rows{margin-left:8px}.evidence,.status,.readonly{font-size:.875rem}.row .readonly{min-width:0}}
 @media(max-width:370px){.actions button{padding-inline:8px}.choices span{padding-inline:6px}.row{grid-template-columns:26px minmax(0,1fr)}.icon{width:26px;height:26px}}
 </style>
 </head>
 <body>
-<header class="mast"><div class="wrap"><div><p class="eyebrow">资料去留清单</p><h1>存储审核</h1><p>按编号记录要保留、列为删除候选或暂缓的资料。</p><p class="summary" id="summary" hidden></p></div><section class="progress-box" aria-label="审核进度"><strong id="progress-text">0 / 0</strong><span id="progress-caption">已记录决定</span><progress id="progress" value="0" max="1" aria-label="已记录决定的进度"></progress></section></div></header>
+<header class="mast"><div class="wrap"><div><nav class="return-nav" aria-label="返回 LifeOS"><a href="/personal">← LifeOS 主站</a><a href="/personal?page=settings&amp;panel=general">设置与工具</a></nav><p class="eyebrow">资料去留清单</p><h1>存储审核</h1><p>按编号记录要保留、列为删除候选或暂缓的资料。</p><p class="summary" id="summary" hidden></p></div><section class="progress-box" aria-label="审核进度"><strong id="progress-text">0 / 0</strong><span id="progress-caption">已选决定，不代表已执行</span><progress id="progress" value="0" max="1" aria-label="已记录决定的进度"></progress></section></div></header>
 <main class="wrap">
 <div class="controls" aria-label="清单工具">
 <div class="search"><label for="search">搜索资料</label><input id="search" type="search" placeholder="输入编号、名称或关键词" autocomplete="off"></div>
@@ -32,7 +34,7 @@ export const reviewDocument = `<!doctype html>
 <section class="pending-input" id="pending-input" hidden aria-labelledby="pending-title"><strong id="pending-title">待确认的选择</strong><p id="pending-description"></p><div class="actions"><button type="button" id="retry-decision">确认后重试保存</button><button type="button" id="discard-decision">放弃本次输入</button></div></section>
 <div class="ledger-head" aria-hidden="true"><span>编号／资料名称</span><span>说明与空间依据</span><span>审核决定</span></div>
 <div id="list"></div>
-<footer><span id="revision"></span><br>审核选项只记录决定，不会删除文件。可导出 JSON 留存。</footer>
+<footer><span id="revision"></span><br>审核选项只记录决定，不会删除文件。父目录保留历史选择，展开后逐项审核；选择删除候选表示待处理，不代表已删除。媒体上传与独立恢复核验须另有证据。可导出 JSON 留存。</footer>
 </main>
 <dialog id="copy-dialog" aria-labelledby="copy-title"><h2 id="copy-title">复制审核决定</h2><label for="copy-text">选中并复制以下编号</label><textarea id="copy-text" readonly></textarea><button type="button" id="close-copy">关闭</button></dialog>
 <script type="application/json" id="review-data">{"schema":1,"revision":"empty","items":[]}</script>
@@ -124,6 +126,46 @@ function matches(item,query,filter,choices,group="") {
   const statusMatch = filter === 'all' || (filter === 'selected' && item.status === 'pending' && !!decision) || (filter === 'pending' && item.status === 'pending' && !decision) || (filter === 'processed' && item.status !== 'pending') || (OWN(DECISIONS,filter) && item.status === 'pending' && decision === filter);
   return (!group || (item.group || '资料清单') === group) && statusMatch && (!query || [item.id,item.title,item.group,item.body,item.question,KINDS[item.kind]].some(v=>v.toLowerCase().includes(query)));
 }
+function reviewTree(items) {
+  const nodes = new Map(items.map(item=>[item.id,{item,children:[]}]));
+  const roots = [];
+  const safe = id=>/^[A-Za-z0-9][A-Za-z0-9_:-]*(?:\\.[A-Za-z0-9_:-]+)*$/.test(id);
+  for (const node of nodes.values()) {
+    const id = node.item.id;
+    const split = id.lastIndexOf('.');
+    const parent = split > 0 && safe(id) ? nodes.get(id.slice(0,split)) : null;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  return {roots,nodes};
+}
+function filterReviewTree(items,query,filter,choices,group) {
+  function select(node) {
+    const children = node.children.map(select).filter(Boolean);
+    const matched = matches(node.item,query,filter,choices,group);
+    return matched || children.length ? {...node,hasChildren:node.children.length>0,matched,children} : null;
+  }
+  return reviewTree(items).roots.map(select).filter(Boolean);
+}
+function reviewProgress(items,choices) {
+  const progress = {total:0,selected:0,keep:0,trash:0,defer:0,parentSelected:0};
+  for (const node of reviewTree(items).nodes.values()) {
+    const decision = choices.get(node.item.id);
+    if (node.children.length) { if (decision) progress.parentSelected++; continue; }
+    if (node.item.status !== 'pending') continue;
+    progress.total++;
+    if (decision) { progress.selected++; progress[decision]++; }
+  }
+  return progress;
+}
+function reviewStateLabel(item,decision,parent) {
+  const status = item.status !== 'pending' ? STATUS[item.status]+' · ' : '';
+  if (parent) return status+'父目录 · '+(decision ? '历史选择：'+DECISIONS[decision]+'（不代表已执行）' : '请展开后逐项决定');
+  return status+(item.status !== 'pending' ? '只读' : decision === 'trash' ? '删除候选 · 待处理' : decision ? '已选：'+DECISIONS[decision] : '尚未决定');
+}
+function reviewEvidence(item) {
+  return item.kind === 'media' ? '上传完成：未核实 · 独立恢复核验：未核实' : '';
+}
 const byId = id => document.getElementById(id);
 const make = (tag, className, value) => {
   const node = document.createElement(tag);
@@ -151,9 +193,15 @@ function icon(kind) {
 }
 const REVIEW_API = '/api/platform/personal/storage-review';
 let review, choices = new Map(), compact = false;
+const collapsedBranches = new Set();
 let pendingDecision = null, syncStatus = 'saved';
 let remote, synced = false, busy = false, uncertain = false, localSaved = true, sessionDenied = false;
 function announce(text) { byId('notice').textContent = text; }
+function guardReviewNavigation(event) {
+  if (!busy && !pendingDecision && !uncertain) return;
+  event.preventDefault();
+  announce('请先确认保存结果或放弃待确认的输入，再返回 LifeOS。');
+}
 function useReview(next, snapshot, resetFilters=true) {
   synced = Boolean(snapshot);
   review = next;
@@ -340,6 +388,9 @@ function focusDecision(id,decision) {
   (row && [...row.querySelectorAll('.choices input')].find(input=>input.value===decision) || row?.querySelector('.choices input') || byId('filter')).focus();
 }
 async function choose(item,decision) {
+  const node = reviewTree(review.items).nodes.get(item.id);
+  if (!node || node.children.length) return;
+  item = node.item;
   if (!canEdit() || item.status !== 'pending' || (choices.get(item.id) ?? null) === decision) return;
   if (synced) {
     const expectedRevision = remote.revision;
@@ -367,43 +418,41 @@ function store() {
   }
 }
 function metrics(shown) {
-  const total = review.items.filter(i=>i.status==='pending').length;
-  const n = {keep:0,trash:0,defer:0};
-  for (const v of choices.values()) n[v]++;
-  byId('progress-text').textContent = choices.size + ' / ' + total;
-  byId('progress').max = total || 1;
-  byId('progress').value = choices.size;
-  byId('counts').textContent = '留 '+n.keep+' · 删除候选 '+n.trash+' · 暂缓 '+n.defer;
+  const n = reviewProgress(review.items,choices);
+  byId('progress-text').textContent = n.selected + ' / ' + n.total;
+  byId('progress').max = n.total || 1;
+  byId('progress').value = n.selected;
+  byId('counts').textContent = '独立项／子项：留 '+n.keep+' · 删除候选（待处理） '+n.trash+' · 暂缓 '+n.defer+(n.parentSelected ? ' · 父目录历史选择 '+n.parentSelected : '');
   byId('visible').textContent = '显示 '+shown+' / '+review.items.length+' 项';
   byId('copy').disabled = byId('export').disabled = !choices.size;
 }
 function render() {
   const query = byId('search').value.trim().toLowerCase();
   const filter = byId('filter').value;
-  const shown = review.items.filter(i=>matches(i,query,filter,choices,byId('group-filter').value));
+  const selectedGroup = byId('group-filter').value;
+  const tree = filterReviewTree(review.items,query,filter,choices,selectedGroup);
+  const shown = review.items.filter(item=>matches(item,query,filter,choices,selectedGroup));
   const parent = byId('list');
   parent.replaceChildren();
   metrics(shown.length);
-  if (!shown.length) {
+  if (!tree.length) {
     parent.append(make('p','empty',review.items.length ? '没有符合条件的资料。试试修改关键词或筛选。' : '清单为空。请选择「导入清单」。'));
     syncControls();
     return;
   }
   const groups = new Map();
-  for (const item of shown) {
-    const group = item.group || '资料清单';
+  for (const node of tree) {
+    const group = node.item.group || '资料清单';
     if (!groups.has(group)) groups.set(group,[]);
-    groups.get(group).push(item);
+    groups.get(group).push(node);
   }
   let index = 0;
-  for (const [name,items] of groups) {
-    const section = make('section','group');
-    section.append(make('h2','',name+'（'+items.length+'）'));
-    const rows = make('div','rows');
-    section.append(rows);
-    for (const item of items) {
+  function appendNode(node,rows) {
+    const item = node.item;
       const row = make('article','row');
       const decision = choices.get(item.id);
+      const isParent = node.hasChildren;
+      row.dataset.context = String(!node.matched);
       row.dataset.id = item.id;
       row.dataset.status = item.status;
       if (decision) row.dataset.decision = decision;
@@ -412,15 +461,17 @@ function render() {
       const head = make('div','rowhead');
       const heading = make('h3','',item.title);
       heading.id = 'item-title-' + index;
-      head.append(make('span','id',item.id),heading,make('span','status',KINDS[item.kind]+' · '+(decision ? DECISIONS[decision] : STATUS[item.status])));
+      head.append(make('span','id',item.id),heading,make('span','status',KINDS[item.kind]+' · '+reviewStateLabel(item,decision,isParent)));
       content.append(head);
+      const evidence = reviewEvidence(item);
       const information = make(compact ? 'details' : 'div');
-      if (compact && (item.body || item.question)) information.append(make('summary','','查看说明'));
+      if (compact && (item.body || item.question || evidence)) information.append(make('summary','','查看说明'));
       if (item.body) information.append(make('p','body',item.body));
       if (item.question) information.append(make('p','question',item.question));
-      if (item.body || item.question) content.append(information);
+      if (evidence) information.append(make('p','evidence',evidence));
+      if (item.body || item.question || evidence) content.append(information);
       row.append(content);
-      if (item.status === 'pending') {
+      if (item.status === 'pending' && !isParent) {
         const buttons = make('div','choices');
         buttons.setAttribute('role','radiogroup');
         buttons.setAttribute('aria-labelledby',heading.id);
@@ -447,15 +498,34 @@ function render() {
         }
         row.append(buttons);
       } else {
-        row.append(make('span','readonly',STATUS[item.status]+' · 只读'));
+        row.append(make('span','readonly',isParent ? '父目录仅作索引，请逐项审核子项' : STATUS[item.status]+' · 只读'));
       }
-      rows.append(row);
-      index++;
+    rows.append(row);
+    index++;
+    if (node.children.length) {
+      const branch = make('details','directory-children');
+      branch.dataset.parentId = item.id;
+      branch.open = !!query || filter !== 'all' || !!selectedGroup || !collapsedBranches.has(item.id);
+      const summary = make('summary','','子项（'+node.children.length+'） · 展开／收起');
+      branch.append(summary);
+      const children = make('div','child-rows');
+      for (const child of node.children) appendNode(child,children);
+      branch.append(children);
+      branch.addEventListener('toggle',()=>{if(branch.open)collapsedBranches.delete(item.id);else collapsedBranches.add(item.id);});
+      rows.append(branch);
     }
+  }
+  for (const [name,nodes] of groups) {
+    const section = make('section','group');
+    section.append(make('h2','',name));
+    const rows = make('div','rows');
+    section.append(rows);
+    for (const node of nodes) appendNode(node,rows);
     parent.append(section);
   }
   syncControls();
 }
+for (const link of document.querySelectorAll('.return-nav a')) link.addEventListener('click',guardReviewNavigation);
 byId('search').addEventListener('input',render);
 byId('filter').addEventListener('change',render);
 byId('group-filter').addEventListener('change',render);

@@ -9,6 +9,54 @@ import {reviewDocument} from '../app/personal/storage-review/document.ts';
 const script=reviewDocument.match(/<script>([\s\S]*?)<\/script>/)![1]!;
 function fn(name:string){const start=script.indexOf('function '+name+'(');assert.ok(start>=0);return (script.slice(start-6,start)==='async '?'async ':'')+script.slice(start,script.indexOf('\n}',start)+2);}
 const item={id:'S-1',title:'Synthetic archive',group:'Archives',body:'Verified 2 GiB',question:'Review?',kind:'folder',status:'pending'};
+function treeFunctions(){return ['reviewTree','reviewProgress','reviewStateLabel'].map(fn).join('\n');}
+test('exact dotted parent identities preserve source order and never group malformed or orphan IDs',()=>{
+ const items=[{...item,id:'G43.01'}, {...item,id:'G43'}, {...item,id:'G43.01.02'}, {...item,id:'G44.01'}, {...item,id:'G43..bad'}, {...item,id:'G430.01'}];
+ const tree=runInNewContext(treeFunctions()+'; reviewTree',{DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},STATUS:{pending:'待审',processed:'已处理',protected:'受保护'}})(items);
+ const shape=tree.roots.map((node:any)=>[node.item.id,node.children.map((child:any)=>[child.item.id,child.children.map((leaf:any)=>leaf.item.id)])]);
+ assert.deepEqual(JSON.parse(JSON.stringify(shape)),[['G43',[['G43.01',['G43.01.02']]]],['G44.01',[]],['G43..bad',[]],['G430.01',[]]]);
+ assert.equal(items[0].id,'G43.01');
+});
+test('choice progress counts pending leaves while retaining historical parent decisions and processing status',()=>{
+ const items=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'M1',kind:'media',body:'Upload verified backup complete'}, {...item,id:'DONE',status:'processed'}];
+ const context={DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},STATUS:{pending:'待审',processed:'已处理',protected:'受保护'}};
+ const result=runInNewContext(treeFunctions()+'; ({progress:reviewProgress, label:reviewStateLabel})',context);
+ assert.deepEqual(JSON.parse(JSON.stringify(result.progress(items,new Map([['G43','trash'],['G43.01','keep'],['M1','trash']])))),{total:2,selected:2,keep:1,trash:1,defer:0,parentSelected:1});
+ assert.match(result.label(items[2],'trash',false),/待处理/);
+ assert.doesNotMatch(result.label(items[2],'trash',false),/已删除|已处理/);
+ assert.match(result.label(items[0],'trash',true),/历史选择/);
+ assert.match(result.label(items[3],null,false),/已处理/);
+});
+test('undecided child filtering retains parent context without counting or changing its saved choice',()=>{
+ const items=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'G43.02'}, {...item,id:'G44.01'}];
+ const choices=new Map([['G43','trash'],['G43.01','keep']]);
+ const context={OWN:(v:object,k:string)=>Object.hasOwn(v,k),DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},KINDS:{folder:'文件夹'}};
+ const project=runInNewContext(fn('reviewTree')+'\n'+fn('matches')+'\n'+fn('filterReviewTree')+'; filterReviewTree',context);
+ const result=project(items,'','pending',choices,'Archives');
+ assert.deepEqual(JSON.parse(JSON.stringify(result.map((row:any)=>[row.item.id,row.matched,row.children.map((child:any)=>child.item.id)]))),[['G43',false,['G43.02']],['G44.01',true,[]]]);
+ assert.equal(choices.get('G43'),'trash');assert.equal(choices.size,2);
+});
+test('media evidence remains unverified even when its body or processed state mentions an upload',()=>{
+ const label=runInNewContext(fn('reviewEvidence')+'; reviewEvidence');
+ for(const status of ['pending','processed','protected'])assert.equal(label({...item,kind:'media',status,body:'Upload verified backup complete'}),'上传完成：未核实 · 独立恢复核验：未核实');
+ assert.equal(label(item),'');
+});
+test('return navigation retains a busy or unconfirmed command and allows a settled review',()=>{
+ const context:any={busy:false,pendingDecision:null,uncertain:false,announce(){}};
+ const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
+ let blocked=0;const event={preventDefault(){blocked++;}};
+ guard(event);assert.equal(blocked,0);
+ for(const key of ['busy','pendingDecision','uncertain']){context[key]=true;guard(event);context[key]=false;}
+ assert.equal(blocked,3);
+});
+test('group parents and unknown identities cannot send a decision while standalone folders remain writable',async()=>{
+ const records=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'LEAF'}];let writes=0;
+ const context:any={review:{items:records,revision:'v1'},choices:new Map([['G43','trash']]),canEdit:()=>true,synced:false,store(){writes++;},render(){},focusDecision(){}};
+ const choose=runInNewContext(fn('reviewTree')+'\n'+fn('choose')+'; choose',context);
+ await choose(records[0],'keep');await choose({...item,id:'unknown'},'trash');
+ assert.equal(writes,0);assert.equal(context.choices.get('G43'),'trash');
+ await choose(records[2],'keep');assert.equal(writes,1);assert.equal(context.choices.get('LEAF'),'keep');
+});
 test('selected and group filters distinguish undecided from defer',()=>{
  const matches=runInNewContext(fn('matches')+'; matches',{OWN:(v:object,k:string)=>Object.hasOwn(v,k),DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},KINDS:{folder:'文件夹'}});
  assert.equal(matches(item,'','selected',new Map([['S-1','defer']]),'Archives'),true);
@@ -50,7 +98,7 @@ function recoveryFixture(){
    return Response.json({review:receipt});
   },
  };
- const functions=['requestReview','writeServer','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
+ const functions=['reviewTree','requestReview','writeServer','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
  const handlers=['retry-decision','discard-decision'].map(id=>{const start=script.indexOf("byId('"+id+"').addEventListener(");return script.slice(start,script.indexOf('\n});',start)+4);}).join('\n');
  runInNewContext(functions+'\n'+handlers+'\nObject.assign(globalThis,{choose,openServer});',context);
  const click=async(id:string)=>{await listeners.get(id)!();for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
