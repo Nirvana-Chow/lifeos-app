@@ -17,6 +17,7 @@ on:
       - 'test/helpers/task-grid-performance-fixture.ts'
       - 'test/helpers/auth-theme-fixture-lifecycle.ts'
       - 'scripts/synthetic-rendered-qualification.ts'
+      - 'scripts/release-qualification.ts'
       - 'scripts/client-bundle-evidence.mjs'
       - 'scripts/attach-vtable-benchmark.py'
       - 'scripts/ci/prepare-runner-cjk-fonts.sh'
