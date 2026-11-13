@@ -25,7 +25,7 @@ function readLayout(scope:string|null|undefined):GridLayout{
  if(!scope)return defaultLayout();
  try{const value=JSON.parse(window.localStorage.getItem('lifeos.task-columns.v1:'+scope)??'null');
   if(!value||!Array.isArray(value.order)||value.order.length!==columnIds.length||new Set(value.order).size!==columnIds.length||!value.order.every((id:unknown)=>typeof id==='string'&&columnIds.includes(id)))return defaultLayout();
-  const visibility:Record<string,boolean>={};for(const id of columnIds)if(id!=='complete'&&id!=='title'&&value.visibility?.[id]===false)visibility[id]=false;
+  const visibility:Record<string,boolean>={};for(const id of columnIds)if(id!=='complete'&&id!=='title'&&typeof value.visibility?.[id]==='boolean')visibility[id]=value.visibility[id];
   return {order:value.order,visibility};
  }catch{return defaultLayout();}
 }
@@ -217,6 +217,7 @@ export function TaskGrid(props: TaskGridProps) {
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
+  const visibility=useMemo<Record<string,boolean>>(()=>({project:props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility}),[props.tasks,layout.visibility]);
   useEffect(()=>{setLayoutState({scope,value:readLayout(scope)});setColumnsOpen(false);setLayoutNotice('');},[scope]);
   function changeLayout(value:GridLayout){
    setLayoutState({scope,value});
@@ -286,7 +287,7 @@ export function TaskGrid(props: TaskGridProps) {
     columns,
     getRowId: row => row.id,
     initialState: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) } },
-    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) },columnOrder:layout.order,columnVisibility:layout.visibility },
+    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) },columnOrder:layout.order,columnVisibility:visibility },
     enableRowSelection: false,
     autoResetPageIndex: false,
   });
@@ -307,8 +308,8 @@ export function TaskGrid(props: TaskGridProps) {
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
     <div ref={host} className={styles.root} aria-label="待办表格" data-task-grid="reui">
       <div className={styles.columnToolbar}><Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
-       {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>浏览器视图设置，不改变任务排序。</p>{layout.order.map((id,index)=><div className={styles.columnSetting} key={id}>
-        <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={layout.visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
+       {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器；无关联的项目/领域默认收起，可勾选显示。</p>{layout.order.map((id,index)=><div className={styles.columnSetting} key={id}>
+        <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
         <Button variant="ghost" disabled={props.blocked||!!edit||index===0} aria-label={`向前移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index-1],order[index]]=[order[index],order[index-1]];changeLayout({...layout,order});}}>↑</Button>
         <Button variant="ghost" disabled={props.blocked||!!edit||index===layout.order.length-1} aria-label={`向后移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index+1],order[index]]=[order[index],order[index+1]];changeLayout({...layout,order});}}>↓</Button>
        </div>)}<Button variant="outline" onClick={()=>changeLayout(defaultLayout())}>恢复默认列</Button>{layoutNotice&&<p role="status">{layoutNotice}</p>}</div>}

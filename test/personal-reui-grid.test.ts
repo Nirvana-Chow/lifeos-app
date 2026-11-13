@@ -8,7 +8,7 @@ import { taskStatusLabels } from '../src/personal-candidate/task-editor-state.ts
 
 const fields = { title: 'Original', text: 'Notes', date: '', status: 'open' };
 const task = (id: string, revision: number) => ({ id, revision, title: id, status: 'open', dueOn: null, project: null, area: null });
-function harness() {
+function harness(storage = new Map<string,string>()) {
   let cursor = 0;
   const states: any[] = [];
   const effects: Function[] = [];
@@ -39,7 +39,7 @@ function harness() {
   };
   const code = ts.transpileModule(readFileSync(new URL('../src/ui-review/task-grid.tsx', import.meta.url), 'utf8'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} as any };
-  new Function('require', 'module', 'exports', 'window', code)((key: string) => { assert.ok(key in imports, 'unexpected dependency ' + key); return imports[key]; }, module, module.exports, { confirm: () => false });
+  new Function('require', 'module', 'exports', 'window', code)((key: string) => { assert.ok(key in imports, 'unexpected dependency ' + key); return imports[key]; }, module, module.exports, { confirm: () => false, localStorage: {getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value)} });
   const find = (node: any, predicate: (value: any) => boolean): any => {
     if (!node || typeof node !== 'object') return null;
     if (predicate(node)) return node;
@@ -147,4 +147,44 @@ test('table completion sends the original identity and remains disabled without 
  assert.deepEqual(calls,[[{id:'a',revision:4},'done']]);
  h.render({...props,writable:false});
  assert.equal(column.cell({row:{id:'a',original:task('a',4)},column:{id:'complete'}}).props.disabled,true);
+});
+
+test('empty reference columns use compact defaults without hiding editable fields or modifying task records',()=>{
+ const h=harness(),rows=[task('a',4)],before=structuredClone(rows);
+ h.render({tasks:rows,writable:false,onOpen(){}});
+ assert.deepEqual(h.options().state.columnVisibility,{project:false,area:false});
+ assert.deepEqual(h.options().data,before);
+ assert.deepEqual(rows,before);
+ const project={id:'project',title:'Saved project'},area={id:'area',title:'Saved area'};
+ h.render({tasks:[{...rows[0],project}],writable:false,onOpen(){}});
+ assert.deepEqual(h.options().state.columnVisibility,{project:true,area:false});
+ h.render({tasks:[{...rows[0],area}],writable:false,onOpen(){}});
+ assert.deepEqual(h.options().state.columnVisibility,{project:false,area:true});
+});
+
+test('explicit visible and hidden choices override reference defaults and survive a fresh component',()=>{
+ const storage=new Map<string,string>(),h=harness(storage),scope='synthetic-owner:space';
+ const props={tasks:[task('a',4)],viewPreferenceScope:scope,writable:false,onOpen(){}};
+ let tree=h.render(props);h.effects();tree=h.render(props);
+ h.find(tree,node=>node.type==='button'&&node.props.children==='列设置').props.onClick();tree=h.render(props);
+ const project=h.find(tree,node=>node.type==='input'&&node.props['aria-label']==='显示项目列');
+ assert.equal(project.props.checked,false);
+ project.props.onChange({target:{checked:true}});h.render(props);
+ assert.equal(h.options().state.columnVisibility.project,true);
+ const restored=harness(storage);restored.render(props);restored.effects();restored.render(props);
+ assert.equal(restored.options().state.columnVisibility.project,true);
+ assert.equal(restored.options().state.columnVisibility.area,false);
+ const persisted=JSON.parse(storage.get('lifeos.task-columns.v1:'+scope)!);
+ persisted.visibility.area=false;storage.set('lifeos.task-columns.v1:'+scope,JSON.stringify(persisted));
+ const old=harness(storage),withReference={...props,tasks:[{...task('a',4),area:{id:'a',title:'Saved area'}}]};
+ old.render(withReference);old.effects();old.render(withReference);
+ assert.equal(old.options().state.columnVisibility.area,false,'legacy hidden choices are not replaced by content defaults');
+});
+
+test('a new scope uses its own compact defaults before any preference effect',()=>{
+ const storage=new Map([['lifeos.task-columns.v1:one',JSON.stringify({order:['complete','title','status','due','project','area','detail'],visibility:{project:true,area:true}})]]),h=harness(storage);
+ const props={tasks:[task('a',4)],viewPreferenceScope:'one',writable:false,onOpen(){}};
+ h.render(props);h.effects();h.render(props);assert.equal(h.options().state.columnVisibility.project,true);
+ h.render({...props,viewPreferenceScope:'two'});
+ assert.deepEqual(h.options().state.columnVisibility,{project:false,area:false});
 });

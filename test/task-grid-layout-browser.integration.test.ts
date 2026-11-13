@@ -25,8 +25,9 @@ test('OPT-IN task content fills the desktop grid and existing board classificati
 import {useState} from 'react';
 import {LifeOSWorkspace} from '../src/ui-review/workspace';
 const tasks=Array.from({length:18},(_,i)=>({id:'synthetic-'+i,revision:2,title:'合成待办 '+i,notes:null,status:'open' as const,dueOn:null,area:i===0?{id:'a',title:'合成领域：持续学习与个人成长'}:null,project:i===0?{id:'p',title:'合成项目：建立可持续复用的学习方法和知识整理流程'}:null,inInbox:false,sourceLabel:'合成数据'}));
-export default function Page(){const [writable,setWritable]=useState(true),[writes,setWrites]=useState(0);
-return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:'var(--card)'}} aria-label="合成测试控制"><output aria-label="合成写入次数">{writes}</output><button onClick={()=>setWritable(value=>!value)}>切换写入权限</button></aside><LifeOSWorkspace initialPage="tasks" initialView="table" viewPreferenceScope="synthetic-task-layout" state={{status:'ready',data:{tasks,areas:[],projects:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable,loginAllowed:true}} onSetTaskStatus={()=>setWrites(value=>value+1)} getTaskFields={task=>({title:tasks.find(row=>row.id===task.id)?.title??'',text:'',date:'',status:'open'})} onSaveTask={async()=>{setWrites(value=>value+1);return null;}}/></>}`);
+export default function Page(){const [writable,setWritable]=useState(true),[writes,setWrites]=useState(0),[related,setRelated]=useState(true);
+const visibleTasks=related?tasks:tasks.map(task=>({...task,project:null,area:null}));
+return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:'var(--card)'}} aria-label="合成测试控制"><output aria-label="合成写入次数">{writes}</output><button onClick={()=>setWritable(value=>!value)}>切换写入权限</button><button onClick={()=>setRelated(value=>!value)}>切换合成关联</button></aside><LifeOSWorkspace initialPage="tasks" initialView="table" viewPreferenceScope="synthetic-task-layout" state={{status:'ready',data:{tasks:visibleTasks,areas:[],projects:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable,loginAllowed:true}} onSetTaskStatus={()=>setWrites(value=>value+1)} getTaskFields={task=>({title:tasks.find(row=>row.id===task.id)?.title??'',text:'',date:'',status:'open'})} onSaveTask={async()=>{setWrites(value=>value+1);return null;}}/></>}`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
   cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],
  });
@@ -141,5 +142,38 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  assert.equal(await page.getByLabel('合成写入次数').innerText(),'0');
  await page.screenshot({path:join(output,'desktop-todos-table-390-dark.png'),animations:'disabled'});
  assert.deepEqual(errors,[]);
+ const compactCells=[];
+ for(const width of [1365,390])for(const theme of ['light','dark'] as const){
+  const tab=await browser.newPage({viewport:{width,height:900},colorScheme:theme});
+  const cellErrors:string[]=[],businessWrites:string[]=[];
+  tab.on('pageerror',error=>cellErrors.push(error.message));
+  tab.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))businessWrites.push(request.method());});
+  try{
+   await tab.goto(origin,{waitUntil:'networkidle',timeout:60_000});
+   await expect(tab.locator('html')).toHaveAttribute('data-lifeos-theme',theme);
+   const compactGrid=tab.locator('[data-task-grid="reui"]'),headers=()=>compactGrid.locator('thead th[data-col-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-col-id')));
+   await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','detail']);
+   assert.equal(await tab.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   const geometry=await compactGrid.evaluate(node=>({width:node.clientWidth,title:node.querySelector('td[data-col-id="title"]')!.getBoundingClientRect().width,filler:node.querySelector('[data-slot="data-grid-table-fill-head-cell"]')!.getBoundingClientRect().width}));
+   if(width>=1024)assert.ok(geometry.filler<=1,JSON.stringify(geometry));
+   await tab.screenshot({path:join(output,`todo-empty-columns-${width}-${theme}.png`),animations:'disabled'});
+   const choices=compactGrid.getByRole('button',{name:'列设置',exact:true});await choices.click();
+   await expect(compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true})).not.toBeChecked();
+   await compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true}).check();await choices.click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
+   await tab.reload({waitUntil:'networkidle'});await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
+   await choices.click();await compactGrid.getByRole('button',{name:'恢复默认列',exact:true}).click();await choices.click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','detail']);
+   await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','area','detail']);
+   assert.equal(await tab.getByLabel('合成写入次数').innerText(),'0');
+   assert.deepEqual(businessWrites,[]);assert.deepEqual(cellErrors,[]);
+   compactCells.push({width,theme,geometry,explicitChoiceSurvivedRefresh:true,referencesArrived:true,businessWrites:0,pageErrors:cellErrors});
+  }finally{await tab.close();}
+ }
+ assert.equal(compactCells.length,4);
+ await writeFile(join(output,'todo-empty-columns-cells.json'),JSON.stringify({syntheticOnly:true,cells:compactCells},null,2));
  await writeFile(join(output,'desktop-todos-layout.json'),JSON.stringify({syntheticOnly:true,viewports:[1365,390],desktop,mobile,mobileTable,mobileEditor,pageErrors:errors},null,2));
 });

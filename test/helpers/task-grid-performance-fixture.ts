@@ -46,6 +46,12 @@ export async function measureTaskGrid({browser,context,page,entries}:PrivateFixt
         for (const mode of ['cold','warm'] as const) {
           await tab.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
           await expect(tab.locator('html')).toHaveAttribute('data-lifeos-theme',layout.theme);
+          // The A/B comparison intentionally retains all seven fields, even when
+          // its filtered synthetic rows have no relationship references.
+          const columns=taskGridRoot(tab).getByRole('button',{name:'列设置',exact:true});
+          await columns.click();
+          for(const label of ['项目','领域'])await taskGridRoot(tab).getByRole('checkbox',{name:`显示${label}列`,exact:true}).check();
+          await columns.click();
           const count=tab.locator('.lo-result-count');
           await expect(count).toHaveText((rows+1)+' 项');
           const search=tab.getByRole('textbox',{name:'搜索待办',exact:true});
