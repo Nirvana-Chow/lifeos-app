@@ -14,39 +14,41 @@ type Difference={path:string;expected:string|null;actual:string|null};
 type Input={candidate:Candidate;metadataText:string;expectedMetadataSha256?:string;now:number;ahead:(base:string,head:string)=>boolean|undefined};
 type Result={status:'snapshot-compatible'|'review-required'|'unknown';code:string;candidateSha:string|null;metadataSha256:string;publicationAuthorized:false;ci:'not-checked';native:'not-checked';differences:Difference[];nextStep:string;match?:string;originSha?:string};
 const SHA=/^[a-f0-9]{40}$/,HASH=/^[a-f0-9]{64}$/;
+const isSHA=(value:unknown):value is string=>typeof value==='string'&&SHA.test(value);
+const isHASH=(value:unknown):value is string=>typeof value==='string'&&HASH.test(value);
 const digest=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const fields=(v:unknown,required:string[],optional:string[]=[])=>object(v)&&required.every(k=>Object.hasOwn(v,k))&&Object.keys(v).every(k=>required.includes(k)||optional.includes(k));
-function hashMap(v:unknown,paths:readonly string[],nullable=false){return object(v)&&Object.keys(v).length===paths.length&&paths.every(p=>Object.hasOwn(v,p)&&(nullable&&v[p]===null||typeof v[p]==='string'&&HASH.test(v[p])));}
+function hashMap(v:unknown,paths:readonly string[],nullable=false){return object(v)&&Object.keys(v).length===paths.length&&paths.every(p=>Object.hasOwn(v,p)&&(nullable&&v[p]===null||isHASH(v[p])));}
 const equal=(a:HashMap,b:HashMap)=>OVERLAY_PATHS.every(p=>a[p]===b[p]);
 const differences=(a:HashMap,b:HashMap,paths:readonly string[]=OVERLAY_PATHS)=>paths.filter(p=>a[p]!==b[p]).map(path=>({path,expected:a[path]!,actual:b[path]!}));
 function validMetadata(v:unknown):v is Metadata{
  if(!fields(v,['version','repository','source','controls','workflowPins','publicBases','overlays','rebases','profile'],['approvedOverlays']))return false;
  const m=v as unknown as Metadata;
- if(m.version!==1||m.repository!=='Nirvana-Chow/lifeos-app'||!fields(m.source,['kind','ref','observedAt','receiptSha256','matcherVersion'])||m.source.kind!=='root-readonly-capture'||m.source.matcherVersion!=='overlay-v1'||typeof m.source.ref!=='string'||!m.source.ref.length||m.source.ref.length>128||typeof m.source.observedAt!=='string'||!HASH.test(m.source.receiptSha256))return false;
- if(!fields(m.controls,['workerSha256','configurationSha256'])||!Object.values(m.controls).every(v=>typeof v==='string'&&HASH.test(v)))return false;
+ if(m.version!==1||m.repository!=='Nirvana-Chow/lifeos-app'||!fields(m.source,['kind','ref','observedAt','receiptSha256','matcherVersion'])||m.source.kind!=='root-readonly-capture'||m.source.matcherVersion!=='overlay-v1'||typeof m.source.ref!=='string'||!m.source.ref.length||m.source.ref.length>128||typeof m.source.observedAt!=='string'||!isHASH(m.source.receiptSha256))return false;
+ if(!fields(m.controls,['workerSha256','configurationSha256'])||!Object.values(m.controls).every(isHASH))return false;
  if(!hashMap(m.workflowPins,WORKFLOW_PATHS)||!hashMap(m.publicBases,OVERLAY_PATHS,true)||!hashMap(m.overlays,OVERLAY_PATHS))return false;
- if(!fields(m.profile,['sourceSha','runId','runAttempt','overlays'])||typeof m.profile.sourceSha!=='string'||!SHA.test(m.profile.sourceSha)||typeof m.profile.runId!=='string'||typeof m.profile.runAttempt!=='string'||!(/^[1-9][0-9]{0,19}$/).test(m.profile.runId)||!(/^[1-9][0-9]{0,9}$/).test(m.profile.runAttempt)||!hashMap(m.profile.overlays,OVERLAY_PATHS))return false;
+ if(!fields(m.profile,['sourceSha','runId','runAttempt','overlays'])||!isSHA(m.profile.sourceSha)||typeof m.profile.runId!=='string'||typeof m.profile.runAttempt!=='string'||!(/^[1-9][0-9]{0,19}$/).test(m.profile.runId)||!(/^[1-9][0-9]{0,9}$/).test(m.profile.runAttempt)||!hashMap(m.profile.overlays,OVERLAY_PATHS))return false;
  if(!object(m.rebases)||Object.keys(m.rebases).length>32)return false;
- for(const [origin,r] of Object.entries(m.rebases))if(!SHA.test(origin)||!fields(r,['treeSha','publicBases','overlays'],['allowDescendants'])||!SHA.test(r.treeSha)||!hashMap(r.publicBases,OVERLAY_PATHS,true)||!hashMap(r.overlays,OVERLAY_PATHS)||r.allowDescendants!==undefined&&typeof r.allowDescendants!=='boolean')return false;
+ for(const [origin,r] of Object.entries(m.rebases))if(!isSHA(origin)||!fields(r,['treeSha','publicBases','overlays'],['allowDescendants'])||!isSHA(r.treeSha)||!hashMap(r.publicBases,OVERLAY_PATHS,true)||!hashMap(r.overlays,OVERLAY_PATHS)||r.allowDescendants!==undefined&&typeof r.allowDescendants!=='boolean')return false;
  if(m.approvedOverlays!==undefined){
   if(!object(m.approvedOverlays)||Object.keys(m.approvedOverlays).length>32)return false;
-  for(const [origin,artifacts] of Object.entries(m.approvedOverlays))if(!SHA.test(origin)||!object(artifacts)||!Object.entries(artifacts).every(([p,h])=>(OVERLAY_PATHS as readonly string[]).includes(p)&&typeof h==='string'&&HASH.test(h)))return false;
+  for(const [origin,artifacts] of Object.entries(m.approvedOverlays))if(!isSHA(origin)||!object(artifacts)||!Object.entries(artifacts).every(([p,h])=>(OVERLAY_PATHS as readonly string[]).includes(p)&&isHASH(h)))return false;
  }
  return true;
 }
 /** Digest binding is external operator evidence, not authentication or release authority. */
 export function checkReleasePreflight(input:Input):Result{
- const metadataSha256=digest(input.metadataText),candidateSha=SHA.test(input.candidate?.sha)?input.candidate.sha:null;
+ const metadataSha256=digest(input.metadataText),candidateSha=isSHA(input.candidate?.sha)?input.candidate.sha:null;
  const result=(status:Result['status'],code:string,diffs:Difference[]=[],match?:string,originSha?:string):Result=>({status,code,candidateSha,metadataSha256,publicationAuthorized:false,ci:'not-checked',native:'not-checked',differences:diffs,nextStep:status==='snapshot-compatible'?'继续既有固定 SHA CI 与 Root 原生发布门禁；本结果不授权发布。':code==='ANCESTRY_UNKNOWN'?'补齐本地固定提交的祖先关系后重新检查。':status==='unknown'?'由 Root 重新提供来源可核验、独立固定摘要的新鲜安全快照。':'将所列差异交 Root 现有审查与采用路径，取得新快照后重新检查。',...(match?{match,originSha}:{})});
- if(!input.expectedMetadataSha256||!HASH.test(input.expectedMetadataSha256)||metadataSha256!==input.expectedMetadataSha256)return result('unknown','METADATA_HASH_UNCONFIRMED');
+ if(!input.expectedMetadataSha256||!isHASH(input.expectedMetadataSha256)||metadataSha256!==input.expectedMetadataSha256)return result('unknown','METADATA_HASH_UNCONFIRMED');
  let metadata:unknown;
  try{if(Buffer.byteLength(input.metadataText)>65536)throw Error();metadata=JSON.parse(input.metadataText);}catch{return result('unknown','METADATA_INVALID');}
  if(!validMetadata(metadata))return result('unknown','METADATA_INVALID');
  const m=metadata,observed=Date.parse(m.source.observedAt);
  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(m.source.observedAt)||!Number.isFinite(observed)||new Date(observed).toISOString().replace('.000Z','Z')!==m.source.observedAt.replace('.000Z','Z')||!Number.isFinite(input.now)||observed>input.now||input.now-observed>300000)return result('unknown','METADATA_STALE');
  const c=input.candidate;
- if(!fields(c,['sha','treeSha','workflowPins','publicBases'])||!candidateSha||!SHA.test(c.treeSha)||!hashMap(c.workflowPins,WORKFLOW_PATHS)||!hashMap(c.publicBases,OVERLAY_PATHS,true))return result('unknown','GIT_SOURCE_UNCONFIRMED');
+ if(!fields(c,['sha','treeSha','workflowPins','publicBases'])||!candidateSha||!isSHA(c.treeSha)||!hashMap(c.workflowPins,WORKFLOW_PATHS)||!hashMap(c.publicBases,OVERLAY_PATHS,true))return result('unknown','GIT_SOURCE_UNCONFIRMED');
  const drift=differences(m.workflowPins,c.workflowPins,WORKFLOW_PATHS);if(drift.length)return result('review-required','WORKFLOW_PIN_REVIEW_REQUIRED',drift);
  // Match the existing worker's order and its two different descendant rules.
  let record=m.rebases[c.sha],origin=c.sha,match=record?'exact-rebase':'default';
@@ -76,10 +78,14 @@ export function checkReleasePreflight(input:Input):Result{
  for(const path of OVERLAY_PATHS)if(wanted[path]!==m.profile.overlays[path]&&m.approvedOverlays?.[origin]?.[path]!==wanted[path])return result('unknown','APPROVED_OVERLAY_ARTIFACT_UNCONFIRMED',[{path,expected:wanted[path]!,actual:m.approvedOverlays?.[origin]?.[path]??null}]);
  return result('snapshot-compatible','CAPTURED_SOURCE_COMPATIBLE',[],match,origin);
 }
-function git(directory:string,args:string[]){return execFileSync('git',args,{cwd:directory,stdio:['ignore','pipe','pipe'],maxBuffer:2*1024*1024});}
+const gitArgs=(args:string[])=>['--no-replace-objects',...args];
+function git(directory:string,args:string[]){return execFileSync('git',gitArgs(args),{cwd:directory,stdio:['ignore','pipe','pipe'],maxBuffer:2*1024*1024});}
 /** Reads immutable local objects only, never the working tree, remote or hooks. */
 export function readGitCandidate(directory:string,sha:string):Candidate{
- if(!SHA.test(sha)||git(directory,['rev-parse','--verify',sha+'^{commit}']).toString().trim()!==sha)throw Error('GIT_SOURCE_UNCONFIRMED');
+ if(!isSHA(sha)||git(directory,['cat-file','-t',sha]).toString().trim()!=='commit')throw Error('GIT_SOURCE_UNCONFIRMED');
+ const raw=git(directory,['cat-file','commit',sha]);
+ if(createHash('sha1').update('commit '+raw.length+'\0').update(raw).digest('hex')!==sha)throw Error('GIT_SOURCE_UNCONFIRMED');
+ const tree=/^tree ([a-f0-9]{40})\n/.exec(raw.toString('utf8'))?.[1];if(!tree)throw Error('GIT_SOURCE_UNCONFIRMED');
  const blob=(path:string):string|null=>{
   const entry=git(directory,['ls-tree','-z',sha,'--',path]).toString();if(!entry)return null;
   if(!/^(100644|100755) blob [a-f0-9]{40}\t[^\0]+\0$/.test(entry))throw Error('GIT_SOURCE_UNCONFIRMED');
@@ -88,7 +94,7 @@ export function readGitCandidate(directory:string,sha:string):Candidate{
  const workflowPins:Record<string,string>={},publicBases:HashMap={};
  for(const path of WORKFLOW_PATHS){const hash=blob(path);if(!hash)throw Error('GIT_SOURCE_UNCONFIRMED');workflowPins[path]=hash;}
  for(const path of OVERLAY_PATHS)publicBases[path]=blob(path);
- return {sha,treeSha:git(directory,['rev-parse',sha+'^{tree}']).toString().trim(),workflowPins,publicBases};
+ return {sha,treeSha:tree,workflowPins,publicBases};
 }
 function main(args:string[]){
  let output:Result|{status:string;code:string;publicationAuthorized:false;nextStep:string};
@@ -98,7 +104,7 @@ function main(args:string[]){
   const fd=openSync(args[3]!,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);let raw:string;
   try{const st=fstatSync(fd);if(!st.isFile()||st.size>65536)throw Error('METADATA_INVALID');const bytes=Buffer.alloc(65537),count=readSync(fd,bytes,0,bytes.length,0);if(count>65536)throw Error('METADATA_INVALID');raw=bytes.subarray(0,count).toString('utf8');}finally{closeSync(fd);}
   output=checkReleasePreflight({candidate,metadataText:raw,expectedMetadataSha256:args[5],now:Date.now(),ahead:(base,head)=>{
-   const r=spawnSync('git',['merge-base','--is-ancestor',base,head],{cwd:process.cwd(),stdio:'ignore'});return r.status===0?true:r.status===1?false:undefined;
+   const r=spawnSync('git',gitArgs(['merge-base','--is-ancestor',base,head]),{cwd:process.cwd(),stdio:'ignore'});return r.status===0?true:r.status===1?false:undefined;
   }});
  }catch{output={status:'unknown',code:'INPUT_UNCONFIRMED',publicationAuthorized:false,nextStep:'核对显式参数、本地固定 Git 对象及 Root 安全元数据文件。'};}
  console.log(JSON.stringify(output));process.exitCode=output.status==='snapshot-compatible'?0:2;
