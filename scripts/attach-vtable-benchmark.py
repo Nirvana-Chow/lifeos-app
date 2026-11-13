@@ -18,6 +18,14 @@ async function privateRead(page:Page,path:string) {
 }
 
 """+helper[end:]
+# The frozen VTable application has no optional-column UI. Modern preparation
+# belongs only to the ReUI probe; it must not survive the legacy projection.
+column_setup="          // The A/B comparison intentionally retains all seven fields, even when\n"
+count_setup="          const count=tab.locator('.lo-result-count');"
+assert helper.count(column_setup)==1 and helper.count(count_setup)==1, 'Modern column preparation must be unique'
+start=helper.index(column_setup)
+end=helper.index(count_setup,start)
+helper=helper[:start]+helper[end:]
 helper=helper.replace("          await search.evaluate", "          await expect(tab.locator('.lo-screen-reader-table tbody tr')).toHaveCount(0);\n          await tab.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));\n          const emptyCanvas=await tab.locator('.lo-vtable canvas').first().evaluate(canvas=>(canvas as HTMLCanvasElement).toDataURL());\n          await search.evaluate")
 start=helper.index('          const firstTitle=')
 end=helper.index('          raw[mode].push',start)
@@ -33,6 +41,7 @@ helper=helper[:start]+"""          const accessibleRows=tab.locator('.lo-screen-
             });
           },emptyCanvas);
 """+helper[end:]
+assert not any(marker in helper for marker in ('taskGridRoot','requireTaskGrid','列设置')), 'Legacy benchmark contains modern-only dependencies'
 (target/'test/helpers/task-grid-performance-fixture.ts').write_text(helper)
 p=target/'test/owner-recovery-browser.integration.test.ts'
 s=p.read_text().replace('timeout:180000','timeout:300000')
