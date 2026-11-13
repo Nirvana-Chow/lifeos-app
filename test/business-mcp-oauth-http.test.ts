@@ -32,3 +32,10 @@ test('duplicate token form parameters are rejected as a request error before pro
  const result=await handler(new Request(config.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:'client_id=one&client_id=two&grant_type=authorization_code'}));
  assert.equal(result.status,400);assert.equal(dispatches,0);
 });
+
+test('authorize forwards the original disconnect signal while the provider dispatch is active',async()=>{
+ const {createBusinessOAuthHttp}=await import('../src/business-mcp-oauth/http.ts'),controller=new AbortController();let calls=0;
+ const handler=createBusinessOAuthHttp({origin,config,assertReady:async()=>{},owner:async()=>null,handler:async request=>{calls++;assert.equal(request.signal.aborted,false);controller.abort();assert.equal(request.signal.aborted,true);return new Response(null,{status:302,headers:{location:'/login'}});},verifyToken:async()=>null,ledger:{register:async()=>null,approve:async()=>{},revoke:async()=>{}}});
+ const request=new Request(config.issuer+'/oauth2/authorize?'+new URLSearchParams({resource:config.resource,code_challenge_method:'S256'}),{headers:{host:'lifeos.nirvanachow.com'},signal:controller.signal});
+ assert.equal((await handler(request)).status,302);assert.equal(calls,1);
+});

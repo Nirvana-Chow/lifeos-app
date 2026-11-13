@@ -23,6 +23,21 @@ test('the same Better Auth instance exposes fixed official OAuth metadata with n
  assert.equal(auth.options.advanced?.defaultCookieAttributes?.sameSite,'strict');assert.equal(auth.options.session?.cookieCache?.enabled,false);
 });
 
+test('authorize retains request context while forged client headers share the official provider rate-limit bucket',async()=>{
+ const clientId='https://client.example/metadata',callback='https://client.example/callback';
+ const params=new URLSearchParams({response_type:'code',client_id:clientId,redirect_uri:callback,resource:oauth.resource,scope:oauth.scopes.join(' '),state:'fixture-state',code_challenge:createHash('sha256').update('v'.repeat(43)).digest('base64url'),code_challenge_method:'S256'}),url=oauth.issuer+'/oauth2/authorize?'+params;
+ for(const rotating of [true,false]){
+  const db:Record<string,Record<string,unknown>[]>={platform_user:[],platform_account:[],platform_session:[],platform_verification:[],platform_rate_limit:[],platform_two_factor:[],platform_oauth_client:[{id:'fixture-client',clientId,name:'Synthetic OAuth client',disabled:false,skipConsent:false,tokenEndpointAuthMethod:'none',redirectUris:[callback],scopes:[...oauth.scopes],grantTypes:['authorization_code','refresh_token'],responseTypes:['code'],requirePKCE:true}],platform_oauth_resource:[],platform_oauth_client_resource:[{id:'fixture-link',clientId,resourceId:oauth.resource}],platform_oauth_refresh_token:[],platform_oauth_access_token:[],platform_oauth_consent:[],platform_oauth_client_assertion:[],platform_oauth_jwks:[]};
+  const auth=createPlatformAuth(config,memoryAdapter(db),{requireMfa:true,businessOAuth:oauth}),forwarded:Request[]=[];
+  const http=createBusinessOAuthHttp({origin:config.baseURL,config:oauth,assertReady:async()=>{},owner:async()=>null,handler:async request=>{forwarded.push(request);return auth.handler(request);},verifyToken:async()=>null,ledger:{approve:async()=>{},register:async()=>null,revoke:async()=>{}}});
+  const statuses:number[]=[];
+  for(let index=0;index<32;index++)statuses.push((await http(new Request(url,{headers:{host:'lifeos.nirvanachow.com',accept:'text/html',cookie:'synthetic-browser-context=present','x-platform-client':rotating?'192.0.2.'+(index+1):'192.0.2.1'}}))).status);
+  assert.deepEqual(statuses,[...Array(30).fill(302),429,429],rotating?'rotating forged client IPs must not bypass the fixed provider limit':'fixed client IP limit');
+  assert.equal(db.platform_rate_limit.length,1);
+  for(const request of forwarded){assert.equal(request.headers.get('x-platform-client'),'127.0.0.1');assert.equal(request.headers.get('cookie'),'synthetic-browser-context=present');assert.equal(request.url,url);assert.equal(request.method,'GET');}
+ }
+});
+
 for(const authMethod of ['none','private_key_jwt'] as const)test('official provider completes owner MFA, signed consent, S256 code/resource JWT/refresh/revoke: '+authMethod,async()=>{
  const now=new Date(),password='Synthetic-only-OAuth-password-0001',clientId='https://client.example/metadata',callback='https://client.example/callback';
  const {generateKeyPair,exportJWK,SignJWT}=await import('jose');const keys=authMethod==='private_key_jwt'?await generateKeyPair('RS256'):null;const jwks=keys?JSON.stringify({keys:[{...await exportJWK(keys.publicKey),kid:'fixture-client-key',alg:'RS256',use:'sig'}]}):undefined;

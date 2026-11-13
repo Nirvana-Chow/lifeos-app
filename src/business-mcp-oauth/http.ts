@@ -54,6 +54,7 @@ export function createBusinessOAuthHttp(options:Options){return async(request:Re
   }else if(metadata||jwks){headers.delete('cookie');headers.delete('authorization');forwarded=new Request(request.url,{method:metadata?'GET':request.method,headers});}
   else if(authorize){
    if(url.searchParams.getAll('resource').length!==1||url.searchParams.get('resource')!==options.config.resource||url.searchParams.get('code_challenge_method')!=='S256')return error(400,'invalid_request');
+   forwarded=new Request(request,{headers});
   }
   const response=await options.handler(forwarded);
   if(metadata&&response.ok){
