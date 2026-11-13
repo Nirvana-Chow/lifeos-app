@@ -160,6 +160,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const settingsLabels:Record<SettingsPanel,string>={general:'通用',topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
   const moduleGroups=groupWorkspaceModules(ownerModules.links);
   const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
+  const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review');
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
@@ -622,6 +623,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <Button variant="ghost" data-workspace-nav aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>需求池</Button>
             {settingsLinks.map(link=><a key={link.id} href={link.href} aria-current={ownerModules.path===link.href?'page':undefined}>{link.label}</a>)}
             </div>
+            {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.settingsNavGroup}><span className={workspaceStyles.settingsGroupLabel}>资料与工具</span>{toolLinks.map(link=><a key={link.id} href={link.href} data-workspace-nav>{link.label}</a>)}</div>}
           </nav>}
           <div className="lo-page-heading">
             <div className="lo-heading-title">
