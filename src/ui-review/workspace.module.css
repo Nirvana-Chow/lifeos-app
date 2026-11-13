@@ -68,7 +68,5 @@
  .domainProject strong,.domainProject > span > span { font-size:16px; }
  .sectionHeading { align-items:flex-start; }
  .domainOverview { margin-bottom:24px; }
- .settingsContent { height:auto; min-height:100%; }
- .settingsPage { overflow:visible; }
  .settingsPanel { padding-right:0; }
 }
