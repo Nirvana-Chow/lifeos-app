@@ -5,7 +5,7 @@
   "retrievedOn": "2026-11-13",
   "license": "CC BY-SA 4.0",
   "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
-  "licenseSha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5",
+  "licenseSha256": "23ee78c8bae49cf08ea2f0c84945c66b987ebe4520881fb51b3dad4fb43d07c2",
   "adaptation": {
     "localPath": "src/cooking/world-catalog-data.json",
     "sha256": "d518025cc1b13cc6cb3fc5acc775a0e5bc93b851ed9724ead87de4fd70292096",
@@ -218,5 +218,11 @@
       "upstreamWikitextSha256": "6ac30c5b409e26f008cd6683aa1b8a570c9711fdccc41f89aedbdeefe78159a1",
       "modified": true
     }
-  ]
+  ],
+  "licenseOriginal": {
+    "sourceUrl": "https://creativecommons.org/licenses/by-sa/4.0/legalcode.txt",
+    "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5",
+    "localPath": "third-party/wikibooks/LICENSE",
+    "changes": "Remove only the extra blank line at EOF; retain all license text verbatim with one terminal newline."
+  }
 }

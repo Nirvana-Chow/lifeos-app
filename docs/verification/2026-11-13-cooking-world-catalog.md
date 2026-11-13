@@ -34,7 +34,17 @@ receipts. Original recipe create/retry/readback/update/history behavior passes.
 - RED: the first three new world catalog/search/history-boundary tests each failed
   before implementation (world count 0 and missing original-name match).
 - GREEN: `node --test test/cooking-world-catalog.test.ts test/cooking-catalog.test.ts test/cooking-filter.test.ts test/cooking-routes.test.ts test/cooking-log-native.test.ts test/cooking-log-agent.test.ts test/cooking-log-client.test.ts` — 33 passed, 0 failed, 0 skipped.
-- `npm run typecheck` and `git diff --check` — exit 0.
+- `npm run typecheck` — exit 0. The original worktree-only `git diff --check`
+  returned 0, but did not inspect newly added files before staging. Independent
+  review of `85d60ec603bc235eb7f4d5c8f26799bb6a9c7d3e..65d072df1202316c58a9a47c31a15e7750307129`
+  found one minor: `third-party/wikibooks/LICENSE:428` had an extra EOF blank
+  line (`git diff --check` exit 2). The follow-up removes only that blank line,
+  records distinct original-download and normalized-local license hashes, and
+  checks the complete fixed-base range with
+  `git diff --check 85d60ec603bc235eb7f4d5c8f26799bb6a9c7d3e..HEAD` — exit 0.
+  A byte comparison excluding terminal newline characters confirms every license
+  body byte is unchanged. This license-only follow-up does not rerun the already
+  passing 33 focused tests, Chrome suite or typecheck.
 - `RUN_COOKING_BROWSER_TESTS=1 RUN_COOKING_LOG_BROWSER_TESTS=1 LIFEOS_TEST_CHROMIUM_PATH='<native Google Chrome executable>' node --test test/cooking-browser.integration.test.ts` — 2 passed, 0 failed, 0 skipped.
 - Browser coverage includes authenticated catalog and detail navigation, Chinese
   ingredient/category filtering plus original-name search, filtered random pick,
