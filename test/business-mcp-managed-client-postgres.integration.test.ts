@@ -59,7 +59,10 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    const entry=(created.data as {entry:{id:string;revision:number}}).entry;
    const updated=await client.execute('updateTodo',{id:entry.id,fields:{...fields,title:'Synthetic managed none updated',personal:null},expectedRevision:entry.revision,idempotencyKey:'managed-none-update-'+randomUUID()});assert.equal(updated.ok,true);assert.equal(updated.verification?.verified,true);assert.equal((updated.data as {entry:{id:string}}).entry.id,entry.id);
    const fetched=await client.execute('getTodo',{id:entry.id});assert.equal(fetched.ok,true);
-   await admin.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[grantId]);assert.equal(await current(),null);assert.equal((await client.execute('getTodo',{id:entry.id})).status,401);
+   await admin.query('UPDATE lifeos_agent.apikey SET enabled=false WHERE id=$1',[grantId]);assert.equal(await current(),null);
+   const denied=await agent(new Request(origin+'/api/platform/agent/v1/todos/'+entry.id,{headers:{host:'lifeos.nirvanachow.com',authorization:'Bearer '+token}}));
+   assert.equal(denied.status,401);assert.deepEqual(await denied.json(),{error:'AUTH_REQUIRED'});
+   assert.deepEqual(await client.execute('getTodo',{id:entry.id}),{ok:false,status:403,error:'API_DISCOVERY_UNAVAILABLE'});
    await admin.query('UPDATE lifeos_agent.apikey SET enabled=true WHERE id=$1',[grantId]);
   });
   await t.test('the original maintenance lock and current MFA prevent registration reads or changes during reset',async()=>{
