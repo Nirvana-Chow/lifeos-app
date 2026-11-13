@@ -44,10 +44,14 @@ test('post-commit authority loss stays unknown with the original command while u
  const f=await fixture();f.revokeAfterCommit();const saved=await f.client.execute('claimRequirementExecution',{...f.command,idempotencyKey:'synthetic-post-commit-revoke'});assert.equal(saved.outcome,'unknown',JSON.stringify(saved));assert.ok(saved.recovery?.requestId);assert.equal(f.outbox.length,1);
  const refused=await f.client.retry(saved.recovery.requestId);assert.equal(refused.ok,false);assert.equal(refused.outcome,'unknown');assert.equal(f.outbox.length,1);
 });
-test('MCP uses the same explicit action and separate current readback; later execution does not erase the original receipt',async()=>{
- const {HttpBusinessClient}=await import('../src/mcp-http/business-client.ts'),f=await fixture(),client=new HttpBusinessClient(origin,'synthetic-admission-token',request=>f.fetcher(request),new AbortController().signal),args={...f.command,idempotencyKey:'synthetic-mcp-admission'};
- const result=await client.execute('claimRequirementExecution',args);assert.equal(result.verification?.verified,true,JSON.stringify(result));f.events.rows.get(f.entry.id)!.state='paused';
- const replay=await client.execute('claimRequirementExecution',args);assert.equal(replay.ok,true);assert.equal((replay.data as any).duplicate,true);assert.equal(replay.verification?.state,'ADMISSION_LATER_STATE');assert.equal(f.outbox.length,1);
+test('business HTTP MCP cannot admit work; the separately scoped API preserves its original receipt and later-state readback',async()=>{
+ const {HttpBusinessClient}=await import('../src/mcp-http/business-client.ts'),f=await fixture();let dispatched=0;
+ const client=new HttpBusinessClient(origin,'synthetic-admission-token',request=>{dispatched++;return f.fetcher(request);},new AbortController().signal),args={...f.command,idempotencyKey:'synthetic-mcp-admission'};
+ const before=structuredClone(f.repo.rows),beforeHistory=structuredClone(f.repo.historyRows);
+ assert.deepEqual(await client.execute('claimRequirementExecution',args),{ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
+ assert.equal(dispatched,0);assert.deepEqual(f.repo.rows,before);assert.deepEqual(f.repo.historyRows,beforeHistory);assert.equal(f.events.rows.size,0);assert.equal(f.outbox.length,0);assert.equal(f.commands.size,0);
+ const result=await f.client.execute('claimRequirementExecution',args);assert.equal(result.verification?.verified,true,JSON.stringify(result));f.events.rows.get(f.entry.id)!.state='paused';
+ const replay=await f.client.execute('claimRequirementExecution',args);assert.equal(replay.ok,true);assert.equal((replay.data as any).duplicate,true);assert.equal(replay.verification?.state,'ADMISSION_LATER_STATE');assert.equal(f.outbox.length,1);
 });
 test('fenced progress committed before authority loss retains an unknown original command',async()=>{
  const f=await fixture();await f.send('/v1/requirement-events/claims','POST',f.command);const lease=(await(await f.send('/v1/requirement-events/claims','POST',{requirementId:f.entry.id,workDigest:hash,holderId:'synthetic-progress-holder'},'synthetic-before-revoke')).json()).lease;

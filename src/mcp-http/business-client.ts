@@ -1,14 +1,13 @@
-import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 import {LifeOSApiClient,type CapabilityCatalog,type OperationResult,validateLocalArguments} from '../mcp-candidate/client.ts';
 import {parseArguments,type Operation} from '../mcp-candidate/schemas.ts';
-import {responseEntry,verifyReceipt,verifyCurrent,verifyExecutionCurrent} from '../mcp-candidate/semantic.mjs';
+import {responseEntry,verifyReceipt,verifyCurrent} from '../mcp-candidate/semantic.mjs';
 import {PlatformError} from '../platform/domain.ts';
+import {isBusinessMcpOperation,isBusinessMcpApiRoute} from './business-policy.ts';
 
 export type BusinessDispatcher=(request:Request)=>Promise<Response>;
 export type HttpOperationResult=OperationResult&{retry?:{operationId:string;idempotencyKey:string;requireSameArguments:true}};
 const apiMount='/api/platform/agent',responseLimit=8*1024*1024;
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
-const projectable=(operation:Operation)=>operation.id!=='commitTodoClassification';
 
 /** In-process transport to the existing Agent boundary; no socket or alternate writer. */
 export function inProcessApiFetch(origin:string,token:string,dispatch:BusinessDispatcher,signal:AbortSignal):typeof fetch{
@@ -16,7 +15,8 @@ export function inProcessApiFetch(origin:string,token:string,dispatch:BusinessDi
   const original=new Request(input,init),url=new URL(original.url);
   const combined=AbortSignal.any([signal,original.signal]);
   if(url.origin!==origin||url.search||url.hash||!url.pathname.startsWith(apiMount+'/')||
-     !['GET','POST','PATCH'].includes(original.method)||original.headers.get('authorization')!=='Bearer '+token||combined.aborted)throw Error('API_TARGET_REJECTED');
+     !['GET','POST','PATCH'].includes(original.method)||!isBusinessMcpApiRoute(original.method,url.pathname.slice(apiMount.length))||
+     original.headers.get('authorization')!=='Bearer '+token||combined.aborted)throw Error('API_TARGET_REJECTED');
   const headers=new Headers({host:new URL(origin).host,authorization:'Bearer '+token,accept:'application/json'});
   for(const name of ['content-type','idempotency-key']){const value=original.headers.get(name);if(value!==null)headers.set(name,value);}
   const request=new Request(original.url,{method:original.method,headers,signal:combined,
@@ -56,19 +56,19 @@ export class HttpBusinessClient{
   this.transport=inProcessApiFetch(origin,token,dispatch,signal);
   this.api=new LifeOSApiClient({origin,credentialProvider:async()=>token},this.transport);
  }
- async discover():Promise<CapabilityCatalog>{const catalog=await this.api.discover();return{...catalog,operations:catalog.operations.filter(projectable)};}
+ async discover():Promise<CapabilityCatalog>{const catalog=await this.api.discover();return{apiVersion:catalog.apiVersion,operations:catalog.operations.filter(operation=>isBusinessMcpOperation(operation.id))};}
  private async readback(operation:Operation,args:Record<string,unknown>,data:Record<string,unknown>){
-  try{const entry=responseEntry(data),id=isRequirementEventOperation(operation.id)?operation.id==='claimRequirementExecution'?args.requirementId:(args.lease as any)?.requirementId:typeof args.id==='string'?args.id:entry?.id;
+  try{const entry=responseEntry(data),id=typeof args.id==='string'?args.id:entry?.id;
    const catalog=await this.discover(),read=catalog.operations.find(candidate=>candidate.module===operation.module&&candidate.method==='GET'&&candidate.path.endsWith('{id}'));
    if(!read||typeof id!=='string')return{ok:false,status:403,error:'READBACK_UNAVAILABLE'};
    return await this.api.execute(read.id,{id,...(read.path.includes('{type}')?{type:args.type}:{})});
   }catch{return{ok:false,status:503,error:'READBACK_UNAVAILABLE'};}
  }
  async execute(operationId:string,input:unknown):Promise<HttpOperationResult>{
+  if(!isBusinessMcpOperation(operationId))return{ok:false,status:403,error:'OPERATION_UNAVAILABLE'};
   let operation:Operation,args:Record<string,unknown>,parsed:ReturnType<typeof parseArguments>;
   try{
    const validated=validateLocalArguments(operationId,input);operation=validated.operation;parsed=validated.parsed;
-   if(!projectable(operation))return{ok:false,status:403,error:'OPERATION_UNAVAILABLE'};
    args=structuredClone(input) as Record<string,unknown>;
   }catch(error){
    if(error instanceof PlatformError)return{ok:false,status:error.status,error:error.code};
@@ -92,8 +92,8 @@ export class HttpBusinessClient{
   }
   try{
    let preimage=before?.ok?responseEntry(before.data):undefined;
-   const expected=operation.id==='updateRequirementExecution'?(args.input as any)?.expectedRevision:args.expectedRevision;
-   if(operation.method==='PATCH'&&args.action!=='renew'&&preimage?.revision!==expected){
+   const expected=args.expectedRevision;
+   if(operation.method==='PATCH'&&preimage?.revision!==expected){
     if(result.data.duplicate!==true)throw Error('RECEIPT_PREIMAGE_UNAVAILABLE');
     // The durable API receipt is authoritative for inherited fields on replay;
     // its explicit arguments/CAS are still checked by the common validator.
@@ -102,6 +102,6 @@ export class HttpBusinessClient{
    verifyReceipt(operation,args,preimage,result.data);
   }catch{return unknown('API_RECEIPT_INVALID',result.status);}
   const readback=await this.readback(operation,args,result.data);
-  return{ok:true,...result,readback,verification:isRequirementEventOperation(operation.id)?verifyExecutionCurrent(operation,args,result.data,readback):verifyCurrent(result.data,readback)};
+  return{ok:true,...result,readback,verification:verifyCurrent(result.data,readback)};
  }
 }
