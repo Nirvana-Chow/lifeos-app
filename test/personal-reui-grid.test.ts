@@ -188,3 +188,36 @@ test('a new scope uses its own compact defaults before any preference effect',()
  h.render({...props,viewPreferenceScope:'two'});
  assert.deepEqual(h.options().state.columnVisibility,{project:false,area:false});
 });
+
+// Exercise the actual performance fixture setup against this TaskGrid harness,
+// including Playwright's no-op when check/uncheck already has the desired state.
+async function runFixedPerformanceSelection(initialReferences:boolean){
+ const source=readFileSync(new URL('./helpers/task-grid-performance-fixture.ts',import.meta.url),'utf8');
+ const start=source.indexOf("const columns=taskGridRoot(tab).getByRole('button',{name:'列设置',exact:true});"),end=source.indexOf('const count=tab.locator',start);
+ assert.ok(start>=0&&end>start);const block=source.slice(start,end);
+ const storage=new Map<string,string>(),h=harness(storage);
+ const rows=initialReferences?[{...task('original',4),project:{id:'p',title:'P'},area:{id:'a',title:'A'}}]:[task('original',4)];
+ const props={tasks:rows,viewPreferenceScope:'synthetic-performance',writable:false,onOpen(){}};
+ h.render(props);h.effects();let tree=h.render(props);
+ const grid={getByRole(role:string,query:{name:string}){
+  if(role==='button')return {async click(){const button=h.find(tree,node=>node.type==='button'&&node.props.children===query.name);assert.ok(button);button.props.onClick();tree=h.render(props);}};
+  assert.equal(role,'checkbox');
+  const setChecked=(checked:boolean)=>{const checkbox=h.find(tree,node=>node.type==='input'&&node.props['aria-label']===query.name);assert.ok(checkbox);
+   if(checkbox.props.checked!==checked){checkbox.props.onChange({target:{checked}});tree=h.render(props);}
+  };
+  return {async check(){setChecked(true);},async uncheck(){setChecked(false);}};
+ }};
+ await new Function('tab','taskGridRoot','return (async()=>{'+block+'})()')({},()=>grid);
+ h.render({...props,tasks:[task('filtered-performance-row',1)]});
+ return {visibility:h.options().state.columnVisibility,stored:storage.get('lifeos.task-columns.v1:synthetic-performance')??null};
+}
+test('performance setup explicitly retains seven columns after filtering initially-related rows',async()=>{
+ const result=await runFixedPerformanceSelection(true);
+ assert.deepEqual(result.visibility,{project:true,area:true},'derived checked state is not a persisted explicit preference');
+ assert.deepEqual(JSON.parse(result.stored!).visibility,{project:true,area:true});
+});
+test('performance setup also retains seven columns when both boxes begin unchecked',async()=>{
+ const result=await runFixedPerformanceSelection(false);
+ assert.deepEqual(result.visibility,{project:true,area:true});
+ assert.deepEqual(JSON.parse(result.stored!).visibility,{project:true,area:true});
+});

@@ -50,7 +50,11 @@ export async function measureTaskGrid({browser,context,page,entries}:PrivateFixt
           // its filtered synthetic rows have no relationship references.
           const columns=taskGridRoot(tab).getByRole('button',{name:'列设置',exact:true});
           await columns.click();
-          for(const label of ['项目','领域'])await taskGridRoot(tab).getByRole('checkbox',{name:`显示${label}列`,exact:true}).check();
+          for(const label of ['项目','领域']){
+            const choice=taskGridRoot(tab).getByRole('checkbox',{name:`显示${label}列`,exact:true});
+            // An already checked automatic default is not an explicit preference.
+            await choice.uncheck();await choice.check();
+          }
           await columns.click();
           const count=tab.locator('.lo-result-count');
           await expect(count).toHaveText((rows+1)+' 项');
