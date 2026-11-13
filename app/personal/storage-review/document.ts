@@ -347,8 +347,8 @@ function syncControls() {
     const latest = choices.get(pending.id);
     byId('pending-description').textContent = pending.command.method==='POST' ? '本次清单保存尚未确认。' : pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。';
     byId('pending-description').textContent += pendingRetained ? ' 原请求已保留在本标签页的会话存储；可确认后返回或重新登录，回来后显式恢复同一请求。' : ' 原请求未能可靠保存在本机；请保留当前页面。';
-    if (pending.outcome==='new') byId('pending-description').textContent += ' 尚未发送；这是未提交草稿。';
-    byId('pending-description').textContent += pending.outcome === 'rejected' ? ' 原请求已明确拒绝，可按最新版本重新确认。' : pending.outcome === 'confirmed' ? ' 原请求已收到确认，读回后不会重复写入。' : ' 原请求结果未知，重试只会恢复原请求，不会覆盖为新的决定。';
+    if (pending.outcome==='new') byId('pending-description').textContent += busy ? ' 正在提交并核对原请求。' : ' 尚未发送；这是未提交草稿。';
+    byId('pending-description').textContent += pending.outcome === 'rejected' ? ' 原请求已明确拒绝，可按最新版本重新确认。' : pending.outcome === 'confirmed' ? ' 原请求已收到确认，读回后不会重复写入。' : pending.outcome === 'new' ? ' 继续时只使用已保留的原请求。' : ' 原请求结果未知，重试只会恢复原请求，不会覆盖为新的决定。';
     byId('retry-decision').textContent = pending.outcome === 'rejected' ? '按最新版本重新确认' : pending.outcome === 'confirmed' ? '确认原请求结果' : '按原请求重试确认';
     byId('retry-decision').disabled = busy || uncertain || recoveryBlocked || (pending.command.method==='POST' ? remote===undefined : !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending'));
     byId('discard-decision').disabled = busy;

@@ -54,3 +54,26 @@ Native installed Chrome was used. No screenshots, real files/records, running-ac
 - The existing protected document adds `返回 LifeOS`, `← LifeOS 主站`, `设置与工具`, `已选决定，不代表已执行`, `父目录仅作索引，请逐项审核子项`, `上传完成：未核实 · 独立恢复核验：未核实` and `请先确认保存结果或放弃待确认的输入，再返回 LifeOS。`.
 - Dynamic presentation composes only existing item text and fixed labels: `父目录 · `, `历史选择：`, `（不代表已执行）`, `请展开后逐项决定`, `已选：`, `尚未决定`, `删除候选 · 待处理`, `子项（…） · 展开／收起`, and `独立项／子项：留 … · 删除候选（待处理） … · 暂缓 … · 父目录历史选择 …`.
 - Footer copy: `审核选项只记录决定，不会删除文件。父目录保留历史选择，展开后逐项审核；选择删除候选表示待处理，不代表已删除。媒体上传与独立恢复核验须另有证据。可导出 JSON 留存。`
+
+## Independent review repair — 2026-11-14
+
+The original independent review returned C0/I3/M0: I1 missing local-persistence failure confirmation; I2 unknown-command exit dead end; I3 weakened current-release DOM oracle. These are open until the repaired source is independently checked; prior author/browser evidence is retained above rather than treated as approval.
+
+Product/test candidate `fedffefd4ad07080400edc9c6a07b73f5488ad90` adds explicit confirmation before abandoning a memory-only local choice, verified owner/space-scoped session command retention before sending, explicit retained-request return/login, same-scope restore without automatic submission, late-generation rejection, and complete `currentReleaseSummary.title`/`changes` DOM expectations. An unretained new request is an unsent draft and emits zero mutations. Unknown commands are kept rather than discarded, with original URL/method/body/key unchanged; POST checklist writes use the same retention path. No new server operation, scope, grant, config or dependency is introduced.
+
+Focused repair check: **61 passed, 0 failed, 0 skipped**, including owner-release-notice; TypeScript and diff check passed. This includes RED→GREEN I1/I2 counterexamples, frozen-command scope/malformed-record checks, retained POST matching, no-wire persistence failure, unknown keep, generation fencing and original CAS/receipt/replay protections. The repaired browser cases are not yet qualified at this checkpoint.
+
+### Repair fixture diagnosis — three attempts retained
+
+1. **Original target:** validate the three review fixes in the original two synthetic fixtures, preserving exact command recovery and source-content oracles.
+2. **Verified scope:** the 61 focused checks/types passed; the repaired storage browser progressed through the original directory and save/recovery cases, but its newly added unknown-return injection has not passed. The owner-module browser has not started because the sequential command stopped at storage failure.
+3. **Boundary:** native Chrome fetch retries a PATCH when the synthetic HTTP server destroys the response connection after committing. The case expects unknown but Chrome can receive the original idempotent receipt on its retry.
+4. **Attempts:** #1 found the old cancellation counter sampled before the disabled button's busy period completed; waiting for the button enabled fixed that path. #2 reached the new return case and found the same early-counter assumption; the request count moved from 9 to 11 before the wait completed. #3 waited for the terminal state and captured a confirmed-receipt DOM state, proving that connection destruction is not a reliable unknown-outcome injection. Browser/server cleanup completed after each run. No product mutation semantics were changed to make the assertion pass.
+5. **Supported cause and remaining uncertainty:** multiple PATCH observations plus the confirmed-receipt UI support a native transport retry, rather than a return-link submission. The unknown-path VM tests still replay only the exact original command; the browser fault must produce a deterministic missing receipt to verify the requested state.
+6. **One proposed minimal action:** replace only the post-commit connection destruction with a deterministic HTTP 503, retaining the committed service write and every unknown/zero-after-exit/exact-body-key assertion. Re-run this same case once; if it fails, retain the count and return to read-only diagnosis. Do not change product behavior or relax the oracle.
+
+Root accepted that single fixture action. The injected 503 contains no usable receipt and is not treated as confirmation; the browser case still demands unknown, no mutation on leave/restore, exact original body/key retry, owner isolation and the later server choice. The prior two sampling fixes wait for the existing busy-disabled control to settle before counting mutations; they do not loosen the counter assertions.
+
+The separate two-line product copy correction distinguishes a busy new command (`正在提交并核对原请求`) from a retention-failed unsent draft (`尚未发送`), and no longer calls an unsent draft an unknown server result. It changes no request/outcome classification or mutation behavior.
+
+Read-only follow-up for the original reviewer: a known 409 rejection followed by failed GET can still leave `uncertain=true` after explicit discard removes the rejected pending input. Review that safe-return boundary separately; the approved 503 fixture action does not change it or establish I2 closed.
