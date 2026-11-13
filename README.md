@@ -51,7 +51,7 @@ python3 scripts/project-xunji-training-analytics.py --input-dir /path/to/xunji-f
 
 ## 参与开发
 
-先通过 Issue 明确问题、行为与验收，再提交 PR。复用现有组件和原生能力，保留单一 `package-lock.json`；变更应包含适用测试及清晰的未完成项。
+先读[项目开发规则](AGENTS.md)与[开发协作约定](docs/development/working-agreement.md)。需求通过已授权的业务 API 入原需求池，Issue/PR/OpenSpec 只保留工程映射；外部贡献先通过 Issue 明确问题、行为与验收。后续变更使用 feature 分支与 PR，commit 带需求 ID，不直推 main。复用现有组件和原生能力，保留单一 `package-lock.json`；变更应包含适用验证及清晰的未完成项。
 
 仓库使用 OpenSpec；生成工作流位于 `.agents/skills/`，CLI 固定 `@fission-ai/openspec@1.16.0`。新需求先形成设计与任务，已有批准范围持续实施；工具状态不能代替功能、权限或真实验收。
 
