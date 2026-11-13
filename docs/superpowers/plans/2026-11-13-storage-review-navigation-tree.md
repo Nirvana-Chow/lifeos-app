@@ -77,3 +77,13 @@ Root accepted that single fixture action. The injected 503 contains no usable re
 The separate two-line product copy correction distinguishes a busy new command (`正在提交并核对原请求`) from a retention-failed unsent draft (`尚未发送`), and no longer calls an unsent draft an unknown server result. It changes no request/outcome classification or mutation behavior.
 
 Read-only follow-up for the original reviewer: a known 409 rejection followed by failed GET can still leave `uncertain=true` after explicit discard removes the rejected pending input. Review that safe-return boundary separately; the approved 503 fixture action does not change it or establish I2 closed.
+
+The deterministic 503 fixture action passed at fixed `477425889ac742ce841a85eb81fc2f07762e913c`: original storage HTTP/Chrome case **1 passed / 0 failed / 0 skipped**, 11 synthetic PATCH observations at 1920/1365/390. It covered preserved unknown exit/login/restore, no automatic mutation on restore, exact original replay, later owner choices, zero-wire retention failure and local-choice leave confirmation. Native Chrome and synthetic HTTP were closed afterward; the owner-module case remained pending the final guard review.
+
+### I2 guard-only follow-up
+
+Independent narrow review retained I2 with two actual-function counterexamples: known 409 → GET failure → discard still blocked return despite no pending write, and actual savePreview → initially retained POST → 503 plus lost session storage → GET failure could use local-choice confirmation to bypass an unretained unknown command. The reviewer supplied a runnable synthetic VM chain; no real data was accessed.
+
+Three regressions observed RED before the minimum guard change: the actual rejection/discard chain, the actual POST/503/storage-loss chain, and stale-retention-flag protection. The guard now handles unknown/confirmed pending commands before local choices and requires reliable command retention plus explicit leave confirmation; the combined prompt also warns about memory-only choices. With no pending write, it permits return while preserving the failed-read `uncertain=true` state and `canEdit=false`. No mutation, restore, permission or uncertainty-classification function was changed in this follow-up.
+
+After that change: **64 focused passed / 0 failed / 0 skipped**, TypeScript and diff check passed. The new frozen candidate awaits the same reviewer's narrow recheck before the final two original browser cases. Broad suite/build, production publication/readback and owner acceptance remain Root's gates.

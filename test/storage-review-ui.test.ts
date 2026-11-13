@@ -46,8 +46,8 @@ test('return navigation retains a busy or unconfirmed command and allows a settl
  const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
  let blocked=0;const event={preventDefault(){blocked++;}};
  guard(event);assert.equal(blocked,0);
- for(const key of ['busy','pendingDecision','uncertain']){context[key]=true;guard(event);context[key]=false;}
- assert.equal(blocked,3);
+ for(const key of ['busy','pendingDecision']){context[key]=true;guard(event);context[key]=false;}
+ assert.equal(blocked,2);
 });
 test('only an explicit leave confirmation can abandon choices that failed local persistence',()=>{
  let confirms=0,blocked=0;let leave=false;
@@ -141,9 +141,9 @@ function recoveryFixture(){
    return Response.json({review:receipt});
   },
  };
- const functions=['reviewRecoveryKey','parsePendingReview','retainPendingDecision','restorePendingDecision','clearPendingDecision','reviewTree','requestReview','writeServer','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
+ const functions=['reviewRecoveryKey','parsePendingReview','retainPendingDecision','restorePendingDecision','clearPendingDecision','reviewTree','requestReview','writeServer','savePreview','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
  const handlers=['retry-decision','discard-decision'].map(id=>{const start=script.indexOf("byId('"+id+"').addEventListener(");return script.slice(start,script.indexOf('\n});',start)+4);}).join('\n');
- runInNewContext(functions+'\n'+handlers+'\nObject.assign(globalThis,{choose,openServer});',context);
+ runInNewContext(functions+'\n'+handlers+'\nObject.assign(globalThis,{choose,openServer,savePreview});',context);
  const click=async(id:string)=>{await listeners.get(id)!();for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
  return{context,wire,notices,click,snapshot,setRead:(value:boolean)=>{failRead=value;},setPatch:(value:typeof patchMode)=>{patchMode=value;},setFresh:(value:any)=>{fresh=value;},setReceipt:(value:any)=>{receipt=value;}};
 }
@@ -157,6 +157,34 @@ test('keeping unknown input never clears its frozen command and persistence fail
  await f.click('discard-decision');assert.equal(f.context.pendingDecision.command,original);assert.equal(f.context.uncertain,true);assert.equal(f.wire.length,1);assert.equal(f.context.pendingRetained,true);
  const g=recoveryFixture();g.context.sessionStorage.setItem=()=>{throw Error('synthetic storage denied');};await g.context.choose(item,'keep');
  assert.equal(g.wire.length,0);assert.equal(g.context.pendingDecision.outcome,'new');assert.equal(g.context.pendingRetained,false);await g.click('discard-decision');assert.equal(g.context.pendingDecision,null);assert.equal(g.wire.length,0);
+});
+test('discarding an explicit rejection permits return while failed-read uncertainty still forbids edits',async()=>{
+ const f=recoveryFixture(),methods:string[]=[],fetcher=f.context.fetch;f.context.fetch=(url:string,options:any)=>{methods.push(options.method);return fetcher(url,options);};f.setPatch('conflict');await f.context.choose(item,'keep');
+ assert.equal(f.context.pendingDecision.outcome,'rejected');assert.equal(f.context.uncertain,true);await f.click('discard-decision');
+ assert.equal(f.context.pendingDecision,null);assert.equal(f.context.uncertain,true);
+ let prevented=0;const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',f.context);
+ guard({preventDefault(){prevented++;}});assert.equal(prevented,0);
+ assert.equal(runInNewContext(fn('canEdit')+'; canEdit',f.context)(),false);
+ assert.deepEqual(methods,['PATCH','GET']);
+});
+test('a real retained POST followed by 503 and lost session storage cannot leave by discarding local choices',async()=>{
+ const f=recoveryFixture(),methods:string[]=[];
+ const checklist={schema:1,revision:'synthetic-post-v1',items:[item]};
+ Object.assign(f.context,{synced:false,remote:null,localSaved:false,choices:new Map([['S-1','keep']]),review:checklist,TextEncoder,confirm:()=>true});
+ f.context.requestReview=async(method='GET')=>{methods.push(method);if(method==='POST'){f.context.sessionStorage.getItem=()=>{throw Error('synthetic session lost');};f.context.sessionStorage.setItem=()=>{throw Error('synthetic session lost');};throw Object.assign(Error('synthetic missing receipt'),{status:503});}throw Error('synthetic read offline');};
+ await f.context.savePreview();assert.deepEqual(methods,['POST','GET']);assert.equal(f.context.pendingDecision.outcome,'unknown');assert.equal(f.context.pendingRetained,false);assert.equal(f.context.uncertain,true);
+ const original=f.context.pendingDecision.command;let prompts=0,prevented=0;f.context.confirm=()=>{prompts++;return true;};
+ runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',f.context)({preventDefault(){prevented++;}});
+ assert.equal(prevented,1);assert.equal(prompts,0);assert.equal(f.context.pendingDecision.command,original);assert.equal(f.context.uncertain,true);assert.deepEqual(methods,['POST','GET']);
+});
+test('an unretained unknown request blocks before a local-only-choice leave confirmation can discard its command',()=>{
+ for(const retained of [false,true]){
+  let prompts=0,prevented=0;
+  const pending={id:'__checklist__',outcome:'unknown',command:{url:'/api/platform/personal/storage-review',method:'POST',body:'original-body',key:'original-key'}};
+  const context:any={busy:false,synced:false,localSaved:false,choices:new Map([['S-1','keep']]),pendingDecision:pending,pendingRetained:retained,uncertain:true,retainPendingDecision:()=>false,announce(){},confirm:()=>{prompts++;return true;}};
+  const guard=runInNewContext(fn('guardReviewNavigation')+'; guardReviewNavigation',context);
+  guard({preventDefault(){prevented++;}});assert.equal(prevented,1);assert.equal(prompts,0);assert.equal(context.pendingDecision,pending);assert.equal(context.uncertain,true);assert.equal(context.choices.get('S-1'),'keep');
+ }
 });
 test('first explicit 409 allows owner rebase with fresh revision and new key; cancel never writes',async()=>{
  const f=recoveryFixture();f.setRead(false);f.setPatch('conflict');f.setFresh(f.snapshot(2,'defer'));await f.context.choose(item,'keep');

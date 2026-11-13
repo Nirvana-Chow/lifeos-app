@@ -199,13 +199,15 @@ let remote, synced = false, busy = false, uncertain = false, localSaved = true, 
 let reviewScope = null, pendingRetained = false, recoveryBlocked = false, reviewGeneration = 0;
 function announce(text) { byId('notice').textContent = text; }
 function guardReviewNavigation(event) {
-  if (!busy && !synced && !localSaved && choices.size) {
+  if (!busy && pendingDecision && !['new','rejected'].includes(pendingDecision.outcome)) {
+    if (pendingRetained && retainPendingDecision() && confirm('原请求已保留在本标签页的会话存储中，结果仍需核对。返回审核页或重新登录后可恢复同一请求，不会自动重发。'+(!synced && !localSaved && choices.size ? ' 继续离开也将放弃仅在内存中的本机决定，可先取消并导出。' : '')+'仍要离开吗？')) return;
+  } else if (!busy && !synced && !localSaved && choices.size) {
     if (confirm('本机决定尚未持久保存。取消后可先导出；继续离开将放弃仅在内存中的决定。仍要离开吗？')) return;
   } else if (!busy && pendingDecision && pendingRetained && retainPendingDecision()) {
     if (confirm('原请求已保留在本标签页的会话存储中，结果仍需核对。返回审核页或重新登录后可恢复同一请求，不会自动重发。仍要离开吗？')) return;
   } else if (!busy && pendingDecision?.outcome === 'new') {
     if (confirm('本次请求尚未发送，也未能可靠保存在本机。继续离开将放弃这份未提交草稿。仍要离开吗？')) return;
-  } else if (!busy && !pendingDecision && !uncertain) return;
+  } else if (!busy && !pendingDecision) return;
   event.preventDefault();
   announce(busy ? '正在保存或读回，请稍后返回 LifeOS。' : '已留在页面。未保存的决定可先导出；待核请求须可靠保留后才能离开。');
 }
