@@ -52,14 +52,14 @@ export async function withPrivateBrowserFixture<T>(handoff:PrivateBrowserHandoff
  let browser:Browser|undefined,context:BrowserContext|undefined,untrust:(()=>void)|undefined;
  try{
   untrust=trustFixtureCA(join(process.env.RUNNER_TEMP!,'recovery-tls','ca.crt'));browser=await chromium.launch({channel:'chrome',headless:true,args:privateBrowserArgs});context=await browser.newContext({viewport:{width:1365,height:900},colorScheme:'light'});context.setDefaultTimeout(5000);context.setDefaultNavigationTimeout(10000);await context.addCookies(handoff.cookies);const page=await context.newPage();await page.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});
-  const status=await privateRead(page,'/api/platform/personal/status');assert.equal(status.ownerId,'personal-review-user');assert.equal(status.scope,'personal-manual-candidate');assert.equal(status.spaceId,handoff.spaceId);assert.equal(status.storageVerified,true);assert.equal(status.writable,true);assert.deepEqual(status.allowedTypes,['todo','journal','project','domain','topic']);await assertPrivateReceipts(page,handoff.entries);
+  const status=await privateRead(page,'/api/platform/personal/status');assert.equal(status.ownerId,'personal-review-user');assert.equal(status.scope,'personal-manual-candidate');assert.equal(status.spaceId,handoff.spaceId);assert.equal(status.storageVerified,true);assert.equal(status.storageReviewEnabled,true);assert.equal(status.writable,true);assert.deepEqual(status.allowedTypes,['todo','journal','project','domain','topic']);await assertPrivateReceipts(page,handoff.entries);
   return await run({browser,context,page,entries:handoff.entries});
  }finally{let failed=false;try{await context?.close();}catch{failed=true;}try{await browser?.close();}catch{failed=true;}try{untrust?.();}catch{failed=true;}if(failed)throw Error('BROWSER_FIXTURE_CLEANUP_FAILED');}
 }
 
 // Independent literals, calibrated against Task4. Do not derive expected routes from the map under test.
 export const privateDestinations=[
- ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
+ ['overview','/personal','总览'],['search','/personal/search','搜索本人记录'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
 ] as const;
 const families=[
  ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings&panel=general','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
@@ -131,12 +131,13 @@ export function projectPrivateAppearanceFailure(phase:unknown,error:unknown){
 // The text source set is finite and reviewed. AST literals/JSX text are admitted
 // exactly, never source prefixes, arbitrary file paths or body-derived expected data.
 export const privateCaptureSources=[
- 'src/ui-review/workspace.tsx','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/category-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
+ 'src/ui-review/workspace.tsx','src/ui-review/workspace-hierarchy.ts','src/ui-review/owner-modules.ts','src/ui-review/task-table.tsx','src/ui-review/task-grid.tsx','src/ui-review/record-grid.tsx','src/ui-review/category-grid.tsx','src/ui-review/selectors.ts','src/ui-review/source-summary.tsx','src/ui-review/contract.ts',
  'src/workbench/shell.tsx','src/workbench/navigation.ts','src/workbench/draft-workspace.tsx','src/workbench/draft-contract.ts','src/workbench/domain.tsx','src/workbench/empty-state.tsx','src/workbench/entry-preview.tsx','src/workbench/entry-fields.ts','src/workbench/workflow.tsx','src/workbench/settings.tsx','src/workbench/theme-switch.tsx',
- 'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/connected-workspace.tsx',
+ 'src/personal-candidate/workspace.tsx','src/personal-candidate/record-form.tsx','src/personal-candidate/relation-fields.tsx','src/personal-candidate/category-entries.tsx','src/personal-candidate/snapshot-panel.tsx','src/personal-candidate/persistent-views.tsx','src/personal-candidate/apple-source-notice.tsx','src/personal-candidate/task-editor.tsx','src/personal-candidate/task-batch-editor.tsx','src/personal-candidate/connected-workspace.tsx',
  'src/personal-candidate/privacy.tsx','src/personal-candidate/live-workspace.tsx','app/layout.tsx','app/personal/[...section]/page.tsx',
  'src/personal-candidate/record-workbench.tsx','src/personal-candidate/record-modules.ts',
  'src/personal-finance/workbench.tsx','src/personal-finance/client.ts',
+ 'src/personal-search/page.tsx','src/personal-search/view.tsx',
 ] as const;
 const normalize=(text:string)=>text.replace(/\s+/g,' ').trim();
 export function captureSourceText(paths:readonly string[]=privateCaptureSources):Set<string>{
@@ -179,6 +180,15 @@ export async function readyHeading(page:Page,heading:string){
  if(heading==='设置'){await expect(page.getByRole('heading',{level:1,name:'设置',exact:true})).toBeVisible();await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();return;}
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
  if(heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(heading==='搜索本人记录'){
+  const form=page.getByRole('search');await expect(form).toHaveCount(1);await expect(form).toBeVisible();
+  await expect(form).toHaveAttribute('action','/personal/search');await expect(form).toHaveAttribute('method','get');
+  const query=form.getByRole('textbox',{name:'搜索标题与正文',exact:true});
+  await expect(query).toBeVisible();await expect(query).toBeEnabled();await expect(query).toHaveAttribute('name','q');await expect(query).toHaveAttribute('maxlength','240');
+  const submit=form.getByRole('button',{name:'搜索',exact:true});
+  await expect(submit).toBeVisible();await expect(submit).toBeEnabled();await expect(submit).toHaveAttribute('type','submit');
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+ }
  else if(['健康','人物','财务','日程'].includes(heading)){
   // These modules are deliberately closed in the recovery fixture. Their real
   // content pages replace the former placeholders; a task action is unrelated.
@@ -218,9 +228,11 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
 export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  await expect(navigation.getByRole('button')).toHaveText(['总览','事项']);
- await expect(navigation.getByRole('link')).toHaveText(['日记','做饭']);
+ await expect(navigation.getByRole('link')).toHaveText(['搜索本人记录','日记','做饭','存储审核']);
+ await expect(navigation.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
  await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
+ await expect(navigation.getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await expect(navigation.locator('summary')).toHaveCount(0);
  const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
  // The TLS fixture binds workspace state to URLs; the native surface fixture
@@ -301,7 +313,9 @@ export async function verifyPrivateAppearanceAndDrafts(f:PrivateFixture){
  catch(error){try{console.error('PRIVATE_APPEARANCE_FAILURE '+JSON.stringify(projectPrivateAppearanceFailure(phase,error)));}catch{}throw error;}
 }
 
-export async function verifyPrivateStorageReview({page,browser,context}:PrivateFixture){
+export async function verifyPrivateStorageReview({page,browser,context}:Pick<PrivateFixture,'page'|'browser'|'context'>,origin:string=privateOrigin){
+ const base=new URL(origin);
+ assert.ok(origin===privateOrigin||base.protocol==='http:'&&base.hostname==='127.0.0.1'&&Number(base.port)>=1024&&base.origin===origin,'isolated storage fixture origin');
  const path='/personal/storage-review',api='/api/platform/personal/storage-review';
  const choices=[{id:'FIXTURE-KEEP',decision:'keep'},{id:'FIXTURE-TRASH',decision:'trash'},{id:'FIXTURE-DEFER',decision:'defer'}];
  const protectedId='FIXTURE-PROTECTED';
@@ -315,7 +329,7 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   const method=request.method();
   if(method==='GET'||method==='HEAD')return;
   const url=new URL(request.url());
-  mutations.push(url.origin===privateOrigin&&url.pathname===api?method:'unexpected');
+  mutations.push(url.origin===origin&&url.pathname===api?method:'unexpected');
  };
  const verifyChoices=async(target:Page)=>{
   for(const {id,decision} of choices)await expect(target.locator(`[data-id="${id}"] input[value="${decision}"]`)).toBeChecked();
@@ -324,7 +338,7 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
  };
  page.on('request',recordMutation);
  try{
-  assert.equal((await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
+  assert.equal((await page.goto(origin+path,{waitUntil:'domcontentloaded'}))?.status(),200);
   await expect(page.getByRole('heading',{level:1,name:'存储审核',exact:true})).toBeVisible();
   await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');
   phase='import';
@@ -352,23 +366,29 @@ export async function verifyPrivateStorageReview({page,browser,context}:PrivateF
   phase='independent-readback';
   independent.setDefaultTimeout(5000);
   independent.setDefaultNavigationTimeout(10000);
-  await independent.addCookies(await context.cookies(privateOrigin));
+  await independent.addCookies(await context.cookies(origin));
   const reader=await independent.newPage();
-  await reader.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});
+  await reader.goto(origin+path,{waitUntil:'domcontentloaded'});
   await expect(reader.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
   await verifyChoices(reader);
   assert.deepEqual(await privateRead(reader,api),{review:{revision:4,checklist,decisions:choices}});
   phase='session-loss';
   await independent.clearCookies();
+  const deniedRequests:{method:string;path:string}[]=[];
+  independent.on('request',request=>{
+   const url=new URL(request.url());
+   if((request.method()!=='GET'&&request.method()!=='HEAD')||url.origin!==origin||url.pathname.startsWith('/api/platform/'))deniedRequests.push({method:request.method(),path:url.origin===origin?url.pathname:'unexpected-origin'});
+  });
   const [denied]=await Promise.all([
-   reader.waitForResponse(response=>response.url()===privateOrigin+api&&response.request().method()==='GET'),
+   reader.waitForResponse(response=>response.url()===origin+'/api/platform/personal/status'&&response.request().method()==='GET'),
    reader.getByRole('button',{name:'打开 LifeOS 清单',exact:true}).click(),
   ]);
   assert.equal(denied.status(),401);
   await expect(reader.getByRole('link',{name:'重新登录',exact:true})).toBeVisible();
   await expect(reader.locator('#list [data-id]')).toHaveCount(0);
   await reader.reload({waitUntil:'domcontentloaded'});
-  await reader.waitForURL(privateOrigin+'/login');
+  await reader.waitForURL(origin+'/login');
+  assert.deepEqual(deniedRequests,[{method:'GET',path:'/api/platform/personal/status'}],'session denial must stop before storage reads or any writes');
  }catch(error){console.log('PRIVATE_STORAGE_REVIEW_FAILURE '+phase);throw error;}
  finally{await independent.close();}
 }

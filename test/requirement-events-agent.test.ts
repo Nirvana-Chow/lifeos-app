@@ -49,12 +49,17 @@ test('lost fenced progress replays its exact original receipt after lease expiry
  const recovered=await client.retry(first.recovery.requestId);assert.equal(recovered.ok,true,JSON.stringify(recovered));assert.equal(recovered.verification?.verified,true);assert.equal((recovered.data as any).duplicate,true);assert.equal(f.repo.historyRows.length,2);
  f.set({revoked:true});assert.equal((await client.execute('getRequirement',{id:entry.id})).ok,false);
 });
-test('MCP receives only JSON execution operations and validates the same lease readback',async()=>{
+test('business HTTP MCP cannot inherit claim or progress authority from the scoped engineering API',async()=>{
  const {HttpBusinessClient}=await import('../src/mcp-http/business-client.ts');const f=fixture(),created=await f.client.execute('createRequirement',{fields,idempotencyKey:'synthetic-mcp-event-create'}),entry=(created.data as any).entry;
  f.events.rows.set(entry.id,{requirementId:entry.id,sourceId:entry.sourceId,revision:1,workDigest:'c'.repeat(64),state:'ready',attempts:0,fence:0,lease:null});
- const client=new HttpBusinessClient(origin,'synthetic-event-token',f.handler,new AbortController().signal);assert.equal((await client.discover()).operations.some(x=>x.id==='streamRequirementEvents'),false);
- const result=await client.execute('claimRequirementExecution',{requirementId:entry.id,workDigest:'c'.repeat(64),holderId:'synthetic-mac',idempotencyKey:'synthetic-mcp-event-claim'});assert.equal(result.verification?.verified,true,JSON.stringify(result));
- const lease=(result.data as any).lease;const progress=await client.execute('updateRequirementExecution',{id:lease.id,action:'progress',lease,input:{fields:{...fields,workflow:{...fields.workflow,state:'in_progress'}},expectedRevision:1,baselineBinding:null},idempotencyKey:'synthetic-mcp-event-progress'});assert.equal(progress.verification?.verified,true,JSON.stringify(progress));
+ let engineDispatches=0;
+ const client=new HttpBusinessClient(origin,'synthetic-event-token',request=>{if(new URL(request.url).pathname.startsWith('/api/platform/agent/v1/requirement-events/'))engineDispatches++;return f.handler(request);},new AbortController().signal);
+ const catalog=await client.discover();assert.equal('eventTransports'in catalog,false);assert.equal(catalog.operations.some(x=>['claimRequirementExecution','updateRequirementExecution','streamRequirementEvents'].includes(x.id)),false);
+ const beforeRows=structuredClone(f.repo.rows),beforeWork=structuredClone(f.events.rows),beforeHistory=structuredClone(f.repo.historyRows),beforeEvents=structuredClone(f.events.events),beforeCommands=structuredClone(f.events.commands);
+ const result=await client.execute('claimRequirementExecution',{requirementId:entry.id,workDigest:'c'.repeat(64),holderId:'synthetic-mac',idempotencyKey:'synthetic-mcp-event-claim'});assert.deepEqual(result,{ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
+ const lease={id:'00000000-0000-4000-8000-000000000001',requirementId:entry.id,sourceId:entry.sourceId,revision:1,workDigest:'c'.repeat(64),holderId:'synthetic-mac',grantId:'synthetic-event-grant',fence:1,expiresAt:f.events.now+120000};
+ const progress=await client.execute('updateRequirementExecution',{id:lease.id,action:'progress',lease,input:{fields:{...fields,workflow:{...fields.workflow,state:'in_progress'}},expectedRevision:1,baselineBinding:null},idempotencyKey:'synthetic-mcp-event-progress'});assert.deepEqual(progress,{ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
+ assert.equal(engineDispatches,0);assert.deepEqual(f.repo.rows,beforeRows);assert.deepEqual(f.events.rows,beforeWork);assert.deepEqual(f.repo.historyRows,beforeHistory);assert.deepEqual(f.events.events,beforeEvents);assert.deepEqual(f.events.commands,beforeCommands);
 });
 
 test('OPT-IN reviewed fixed legacy client ignores event transport metadata and retains requirement CRUD',{

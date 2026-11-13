@@ -5,7 +5,8 @@ import {parseMfaSetup,type MfaSetup} from './owner-mfa-flow';
 import s from './workspace.module.css';
 import m from './owner-mfa.module.css';
 
-export function OwnerMfaPanel({mode}:{mode:'start'|'verify'|'incomplete'|'relogin'|'unavailable'}){
+export function OwnerMfaPanel({mode,oauthQuery}:{mode:'start'|'verify'|'incomplete'|'relogin'|'unavailable';oauthQuery?:string}){
+ const suffix=oauthQuery?'?oauth_query='+encodeURIComponent(oauthQuery):'';
  const [setup,setSetup]=useState<MfaSetup|null>(null),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[startAgain,setStartAgain]=useState(false),canvas=useRef<HTMLCanvasElement>(null);
  useEffect(()=>{setHydrated(true);},[]);
  useEffect(()=>{let active=true;if(setup&&canvas.current){import('qrcode').then(module=>{if(active&&canvas.current)return module.toCanvas(canvas.current,setup.uri,{width:240,margin:4,errorCorrectionLevel:'M'});}).catch(()=>{if(active)setMessage('二维码未能显示，请使用下方手动设置密钥。');});}return()=>{active=false;};},[setup]);
@@ -13,7 +14,7 @@ export function OwnerMfaPanel({mode}:{mode:'start'|'verify'|'incomplete'|'relogi
   try{const response=await fetch('/api/platform/auth/two-factor/enable',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password,method:'totp'})});form.reset();if(!response.ok){setMessage(response.status===429?'尝试过于频繁，请稍后再试。':'绑定未能开始，请核对密码或重新登录。');return;}setSetup(parseMfaSetup(await response.json()));setSaved(false);setStartAgain(false);
   }catch{form.reset();setMessage('绑定结果未确认，请重新登录后确认，不要重复提交。');}finally{setBusy(false);}
  }
- async function leave(){if(!hydrated||busy)return;setBusy(true);setSetup(null);try{const response=await fetch('/api/platform/auth/sign-out',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});if(response.ok)window.location.replace('/login');else setMessage('退出结果未确认，请稍后重新打开登录页确认。');}catch{setMessage('退出结果未确认，请稍后重新打开登录页确认。');}finally{setBusy(false);}}
+ async function leave(){if(!hydrated||busy)return;setBusy(true);setSetup(null);try{const response=await fetch('/api/platform/auth/sign-out',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});if(response.ok)window.location.replace('/login'+suffix);else setMessage('退出结果未确认，请稍后重新打开登录页确认。');}catch{setMessage('退出结果未确认，请稍后重新打开登录页确认。');}finally{setBusy(false);}}
  const enabled=mode!=='unavailable',start=(mode==='start'||mode==='verify'&&startAgain)&&!setup,needsSaved=!!setup||mode==='verify'||mode==='incomplete';
  return <main data-lifeos-surface="auth" className={s.page+' '+s.auth}><h1>LifeOS</h1><section className={s.panel}>
   <h2>{mode==='relogin'?'请重新完成两步登录':'绑定验证器'}</h2>
@@ -30,7 +31,7 @@ export function OwnerMfaPanel({mode}:{mode:'start'|'verify'|'incomplete'|'relogi
     <label className={m.ack}><input type="checkbox" checked={saved} onChange={event=>setSaved(event.target.checked)}/>我已妥善保存备用恢复码</label>
    </div>}
    {!setup&&!start&&(mode==='verify'||mode==='incomplete')&&<label className={m.ack}><input type="checkbox" checked={saved} disabled={!hydrated||busy} onChange={event=>setSaved(event.target.checked)}/>我已妥善保存此前显示的备用恢复码</label>}
-   {(setup||!start)&&<MfaCodeForm disabled={needsSaved&&!saved} onSuccess={()=>{setSetup(null);window.location.replace('/account/mfa');}}/>}
+   {(setup||!start)&&<MfaCodeForm disabled={needsSaved&&!saved} onSuccess={()=>{setSetup(null);window.location.replace('/account/mfa'+suffix);}}/>}
    {mode==='verify'&&!setup&&!startAgain&&<button type="button" disabled={!hydrated||busy} onClick={()=>setStartAgain(true)}>未保存绑定信息？重新生成</button>}
   </>}
   {enabled&&<p><button type="button" disabled={!hydrated||busy} onClick={leave}>退出并返回登录</button></p>}

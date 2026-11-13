@@ -70,16 +70,21 @@ async function classify() {
 export const VISUAL_PATHS=[
  'app/**/*.tsx','app/**/*.css','components/**','src/**/*.tsx','src/**/*.css','test/**/*browser*',
  'test/helpers/personal-*.ts','test/helpers/task-grid-performance-fixture.ts','test/helpers/auth-theme-fixture-lifecycle.ts',
- 'scripts/synthetic-rendered-qualification.ts','scripts/client-bundle-evidence.mjs','scripts/attach-vtable-benchmark.py',
+ 'scripts/synthetic-rendered-qualification.ts','scripts/release-qualification.ts','scripts/client-bundle-evidence.mjs','scripts/attach-vtable-benchmark.py',
  'scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts','.github/workflows/visual-qualification.yml',
 ] as const;
+const oauthMetadataPaths=new Set([
+ 'app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts',
+ 'app/.well-known/oauth-protected-resource/[[...resource]]/route.ts',
+]);
 const visualNames=['Visual qualification scope','Visual source and isolated fixture prerequisites','Visual matrix and historical renderer benchmark'];
 const visualGuard='Verify every enabled case and the finite synthetic capture manifest';
 function confirmed(ok:unknown,code='QUALIFICATION_UNCONFIRMED'):asserts ok {if(!ok)throw Error(code);}
 export function visualPathsApply(paths:string[]):boolean {
  // Native glob dot-segment handling is not assumed equal to Actions patterns.
- // Refuse that ambiguity; the literal .github workflow path stays supported.
- confirmed(paths.length<=300&&paths.every(p=>typeof p==='string'&&p.length>0&&!p.startsWith('/')&&!p.split('/').some((v,index)=>!v||v==='.'||v==='..'||(v.startsWith('.')&&!(index===0&&v==='.github')))&&!/[\\\x00-\x1f\x7f\ufffd]/.test(p)),'VISUAL_SCOPE_UNCONFIRMED');
+ // Refuse that ambiguity except the existing root .github segment and two
+ // reviewed metadata files. Those exact .ts routes do not themselves match UI.
+ confirmed(paths.length<=300&&paths.every(p=>typeof p==='string'&&p.length>0&&!p.startsWith('/')&&!p.split('/').some((v,index)=>!v||v==='.'||v==='..'||(v.startsWith('.')&&!(index===0&&v==='.github')&&!(index===1&&v==='.well-known'&&oauthMetadataPaths.has(p))))&&!/[\\\x00-\x1f\x7f\ufffd]/.test(p)),'VISUAL_SCOPE_UNCONFIRMED');
  return paths.some(p=>VISUAL_PATHS.some(pattern=>matchesGlob(p,pattern)));
 }
 type ScopeContext={sha:string;event:string;headBranch:string;payload:unknown};

@@ -332,7 +332,7 @@ export async function verifyPersonalWorkspace(page:Page){
  const diagnostic:PresentationDiagnostic=(reason,metadata={})=>{presentationFailure={reason,metadata:Object.fromEntries(Object.entries(metadata).filter(([,value])=>typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value))))};};
  try{
  await workspaceReady(page);const initial=await overview(page);assert.equal(initial.total,0);assert.deepEqual(initial.items,[]);
- phase='workspace-capabilities';const access=await json(page,'/api/platform/personal/status');assert.equal(access.writable,true);assert.deepEqual(access.allowedTypes,['todo','journal','project','domain','topic']);
+ phase='workspace-capabilities';const access=await json(page,'/api/platform/personal/status');assert.equal(access.writable,true);assert.equal(access.storageReviewEnabled,true);assert.deepEqual(access.allowedTypes,['todo','journal','project','domain','topic']);
  phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);

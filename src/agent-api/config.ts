@@ -1,5 +1,8 @@
 import {isHTTPSOrigin, type PlatformConfig} from '../platform/config.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
+import {readBusinessOAuthConfig} from '../business-mcp-oauth/boundary.ts';
+
+const businessOAuthRuntimeKeys=['LIFEOS_BUSINESS_MCP_OAUTH','LIFEOS_BUSINESS_MCP_GRANT_ID','LIFEOS_BUSINESS_MCP_SCOPES'] as const;
 
 export const agentRuntimeKeys = [
   'LIFEOS_AGENT_API_ENABLED',
@@ -13,6 +16,7 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_STORAGE_REVIEW',
   'LIFEOS_AGENT_REQUIREMENT_EVENTS',
   'LIFEOS_MCP_HTTP',
+  ...businessOAuthRuntimeKeys,
 ] as const;
 
 export const agentVerifierRole = 'lifeos_agent_verifier';
@@ -36,7 +40,7 @@ export function readAgentRuntimeConfig(
   if (agentRuntimeKeys.every(key => env[key] === undefined)) return null;
 
   const invalid = (): never => { throw Error('Agent runtime configuration unavailable'); };
-  readAgentMcpHttpTransport(env);
+  const mcpTransport=readAgentMcpHttpTransport(env);
   const databaseURL = env.LIFEOS_AGENT_API_DATABASE_URL;
   const secret = env.LIFEOS_AGENT_API_SECRET;
   if (env.LIFEOS_AGENT_API_ENABLED !== '1' || !personal || personal.transport === 'ssh-loopback' ||
@@ -52,6 +56,10 @@ export function readAgentRuntimeConfig(
         database.username !== agentVerifierRole || !database.password || database.search || database.hash) return invalid();
   } catch {
     return invalid();
+  }
+  if(businessOAuthRuntimeKeys.some(key=>env[key]!==undefined)){
+    try{if(mcpTransport!==agentMcpHttpTransport||!readBusinessOAuthConfig(env,platform.baseURL))return invalid();}
+    catch{return invalid();}
   }
   return Object.freeze({databaseURL, secret});
 }

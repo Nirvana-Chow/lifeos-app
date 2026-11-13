@@ -4,9 +4,10 @@ import type {OwnerModuleLink} from './owner-modules.ts';
 /** Presentation only: groups existing status-authorized links, never creates capabilities. */
 export function groupWorkspaceModules(links:readonly OwnerModuleLink[]){
  return [
-  {label:'安排与推进',ids:['calendar']},
+  {label:'安排与推进',ids:['search','calendar']},
   {label:'生活记录',ids:['journal','health','cooking','people','media']},
   {label:'长期积累',ids:['career','finance','portfolio']},
+  {label:'资料与工具',ids:['storage-review']},
  ].map(group=>({label:group.label,links:links.filter(link=>group.ids.includes(link.id))}));
 }
 export type OverviewDomain={id:string|null;title:string;loaded:boolean;projects:ProjectRow[]};

@@ -30,6 +30,55 @@ const agent={
 const binding={...platform,...personal,...agent};
 const platformConfig=readPlatformConfig(platform)!;
 const personalConfig=readPersonalConfig(binding,platformConfig)!;
+const oauthFlags={LIFEOS_BUSINESS_MCP_OAUTH:'business-mcp-oauth-v1',LIFEOS_BUSINESS_MCP_GRANT_ID:'synthetic-reviewed-grant',LIFEOS_BUSINESS_MCP_SCOPES:'todo:read todo:write offline_access'};
+const oauthBinding={...binding,LIFEOS_PLATFORM_BASE_URL:'https://lifeos.nirvanachow.com',LIFEOS_PLATFORM_HTTPS_HOST:'lifeos.nirvanachow.com',LIFEOS_MCP_HTTP:'streamable-http-v1',...oauthFlags};
+
+test('protected startup accepts the reviewed OAuth flags without changing the original Agent result',()=>{
+ const approved=validateReviewConfig(oauthBinding),platform=readPlatformConfig(approved)!,personal=readPersonalConfig(approved,platform)!;
+ for(const[key,value]of Object.entries(oauthFlags))assert.equal(approved[key],value);
+ assert.deepEqual(readAgentRuntimeConfig(approved,platform,personal),{databaseURL:agent.LIFEOS_AGENT_API_DATABASE_URL,secret:agent.LIFEOS_AGENT_API_SECRET});
+});
+
+test('both original adapters clear inherited OAuth flags when the protected config omits them',()=>{
+ for(const apply of [applyReviewEnvironment,applyBoundStartupConfig]){
+  const sink:Record<string,string|undefined>={...oauthFlags};apply(binding,sink);
+  for(const key of Object.keys(oauthFlags))assert.equal(sink[key],undefined);
+ }
+});
+
+test('OAuth startup requires all reviewed values and the complete canonical HTTPS Agent/MCP binding',()=>{
+ for(const change of [
+  {LIFEOS_BUSINESS_MCP_OAUTH:undefined},{LIFEOS_BUSINESS_MCP_OAUTH:''},{LIFEOS_BUSINESS_MCP_OAUTH:'1'},
+  {LIFEOS_BUSINESS_MCP_OAUTH:'business-mcp-oauth-v2'},{LIFEOS_BUSINESS_MCP_GRANT_ID:undefined},
+  {LIFEOS_BUSINESS_MCP_GRANT_ID:''},{LIFEOS_BUSINESS_MCP_GRANT_ID:'not/a/grant'},
+  {LIFEOS_BUSINESS_MCP_SCOPES:undefined},{LIFEOS_BUSINESS_MCP_SCOPES:''},{LIFEOS_BUSINESS_MCP_SCOPES:'offline_access'},
+  {LIFEOS_BUSINESS_MCP_SCOPES:'todo:write'},{LIFEOS_BUSINESS_MCP_SCOPES:'todo:read todo:read'},
+  {LIFEOS_BUSINESS_MCP_SCOPES:'todo:read account:write'},{LIFEOS_MCP_HTTP:undefined},
+  {LIFEOS_MCP_HTTP:'1'},{LIFEOS_AGENT_API_ENABLED:'0'},{LIFEOS_AGENT_API_SECRET:undefined},
+  {LIFEOS_AGENT_API_DATABASE_URL:undefined},{LIFEOS_PERSONAL_ENABLED:undefined},
+  {LIFEOS_PLATFORM_BASE_URL:'https://review.example.test',LIFEOS_PLATFORM_HTTPS_HOST:'review.example.test'},
+ ]){
+  const value={...oauthBinding,...change};
+  const platform=readPlatformConfig(value)!,personal=readPersonalConfig(value,platform);
+  assert.throws(()=>readAgentRuntimeConfig(value,platform,personal));
+  assert.throws(()=>validateReviewConfig(value),/^Error: Isolated review configuration unavailable$/);
+ }
+ for(const change of [{LIFEOS_BUSINESS_MCP_ENABLED:'1'},{LIFEOS_BUSINESS_MCP_GRANT_ID:42}])assert.throws(()=>validateReviewConfig({...oauthBinding,...change}));
+});
+
+test('measured OAuth bytes reach both original adapters; changed FD proof still fails closed',()=>{
+ const dir=mkdtempSync(join(realpathSync(tmpdir()),'oauth-startup-')),runtimePath=join(dir,'runtime.json'),gatePath=join(dir,'gate');
+ let runtime:number|undefined,gate:number|undefined;
+ try{
+  mkdirSync(gatePath,{mode:0o700});const bytes=JSON.stringify(oauthBinding);writeFileSync(runtimePath,bytes,{mode:0o600});
+  runtime=openSync(runtimePath,constants.O_RDONLY|constants.O_NOFOLLOW);gate=openSync(gatePath,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  const r=fstatSync(runtime,{bigint:true}),g=fstatSync(gate,{bigint:true});
+  const proof={version:1,runtime:{dev:String(r.dev),ino:String(r.ino),sha256:createHash('sha256').update(bytes).digest('hex')},gate:{dev:String(g.dev),ino:String(g.ino)}};
+  const verified=readBoundStartupConfig(proof,{runtime,gate});
+  for(const apply of [applyReviewEnvironment,applyBoundStartupConfig]){const sink:Record<string,string|undefined>={LIFEOS_BUSINESS_MCP_OAUTH:'unreviewed'};apply(verified,sink);for(const[key,value]of Object.entries(oauthFlags))assert.equal(sink[key],value);}
+  for(const runtimeProof of [{...proof.runtime,ino:String(r.ino+1n)},{...proof.runtime,sha256:'0'.repeat(64)}])assert.throws(()=>readBoundStartupConfig({...proof,runtime:runtimeProof},{runtime:runtime!,gate:gate!}),/^Error: STARTUP_MOUNT_UNVERIFIED$/);
+ }finally{if(runtime!==undefined)closeSync(runtime);if(gate!==undefined)closeSync(gate);rmSync(dir,{recursive:true,force:true});}
+});
 
 test('controlled startup carries the approved MCP transport from the measured private runtime bytes',()=>{
  const dir=mkdtempSync(join(realpathSync(tmpdir()),'mcp-startup-')),runtimePath=join(dir,'runtime.json'),gatePath=join(dir,'gate');

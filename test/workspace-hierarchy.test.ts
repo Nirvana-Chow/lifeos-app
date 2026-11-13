@@ -9,7 +9,7 @@ const project=(id:string,area:ProjectRow['area'],stage='active'):ProjectRow=>({i
 test('navigation groups only supplied authorized links without dropping or duplicating existing destinations',()=>{
  assert.equal(typeof hierarchy.groupWorkspaceModules,'function','grouped workspace navigation is required');
  const links:OwnerModuleLink[]=[{id:'journal',label:'日记',href:'/personal/journal'},{id:'calendar',label:'日程',href:'/personal/schedule'},{id:'finance',label:'财务',href:'/personal/finance'}];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['安排与推进',['calendar']],['生活记录',['journal']],['长期积累',['finance']]]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['安排与推进',['calendar']],['生活记录',['journal']],['长期积累',['finance']],['资料与工具',[]]]);
  assert.deepEqual(hierarchy.groupWorkspaceModules([]).flatMap(group=>group.links),[]);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links).map(link=>link.href).sort(),['/personal/finance','/personal/journal','/personal/schedule']);
 });
@@ -24,4 +24,14 @@ test('domain overview associates active projects by stable identity and retains 
  assert.equal(result[1].projects[0].nextStep,'真实下一步');
  assert.equal(projects.length,5);
  assert.deepEqual(hierarchy.overviewDomains([],[]),[]);
+});
+
+test('search is discoverable in the authorized navigation grouping',()=>{
+ const search={id:'search',label:'搜索本人记录',href:'/personal/search'} as OwnerModuleLink;
+ assert.deepEqual(hierarchy.groupWorkspaceModules([search]).flatMap(group=>group.links),[search]);
+});
+
+test('storage review is discoverable in tools without dropping other authorized modules',()=>{
+ const link={id:'storage-review',label:'存储审核',href:'/personal/storage-review'} as OwnerModuleLink;
+ assert.deepEqual(hierarchy.groupWorkspaceModules([link]).filter(group=>group.links.length).map(group=>[group.label,group.links]),[['资料与工具',[link]]]);
 });

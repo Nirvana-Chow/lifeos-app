@@ -1,3 +1,4 @@
+import {PersonalSearchPage} from '../../../src/personal-search/page';
 import {PersonalRecordPage} from '../../../src/personal-candidate/record-page';
 import {PersonalCalendarPage} from '../../../src/calendar-candidate/personal-page';
 import {PersonalFinancePage} from '../../../src/personal-finance/page';
@@ -13,12 +14,13 @@ import {PrivacyBoundary} from '../../../src/personal-candidate/privacy';
 
 export const dynamic='force-dynamic';
 export const metadata={title:'LifeOS · 私人工作台',robots:{index:false,follow:false}};
-export default async function Page({params}:{params:Promise<{section:string[]}>}){
+export default async function Page({params,searchParams}:{params:Promise<{section:string[]}>;searchParams:Promise<{q?:string;type?:string;id?:string}>}){
  let principal=null;
  try{principal=await readPlatformPagePrincipal(await headers());}catch{}
  if(!principal)redirect('/login');
  const module=resolvePrivateModule((await params).section);
  if(!module)notFound();
+ if(module.id==='search'){const q=await searchParams;return <PrivacyBoundary><PersonalSearchPage query={q.q} type={q.type} id={q.id}/></PrivacyBoundary>;}
  if(module.id==='schedule')return <PrivacyBoundary><PersonalCalendarPage/></PrivacyBoundary>;
  if(module.id==='health'||module.id==='people'||module.id==='journal')return <PrivacyBoundary><PersonalRecordPage type={module.id==='people'?'person':module.id}/></PrivacyBoundary>;
  if(module.id==='finance')return <PrivacyBoundary><PersonalFinancePage/></PrivacyBoundary>;
@@ -28,7 +30,7 @@ export default async function Page({params}:{params:Promise<{section:string[]}>}
  }
  let content;
  if(module.id==='ai-settings')content=<div style={{padding:'var(--lo-content-padding)'}}><h1>AI 服务设置</h1><DraftEditor kind="ai"/></div>;
- else if(module.id==='records'||module.id==='search'||module.id==='growth'||module.id==='articles'||module.id==='knowledge')content=<BasicWorkspace module={module.id} homeHref={privateHrefs.overview} dataHref={privateHrefs.database} recordsHref={privateHrefs.records}/>;
+ else if(module.id==='records'||module.id==='growth'||module.id==='articles'||module.id==='knowledge')content=<BasicWorkspace module={module.id} homeHref={privateHrefs.overview} dataHref={privateHrefs.database} recordsHref={privateHrefs.records}/>;
  else content=<DomainPage module={module} settingsHref={privateHrefs.settings} surface="personal"/>;
  return <WorkbenchShell surface="personal">{content}</WorkbenchShell>;
 }
