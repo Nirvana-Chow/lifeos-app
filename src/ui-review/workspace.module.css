@@ -11,7 +11,7 @@
 .settingsContent > :not(.settingsPage) { flex:none; }
 .settingsPage { display:flex; flex:1; min-height:96px; overflow:hidden; }
 .settingsLayout { display:flex; flex:1; min-width:0; min-height:0; }
-.settingsPanel { flex:1; min-width:0; padding:0 4px 24px 0; }
+.settingsPanel { flex:1; min-width:0; max-width:900px; padding:0 4px 24px 0; }
 .shell .settingsPanel { --primary:var(--foreground); --primary-foreground:var(--background); }
 .shell .settingsPanel :global([aria-label="修改密码"]) { margin-inline:0; }
 .shell :global(.lo-nav) :global(.is-current),.shell :global(.lo-sidebar-bottom) :global(.is-current) { color:var(--foreground); background:var(--muted); }
@@ -26,4 +26,49 @@
  .breadcrumbs { margin-bottom:4px; }
  .settingsNavigation { margin-bottom:4px; padding-bottom:4px; }
  .shell .settingsNavigation :is(button,a) { min-height:var(--lo-control-height); padding-block:4px; }
+}
+
+/* Workspace hierarchy stays local; shared theme and table tokens remain authoritative. */
+.navigationGroup { display:grid; gap:3px; min-width:0; }
+.navigationGroup + .navigationGroup { margin-top:18px; }
+.navigationLabel { padding:0 12px 5px; color:var(--muted-foreground); font-size:12px; font-weight:550; line-height:1.5; }
+.shell:global(.lo-is-collapsed) :global(.lo-sidebar) .navigationLabel { display:none; }
+.shell:global(.lo-is-collapsed) :global(.lo-sidebar) .navigationGroup + .navigationGroup { border-top:1px solid var(--border); padding-top:10px; margin-top:10px; }
+.domainOverview { margin-bottom:28px; }
+.sectionHeading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 16px; }
+.sectionHeading h2 { margin:0; font-size:18px; font-weight:600; }
+.sectionHeading p { margin:5px 0 0; color:var(--muted-foreground); font-size:14px; }
+.domainGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 28px; border-top:1px solid var(--border); }
+.domainSection { min-width:0; padding:18px 0; border-bottom:1px solid var(--border); }
+.domainHeading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.domainHeading h3 { margin:0; font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+.domainHeading > span { flex:none; color:var(--muted-foreground); font-size:12px; }
+.domainProjects { list-style:none; padding:0; margin:0; }
+.shell .domainProject { display:flex; justify-content:space-between; gap:12px; width:100%; height:auto; padding:10px 8px; text-align:left; white-space:normal; }
+.domainProject > span { display:grid; gap:4px; min-width:0; }
+.domainProject strong { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.domainProject > span > span { color:var(--muted-foreground); font-size:14px; font-weight:400; overflow-wrap:anywhere; }
+.domainEmpty,.coverageNote { margin:8px 0; color:var(--muted-foreground); font-size:14px; line-height:1.6; }
+.settingsNavGroup { display:flex; align-items:center; flex-wrap:wrap; gap:4px; min-width:0; }
+.settingsNavGroup + .settingsNavGroup { border-left:1px solid var(--border); padding-left:16px; margin-left:12px; }
+.settingsGroupLabel { color:var(--muted-foreground); font-size:12px; margin-right:6px; }
+.shell .generalSettings { border:0; border-radius:0; max-width:760px; }
+.settingSection { padding:24px 0; border-bottom:1px solid var(--border); }
+.settingSection:first-child { padding-top:8px; }
+.settingSection h2 { margin:0 0 16px; font-size:18px; font-weight:600; }
+.shell .settingSection :is(a,button) { border-radius:var(--lo-radius-control); }
+.shell .generalSettings > :global(.lo-logout) { margin-top:20px; border:1px solid var(--border); border-radius:var(--lo-radius-control); width:auto; }
+@media(max-width:1100px) { .settingsNavGroup + .settingsNavGroup { padding-left:0; margin-left:0; border-left:0; } }
+@media(max-width:850px) {
+ .navigationLabel { font-size:14px; }
+ .settingsNavigation { display:grid; gap:8px; overflow:visible; }
+ .settingsNavGroup { flex-wrap:nowrap; overflow-x:auto; max-width:100%; padding-bottom:4px; }
+ .settingsGroupLabel { flex:none; font-size:14px; }
+ .domainGrid { grid-template-columns:minmax(0,1fr); }
+ .domainProject strong,.domainProject > span > span { font-size:16px; }
+ .sectionHeading { align-items:flex-start; }
+ .domainOverview { margin-bottom:24px; }
+ .settingsContent { height:auto; min-height:100%; }
+ .settingsPage { overflow:visible; }
+ .settingsPanel { padding-right:0; }
 }

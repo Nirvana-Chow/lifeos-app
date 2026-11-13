@@ -144,3 +144,16 @@ Continue the existing private workspace and tasks 3.1/3.2. Use the existing auth
 - [x] Verify owner and anonymous responses, cache policy, and the browser import, selection and export flow with synthetic data.
 - [ ] Verify private durable saves, protected rows, stale writes and separate-session readback through the authenticated site. Review any machine read capability against scope and discovery.
 - [ ] Complete fixed-source qualification and the native publication gate. Read back the deployed route and running source. Record owner experience acceptance separately.
+
+
+## Delivery-rule clarification (2026-11-13; LO-OPS-001 / Issue #30)
+
+Apply the [portable working agreement](../../../docs/development/working-agreement.md) and [project rules](../../../AGENTS.md) to the existing 2.1/3.1/3.2 execution mapping. This is a documentation-only clarification: no old text, task ID, checkbox, historical evidence or unfinished renderer/performance/runtime/recovery/owner-acceptance gate is changed. The authorized business API + DB remains the sole requirements/progress source; this checklist and Issue/PR retain engineering mapping rather than a second business ledger.
+
+The latest owner direction requires feature branches + PRs, requirement IDs in commits and root-serialized integration, superseding the earlier direct-main preference. Routine authorized review/CI/merge/existing private publication/readback proceeds without repeated phase approval; public CI stays read-only and failures block publication. Preserve single-writer boundaries, protected classification approval and specific permission/migration/privacy/system/irreversible-action gates. Daily automatic PPT rebuilding is explicitly cancelled; requested on-demand export is unaffected. This rule update neither ships product capabilities nor establishes production or owner acceptance.
+
+## Combined delivery flow clarification (2026-11-13; LO-OPS-001 / Issue #30)
+
+This append-only clarification preserves every preceding byte, task ID, checkbox and historical qualification result. Independent domains use separate worktrees assigned directly by Root; subagents must not delegate further. Related requirements may be batched on one track. Before merge, run applicable fast local checks and independent technical review. Root serializes ordinary feature PR merges into the combined main tree, then runs the full original CI/build/private automatic release/original Native + HTTPS independent readback once against that fixed main SHA, without duplicating long full PR/main pipelines. Required branch protection remains binding. Failure prevents publication, retains the previous running version and requires immediate repair.
+
+Stop repeated screenshot-based aesthetic judgments. Preserve route, interaction, functional layout, keyboard accessibility, permission and save/recovery checks; the owner judges appearance on the real deployed site. This documentation-only update leaves the original three workflows unchanged and does not integrate the unadopted PR-only workflow candidate or claim trigger deduplication is implemented. Existing historical evidence, technical/authorization boundaries, paused work, cancelled daily automatic PPT rebuilding and unfinished delivery/owner-acceptance gates remain unchanged.

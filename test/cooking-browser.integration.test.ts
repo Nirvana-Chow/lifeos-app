@@ -8,6 +8,7 @@ import {chromium,expect,type Browser,type BrowserServer,type Route} from '@playw
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {MemoryPort} from './helpers/platform.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {getRecipe,listRecipes} from '../src/cooking/catalog.ts';
 
 test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  skip:process.env.RUN_COOKING_BROWSER_TESTS!=='1'&&'Requires native Chrome and an isolated synthetic Next fixture',
@@ -104,6 +105,30 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await page.getByRole('button',{name:'切换到深色模式'}).click();
  await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ // World recipes reuse the same ingredient/category/random/detail flow.
+ await page.goto(origin+'/personal/cooking');
+ await page.getByRole('searchbox',{name:'手头食材'}).fill('番茄');
+ await page.getByRole('group',{name:'菜谱分类'}).getByRole('button',{name:/^汤品/}).click();
+ await page.getByRole('searchbox',{name:'搜索菜名'}).fill('Gazpacho');
+ await page.getByRole('button',{name:'随机选一道',exact:true}).click();
+ await expect(page.getByRole('status',{name:'随机选菜结果'}).getByRole('link')).toHaveText(/西班牙番茄冷汤/);
+ const worldLink=page.getByRole('region',{name:'菜谱库'}).getByRole('link',{name:/西班牙番茄冷汤/});
+ await expect(worldLink).toBeVisible();
+ const worldPath=await worldLink.getAttribute('href');
+ assert.ok(worldPath);
+ await worldLink.click();
+ await expect(page.getByRole('heading',{name:'西班牙番茄冷汤',exact:true})).toBeVisible();
+ await expect(page.getByText('Gazpacho · 西班牙',{exact:true})).toBeVisible();
+ await expect(page.getByRole('link',{name:'CC BY-SA 4.0',exact:true})).toHaveAttribute('href','https://creativecommons.org/licenses/by-sa/4.0/');
+ await expect(page.getByRole('link',{name:'原作者与修订记录'})).toHaveAttribute('href',/action=history$/);
+ await expect(page.getByText('份量：原文未标注',{exact:true})).toBeVisible();
+ await expect(page.getByText(/AI 辅助中文翻译/)).toBeVisible();
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ const worldId=worldPath.split('/').at(-1)!;
+ assert.equal((await page.request.get(origin+'/personal/cooking/history?recipe='+worldId)).status(),404);
+ await page.goto(origin+'/personal/cooking');
+ await page.getByRole('searchbox',{name:'搜索菜名'}).fill('墨西哥');
+ await expect(page.getByRole('region',{name:'菜谱库'}).getByRole('link')).toHaveCount(2);
  const invalid=await page.goto(origin+'/personal/cooking/0000000000000000');
  assert.equal(invalid?.status(),404);
  assert.deepEqual(errors,[]);
@@ -133,6 +158,17 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
    await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
   };
   await page.route(origin+'/api/platform/personal/**',nativeRequest);
+  // Even with a valid writable cooking grant, unsupported world pins have no action.
+  await page.goto(origin+worldPath);
+  await expect(page.getByRole('link',{name:'记录这次',exact:true})).toHaveCount(0);
+  const worldRecipe=getRecipe(listRecipes().find(recipe=>recipe.name==='西班牙番茄冷汤')!.id)!;
+  const unsupported=await handle(new Request(origin+'/api/platform/personal/cooking',{
+   method:'POST',headers:{host:new URL(origin).host,origin,'content-type':'application/json','idempotency-key':'synthetic-world-pin','x-synthetic-fixture':'cooking'},
+   body:JSON.stringify({spaceId,confirmed:true,fields:{title:'合成世界菜谱记录',text:'',occurredOn:'2031-05-07',personal:{type:'cooking',schemaVersion:1,recipe:{id:worldRecipe.id,sourceUrl:worldRecipe.sourceUrl}}}}),
+  }));
+  assert.equal(unsupported.status,400);
+  assert.equal(repository.rows.size,0);
+  assert.equal(repository.receipts.size,0);
   await page.goto(origin+path);
   await page.getByRole('link',{name:'记录这次',exact:true}).click();
   await expect(page.getByRole('heading',{name:'做饭历史',exact:true})).toBeVisible();

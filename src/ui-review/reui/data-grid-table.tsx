@@ -2095,6 +2095,9 @@ function DataGridTableBodyRow<TData extends object>({
   const { props, table } = context
   const isRowPinned = row.getIsPinned()
   const rowStatus = props.getRowStatus?.(row.original)
+  const displayIndex = props.tableLayout?.cellSelection
+    ? row.getDisplayIndex()
+    : -1
 
   const bodyRowBottomBorderClasses = "[&:not(:last-child)>td]:border-b"
 
@@ -2121,11 +2124,9 @@ function DataGridTableBodyRow<TData extends object>({
       // style write (the scroll area rewrites its own each scroll) restyle all
       // the cells below it, measured at 24 fps instead of 120 on 1,000 rows.
       data-dragging={dndDragging || undefined}
-      // 1-based after the header row; row.index is the position in the data,
-      // so the announced index stays absolute across pagination.
-      aria-rowindex={
-        props.tableLayout?.cellSelection ? row.index + 2 : undefined
-      }
+      // Use the same pre-pagination display order as keyboard navigation.
+      // Retained pinned rows outside that filtered order have no position.
+      aria-rowindex={displayIndex >= 0 ? displayIndex + 2 : undefined}
       onClick={(event) => {
         if (isDataGridPortalEvent(event)) return
         // Through the getter, as in DataGridTableAddRow.

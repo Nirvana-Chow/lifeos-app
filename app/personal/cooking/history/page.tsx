@@ -12,6 +12,6 @@ export default async function Page({ searchParams }: {searchParams: Promise<{rec
   if (!principal) redirect('/login');
   const { recipe: recipeId } = await searchParams;
   const recipe = typeof recipeId === 'string' ? getRecipe(recipeId) : undefined;
-  if (recipeId !== undefined && !recipe) notFound();
+  if (recipeId !== undefined && (!recipe || recipe.referenceOnly)) notFound();
   return <CookingHistoryPage recipe={recipe ? {id:recipe.id,name:recipe.name,sourceUrl:recipe.sourceUrl} : null} />;
 }

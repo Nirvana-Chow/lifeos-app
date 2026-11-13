@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { flexRender } from '@tanstack/react-table';
+import { flexRender, tableFeatures, columnGroupingFeature, createGroupedRowModel } from '@tanstack/react-table';
 import { TaskCellDraftMemory } from '../src/personal-candidate/task-cell-draft.ts';
 import { taskStatusLabels } from '../src/personal-candidate/task-editor-state.ts';
 
@@ -25,7 +25,7 @@ function harness(storage = new Map<string,string>()) {
   let options: any;
   const imports: Record<string, any> = {
     react, 'react/jsx-runtime': jsx,
-    '@tanstack/react-table': { useTable: (input: any) => {
+    '@tanstack/react-table': { tableFeatures, columnGroupingFeature, createGroupedRowModel, useTable: (input: any) => {
       options = input;
       return { getRowModel: () => ({ rows: input.data.map((original: any) => ({ id: original.id, original })) }), setFocusedCell() {}, getHeaderGroups: () => [], state: {}, store: {} };
     } },
@@ -48,6 +48,49 @@ function harness(storage = new Map<string,string>()) {
   };
   return { render(props: any) { cursor = 0; effects.length = 0; const tree = module.exports.TaskGrid(props); const provider = find(tree, node => !!node.type?.context); if (provider) provider.type.context.current = provider.props.value; return tree; }, options: () => options, find, effects: () => effects.splice(0).forEach(fn => fn()) };
 }
+
+test('todo grouping defaults to none, uses reference IDs and leaves column choices intact',()=>{
+ const h=harness(),props={tasks:[{...task('a',4),project:{id:'p-one',title:'Same'}},{...task('b',5),project:{id:'p-two',title:'Same'}},task('c',6)],writable:false,onOpen(){}};
+ let tree=h.render(props);
+ const control=h.find(tree,node=>node.type==='select'&&node.props['aria-label']==='待办表格分组');
+ assert.ok(control,'the table exposes an explicit grouping choice');
+ assert.equal(control.props.value,'none');assert.deepEqual(h.options().state.grouping,[]);
+ const visibility={...h.options().state.columnVisibility};
+ control.props.onChange({target:{value:'project'}});tree=h.render(props);
+ assert.deepEqual(h.options().state.grouping,['project']);assert.equal(h.options().state.expanded,true);
+ const column=h.options().columns.find((column:any)=>column.id==='project');
+ assert.notEqual(column.getGroupingValue(props.tasks[0]),column.getGroupingValue(props.tasks[1]));
+ assert.notEqual(column.getGroupingValue(props.tasks[0]),column.getGroupingValue(props.tasks[2]));
+ assert.deepEqual(h.options().state.columnVisibility,visibility);assert.equal(h.options().groupedColumnMode,false);
+ h.find(tree,node=>node.props?.['aria-label']==='待办表格分组').props.onChange({target:{value:'area'}});h.render(props);
+ assert.deepEqual(h.options().state.grouping,['area']);
+});
+
+test('synthetic group rows render a filtered count and no task action or editor',()=>{
+ const calls:unknown[]=[],h=harness(),original={...task('a',4),project:{id:'p-one',title:'Saved project'}};
+ h.render({tasks:[original],writable:true,onOpen:(...args:unknown[])=>calls.push(args),onSetTaskStatus:(...args:unknown[])=>calls.push(args),onSave:async()=>null,getTaskFields:()=>fields});
+ const row={id:'project:ref:p-one',original,groupingColumnId:'project',subRows:[{original}]};
+ for(const column of h.options().columns){
+  const cell=column.cell({row,column:{id:column.id},getValue:()=>original.title});
+  if(column.id==='title'){
+   assert.equal(cell.props['data-task-group'],'project');assert.equal(cell.props['data-task-group-id'],'p-one');
+   assert.equal(cell.props.children[0].props.children,'Saved project');assert.equal(cell.props.children[1].props.children,'1 项');
+  }else assert.equal(cell,null,'group '+column.id+' has no business action');
+ }
+ assert.deepEqual(calls,[]);
+ const title=h.options().columns.find((column:any)=>column.id==='title');
+ const unassigned=title.cell({row:{...row,original:task('u',1)},column:{id:'title'}});
+ assert.equal(unassigned.props.children[0].props.children,'未关联项目');
+});
+
+test('grouping is scoped to the current view and blocked while editing or access is blocked',()=>{
+ const h=harness(),props={tasks:[task('a',4)],viewPreferenceScope:'one',writable:true,onOpen(){},onSave:async()=>null,getTaskFields:()=>fields};
+ let tree=h.render(props);h.find(tree,node=>node.props?.['aria-label']==='待办表格分组').props.onChange({target:{value:'project'}});h.render(props);
+ h.render({...props,viewPreferenceScope:'two'});assert.deepEqual(h.options().state.grouping,[]);
+ tree=h.render({...props,blocked:true});assert.equal(h.find(tree,node=>node.props?.['aria-label']==='待办表格分组').props.disabled,true);
+ tree=h.render(props);h.find(tree,node=>node.type==='grid').props.onCellEditRequest({rowId:'a',columnId:'title'});tree=h.render(props);
+ assert.equal(h.find(tree,node=>node.props?.['aria-label']==='待办表格分组').props.disabled,true);
+});
 
 test('grid resolves edits by stable id from latest props and rejects fabricated row metadata', () => {
   const h = harness(); const memory = new TaskCellDraftMemory(); memory.verify({ ownerId: 'owner', spaceId: 'space' });

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTable, type CellContext, type HeaderContext, type ColumnDef } from '@tanstack/react-table';
+import { useTable, tableFeatures, columnGroupingFeature, createGroupedRowModel, type CellContext, type HeaderContext, type ColumnDef } from '@tanstack/react-table';
 import type { TaskGridProps, TaskRow } from './contract';
 import type { TaskCellDraft, TaskCellField } from '../personal-candidate/task-cell-draft';
 import { taskStatusLabels } from '../personal-candidate/task-editor-state';
@@ -19,6 +19,8 @@ const columnIds = ['complete','title','status','due','project','area','detail'];
 const columnLabels:Record<string,string>={complete:'完成',title:'待办',status:'状态',due:'到期日',project:'项目',area:'领域',detail:'详情'};
 const columnWidths:Record<string,number>={complete:64,title:284,status:154,due:154,project:150,area:130,detail:100};
 const columnMinWidths:Record<string,number>={complete:56,title:140,status:112,due:130,project:90,area:90,detail:80};
+const taskGridFeatures=tableFeatures({...dataGridFeatures,columnGroupingFeature,groupedRowModel:createGroupedRowModel()});
+type TaskGrouping='none'|'project'|'area';
 type GridLayout={order:string[];visibility:Record<string,boolean>};
 const defaultLayout=():GridLayout=>({order:[...columnIds],visibility:{}});
 function readLayout(scope:string|null|undefined):GridLayout{
@@ -165,10 +167,18 @@ const GridCellContext = createContext<GridCellState | null>(null);
 
 // Component types stay stable across saving/uncertain/access transitions. Context updates
 // reach the editor through upstream memoized rows without resetting the native input.
-function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGridFeatures, TaskRow, unknown>) {
+function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGridFeatures, TaskRow, unknown>) {
   const state = useContext(GridCellContext);
   if (!state) throw Error('Task cell requires its workspace context.');
   const { edit, latest, open, close, advance, onError } = state;
+  if (row.groupingColumnId) {
+    if (column.id !== 'title') return null;
+    const field=row.groupingColumnId==='project'?'project':'area';
+    const reference=row.original[field];
+    return <span className={styles.group} data-task-group={field} data-task-group-id={reference?.id??'unassigned'}>
+      <strong>{reference?.title??(field==='project'?'未关联项目':'未关联领域')}</strong><span>{row.subRows.length+' 项'}</span>
+    </span>;
+  }
   if (column.id === 'complete') {
     const task = row.original;
     const allowed = () => !!latest.current.writable && !latest.current.blocked && !!latest.current.onSetTaskStatus;
@@ -192,7 +202,7 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof dataGri
   return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>{value || '—'}</span>;
 }
 
-function TaskGridColumnHeader({ column }: HeaderContext<typeof dataGridFeatures, TaskRow, unknown>) {
+function TaskGridColumnHeader({ column }: HeaderContext<typeof taskGridFeatures, TaskRow, unknown>) {
   if (column.id === 'complete'||column.id === 'detail') return columnLabels[column.id];
   const direction = column.getIsSorted();
   return <Button variant="ghost" className={styles.sort} data-sorted={direction || undefined}
@@ -207,7 +217,7 @@ export function TaskGrid(props: TaskGridProps) {
   latest.current = props;
   const host = useRef<HTMLDivElement>(null);
   const focusApi = useRef<DataGridCellSelectionApi | null>(null);
-  const tableRef = useRef<ReturnType<typeof useTable<typeof dataGridFeatures, TaskRow>> | null>(null);
+  const tableRef = useRef<ReturnType<typeof useTable<typeof taskGridFeatures, TaskRow>> | null>(null);
   const currentEdit = useRef<CellEdit | null>(null);
   const [edit, setEdit] = useState<CellEdit | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -216,6 +226,8 @@ export function TaskGrid(props: TaskGridProps) {
   useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
+  const [groupingState,setGroupingState]=useState<{scope:string|null;value:TaskGrouping}>({scope:null,value:'none'});
+  const grouping=groupingState.scope===scope?groupingState.value:'none';
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
   const visibility=useMemo<Record<string,boolean>>(()=>({project:props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility}),[props.tasks,layout.visibility]);
   useEffect(()=>{setLayoutState({scope,value:readLayout(scope)});setColumnsOpen(false);setLayoutNotice('');},[scope]);
@@ -233,6 +245,7 @@ export function TaskGrid(props: TaskGridProps) {
   const open = useCallback((rowId: string, field: TaskCellField, initialText?: string) => {
     const current = latest.current;
     if (!canWrite(current)) return;
+    if (tableRef.current?.getRowModel().rows.find(row=>row.id===rowId)?.groupingColumnId) return;
     if (currentEdit.current?.task.id === rowId && currentEdit.current.field === field) return;
     const task = current.tasks.find(row => row.id === rowId);
     if (!task) return;
@@ -254,7 +267,7 @@ export function TaskGrid(props: TaskGridProps) {
   }, []);
   const advance = useCallback((direction: 'next' | 'previous') => {
     const previous = currentEdit.current;
-    const rows = tableRef.current?.getRowModel().rows;
+    const rows = tableRef.current?.getRowModel().rows.filter(row=>!row.groupingColumnId);
     if (!previous || !rows) return;
     const index = rows.findIndex(row => row.id === previous.task.id);
     const visibleIds=tableRef.current?.getVisibleLeafColumns().map(column=>column.id)??columnIds;
@@ -264,12 +277,13 @@ export function TaskGrid(props: TaskGridProps) {
     focusApi.current?.focusCell(row.id, visibleIds[position % visibleIds.length]);
   }, []);
   const onError = useCallback((message: string) => setError(message), []);
-  const columns = useMemo<ColumnDef<typeof dataGridFeatures, TaskRow>[]>(() =>
+  const columns = useMemo<ColumnDef<typeof taskGridFeatures, TaskRow>[]>(() =>
     columnIds.map(id => ({
       id,
       size: columnWidths[id],
       minSize: columnMinWidths[id],
       accessorFn: task => id === 'status' ? task.status : id === 'title'||id === 'due' ? valueOf(task,id) : id === 'project' ? task.project?.title ?? '—' : id === 'area' ? task.area?.title ?? '—' : id === 'complete' ? task.status === 'done' : '查看详情',
+      ...(id==='project'||id==='area'?{getGroupingValue:(task:TaskRow)=>task[id]?'ref:'+task[id]!.id:'unassigned'}:{}),
       header: TaskGridColumnHeader,
       enableSorting: id!=='complete'&&id!=='detail',
       meta: {
@@ -282,12 +296,13 @@ export function TaskGrid(props: TaskGridProps) {
     })), [latest]);
   const data = useMemo(() => [...props.tasks], [props.tasks]);
   const table = useTable({
-    features: dataGridFeatures,
+    features: taskGridFeatures,
     data,
     columns,
     getRowId: row => row.id,
     initialState: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) } },
-    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length, 1) },columnOrder:layout.order,columnVisibility:visibility },
+    state: { pagination: { pageIndex: 0, pageSize: Math.max(data.length*(grouping==='none'?1:2), 1) },columnOrder:layout.order,columnVisibility:visibility,grouping:grouping==='none'?[]:[grouping],expanded:true },
+    groupedColumnMode: false,
     enableRowSelection: false,
     autoResetPageIndex: false,
   });
@@ -307,7 +322,9 @@ export function TaskGrid(props: TaskGridProps) {
   return (
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
     <div ref={host} className={styles.root} aria-label="待办表格" data-task-grid="reui">
-      <div className={styles.columnToolbar}><Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
+      <div className={styles.columnToolbar}>
+       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option><option value="area">按领域</option></select></label>
+       <Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
        {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器；无关联的项目/领域默认收起，可勾选显示。</p>{layout.order.map((id,index)=><div className={styles.columnSetting} key={id}>
         <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
         <Button variant="ghost" disabled={props.blocked||!!edit||index===0} aria-label={`向前移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index-1],order[index]]=[order[index],order[index-1]];changeLayout({...layout,order});}}>↑</Button>

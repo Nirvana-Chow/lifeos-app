@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   CheckSquare2,
-  Folder,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -67,6 +66,7 @@ import {OwnerReleaseNotice} from './owner-release-notice';
 import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
+import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
 
 import {readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
 
@@ -158,6 +158,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const settingsSection=page==='settings'||page==='requirements';
   const settingsLabels:Record<SettingsPanel,string>={general:'通用',topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
+  const moduleGroups=groupWorkspaceModules(ownerModules.links);
+  const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
@@ -398,7 +400,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const navigation = (
     <>
       <nav className="lo-nav" aria-label="主导航">
-        {navItems.map(({ id, label, icon: Icon }) => (
+        {moduleGroups.map((group,index)=>(index===0||group.links.length>0)&&<div key={group.label} role="group" aria-label={group.label} className={workspaceStyles.navigationGroup}>
+        <span className={workspaceStyles.navigationLabel}>{group.label}</span>
+        {index===0&&navItems.map(({ id, label, icon: Icon }) => (
           <Button
             variant="ghost"
             key={id}
@@ -413,7 +417,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span>{label}</span>
           </Button>
         ))}
-        <OwnerModuleLinks links={ownerModules.links.filter(link=>!['roadmap','feedback','updates'].includes(link.id))} path={ownerModules.path} collapsed={collapsed}/>
+        <OwnerModuleLinks links={group.links} path={ownerModules.path} collapsed={collapsed}/>
+        </div>)}
       </nav>
       <div className="lo-sidebar-bottom">
         <Button
@@ -610,9 +615,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
           </nav>
           {settingsSection&&<nav aria-label="设置分类" className={workspaceStyles.settingsNavigation}>
+            <div role="group" aria-label="偏好与账号" className={workspaceStyles.settingsNavGroup}><span className={workspaceStyles.settingsGroupLabel}>偏好与账号</span>
             {([{id:'general',label:'通用'},{id:'security',label:'安全与密码'},{id:'api-keys',label:'API 密钥'},{id:'topics',label:'标签'}] as const).filter(item=>item.id==='general'||item.id==='topics'&&access.allowedTypes?.includes('topic')||props.availableSettingsPanels?.includes(item.id)).map(item=><Button variant="ghost" data-workspace-nav key={item.id} aria-current={settingsOpen&&settingsPanel===item.id?'page':undefined} onClick={()=>{if(!settingsOpen)navigate('settings',null,null,item.id);else selectSettingsPanel(item.id);}}>{item.label}</Button>)}
+            </div>
+            <div role="group" aria-label="产品与反馈" className={workspaceStyles.settingsNavGroup}><span className={workspaceStyles.settingsGroupLabel}>产品与反馈</span>
             <Button variant="ghost" data-workspace-nav aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>需求池</Button>
             {settingsLinks.map(link=><a key={link.id} href={link.href} aria-current={ownerModules.path===link.href?'page':undefined}>{link.label}</a>)}
+            </div>
           </nav>}
           <div className="lo-page-heading">
             <div className="lo-heading-title">
@@ -689,6 +698,15 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             </nav>}
           {page === "overview" && (
             <>
+              {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
+                <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
+                {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
+                <div className={workspaceStyles.domainGrid}>{domains.map(domain=><section key={domain.id??'unassigned'} className={workspaceStyles.domainSection}>
+                  <div className={workspaceStyles.domainHeading}><h3>{domain.title}</h3>{!domain.loaded&&<span>领域待核对</span>}</div>
+                  {domain.projects.length>0?<ul className={workspaceStyles.domainProjects}>{domain.projects.map(project=><li key={project.id}><Button variant="ghost" data-workspace-nav className={workspaceStyles.domainProject} onClick={()=>navigate('tasks',null,project.id)}><span><strong>{project.title}</strong><span>{project.nextStep?.trim()?project.nextStep:'下一步尚未填写'}</span></span><ChevronRight size={16}/></Button></li>)}</ul>:<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无推进中项目':'暂无推进中项目'}</p>}
+                </section>)}</div>
+                {domains.length===0&&<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无领域或推进中项目':'暂无领域或推进中项目，可在事项中整理领域与项目。'}</p>}
+              </section>}
               <section className="lo-metrics" aria-label="任务指标">
                 {([
                   {label:"待办",value:metrics.pending,metric:"pending"},
@@ -751,41 +769,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                     </section>
                 )}
               </div>
-              {state.status === "ready" && (
-                  <section className="lo-panel lo-project-overview">
-                    <div className="lo-panel-heading">
-                      <h2>推进中项目</h2>
-                      <Button
-                        variant="ghost"
-                        aria-label="查看全部项目"
-                        data-workspace-nav
-                        onClick={() => navigate("projects")}
-                      >
-                        <ArrowUpRight size={18} />
-                      </Button>
-                    </div>
-                    {activeProjects.length ? (
-                      activeProjects.slice(0, 5).map((project) => (
-                        <Button
-                          variant="ghost"
-                          key={project.id}
-                          className="lo-project-line"
-                          data-workspace-nav
-                          onClick={() => navigate("tasks", null, project.id)}
-                        >
-                          <Folder size={18} />
-                          <span>{project.title}</span>
-                          <span className="lo-project-next">
-                            {project.nextStep ?? "—"}
-                          </span>
-                          <ChevronRight size={16} />
-                        </Button>
-                      ))
-                    ) : (
-                      <div className="lo-empty-compact">暂无推进中的项目</div>
-                    )}
-                  </section>
-              )}
             </>
           )}
           {(page === "tasks" || page === "inbox") && (
@@ -947,9 +930,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {settingsOpen&&<section data-settings-page className={workspaceStyles.settingsPage}>          <div className={workspaceStyles.settingsLayout}>
             <div className={`lo-settings-panel ${workspaceStyles.settingsPanel}`} data-settings-panel={settingsPanel}>
           {settingsPanel === "general" && (
-            <div className="lo-settings">
-              <AppearanceSettings/>
-              {access.authenticated === true && props.settingsContent}
+            <div className={`lo-settings ${workspaceStyles.generalSettings}`}>
+              <div className={workspaceStyles.settingSection}><AppearanceSettings/></div>
+              {access.authenticated === true && props.settingsContent&&<section className={workspaceStyles.settingSection} aria-label="账号与连接"><h2>账号与连接</h2>{props.settingsContent}</section>}
               {access.authenticated === false &&
                 access.loginAllowed === true &&
                 props.onLogin && (

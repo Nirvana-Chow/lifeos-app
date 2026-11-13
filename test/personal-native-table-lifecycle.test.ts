@@ -1,5 +1,6 @@
 import test from'node:test';import assert from'node:assert/strict';import{readFileSync}from'node:fs';import ts from'typescript';
 import * as gridEditorModule from '../src/personal-candidate/task-grid-editor.ts';
+import {tableFeatures,columnGroupingFeature,createGroupedRowModel} from '@tanstack/react-table';
 import{PersonalWorkspaceController}from'../src/personal-candidate/workspace-controller.ts';import*as editorModule from'../src/personal-candidate/editor.ts';import*as stateModule from'../src/personal-candidate/task-editor-state.ts';import*as draftModule from'../src/personal-candidate/task-cell-draft.ts';
 const secondId='33333333-3333-4333-8333-333333333333';
 const id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';const flush=async()=>{for(let i=0;i<8;i++)await new Promise<void>(r=>setImmediate(r));};
@@ -62,7 +63,7 @@ function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='gri
   const react = new Proxy({}, { get: (_, key: keyof typeof tableHooks.react) => currentHooks.react[key].bind(currentHooks.react) });
   const tableModule = load(new URL('../src/ui-review/task-grid.tsx', import.meta.url), {
     react, 'react/jsx-runtime': jsx,
-    '@tanstack/react-table': { useTable: (options: any) => { tableOptions = options; return { getRowModel: () => ({ rows: options.data.map((original: any) => ({ id: original.id, original })) }) }; } },
+    '@tanstack/react-table': { tableFeatures,columnGroupingFeature,createGroupedRowModel,useTable: (options: any) => { tableOptions = options; return { getRowModel: () => ({ rows: options.data.map((original: any) => ({ id: original.id, original })) }) }; } },
     './reui/data-grid': { DataGrid: 'grid', DataGridContainer: 'container', dataGridFeatures: {} },
     './reui/data-grid-table-virtual': { DataGridTableVirtual: 'virtual' },
     './reui/data-grid-cell-selection': { DataGridCellSelection: 'selection' },
@@ -90,7 +91,7 @@ function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='gri
     }
     if(node.type==='button'&&node.props['aria-label']?.startsWith('编辑标题：')){titleButton=node;titleButtons.set(node.props['aria-label'],node);}
     if (node.type === 'selection') node.props.apiRef.current = { focusCell() {} };
-    if (node.type === 'input' || node.type === 'select') {
+    if ((node.type === 'input' || node.type === 'select') && node.props['aria-label']?.startsWith('编辑')) {
       const key = path + '/' + node.type; visited.add(key);
       let element = dom.get(key); if (!element) { element = new Element(node.type); element.value = node.props.defaultValue ?? ''; dom.set(key, element); }
       element.className = node.props.className; element.type = node.props.type ?? '';

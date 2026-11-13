@@ -27,9 +27,15 @@
 .root > :global([data-slot="data-grid"]) { flex:1; min-height:0; }
 .root :global([data-slot="data-grid-table-viewport"]) { overscroll-behavior:contain; scroll-padding-top:48px; }
 
-.columnToolbar{position:relative;flex:none;display:flex;justify-content:flex-end;border-bottom:1px solid var(--border);padding:2px 8px;background:var(--muted)}
+.columnToolbar{position:relative;flex:none;display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding:2px 8px;background:var(--muted)}
+.groupingControl{display:flex;align-items:center;gap:8px;color:var(--muted-foreground);font-size:var(--lo-font-meta)}
+.groupingControl select{min-height:44px;max-width:100%;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit}
+.groupingControl select:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.group{display:flex;align-items:center;gap:12px;min-width:0;white-space:nowrap}
+.group strong{overflow:hidden;text-overflow:ellipsis}.group>span{flex:none;color:var(--muted-foreground);font-size:var(--lo-font-meta)}
 .columnSettings{position:absolute;top:100%;right:8px;z-index:45;width:min(340px,calc(100vw - 48px));max-height:55dvh;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--popover);color:var(--popover-foreground);box-shadow:0 8px 24px #0002}
 .columnSettings p{margin-bottom:8px;font-size:var(--lo-font-meta)}.columnSetting{display:flex;align-items:center;gap:8px}.columnSetting label{display:flex;align-items:center;gap:8px;flex:1;min-height:44px}.columnSetting label input{width:18px;height:18px;min-height:18px}.columnSetting button{min-width:44px}
 @media(min-width:1024px) and (pointer:fine){.root .table,.tableCell,.header th{font-size:14px}.header,.header th{height:36px}.row,.tableCell{height:40px}.cell,.sort,.open{min-height:32px}.input{height:32px;font-size:14px;padding:0 8px}.complete{min-width:32px;min-height:32px;font-size:20px}.columnSetting label{min-height:32px}.columnSetting button{min-width:32px}}
+@media(min-width:1024px) and (pointer:fine){.groupingControl select{min-height:32px}}
 /* Detail labels must remain one line after native sizing/reordering. */
 .root .open[data-slot="button"]{padding:0;white-space:nowrap}.open span{white-space:nowrap}
