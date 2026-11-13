@@ -21,6 +21,39 @@ test('missing private handoff fails before trust launch or body access',async()=
  await assert.rejects(fixture.withPrivateBrowserFixture(undefined,async()=>{touched=true;}),/BROWSER_PRIVATE_HANDOFF_UNAVAILABLE/);
  assert.equal(touched,false);
 });
+type ReadyNode={role:string;name?:string;level?:number;parent?:string;attributes?:Record<string,string>;visible?:boolean;enabled?:boolean};
+function readySurface(nodes:ReadyNode[]){
+ const locate=(found:ReadyNode[])=>({_apiName:'Locator',_selector:'synthetic-ready-surface',count:async()=>found.length,
+  getByRole:(role:string,options:{name?:string;exact?:boolean;level?:number}={})=>locate(nodes.filter(node=>node.parent===found[0]?.role&&node.role===role&&(!options.name||node.name===options.name)&&(!options.level||node.level===options.level))),
+  async _expect(expression:string,options:{expectedNumber?:number;expressionArg?:string;expectedText?:{string?:string}[]}){
+   const one=found.length===1;let matches:boolean,received:unknown;
+   if(expression==='to.have.count'){received=found.length;matches=received===options.expectedNumber;}
+   else if(expression==='to.be.visible'){received=one&&found[0].visible!==false;matches=received===true;}
+   else if(expression==='to.be.enabled'){received=one&&found[0].enabled!==false;matches=received===true;}
+   else if(expression==='to.have.attribute.value'){received=one?found[0].attributes?.[options.expressionArg!]:undefined;matches=one&&received===options.expectedText?.[0]?.string;}
+   else throw Error('Unsupported ready-surface assertion: '+expression);
+   return{matches,received,log:[],timedOut:!matches};
+  },
+ });
+ return{getByRole:(role:string,options:{name?:string;exact?:boolean;level?:number}={})=>locate(nodes.filter(node=>node.role===role&&(!options.name||node.name===options.name)&&(!options.level||node.level===options.level))),locator:(selector:string)=>{assert.equal(selector,'.lo-shell');return locate([{role:'shell'}]);}};
+}
+const searchReadyNodes=():ReadyNode[]=>[
+ {role:'heading',level:1,name:'搜索本人记录'},
+ {role:'search',attributes:{action:'/personal/search',method:'get'}},
+ {role:'textbox',parent:'search',name:'搜索标题与正文',attributes:{name:'q',maxlength:'240'}},
+ {role:'button',parent:'search',name:'搜索',attributes:{type:'submit'}},
+];
+test('the original route-ready oracle accepts the exact read-only search surface',async()=>{
+ const destination=fixture.privateDestinations.find(([id])=>id==='search');assert.ok(destination);
+ await fixture.readyHeading(readySurface(searchReadyNodes()) as never,destination[2]);
+});
+test('the real route-ready oracle rejects incomplete or writable search and retains the todo requirement elsewhere',async()=>{
+ const changes:((nodes:ReadyNode[])=>void)[]=[nodes=>{nodes[0].name='统一搜索';},nodes=>{nodes.splice(1,1);},nodes=>{nodes[1].attributes!.action='/personal';},nodes=>{nodes[1].attributes!.method='post';},nodes=>{nodes.splice(2,1);},nodes=>{nodes[2].enabled=false;},nodes=>{nodes[2].attributes!.name='other';},nodes=>{nodes[2].attributes!.maxlength='1000';},nodes=>{nodes[3].enabled=false;},nodes=>{nodes[3].attributes!.type='button';},nodes=>{nodes[3].parent='outside';},nodes=>{nodes.push({role:'button',name:'新建待办'});}];
+ for(const change of changes){const nodes=searchReadyNodes();change(nodes);await assert.rejects(fixture.readyHeading(readySurface(nodes) as never,'搜索本人记录'));}
+ const overview:ReadyNode[]=[{role:'heading',level:1,name:'总览'},{role:'button',name:'新建待办'}];
+ await fixture.readyHeading(readySurface(overview) as never,'总览');
+ await assert.rejects(fixture.readyHeading(readySurface(overview.slice(0,1)) as never,'总览'));
+});
 test('keyboard lifecycle diagnostics contain at most three bounded integer snapshots and no private values',()=>{
  const secret='private-keyboard-secret';
  assert.deepEqual(fixture.projectPrivateKeyboardLifecycle([511,64,128,secret]),[511,64,128]);

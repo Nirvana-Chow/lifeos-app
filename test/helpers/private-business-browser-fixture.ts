@@ -59,7 +59,7 @@ export async function withPrivateBrowserFixture<T>(handoff:PrivateBrowserHandoff
 
 // Independent literals, calibrated against Task4. Do not derive expected routes from the map under test.
 export const privateDestinations=[
- ['overview','/personal','总览'],['search','/personal/search','统一搜索'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
+ ['overview','/personal','总览'],['search','/personal/search','搜索本人记录'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings&panel=general','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
 ] as const;
 const families=[
  ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings&panel=general','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
@@ -180,6 +180,15 @@ export async function readyHeading(page:Page,heading:string){
  if(heading==='设置'){await expect(page.getByRole('heading',{level:1,name:'设置',exact:true})).toBeVisible();await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();return;}
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
  if(heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(heading==='搜索本人记录'){
+  const form=page.getByRole('search');await expect(form).toHaveCount(1);await expect(form).toBeVisible();
+  await expect(form).toHaveAttribute('action','/personal/search');await expect(form).toHaveAttribute('method','get');
+  const query=form.getByRole('textbox',{name:'搜索标题与正文',exact:true});
+  await expect(query).toBeVisible();await expect(query).toBeEnabled();await expect(query).toHaveAttribute('name','q');await expect(query).toHaveAttribute('maxlength','240');
+  const submit=form.getByRole('button',{name:'搜索',exact:true});
+  await expect(submit).toBeVisible();await expect(submit).toBeEnabled();await expect(submit).toHaveAttribute('type','submit');
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+ }
  else if(['健康','人物','财务','日程'].includes(heading)){
   // These modules are deliberately closed in the recovery fixture. Their real
   // content pages replace the former placeholders; a task action is unrelated.
