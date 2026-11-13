@@ -4,6 +4,8 @@ export type McpRuntimeConfig=Readonly<{origin:string}>;
 export type CredentialProvider=()=>Promise<string|null>;
 export type McpRuntimeOptions=McpRuntimeConfig&Readonly<{
  credentialProvider?:CredentialProvider;
+ /** Explicit trusted transport format; syntax is never an authorization decision. */
+ credentialFormat?:'api-key'|'business-oauth-jwt';
  nativeRequest?:(path:string,method:string,encoded?:string,key?:string)=>Promise<{status:number;data:Record<string,unknown>;credentialFingerprint:string}>;
  durable?:import('./native-store.mjs').DurableStore;
  /** Optional trusted-code wrapper for the existing documentation updater; never remote executable code. */

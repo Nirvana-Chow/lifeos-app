@@ -3,13 +3,13 @@ import {useEffect,useState,type FormEvent} from 'react';
 import s from './login.module.css';
 import type {LoginCapability} from '../platform/page-access';
 import {submitLogin} from './login-flow';
-export function LoginPage({capability}:{capability:LoginCapability}){const enabled=capability.enabled,ownerAlias=capability.mode==='personal'?capability.ownerAlias:undefined,[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[challenge,setChallenge]=useState(false),[backup,setBackup]=useState(false),[unknown,setUnknown]=useState(false);
+export function LoginPage({capability,oauthQuery}:{capability:LoginCapability;oauthQuery?:string}){const enabled=capability.enabled,ownerAlias=capability.mode==='personal'?capability.ownerAlias:undefined,[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[challenge,setChallenge]=useState(false),[backup,setBackup]=useState(false),[unknown,setUnknown]=useState(false);
  useEffect(()=>{setHydrated(true);},[]);
  async function login(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(!enabled||!hydrated||busy||unknown)return;
   const form=event.currentTarget,data=new FormData(form);setBusy(true);setMessage('');
   try{
-   const result=await submitLogin({personal:capability.mode==='personal',challenge,backup,email:String(data.get('email')??''),password:String(data.get('password')??''),code:String(data.get('code')??'')},fetch);
+   const result=await submitLogin({personal:capability.mode==='personal',challenge,backup,email:String(data.get('email')??''),password:String(data.get('password')??''),code:String(data.get('code')??''),oauthQuery},fetch);
    form.reset();
    if(result.kind==='redirect')window.location.replace(result.location);
    else{setChallenge(result.challenge);setUnknown(result.kind==='unknown');setMessage(result.message);}
@@ -29,7 +29,7 @@ export function LoginPage({capability}:{capability:LoginCapability}){const enabl
      <button className={s.primary}>{busy?'正在登录…':'登录'}</button>
     </fieldset></form>
     <button className={s.alternative} type="button" disabled={!hydrated||busy||unknown} onClick={()=>{setBackup(!backup);setMessage('');}}>{backup?'使用验证器动态码':'无法使用验证器？使用备用恢复码'}</button>
-    {(challenge||unknown)&&<a className={s.link} href="/login">重新开始登录</a>}
+    {(challenge||unknown)&&<a className={s.link} href={oauthQuery?'/login?oauth_query='+encodeURIComponent(oauthQuery):'/login'}>重新开始登录</a>}
    </>:<p className={s.hint}>安全入口尚未就绪，当前不能登录或保存。</p>}
    {capability.mode==='personal'&&<a className={s.link} href="/account/recover">首次设置或忘记密码</a>}
   </section>

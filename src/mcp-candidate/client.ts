@@ -35,6 +35,7 @@ export class LifeOSApiClient{
  constructor(options:McpRuntimeOptions,fetcher:typeof fetch=fetch){
   this.#config=parseMcpRuntimeConfig({origin:options.origin});
   if((typeof options.credentialProvider!=='function'&&typeof options.nativeRequest!=='function')||options.beforeUse!==undefined&&typeof options.beforeUse!=='function')throw Error('MCP_CONFIG_INVALID');
+  if(options.credentialFormat!==undefined&&!['api-key','business-oauth-jwt'].includes(options.credentialFormat))throw Error('MCP_CONFIG_INVALID');
   if(options.nativeRequest&&(!options.durable||!options.beforeUse||options.origin!=='https://lifeos.nirvanachow.com'))throw Error('NATIVE_HOST_INCOMPLETE');
   this.#runtime=Object.freeze({...options});this.#fetch=fetcher;
  }
@@ -45,7 +46,7 @@ export class LifeOSApiClient{
   if(encoded!==undefined&&Buffer.byteLength(encoded)>requestLimit)throw new ApiError(400,'REQUEST_TOO_LARGE');
   if(this.#runtime.nativeRequest){const result=await this.#runtime.nativeRequest(path,method,encoded,key);if(result.credentialFingerprint!==this.#runtime.durable!.binding.credentialFingerprint)throw new ApiError(403,'CREDENTIAL_BINDING_CHANGED');if(result.status<200||result.status>=300)throw new ApiError(result.status,result.status===401?'AUTH_REQUIRED':result.status===403?'ACCESS_DENIED':'API_ERROR');return result;}
   let token:unknown;try{token=await this.#runtime.credentialProvider!();}catch{throw new ApiError(401,'CREDENTIAL_UNAVAILABLE');}
-  if(typeof token!=='string'||!/^[-A-Za-z0-9_]{1,256}$/.test(token))throw new ApiError(401,'CREDENTIAL_UNAVAILABLE');
+  if(typeof token!=='string'||!(this.#runtime.credentialFormat==='business-oauth-jwt'?token.length<=8192&&/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token):/^[-A-Za-z0-9_]{1,256}$/.test(token)))throw new ApiError(401,'CREDENTIAL_UNAVAILABLE');
   const secret=token;
   let response:Response;
   try{response=await this.#fetch(target.href,{method,redirect:'manual',credentials:'omit',cache:'no-store',signal:AbortSignal.timeout(30000),headers:{authorization:'Bearer '+secret,accept:'application/json',...(encoded===undefined?{}:{'content-type':'application/json'}),...(key?{'idempotency-key':key}:{})},body:encoded});}

@@ -78,6 +78,17 @@ export class PostgresPlatformRepository implements ClassificationRepository{
  private async transactionImpl<T>(owner:string,key:string,fn:(tx:Transaction,client:SqlClient)=>Promise<T>,commandLock=JSON.stringify([owner,key])):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
+  const lockGrant=async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
+    if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
+    // SQL acquires the OAuth statement gate before its client/consent/binding
+    // rows, then the existing grant row. Never open a second pool from here.
+    if(grant.oauthFence){
+     const oauth=await client.query('SELECT lifeos_agent.assert_oauth_business_grant($1,$2,$3,$4::jsonb,$5::text[],$6::text) AS allowed',[grant.grantId,owner,grant.spaceId,JSON.stringify(grant.oauthFence),requiredScopes,grant.operationId??null]);
+     if(oauth.rows[0]?.allowed!==true)return false;
+    }
+    const result=await client.query(this.businessFeatures?.businessDataPolicy?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(this.businessFeatures?.businessDataPolicy?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);
+    return result.rows[0]?.allowed===true;
+  };
   const tx:Transaction={
    ...(this.requirementEventsEnabled?{
     assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding),
@@ -86,11 +97,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
     admitRequirementExecution:(binding:import('../requirement-events/admission.ts').ExecutionAdmissionBinding)=>admitPostgresExecution(client,owner,binding),
    }:{}),
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
-   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
-    if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
-    const result=await client.query(this.businessFeatures?.businessDataPolicy?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(this.businessFeatures?.businessDataPolicy?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);
-    return result.rows[0]?.allowed===true;
-   }}:{}),
+   lockOAuthAgentGrant:(grant,scopes)=>grant.oauthFence?lockGrant(grant,scopes):Promise.resolve(false),
+   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:lockGrant}:{}),
    ...(this.agentWriteFenceEnabled?{lockAgentTodoWriteGrant:async(grant:Readonly<{grantId:string;ownerId:string;spaceId:string}>)=>{
     if(grant.ownerId!==owner)return false;
     const result=await client.query('SELECT lifeos_agent.assert_todo_write_grant($1,$2,$3) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId]);
