@@ -1,4 +1,4 @@
-// Static review interface. Real review files are imported locally by the browser.
+// Owner review interface: same-origin saved snapshots, with optional local previews.
 export const reviewDocument = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -9,8 +9,10 @@ export const reviewDocument = `<!doctype html>
 <title>存储审核</title>
 <style>
 :root{color-scheme:light;--ink:#18253a;--muted:#50627a;--surface:#fff;--paper:#f1f5fa;--line:#cbd6e3;--accent:#234cc0;--navy:#192c50;--keep:#135840;--keep-bg:#e6f5ec;--trash:#8a3625;--trash-bg:#fff0e9;--defer:#624500;--defer-bg:#fff5cf;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);line-height:1.55}.wrap{width:min(1080px,calc(100% - 48px));margin:auto}.mast{background:var(--navy);color:#fff;padding:40px 0 34px;border-bottom:6px solid #8ba8f7}.mast .wrap{display:grid;grid-template-columns:1fr minmax(230px,310px);gap:32px;align-items:end}.eyebrow{margin:0 0 5px;font-size:.85rem;color:#c9d8fa}.mast h1{font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.05em;line-height:1.08;margin:0 0 12px}.mast p{margin:0;max-width:55ch}.mast .summary{margin-top:10px;color:#dce6fc;white-space:pre-wrap;overflow-wrap:anywhere}.progress-box{padding:14px 17px;border:1px solid #6c83b2;border-radius:9px}.progress-box strong{font-size:1.3rem;font-variant-numeric:tabular-nums}.progress-box span{display:block;color:#dce6fc;font-size:.86rem}progress{display:block;width:100%;margin-top:8px;accent-color:#9ab5ff;height:9px}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:18px 0 12px}.search{flex:1 1 230px}.filter{flex:0 1 166px}.controls label{display:block;color:var(--muted);font-size:.83rem;margin-bottom:4px}.controls input,.controls select,button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:7px;background:var(--surface);min-height:44px;padding:7px 12px}.controls input,.controls select{width:100%}button{cursor:pointer}button:hover{border-color:var(--accent);color:var(--accent)}button:disabled{cursor:default;opacity:.6}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #3d6ee4;outline-offset:3px}.actions{display:flex;gap:7px;flex-wrap:wrap}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}.primary:hover{background:#173d9c;color:#fff}.meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;border-bottom:1px solid var(--line);padding-bottom:11px;color:var(--muted);font-size:.88rem}.note{min-height:1.6rem;margin:10px 0;color:var(--muted);font-size:.9rem}.group{margin:0 0 24px}.group h2{font-size:1rem;margin:0 0 7px;color:var(--navy);overflow-wrap:anywhere}.rows{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;padding:15px 16px;align-items:start;border-left:4px solid transparent}.row+.row{border-top:1px solid var(--line)}.row[data-decision=keep]{border-left-color:#28795c}.row[data-decision=trash]{border-left-color:#b55742}.row[data-decision=defer]{border-left-color:#a4771d}.row[data-status=protected],.row[data-status=processed]{background:#f8fafd}.icon{display:grid;place-items:center;height:36px;width:36px;border-radius:8px;color:var(--navy);background:#e9effb}.icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.rowhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 4px}.id{color:var(--accent);font-size:.82rem;font-weight:700}.row h3{font-size:1rem;line-height:1.42;margin:0;overflow-wrap:anywhere}.status{font-size:.76rem;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 7px;white-space:nowrap}.body,.question{overflow-wrap:anywhere;white-space:pre-wrap;margin:6px 0 0;color:var(--muted);font-size:.9rem}.question{color:var(--ink)}details{margin-top:5px}summary{cursor:pointer;color:var(--accent);font-size:.85rem;min-height:30px;align-content:center}.choices{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.choices label{position:relative;cursor:pointer}.choices input{position:absolute;opacity:0;width:1px;height:1px}.choices span{display:grid;place-items:center;padding:6px 9px;min-height:38px;background:#fff;border:1px solid var(--line);border-radius:6px;font-size:.84rem;white-space:nowrap}.choices input:focus-visible+span{outline:3px solid #3d6ee4;outline-offset:2px}.choices input[value=keep]:checked+span{color:var(--keep);background:var(--keep-bg);border-color:var(--keep);font-weight:700}.choices input[value=trash]:checked+span{color:var(--trash);background:var(--trash-bg);border-color:var(--trash);font-weight:700}.choices input[value=defer]:checked+span{color:var(--defer);background:var(--defer-bg);border-color:var(--defer);font-weight:700}.empty{padding:30px 18px;background:#fff;border:1px dashed var(--line);border-radius:8px;color:var(--muted)}footer{padding:6px 0 32px;color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}dialog{width:min(550px,calc(100% - 32px));border:1px solid var(--line);border-radius:10px;padding:20px;color:var(--ink);background:var(--surface)}dialog::backdrop{background:#192c5088}dialog textarea{display:block;width:100%;min-height:180px;margin:12px 0;border:1px solid var(--line);font:inherit;padding:8px}
-@media(max-width:720px){.wrap{width:calc(100% - 28px)}.mast{padding:26px 0 22px}.mast .wrap{grid-template-columns:1fr;gap:15px}.controls{gap:8px}.search{flex-basis:52%}.filter{flex:1 1 110px}.actions{width:100%}.row{grid-template-columns:32px minmax(0,1fr);padding:12px 10px;gap:8px}.icon{width:30px;height:30px}.choices{grid-column:2}.choices span{min-height:44px}.row h3{font-size:.96rem}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);line-height:1.55}.wrap{width:min(1480px,calc(100% - 48px));margin:auto}.mast{background:var(--navy);color:#fff;padding:40px 0 34px;border-bottom:6px solid #8ba8f7}.mast .wrap{display:grid;grid-template-columns:1fr minmax(230px,310px);gap:32px;align-items:end}.eyebrow{margin:0 0 5px;font-size:.85rem;color:#c9d8fa}.mast h1{font-size:clamp(2rem,5vw,3.2rem);letter-spacing:-.05em;line-height:1.08;margin:0 0 12px}.mast p{margin:0;max-width:55ch}.mast .summary{margin-top:10px;color:#dce6fc;white-space:pre-wrap;overflow-wrap:anywhere}.progress-box{padding:14px 17px;border:1px solid #6c83b2;border-radius:9px}.progress-box strong{font-size:1.3rem;font-variant-numeric:tabular-nums}.progress-box span{display:block;color:#dce6fc;font-size:.86rem}progress{display:block;width:100%;margin-top:8px;accent-color:#9ab5ff;height:9px}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:18px 0 12px}.search{flex:1 1 230px}.filter{flex:0 1 166px}.controls label{display:block;color:var(--muted);font-size:.83rem;margin-bottom:4px}.controls input,.controls select,button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:7px;background:var(--surface);min-height:44px;padding:7px 12px}.controls input,.controls select{width:100%}button{cursor:pointer}button:hover{border-color:var(--accent);color:var(--accent)}button:disabled{cursor:default;opacity:.6}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #3d6ee4;outline-offset:3px}.actions{display:flex;gap:7px;flex-wrap:wrap}.primary{background:var(--accent);color:#fff;border-color:var(--accent)}.primary:hover{background:#173d9c;color:#fff}.meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px;border-bottom:1px solid var(--line);padding-bottom:11px;color:var(--muted);font-size:.88rem}.note{min-height:1.6rem;margin:10px 0;color:var(--muted);font-size:.9rem}.group{margin:0 0 24px}.group h2{font-size:1rem;margin:0 0 7px;color:var(--navy);overflow-wrap:anywhere}.rows{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;padding:15px 16px;align-items:start;border-left:4px solid transparent}.row+.row{border-top:1px solid var(--line)}.row[data-decision=keep]{border-left-color:#28795c}.row[data-decision=trash]{border-left-color:#b55742}.row[data-decision=defer]{border-left-color:#a4771d}.row[data-status=protected],.row[data-status=processed]{background:#f8fafd}.icon{display:grid;place-items:center;height:36px;width:36px;border-radius:8px;color:var(--navy);background:#e9effb}.icon svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.rowhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 4px}.id{color:var(--accent);font-size:.82rem;font-weight:700}.row h3{font-size:1rem;line-height:1.42;margin:0;overflow-wrap:anywhere}.status{font-size:.76rem;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 7px;white-space:nowrap}.body,.question{overflow-wrap:anywhere;white-space:pre-wrap;margin:6px 0 0;color:var(--muted);font-size:.9rem}.question{color:var(--ink)}details{margin-top:5px}summary{cursor:pointer;color:var(--accent);font-size:.85rem;min-height:30px;align-content:center}.choices{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.choices label{position:relative;cursor:pointer}.choices input{position:absolute;opacity:0;width:1px;height:1px}.choices span{display:grid;place-items:center;padding:6px 9px;min-height:38px;background:#fff;border:1px solid var(--line);border-radius:6px;font-size:.84rem;white-space:nowrap}.choices input:focus-visible+span{outline:3px solid #3d6ee4;outline-offset:2px}.choices input[value=keep]:checked+span{color:var(--keep);background:var(--keep-bg);border-color:var(--keep);font-weight:700}.choices input[value=trash]:checked+span{color:var(--trash);background:var(--trash-bg);border-color:var(--trash);font-weight:700}.choices input[value=defer]:checked+span{color:var(--defer);background:var(--defer-bg);border-color:var(--defer);font-weight:700}.empty{padding:30px 18px;background:#fff;border:1px dashed var(--line);border-radius:8px;color:var(--muted)}footer{padding:6px 0 32px;color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}dialog{width:min(550px,calc(100% - 32px));border:1px solid var(--line);border-radius:10px;padding:20px;color:var(--ink);background:var(--surface)}dialog::backdrop{background:#192c5088}dialog textarea{display:block;width:100%;min-height:180px;margin:12px 0;border:1px solid var(--line);font:inherit;padding:8px}
+.pending-input{margin:12px 0;padding:16px;border:1px solid #a4771d;border-radius:8px;background:var(--defer-bg)}.pending-input[hidden]{display:none}.pending-input p{margin:6px 0 12px;overflow-wrap:anywhere}.ledger-head{display:grid;grid-template-columns:minmax(230px,1fr) minmax(280px,1.4fr) 260px;gap:24px;padding:12px 16px;color:var(--muted);font-size:.82rem}.group h2{padding:12px 0 2px}.row{grid-template-columns:36px minmax(0,1fr) 260px;gap:12px}.row-content{display:grid;grid-template-columns:minmax(160px,.8fr) minmax(240px,1.4fr);gap:24px}.rowhead{display:block}.rowhead .id{display:block;margin-bottom:4px}.rowhead .status{display:inline-block;margin-top:6px}.body{margin-top:0}.choices span{min-height:44px}.choices button{font-size:.8rem}.readonly{color:var(--muted);font-size:.85rem}.meta a{align-self:center}.note{padding:8px 0}.meta[data-sync=error]{color:var(--trash)}
+@media(max-width:1100px){.ledger-head{display:none}.row-content{display:block}.rowhead{display:flex}.rowhead .id{margin:0}.rowhead .status{margin:0}.body{margin-top:6px}.row{grid-template-columns:36px minmax(0,1fr) 230px}}
+@media(max-width:720px){.wrap{width:calc(100% - 28px)}.mast{padding:26px 0 22px}.mast .wrap{grid-template-columns:1fr;gap:15px}.controls{gap:8px}.search{flex-basis:52%}.filter{flex:1 1 110px}.actions{width:100%}.row{grid-template-columns:32px minmax(0,1fr);padding:12px 10px;gap:8px}.icon{width:30px;height:30px}.choices,.readonly{grid-column:2}.choices span{min-height:44px}.row h3{font-size:.96rem}}
 @media(max-width:370px){.actions button{padding-inline:8px}.choices span{padding-inline:6px}.row{grid-template-columns:26px minmax(0,1fr)}.icon{width:26px;height:26px}}
 </style>
 </head>
@@ -19,13 +21,16 @@ export const reviewDocument = `<!doctype html>
 <main class="wrap">
 <div class="controls" aria-label="清单工具">
 <div class="search"><label for="search">搜索资料</label><input id="search" type="search" placeholder="输入编号、名称或关键词" autocomplete="off"></div>
-<div class="filter"><label for="filter">筛选</label><select id="filter"><option value="all">全部资料</option><option value="pending">尚未决定</option><option value="keep">留</option><option value="trash">删除候选</option><option value="defer">待定</option><option value="processed">已处理／受保护</option></select></div>
+<div class="filter"><label for="filter">筛选</label><select id="filter"><option value="all">全部资料</option><option value="pending">尚未决定</option><option value="selected">已选决定</option><option value="keep">留</option><option value="trash">删除候选</option><option value="defer">暂缓</option><option value="processed">已处理／受保护</option></select></div>
+<div class="filter"><label for="group-filter">分组</label><select id="group-filter"><option value="">全部分组</option></select></div>
 <div class="actions"><button type="button" id="compact" aria-pressed="false">精简视图</button><button type="button" id="import">导入清单</button><button type="button" id="copy" disabled>复制编号</button><button type="button" class="primary" id="export" disabled>导出决定</button></div>
 <input type="file" id="file" accept=".csv,.json,text/csv,application/json" hidden>
 </div>
 <div class="meta"><span id="sync-state">本机预览</span><div class="actions"><a href="/login" id="sync-login" hidden>重新登录</a><button type="button" id="open-server">打开 LifeOS 清单</button><button type="button" id="save-server" disabled>保存清单到 LifeOS</button></div></div>
 <div class="meta"><span id="visible"></span><span id="counts"></span></div>
 <p class="note" id="notice" role="status" aria-live="polite"></p>
+<section class="pending-input" id="pending-input" hidden aria-labelledby="pending-title"><strong id="pending-title">待确认的选择</strong><p id="pending-description"></p><div class="actions"><button type="button" id="retry-decision">确认后重试保存</button><button type="button" id="discard-decision">放弃本次输入</button></div></section>
+<div class="ledger-head" aria-hidden="true"><span>编号／资料名称</span><span>说明与空间依据</span><span>审核决定</span></div>
 <div id="list"></div>
 <footer><span id="revision"></span><br>审核选项只记录决定，不会删除文件。可导出 JSON 留存。</footer>
 </main>
@@ -33,7 +38,7 @@ export const reviewDocument = `<!doctype html>
 <script type="application/json" id="review-data">{"schema":1,"revision":"empty","items":[]}</script>
 <script>
 'use strict';
-const DECISIONS = Object.freeze({keep:'留',trash:'删除候选',defer:'待定'});
+const DECISIONS = Object.freeze({keep:'留',trash:'删除候选',defer:'暂缓'});
 const KINDS = Object.freeze({file:'文件',folder:'文件夹',media:'媒体',app:'应用'});
 const STATUS = Object.freeze({pending:'待审',processed:'已处理',protected:'受保护'});
 const OWN = (value,key) => Object.prototype.hasOwnProperty.call(value,key);
@@ -114,10 +119,10 @@ function readChoices(raw,review) {
 function serialize(review, choices) {
   return {schema:1,revision:review.revision,choices:review.items.filter(i=>i.status==='pending' && choices.has(i.id)).map(i=>({id:i.id,decision:choices.get(i.id)}))};
 }
-function matches(item,query,filter,choices) {
+function matches(item,query,filter,choices,group="") {
   const decision = choices.get(item.id);
-  const statusMatch = filter === 'all' || (filter === 'pending' && item.status === 'pending' && !decision) || (filter === 'processed' && item.status !== 'pending') || (OWN(DECISIONS,filter) && item.status === 'pending' && decision === filter);
-  return statusMatch && (!query || [item.id,item.title,item.group,item.body,item.question,KINDS[item.kind]].some(v=>v.toLowerCase().includes(query)));
+  const statusMatch = filter === 'all' || (filter === 'selected' && item.status === 'pending' && !!decision) || (filter === 'pending' && item.status === 'pending' && !decision) || (filter === 'processed' && item.status !== 'pending') || (OWN(DECISIONS,filter) && item.status === 'pending' && decision === filter);
+  return (!group || (item.group || '资料清单') === group) && statusMatch && (!query || [item.id,item.title,item.group,item.body,item.question,KINDS[item.kind]].some(v=>v.toLowerCase().includes(query)));
 }
 const byId = id => document.getElementById(id);
 const make = (tag, className, value) => {
@@ -146,6 +151,7 @@ function icon(kind) {
 }
 const REVIEW_API = '/api/platform/personal/storage-review';
 let review, choices = new Map(), compact = false;
+let pendingDecision = null, syncStatus = 'saved';
 let remote, synced = false, busy = false, uncertain = false, localSaved = true, sessionDenied = false;
 function announce(text) { byId('notice').textContent = text; }
 function useReview(next, snapshot, resetFilters=true) {
@@ -169,6 +175,13 @@ function useReview(next, snapshot, resetFilters=true) {
       }
     }
   }
+  const selectedGroup = resetFilters ? '' : byId('group-filter').value;
+  byId('group-filter').replaceChildren(make('option','','全部分组'));
+  byId('group-filter').firstChild.value = '';
+  for (const group of new Set(review.items.map(item=>item.group || '资料清单'))) {
+    const option = make('option','',group); option.value = group; byId('group-filter').append(option);
+  }
+  byId('group-filter').value = selectedGroup;
   byId('summary').textContent = review.context.summary;
   byId('summary').hidden = !review.context.summary;
   byId('revision').textContent = '清单版本 ' + review.revision;
@@ -202,10 +215,19 @@ function syncControls() {
   byId('open-server').disabled = busy;
   byId('save-server').disabled = busy || synced || uncertain || remote === undefined || !review.items.length;
   byId('sync-login').hidden = !sessionDenied;
-  byId('import').disabled = busy;
-  byId('file').disabled = busy;
-  byId('sync-state').textContent = (synced ? 'LifeOS 已保存清单' : '本机预览') + (uncertain ? ' · 等待读回' : '');
-  for (const input of byId('list').querySelectorAll('.choices input,.choices button')) input.disabled = !canEdit();
+  byId('import').disabled = busy || !!pendingDecision;
+  byId('file').disabled = busy || !!pendingDecision;
+  byId('sync-state').textContent = (synced ? ({saving:'LifeOS 清单 · 正在保存并读回',saved:'LifeOS 已保存清单',error:'LifeOS 清单 · 保存未确认'}[syncStatus]) : '本机预览') + (uncertain ? ' · 请先重新读回' : '');
+  byId('sync-state').parentElement.dataset.sync = syncStatus;
+  const pending = pendingDecision;
+  byId('pending-input').hidden = !pending || !synced;
+  if (pending && synced) {
+    const latest = choices.get(pending.id);
+    byId('pending-description').textContent = pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。请核对后重试或放弃；本次输入仅保留在当前页面。';
+    byId('retry-decision').disabled = busy || uncertain || !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending');
+    byId('discard-decision').disabled = busy;
+  }
+  for (const input of byId('list').querySelectorAll('.choices input,.choices button')) input.disabled = !canEdit() || !!pendingDecision;
 }
 const isSessionDenial = error => error?.status === 401 || error?.status === 403;
 function hideDeniedServerReview() {
@@ -231,7 +253,8 @@ async function openServer(automatic=false) {
     sessionDenied = false;
     if (remote) {
       useReview(remote.checklist,remote);
-      announce('已打开 LifeOS 清单和服务器决定。');
+      syncStatus = pendingDecision ? 'error' : 'saved';
+      announce(pendingDecision ? '已读回最新决定，请核对待确认的输入。' : '已打开 LifeOS 清单和服务器决定。');
     } else {
       announce('LifeOS 暂无保存的清单。可导入并保存，也可仅在本机审核。');
     }
@@ -245,6 +268,7 @@ async function openServer(automatic=false) {
 }
 async function writeServer(method,body,match) {
   busy = true;
+  syncStatus = 'saving';
   syncControls();
   announce('正在保存并读回 LifeOS…');
   let failure;
@@ -256,6 +280,8 @@ async function writeServer(method,body,match) {
     uncertain = false;
     sessionDenied = false;
     const agrees = fresh && match(fresh);
+    syncStatus = agrees ? 'saved' : 'error';
+    if (agrees) pendingDecision = null;
     if (fresh && (synced || agrees)) useReview(fresh.checklist,fresh,false);
     if (agrees) {
       announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : '决定已保存，并已读回 LifeOS。');
@@ -265,6 +291,7 @@ async function writeServer(method,body,match) {
       announce('已读回 LifeOS，但未确认本次保存。请核对后重试。');
     }
   } catch (error) {
+    syncStatus = 'error';
     if (isSessionDenial(error) || isSessionDenial(failure)) hideDeniedServerReview();
     else {
       uncertain = true;
@@ -296,6 +323,7 @@ async function choose(item,decision) {
   if (synced) {
     const expectedRevision = remote.revision;
     const checklistRevision = review.revision;
+    pendingDecision = {id:item.id,decision,checklistRevision};
     await writeServer('PATCH',{expectedRevision,checklistRevision,id:item.id,decision},snapshot=>
       snapshot.revision>expectedRevision && snapshot.checklist.revision===checklistRevision &&
       (snapshot.decisions.find(row=>row.id===item.id)?.decision ?? null)===decision);
@@ -324,14 +352,14 @@ function metrics(shown) {
   byId('progress-text').textContent = choices.size + ' / ' + total;
   byId('progress').max = total || 1;
   byId('progress').value = choices.size;
-  byId('counts').textContent = '留 '+n.keep+' · 删除候选 '+n.trash+' · 待定 '+n.defer;
+  byId('counts').textContent = '留 '+n.keep+' · 删除候选 '+n.trash+' · 暂缓 '+n.defer;
   byId('visible').textContent = '显示 '+shown+' / '+review.items.length+' 项';
   byId('copy').disabled = byId('export').disabled = !choices.size;
 }
 function render() {
   const query = byId('search').value.trim().toLowerCase();
   const filter = byId('filter').value;
-  const shown = review.items.filter(i=>matches(i,query,filter,choices));
+  const shown = review.items.filter(i=>matches(i,query,filter,choices,byId('group-filter').value));
   const parent = byId('list');
   parent.replaceChildren();
   metrics(shown.length);
@@ -359,7 +387,7 @@ function render() {
       row.dataset.status = item.status;
       if (decision) row.dataset.decision = decision;
       row.append(icon(item.kind));
-      const content = make('div');
+      const content = make('div','row-content');
       const head = make('div','rowhead');
       const heading = make('h3','',item.title);
       heading.id = 'item-title-' + index;
@@ -397,6 +425,8 @@ function render() {
           buttons.append(clear);
         }
         row.append(buttons);
+      } else {
+        row.append(make('span','readonly',STATUS[item.status]+' · 只读'));
       }
       rows.append(row);
       index++;
@@ -407,6 +437,19 @@ function render() {
 }
 byId('search').addEventListener('input',render);
 byId('filter').addEventListener('change',render);
+byId('group-filter').addEventListener('change',render);
+byId('discard-decision').addEventListener('click',()=>{
+  if (busy) return; pendingDecision = null; syncStatus = uncertain ? 'error' : 'saved'; render(); announce(uncertain ? '已放弃本次输入，保存结果仍需重新读回确认。' : '已放弃本次输入，当前显示最近读回的服务器决定。');
+});
+byId('retry-decision').addEventListener('click',()=>{
+  if (!pendingDecision || !canEdit() || review.revision !== pendingDecision.checklistRevision) return;
+  const pending = pendingDecision;
+  const item = review.items.find(item=>item.id===pending.id && item.status==='pending');
+  if (!item) return;
+  pendingDecision = null;
+  if ((choices.get(item.id) ?? null) === pending.decision) {syncStatus = 'saved'; render(); announce('读回的决定已与本次输入一致。');return;}
+  void choose(item,pending.decision);
+});
 byId('compact').addEventListener('click',()=>{
   compact = !compact;
   byId('compact').setAttribute('aria-pressed',String(compact));
