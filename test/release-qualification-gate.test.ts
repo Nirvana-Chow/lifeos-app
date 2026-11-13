@@ -161,8 +161,30 @@ test('stable latest indexes close without sleeping and are independently reread'
 test('native glob scope matches every declared positive visual path, with literal behavioral boundaries',()=>{
  const workflow=readFileSync(new URL('../.github/workflows/visual-qualification.yml',import.meta.url),'utf8');const section=workflow.split('    paths:\n')[1]!.split('  workflow_dispatch:')[0]!;
  const declared=[...section.matchAll(/^      - '([^']+)'$/gm)].map(m=>m[1]);assert.deepEqual([...gate.VISUAL_PATHS],declared);
- for(const path of ['app/page.tsx','app/nested/theme.css','components/button.ts','src/cooking/detail.tsx','src/cooking/log-workbench.module.css','test/cooking-browser.integration.test.ts','test/helpers/personal-synthetic-bootstrap.ts','test/helpers/task-grid-performance-fixture.ts','test/helpers/auth-theme-fixture-lifecycle.ts','scripts/synthetic-rendered-qualification.ts','scripts/client-bundle-evidence.mjs','scripts/attach-vtable-benchmark.py','scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts','.github/workflows/visual-qualification.yml'])assert.equal(gate.visualPathsApply([path]),true,path);
- for(const path of ['docs/readme.md','src/platform/auth.ts','scripts/release-qualification.ts','db/001.sql','test/ordinary.test.ts'])assert.equal(gate.visualPathsApply([path]),false,path);
+ for(const path of ['app/page.tsx','app/nested/theme.css','components/button.ts','src/cooking/detail.tsx','src/cooking/log-workbench.module.css','test/cooking-browser.integration.test.ts','test/helpers/personal-synthetic-bootstrap.ts','test/helpers/task-grid-performance-fixture.ts','test/helpers/auth-theme-fixture-lifecycle.ts','scripts/synthetic-rendered-qualification.ts','scripts/release-qualification.ts','scripts/client-bundle-evidence.mjs','scripts/attach-vtable-benchmark.py','scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts','.github/workflows/visual-qualification.yml'])assert.equal(gate.visualPathsApply([path]),true,path);
+ for(const path of ['docs/readme.md','src/platform/auth.ts','db/001.sql','test/ordinary.test.ts'])assert.equal(gate.visualPathsApply([path]),false,path);
+});
+
+test('the two exact OAuth metadata routes are legal without scheduling a metadata-only visual run',()=>{
+ const paths=['app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts','app/.well-known/oauth-protected-resource/[[...resource]]/route.ts'];
+ for(const path of paths)assert.equal(gate.visualPathsApply([path]),false,path);
+ assert.equal(gate.visualPathsApply(paths),false);
+ assert.equal(gate.visualPathsApply([...paths,'src/business-mcp-oauth/panel.tsx']),true);
+});
+
+test('actual metadata-only push is nonvisual and OAuth UI in the same push requires visual evidence',()=>{
+ const f=fixture();try{
+  f.put('app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts','synthetic metadata');
+  f.put('app/.well-known/oauth-protected-resource/[[...resource]]/route.ts','synthetic metadata');
+  const metadata=f.commit();assert.deepEqual(gate.readVisualScope(f.context(metadata),f.directory),{required:false,reason:'push-paths-not-matched'});
+  f.put('src/business-mcp-oauth/panel.tsx','synthetic UI');const ui=f.commit();assert.deepEqual(gate.readVisualScope(f.context(ui),f.directory),{required:true,reason:'push-paths-match'});
+ }finally{f.close();}
+});
+
+test('a gate-source-only push requires its own visual qualification',()=>{
+ const f=fixture();try{
+  f.put('scripts/release-qualification.ts','synthetic gate fix');const head=f.commit();assert.deepEqual(gate.readVisualScope(f.context(head),f.directory),{required:true,reason:'push-paths-match'});
+ }finally{f.close();}
 });
 test('real pushed Git scope includes added deleted and earlier multicommit UI changes',()=>{
  const f=fixture();try{
@@ -192,5 +214,10 @@ test('--classify does not read visual event scope or wait on other workflows',()
 });
 
 test('native glob ambiguity on hidden path segments is unconfirmed, never irrelevant',()=>{
- for(const path of ['components/.hidden.tsx','src/.hidden/view.tsx','components/.github/view.tsx','../src/view.tsx','/src/view.tsx','src\\view.tsx'])assert.throws(()=>gate.visualPathsApply([path]),/VISUAL_SCOPE_UNCONFIRMED/);
+ for(const path of ['components/.hidden.tsx','src/.hidden/view.tsx','components/.github/view.tsx','../src/view.tsx','/src/view.tsx','src\\view.tsx',
+  'app/.well-known/other/route.ts','app/.well-known/oauth-authorization-server/route.ts','app/.well-known/oauth-authorization-server/[[...issuer]]/page.tsx',
+  'app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts/extra','app/.well-known/oauth-protected-resource/[...resource]/route.ts',
+  'app/.well-known/oauth-protected-resource/[[...resource]]/route.tsx','app/.well-known/.hidden/route.ts','app/.well-known/oauth-protected-resource/[[...resource]]//route.ts',
+  'app/.well-known/oauth-protected-resource/../[[...resource]]/route.ts','App/.well-known/oauth-protected-resource/[[...resource]]/route.ts',
+ ])assert.throws(()=>gate.visualPathsApply([path]),/VISUAL_SCOPE_UNCONFIRMED/);
 });
