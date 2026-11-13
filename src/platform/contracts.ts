@@ -19,6 +19,8 @@ export interface Transaction {
  /** Serialize deterministic identities even before the first record exists. */
  lockRecordIdentity?(kind:Kind,id:string):Promise<void>;
  lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
+ /** OAuth keeps its current authorization and original grant on this connection. */
+ lockOAuthAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
  /** Agent-only capability, held until this same transaction ends. */
  lockAgentTodoWriteGrant?(grant: Readonly<{grantId:string;ownerId:string;spaceId:string}>):Promise<boolean>;
  /** Nonlocking discovery on this transaction's connection. Decisions must use

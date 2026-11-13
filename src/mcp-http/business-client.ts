@@ -54,7 +54,7 @@ export class HttpBusinessClient{
  constructor(origin:string,token:string,dispatch:BusinessDispatcher,signal:AbortSignal){
   this.origin=origin;this.token=token;
   this.transport=inProcessApiFetch(origin,token,dispatch,signal);
-  this.api=new LifeOSApiClient({origin,credentialProvider:async()=>token},this.transport);
+  this.api=new LifeOSApiClient({origin,credentialProvider:async()=>token,credentialFormat:token.includes('.')?'business-oauth-jwt':'api-key'},this.transport);
  }
  async discover():Promise<CapabilityCatalog>{const catalog=await this.api.discover();return{apiVersion:catalog.apiVersion,operations:catalog.operations.filter(operation=>isBusinessMcpOperation(operation.id))};}
  private async readback(operation:Operation,args:Record<string,unknown>,data:Record<string,unknown>){
