@@ -11,6 +11,8 @@ import {personalReferences} from './business.ts';
 import {lockPersonalRecords,personalRecordLockOrder} from './personal-record-locks.ts';
 import {classificationCanonical,classificationDigest,classificationPlanDigest,classificationBindingsDigest,classificationNoOp,decodeChanges,decodePlan,decodeApproval,decodeReceipt,assertApprovalMatchesPlan,type ClassificationChange,type ClassificationPlan,type ClassificationPreview,type ClassificationApproval,type ClassificationResult,type ClassificationReview} from './classification-contracts.ts';
 import {assertReceiptMatchesPlan} from './classification-postgres.ts';
+import {assertClassificationOAuthProducer,classificationOAuthProducer,isOAuthProducerRevision} from './classification-oauth.ts';
+import {sameOAuthFence,type OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
 const readScopes:readonly AgentScope[]=['todo:read','organization:read'];
 const commitScopes:readonly AgentScope[]=['todo:read','todo:write','organization:read'];
 const fail=(status:number,code:string):never=>{throw new PlatformError(status,code,'分类操作未完成，请保留原请求并重新核对。');};
@@ -37,15 +39,26 @@ export class ClassificationService {
   if(actor.kind==='agent-grant'&&plan&&actor.grantId!==plan.grantId)return fail(403,'CLASSIFICATION_AUTHORITY');
   const grantId=plan?plan.grantId:actor.kind==='agent-grant'?actor.grantId:null;
   if(grantId){
-   const binding=actor.kind==='agent-grant'?actor:await this.options.authority.currentProducerBinding(grantId);
+   const producerFence=plan?await this.producerFence(tx,plan):actor.kind==='agent-grant'?actor.oauthFence:undefined;
+   if(plan&&actor.kind==='agent-grant'&&!sameOAuthFence(actor.oauthFence,producerFence))return fail(403,'CLASSIFICATION_AUTHORITY');
+   const binding=actor.kind==='agent-grant'?actor:await this.options.authority.currentProducerBinding(grantId,producerFence);
    if(!binding)return fail(403,'CLASSIFICATION_AUTHORITY');
    await assertAgentGrant(tx,binding,commit&&actor.kind==='agent-grant'?commitScopes:readScopes,commit&&actor.kind==='agent-grant'?'commitTodoClassification':'previewTodoClassification');
   }
  }
- private async producer(grantId:string|null){if(!grantId)return null;const revision=await this.options.authority.currentProducerRevision(grantId);if(!revision)return fail(403,'CLASSIFICATION_AUTHORITY');return revision;}
- private async current(plan:ClassificationPlan){
+ private async producerFence(tx:ClassificationTransaction,plan:ClassificationPlan){
+  if(!isOAuthProducerRevision(plan.producerAuthorizationRevision))return undefined;
+  if(!tx.classificationOAuthProducer)return fail(503,'CLASSIFICATION_UNAVAILABLE');
+  return assertClassificationOAuthProducer(await tx.classificationOAuthProducer(plan.preview.planId),plan).oauthFence;
+ }
+ private async saveProducer(tx:ClassificationTransaction,plan:ClassificationPlan,fence:OAuthGrantFence|undefined){
+  if(!fence)return;if(!tx.saveClassificationOAuthProducer)return fail(503,'CLASSIFICATION_UNAVAILABLE');
+  await tx.saveClassificationOAuthProducer(classificationOAuthProducer(plan,fence));
+ }
+ private async producer(grantId:string|null,fence?:OAuthGrantFence){if(!grantId)return null;const revision=await this.options.authority.currentProducerRevision(grantId,fence);if(!revision)return fail(403,'CLASSIFICATION_AUTHORITY');return revision;}
+ private async current(tx:ClassificationTransaction,plan:ClassificationPlan){
   if(plan.ownerId!==this.config.ownerId||plan.spaceId!==this.config.spaceId)return fail(403,'CLASSIFICATION_AUTHORITY');
-  if(this.now()>=Date.parse(plan.preview.expiresAt)||plan.policyRevision!==this.options.policyRevision()||plan.producerAuthorizationRevision!==await this.producer(plan.grantId))return conflict();
+  if(this.now()>=Date.parse(plan.preview.expiresAt)||plan.policyRevision!==this.options.policyRevision()||plan.producerAuthorizationRevision!==await this.producer(plan.grantId,await this.producerFence(tx,plan)))return conflict();
  }
  private async plan(tx:ClassificationTransaction,id:string){const raw=await tx.getClassificationPlan(id);if(!raw)return fail(404,'CLASSIFICATION_NOT_FOUND');const plan=decodePlan(raw);if(plan.ownerId!==this.config.ownerId||plan.spaceId!==this.config.spaceId)return fail(403,'CLASSIFICATION_AUTHORITY');return plan;}
  private recordLocks(changes:readonly ClassificationChange[]){
@@ -78,23 +91,23 @@ export class ClassificationService {
   return this.repository.classificationTransaction(this.config.ownerId,this.config.spaceId,'preview-'+randomUUID(),async tx=>{
    await this.authorize(actor,'previewTodoClassification',false,false);await this.fence(tx,actor,null);
    const records=await this.records(tx,changes);this.validate(changes,records,true);
-   const grantId=actor.kind==='agent-grant'?actor.grantId:null,createdAt=new Date(this.now()).toISOString();
-   const plan:ClassificationPlan={schemaVersion:1,proposalRevision:1,ownerId:this.config.ownerId,spaceId:this.config.spaceId,grantId,producerAuthorizationRevision:await this.producer(grantId),policyRevision:this.options.policyRevision(),referenceObservationDigest:this.observation(changes,records),createdAt,preview:{planId:randomUUID(),digest:'0'.repeat(64),expiresAt:new Date(Date.parse(createdAt)+30*60*1000).toISOString(),changes,unchangedIds:changes.filter(c=>classificationNoOp(c.before,c.after)).map(c=>c.todo.id)}};
-   const complete=decodePlan({...plan,preview:{...plan.preview,digest:classificationPlanDigest(plan)}});await this.authorize(actor,'previewTodoClassification',false,false);await tx.saveClassificationPlan(complete);return structuredClone(complete.preview);
+   const grantId=actor.kind==='agent-grant'?actor.grantId:null,oauthFence=actor.kind==='agent-grant'?actor.oauthFence:undefined,createdAt=new Date(this.now()).toISOString();
+   const plan:ClassificationPlan={schemaVersion:1,proposalRevision:1,ownerId:this.config.ownerId,spaceId:this.config.spaceId,grantId,producerAuthorizationRevision:await this.producer(grantId,oauthFence),policyRevision:this.options.policyRevision(),referenceObservationDigest:this.observation(changes,records),createdAt,preview:{planId:randomUUID(),digest:'0'.repeat(64),expiresAt:new Date(Math.min(Date.parse(createdAt)+30*60*1000,oauthFence?oauthFence.expiresAt*1000:Infinity)).toISOString(),changes,unchangedIds:changes.filter(c=>classificationNoOp(c.before,c.after)).map(c=>c.todo.id)}};
+   const complete=decodePlan({...plan,preview:{...plan.preview,digest:classificationPlanDigest(plan)}});await this.authorize(actor,'previewTodoClassification',false,false);await tx.saveClassificationPlan(complete);await this.saveProducer(tx,complete,oauthFence);return structuredClone(complete.preview);
   });
  }
  async review(actor:TrustedActor,id:string):Promise<ClassificationReview>{
   if(actor.kind!=='owner-session')return fail(403,'CLASSIFICATION_AUTHORITY');id=validateId(id);await this.authorize(actor,'reviewTodoClassification');
   return this.repository.classificationTransaction(this.config.ownerId,this.config.spaceId,'review-'+randomUUID(),async tx=>{
    await this.authorize(actor,'reviewTodoClassification',false,false);const plan=await this.plan(tx,id);await this.fence(tx,actor,plan);await tx.lockClassificationPlan(id);
-   const records=await this.records(tx,plan.preview.changes);let stale=false;try{await this.current(plan);this.validatePlan(plan,records);}catch(error){if(error instanceof PlatformError&&error.status===409)stale=true;else throw error;}
+   const records=await this.records(tx,plan.preview.changes);let stale=false;try{await this.current(tx,plan);this.validatePlan(plan,records);}catch(error){if(error instanceof PlatformError&&error.status===409)stale=true;else throw error;}
    const approval=await tx.classificationApproval(id);if(approval)assertApprovalMatchesPlan(approval,plan);
    const todos:ClassificationReview['labels']['todos'][number][]=[],organization:ClassificationReview['labels']['organization'][number][]=[];
    for(const row of records.values()){if(!row||row.ownerId!==this.config.ownerId)continue;const type=personalEntryType(row,this.config.spaceId);if(type==='todo')todos.push({id:row.id,sourceId:row.source.id,revision:row.revision,title:(row.draft as TodoDraft).title});else if(type==='project'||type==='domain'||type==='topic')organization.push({type,id:row.id,sourceId:row.source.id,revision:row.revision,title:'title'in row.draft?row.draft.title:''});}
    // Historical receipts remain readable even when current records or policy make the plan stale.
    const rawReceipt=await tx.classificationPlanReceipt(id),receipt=rawReceipt?decodeReceipt(rawReceipt):null;if(receipt)assertReceiptMatchesPlan(receipt,plan);
    // SHARE preserves the producer's read scopes, but not its lifetime; stale plans may skip current()'s producer lookup.
-   await this.producer(plan.grantId);await this.authorize(actor,'reviewTodoClassification',false,false);return{preview:plan.preview,approval,committed:receipt!==null,stale,receipt:receipt?structuredClone(receipt.result):null,labels:{todos,organization}};
+   await this.producer(plan.grantId,await this.producerFence(tx,plan));await this.authorize(actor,'reviewTodoClassification',false,false);return{preview:plan.preview,approval,committed:receipt!==null,stale,receipt:receipt?structuredClone(receipt.result):null,labels:{todos,organization}};
   });
  }
  async previewSelection(actor:TrustedActor,basePlanId:string,input:unknown):Promise<ClassificationPreview>{
@@ -105,19 +118,19 @@ export class ClassificationService {
   return this.repository.classificationTransaction(this.config.ownerId,this.config.spaceId,'selection-'+randomUUID(),async tx=>{
    await this.authorize(actor,'previewSelectionTodoClassification',false,false);const base=await this.plan(tx,basePlanId);await this.fence(tx,actor,base);await tx.lockClassificationPlan(basePlanId);
    if(base.runProvenance||await tx.classificationApproval(basePlanId)||await tx.classificationPlanCommitted(basePlanId))return conflict();
-   await this.current(base);if(selected.some(id=>!base.preview.changes.some(c=>c.todo.id===id)))return fail(400,'INVALID_CLASSIFICATION');
+   await this.current(tx,base);if(selected.some(id=>!base.preview.changes.some(c=>c.todo.id===id)))return fail(400,'INVALID_CLASSIFICATION');
    // Validate the whole proposal before selecting; omitting a stale entry must not refresh its provenance.
-   const records=await this.records(tx,base.preview.changes);this.validatePlan(base,records);await this.current(base);await this.authorize(actor,'previewSelectionTodoClassification',false,false);
+   const records=await this.records(tx,base.preview.changes);this.validatePlan(base,records);await this.current(tx,base);await this.authorize(actor,'previewSelectionTodoClassification',false,false);
    const changes=base.preview.changes.filter(c=>selected.includes(c.todo.id));
    const plan:ClassificationPlan={...base,createdAt:new Date(this.now()).toISOString(),referenceObservationDigest:this.observation(changes,records),preview:{...base.preview,planId:randomUUID(),digest:'0'.repeat(64),changes,unchangedIds:changes.filter(c=>classificationNoOp(c.before,c.after)).map(c=>c.todo.id)}};
-   const complete=decodePlan({...plan,preview:{...plan.preview,digest:classificationPlanDigest(plan)}});await tx.saveClassificationPlan(complete);return structuredClone(complete.preview);
+   const complete=decodePlan({...plan,preview:{...plan.preview,digest:classificationPlanDigest(plan)}});await tx.saveClassificationPlan(complete);await this.saveProducer(tx,complete,await this.producerFence(tx,base));return structuredClone(complete.preview);
   });
  }
  async approve(actor:TrustedActor,input:unknown):Promise<ClassificationApproval>{
   if(actor.kind!=='owner-session')return fail(403,'CLASSIFICATION_AUTHORITY');const body=classificationConfirmation(input);await this.authorize(actor,'approveTodoClassification');
   return this.repository.classificationTransaction(this.config.ownerId,this.config.spaceId,'approve-'+randomUUID(),async tx=>{
-   await this.authorize(actor,'approveTodoClassification',false,false);const plan=await this.plan(tx,body.planId);await this.fence(tx,actor,plan);await tx.lockClassificationPlan(body.planId);await this.current(plan);
-   if(plan.preview.digest!==body.digest||await tx.classificationPlanCommitted(body.planId))return conflict();this.validatePlan(plan,await this.records(tx,plan.preview.changes));await this.current(plan);
+   await this.authorize(actor,'approveTodoClassification',false,false);const plan=await this.plan(tx,body.planId);await this.fence(tx,actor,plan);await tx.lockClassificationPlan(body.planId);await this.current(tx,plan);
+   if(plan.preview.digest!==body.digest||await tx.classificationPlanCommitted(body.planId))return conflict();this.validatePlan(plan,await this.records(tx,plan.preview.changes));await this.current(tx,plan);
    const existing=await tx.classificationApproval(body.planId);if(existing){assertApprovalMatchesPlan(existing,plan);await this.authorize(actor,'approveTodoClassification',false,false);return existing;}
    const approval=decodeApproval({planId:body.planId,proposalRevision:plan.proposalRevision,digest:body.digest,operationIds:['commitTodoClassification'],bindingsDigest:classificationBindingsDigest(plan),producerAuthorizationRevision:plan.producerAuthorizationRevision,policyRevision:plan.policyRevision,approvedAt:new Date(this.now()).toISOString(),expiresAt:plan.preview.expiresAt});assertApprovalMatchesPlan(approval,plan);await this.authorize(actor,'approveTodoClassification',false,false);await tx.saveClassificationApproval(approval);return approval;
   });
@@ -129,14 +142,14 @@ export class ClassificationService {
    await this.authorize(actor,'commitTodoClassification',true,false);const rawReceipt=await tx.classificationReceipt(),receipt=rawReceipt?decodeReceipt(rawReceipt):null;
    const plan=await this.plan(tx,receipt?.planId??body.planId);await this.fence(tx,actor,plan,true);
    if(receipt){assertReceiptMatchesPlan(receipt,plan);if(receipt.requestDigest!==requestDigest)return fail(409,'COMMAND_CONFLICT');await this.authorize(actor,'commitTodoClassification',true,false);return{...structuredClone(receipt.result),duplicate:true};}
-   await tx.lockClassificationPlan(body.planId);if(await tx.classificationPlanCommitted(body.planId))return conflict();await this.current(plan);if(plan.preview.digest!==body.digest)return conflict();
+   await tx.lockClassificationPlan(body.planId);if(await tx.classificationPlanCommitted(body.planId))return conflict();await this.current(tx,plan);if(plan.preview.digest!==body.digest)return conflict();
    const approval=await tx.classificationApproval(body.planId);if(!approval)return fail(403,'CLASSIFICATION_APPROVAL_REQUIRED');assertApprovalMatchesPlan(approval,plan);
-   const records=await this.records(tx,plan.preview.changes);this.validatePlan(plan,records);await this.current(plan);const entries:ClassificationResult['entries'][number][]=[],updatedAt=new Date(this.now()).toISOString();
+   const records=await this.records(tx,plan.preview.changes);this.validatePlan(plan,records);await this.current(tx,plan);const entries:ClassificationResult['entries'][number][]=[],updatedAt=new Date(this.now()).toISOString();
    for(const change of plan.preview.changes){const old=records.get(JSON.stringify(['todo',change.todo.id]))!;let row=old;
     if(!classificationNoOp(change.before,change.after)){row={...old,draft:{...old.draft,personal:structuredClone(change.after)} as TodoDraft,revision:old.revision+1,updatedAt};await this.authorize(actor,'commitTodoClassification',true,false);await tx.write(row,{action:'todo-classification-v1',planId:body.planId,digest:body.digest,change},false);}
     entries.push({id:row.id,sourceId:row.source.id,revision:row.revision,personal:(row.draft as TodoDraft).personal??null});
    }
-   const result:ClassificationResult={planId:body.planId,digest:body.digest,duplicate:false,entries,unchangedIds:plan.preview.unchangedIds};await this.authorize(actor,'commitTodoClassification',true,false);await this.current(plan);await tx.saveClassificationReceipt({requestDigest,planId:body.planId,result});return result;
+   const result:ClassificationResult={planId:body.planId,digest:body.digest,duplicate:false,entries,unchangedIds:plan.preview.unchangedIds};await this.authorize(actor,'commitTodoClassification',true,false);await this.current(tx,plan);await tx.saveClassificationReceipt({requestDigest,planId:body.planId,result});return result;
   });
  }
 }

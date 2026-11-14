@@ -2,6 +2,7 @@ import type {SqlClient,SqlPool} from '../platform/postgres.ts';
 import type {ClassificationTransaction} from '../platform/contracts.ts';
 import {PlatformError,validateId,validateIdempotencyKey} from '../platform/domain.ts';
 import {decodePlan,decodeApproval,decodeReceipt,assertApprovalMatchesPlan,classificationNoOp,classificationCanonical,type ClassificationPlan,type ClassificationReceipt} from './classification-contracts.ts';
+import {assertClassificationOAuthProducer} from './classification-oauth.ts';
 export const classificationUnavailable=()=>new PlatformError(503,'CLASSIFICATION_UNAVAILABLE','分类审核暂不可用。');
 export const classificationCommandKey=(owner:string,space:string,key:string)=>JSON.stringify([owner,'todo-classification-v1',space,key]);
 type ConstraintShape={kind:string;columns:string[];target:string|null;references:string[];expression:string|null;functionIds:string[]};
@@ -116,10 +117,19 @@ export function assertReceiptMatchesPlan(receipt:ClassificationReceipt,plan:Clas
   if(entry.id!==change.todo.id||entry.sourceId!==change.todo.sourceId||entry.revision!==change.todo.expectedRevision+(noop?0:1)||classificationCanonical(entry.personal)!==classificationCanonical(noop?change.before:change.after))throw new PlatformError(400,'INVALID_CLASSIFICATION','分类回执与计划不符。');
  }
 }
-export function classificationQueries(client:SqlClient,owner:string,space:string,key:string):Pick<ClassificationTransaction,'getClassificationPlan'|'lockClassificationPlan'|'saveClassificationPlan'|'classificationApproval'|'saveClassificationApproval'|'classificationReceipt'|'classificationPlanCommitted'|'classificationPlanReceipt'|'saveClassificationReceipt'>{
+export function classificationQueries(client:SqlClient,owner:string,space:string,key:string):Pick<ClassificationTransaction,'getClassificationPlan'|'lockClassificationPlan'|'saveClassificationPlan'|'classificationApproval'|'saveClassificationApproval'|'classificationReceipt'|'classificationPlanCommitted'|'classificationPlanReceipt'|'saveClassificationReceipt'|'classificationOAuthProducer'|'saveClassificationOAuthProducer'>{
  validateIdempotencyKey(key);
  const getPlan=async(id:string)=>{const rows=(await client.query('SELECT plan FROM lifeos_platform.platform_classification_plan WHERE owner_id=$1 AND space_id=$2 AND plan_id=$3',[owner,space,validateId(id)])).rows;if(!rows[0])return null;const plan=decodePlan(rows[0].plan);if(plan.ownerId!==owner||plan.spaceId!==space||plan.preview.planId!==validateId(id))throw classificationUnavailable();return plan;};
  return{
+  classificationOAuthProducer:async id=>{
+   const plan=await getPlan(id);if(!plan)return missing();
+   const row=(await client.query(`SELECT jsonb_build_object('schemaVersion',1,'ownerId',owner_id,'spaceId',space_id,'grantId',grant_id,'planId',plan_id::text,'digest',digest,'proposalRevision',proposal_revision,'expiresAt',$4::text,'producerAuthorizationRevision',producer_authorization_revision,'oauthFence',oauth_fence) AS producer,expires_at=$4::timestamptz AS expiry_matches FROM lifeos_platform.platform_classification_oauth_producer WHERE owner_id=$1 AND space_id=$2 AND plan_id=$3`,[owner,space,validateId(id),plan.preview.expiresAt])).rows[0];
+   if(!row)return null;if(row.expiry_matches!==true)throw classificationUnavailable();return assertClassificationOAuthProducer(row.producer,plan);
+  },
+  saveClassificationOAuthProducer:async value=>{
+   const plan=await getPlan(value.planId);if(!plan)return missing();const p=assertClassificationOAuthProducer(value,plan);
+   await client.query('INSERT INTO lifeos_platform.platform_classification_oauth_producer(owner_id,space_id,plan_id,digest,proposal_revision,grant_id,expires_at,producer_authorization_revision,oauth_fence) VALUES($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,$9::jsonb)',[owner,space,p.planId,p.digest,p.proposalRevision,p.grantId,p.expiresAt,p.producerAuthorizationRevision,JSON.stringify(p.oauthFence)]);
+  },
   getClassificationPlan:getPlan,
   lockClassificationPlan:async id=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify([owner,'classification-plan-v1',space,validateId(id)])]);},
   saveClassificationPlan:async value=>{const p=decodePlan(value);if(p.ownerId!==owner||p.spaceId!==space)throw new PlatformError(403,'CLASSIFICATION_OWNER','分类计划空间不匹配。');await client.query('INSERT INTO lifeos_platform.platform_classification_plan(owner_id,space_id,plan_id,digest,proposal_revision,grant_id,plan) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)',[owner,space,p.preview.planId,p.preview.digest,p.proposalRevision,p.grantId,JSON.stringify(p)]);},
