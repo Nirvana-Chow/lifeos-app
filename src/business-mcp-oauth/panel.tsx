@@ -1,6 +1,6 @@
 'use client';
 import {useState} from 'react';
-import {validOAuthRedirect} from './query';
+import {submitOAuthConsent} from './consent-flow';
 import type {BusinessOAuthConfig} from './boundary';
 import s from '../personal-candidate/login.module.css';
 const labels:Record<string,string>={todo:'待办',organization:'项目、领域与主题',requirements:'需求',journal:'日记',calendar:'日历',health:'健康',person:'联系人',finance:'财务',media:'收藏',career:'职业',portfolio:'作品',cooking:'烹饪',feedback:'反馈','storage-review':'文件审阅','file-handoff':'明确交接的文件'};
@@ -9,10 +9,9 @@ export function OAuthPanel({query,clientId,scopes,config,continuation=false}:{qu
  async function submit(accept:boolean){
   if(busy||unknown)return;setBusy(true);setMessage('');
   try{
-   const response=await fetch('/api/platform/auth/oauth2/'+(continuation?'continue':'consent'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(continuation?{postLogin:true,oauth_query:query}:{accept,oauth_query:query})});
-   if(!response.ok){setUnknown(true);setMessage('连接结果未确认。请返回 ChatGPT 重新发起连接；本页不会重复提交。');return;}
-   const value=await response.json();if(value?.redirect!==true||typeof value.url!=='string'||!validOAuthRedirect(value.url,query,config))throw Error('redirect');
-   window.location.replace(value.url);
+   const result=await submitOAuthConsent({query,config,continuation,accept});
+   if(result.kind==='unknown'){setUnknown(true);setMessage('连接结果未确认。请返回 ChatGPT 重新发起连接；本页不会重复提交。');return;}
+   window.location.replace(result.location);
   }catch{setUnknown(true);setMessage('连接结果未确认。请返回 ChatGPT 重新发起连接；本页不会重复提交。');}finally{setBusy(false);}
  }
  return <main data-lifeos-surface="auth" className={s.page}><section className={s.card} aria-labelledby="oauth-title"><h1>LifeOS</h1><h2 id="oauth-title">{continuation?'继续连接':'允许连接你的私人空间'}</h2>
