@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {projectJournalHistory} from '../src/personal-journal/history.ts';
+import {journalFixture} from './helpers/journal-history.ts';
+
+test('journal periods use civil dates for Monday weeks, quarters and years, including leap and year boundaries',async()=>{
+ const period=await import('../src/personal-journal/journal-period.ts').catch(()=>null);
+ assert.ok(period,'journal period projection must exist');
+ const {journalPeriodRange}=period;
+ assert.deepEqual(journalPeriodRange('2027-01-01','week'),{from:'2026-12-28',to:'2027-01-03'});
+ assert.deepEqual(journalPeriodRange('2024-02-29','day'),{from:'2024-02-29',to:'2024-02-29'});
+ assert.deepEqual(journalPeriodRange('2024-02-29','month'),{from:'2024-02-01',to:'2024-02-29'});
+ assert.deepEqual(journalPeriodRange('2025-02-28','month'),{from:'2025-02-01',to:'2025-02-28'});
+ assert.deepEqual(journalPeriodRange('2026-12-31','quarter'),{from:'2026-10-01',to:'2026-12-31'});
+ assert.deepEqual(journalPeriodRange('2027-01-01','quarter'),{from:'2027-01-01',to:'2027-03-31'});
+ assert.deepEqual(journalPeriodRange('2024-02-29','year'),{from:'2024-01-01',to:'2024-12-31'});
+ assert.deepEqual(journalPeriodRange('9999-12-31','week'),{from:'9999-12-27',to:'9999-12-31'});
+ assert.deepEqual(journalPeriodRange('0001-01-01','week'),{from:'0001-01-01',to:'0001-01-07'});
+ assert.throws(()=>journalPeriodRange('2025-02-29','month'));
+ assert.throws(()=>journalPeriodRange('2026-11-13T00:00:00Z','month'));
+});
+test('calendar marks real leap-month days and navigates months without carrying a day into the wrong month',async()=>{
+ const period=await import('../src/personal-journal/journal-period.ts').catch(()=>null);assert.ok(period,'journal calendar projection must exist');
+ const history=projectJournalHistory([journalFixture(1,'2024-02-29'),journalFixture(2,'2024-02-29'),journalFixture(3,null)],'2026-11-13T00:00:00.000Z');
+ const month=period.journalMonthDays('2024-02-29',history.rows);
+ assert.equal(month.month,'2024-02');assert.equal(month.cells.length%7,0);
+ assert.deepEqual(month.cells.slice(0,4),[null,null,null,{date:'2024-02-01',count:0}]);
+ assert.deepEqual(month.cells.find(cell=>cell?.date==='2024-02-29'),{date:'2024-02-29',count:2});
+ assert.equal(month.cells.filter(Boolean).length,29);
+ assert.equal(period.shiftJournalMonth('2024-01-31',1),'2024-02-29');
+ assert.equal(period.shiftJournalMonth('2025-03-31',-1),'2025-02-28');
+ assert.equal(period.shiftJournalMonth('2026-12-31',1),'2027-01-31');
+ assert.equal(period.shiftJournalMonth('0001-01-01',-1),null);
+ assert.equal(period.shiftJournalMonth('9999-12-31',1),null);
+});
+test('period coverage uses the complete saved snapshot and keeps unknown dates out of every inferred period',async()=>{
+ const period=await import('../src/personal-journal/journal-period.ts').catch(()=>null);assert.ok(period,'journal coverage projection must exist');
+ const entries=[journalFixture(1,'2026-12-28'),journalFixture(2,'2027-01-01'),journalFixture(3,'2027-01-01'),journalFixture(4,'2027-01-04'),journalFixture(5,null)];
+ const history=projectJournalHistory(entries,'2027-01-01T00:00:00.000Z'),result=period.projectJournalPeriod(history,'2027-01-01','week');
+ assert.deepEqual(result.rows.map(row=>row.id),[entries[2].id,entries[1].id,entries[0].id]);
+ assert.equal(result.recordedDays,2);assert.equal(result.rows.length,3);
+ assert.deepEqual(result.undated.map(row=>row.id),[entries[4].id]);
+ assert.deepEqual(result.range,{from:'2026-12-28',to:'2027-01-03'});
+ assert.equal(result.rows[0].sourceId,entries[2].source.id);
+ assert.equal(result.rows[0].revision,1);
+ assert.equal(history.coverage.historicalCompleteness,'unknown');
+ const empty=period.projectJournalPeriod(projectJournalHistory([],'2027-01-01T00:00:00.000Z'),'2027-01-01','year');
+ assert.deepEqual(empty.rows,[]);assert.deepEqual(empty.undated,[]);assert.equal(empty.recordedDays,0);
+ const undatedOnly=period.projectJournalPeriod(projectJournalHistory([entries[4]],'2027-01-01T00:00:00.000Z'),'2027-01-01','day');
+ assert.deepEqual(undatedOnly.rows,[]);assert.equal(undatedOnly.undated.length,1);
+});
