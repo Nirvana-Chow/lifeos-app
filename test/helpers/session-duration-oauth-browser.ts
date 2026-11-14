@@ -54,12 +54,12 @@ export async function control(request:Request){
  const f=await fixture();
  if(request.method==='POST'){
   const {action}=input;
-  if(action==='age')for(const session of f.db.platform_session)session.createdAt=new Date(Date.now()-1801*1000);
+  if(action==='age')for(const session of f.db.platform_session){session.createdAt=new Date(Date.now()-1801*1000);session.expiresAt=new Date((session.createdAt as Date).valueOf()+Number(session.sessionDurationSeconds)*1000);}
   else if(action==='reset') {f.requests=[];f.providerCalls=0;f.unconfirmed=false;}
   else if(action==='unconfirmed')f.unconfirmed=true;
   else if(action!=='fresh')return new Response(null,{status:400});
  }
- return Response.json({code:await syntheticOwnerTotp(f.auth,f.config.ownerId),requests:f.requests,authRequests:f.authRequests,providerCalls:f.providerCalls},{headers:{'cache-control':'no-store'}});
+ return Response.json({code:await syntheticOwnerTotp(f.auth,f.config.ownerId),requests:f.requests,authRequests:f.authRequests,providerCalls:f.providerCalls,staleValidSessions:f.db.platform_session.filter(session=>new Date(session.createdAt as string).valueOf()<Date.now()-1800*1000&&new Date(session.expiresAt as string).valueOf()>Date.now()).length},{headers:{'cache-control':'no-store'}});
 }
 `);
   await writeFile(join(root,'src/platform/runtime.ts'),`
