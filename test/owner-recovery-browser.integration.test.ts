@@ -19,6 +19,7 @@ import {safeScreenshot as guardedAuthScreenshot,trustFixtureCA,applyAuthFixtureA
 import {measureTaskGrid} from './helpers/task-grid-performance-fixture.ts';
 import {verifyPersonalWorkspace} from './helpers/personal-workspace-browser-fixture.ts';
 import {themeStorageKey} from '../src/workbench/theme.ts';
+import {probeDisabledNoJsAuthForm} from './helpers/owner-nojs-auth-form.ts';
 
 import {withPrivateBrowserFixture,verifyPrivateRouteBoundaries,verifyPrivateAppearanceAndDrafts,verifyPrivatePresentationMatrix,verifyPrivateStorageReview,type PrivateBrowserHandoff} from './helpers/private-business-browser-fixture.ts';
 import {recordSyntheticCapture,publishSyntheticCaptureManifest,assertFixtureCompletion} from '../scripts/synthetic-rendered-qualification.ts';
@@ -142,16 +143,7 @@ test('isolated browser owner recovery and password flow',{skip:!enabled?'isolate
   const finishSecondFactor=async()=>{await page.getByLabel('验证器动态码',{exact:true}).waitFor();await page.getByLabel('验证器动态码',{exact:true}).fill(await syntheticOwnerTotp(nativeMfa,config.ownerId));await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForURL(origin+'/personal');};
   stage='no-js-fallback';const nojs=await browser.newContext({javaScriptEnabled:false,viewport:{width:1365,height:900}});try{
    await nojs.addCookies(await context.cookies(origin));
-   const classifyRoute=(value:string)=>{try{const u=new URL(value);return u.origin===origin&&u.pathname==='/login'?'login':u.origin===origin&&u.pathname==='/account/password'?'password':'other';}catch{return 'other';}};
-   const netCode=(value:string)=>value.match(/net::ERR_[A-Z_]+/)?.[0]??'OTHER';
-   for(const [route,field] of [['/login','password'],['/account/password','currentPassword']] as const)noJsFinished=await isolatedPage(()=>nojs.newPage(),async p=>{
-    p.on('framenavigated',frame=>{if(frame===p.mainFrame())console.log('NO_JS_FRAME '+classifyRoute(frame.url()));});
-    p.on('requestfailed',request=>{if(request.isNavigationRequest()&&request.frame()===p.mainFrame())console.log('NO_JS_REQUEST_FAILED '+classifyRoute(request.url())+' '+netCode(request.failure()?.errorText??''));});
-    const routeLabel=route==='/login'?'login':'password';stage='no-js-'+routeLabel+'-load';await p.goto(origin+route,{waitUntil:'domcontentloaded'});const form=p.locator('form');stage='no-js-'+routeLabel+'-form';must(await form.getAttribute('method')==='post'&&await form.getAttribute('action')===route,'no-js-form');stage='no-js-'+routeLabel+'-disabled';must(await p.locator('input[name="'+field+'"]') .isDisabled(),'no-js-disabled');
-    stage='no-js-'+routeLabel+'-navigation';const navigation=p.waitForResponse(response=>response.request().isNavigationRequest()&&response.request().method()==='POST');
-    await p.evaluate(name=>{const input=document.querySelector('input[name="'+name+'"]') as HTMLInputElement;input.value='synthetic-nojs-probe';(input.form as HTMLFormElement).requestSubmit();},field);
-    const response=await navigation,request=response.request(),url=new URL(request.url());noJsFinished='pending';const facts={method:request.method()==='POST'?'POST':'OTHER',status:response.status(),originMatches:url.origin===origin,routeMatches:url.pathname===route,hasQuery:url.search!=='',hasMarker:(request.postData()??'').includes('synthetic-nojs-probe')};console.log('NO_JS_DIAGNOSTIC '+routeLabel+' '+JSON.stringify(facts));stage='no-js-'+routeLabel+'-response';must(facts.method==='POST'&&facts.originMatches&&facts.routeMatches&&!facts.hasQuery&&!facts.hasMarker&&facts.status>=400,'no-js-fallback');return {finished:observeFinished(()=>response.finished())};
-   });
+   for(const [route,field] of [['/login','password'],['/account/password','currentPassword']] as const)noJsFinished=await isolatedPage(()=>nojs.newPage(),p=>probeDisabledNoJsAuthForm(p,{origin,route,field,stage:value=>{stage=value;if(value.endsWith('-response'))noJsFinished='pending';}}));
   }finally{await nojs.close();}
   stage='change-password';await page.goto(origin+'/account/password',{waitUntil:'domcontentloaded'});must(await page.locator('input[name="username"]').getAttribute('autocomplete')==='username','change-user');must(await page.locator('input[name="currentPassword"]').getAttribute('autocomplete')==='current-password','change-old');must(await page.locator('input[name="newPassword"]').getAttribute('autocomplete')==='new-password','change-new');await page.getByLabel('原密码').fill('fixture-browser-recovery-password');await page.getByLabel('新密码',{exact:true}).fill('fixture-browser-changed-password');await page.getByLabel('确认新密码').fill('fixture-browser-changed-password');await page.getByRole('button',{name:'保存密码',exact:true}).click();await page.waitForURL(origin+'/login');await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await page.waitForURL(origin+'/login');
   stage='old-password-rejected';await login('fixture-browser-recovery-password');await page.getByRole('status').filter({hasText:'登录未通过'}).waitFor();must(await cleanFields(page),'old-reset');
