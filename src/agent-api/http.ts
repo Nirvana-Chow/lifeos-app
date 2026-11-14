@@ -96,7 +96,7 @@ export function createAgentHandler(options: Options) {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
-    const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions))?$/.exec(route);
+    const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions|notes))?$/.exec(route);
     const fileRoute=/^\/v1\/file-handoffs\/([a-f0-9-]{36})(?:\/(content|acknowledgments))?$/.exec(route);
     const executionRoute=/^\/v1\/requirement-events\/claims\/([a-f0-9-]{36})$/.exec(route);
     const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
