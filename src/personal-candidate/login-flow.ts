@@ -1,8 +1,10 @@
+import {safeSessionReturn} from '../session-duration/client.ts';
+import type {SessionDuration} from '../session-duration/policy.ts';
 import {passwordLoginDestination} from './owner-mfa-flow.ts';
 
-type LoginAttempt={personal:boolean;challenge:boolean;email:string;password:string;code:string;backup:boolean;oauthQuery?:string};
+type LoginAttempt={personal:boolean;challenge:boolean;email:string;password:string;code:string;backup:boolean;oauthQuery?:string;returnTo?:string;sessionDuration?:SessionDuration};
 export type LoginResult=
- |{kind:'redirect';location:'/account/mfa'|'/review/admin'|'/personal'|`/account/mfa?oauth_query=${string}`|`/personal/oauth/continue?oauth_query=${string}`}
+ |{kind:'redirect';location:string}
  |{kind:'error'|'challenge'|'unknown';challenge:boolean;message:string};
 type LoginFetch=(url:string,init:RequestInit)=>Promise<Response>;
 
@@ -10,20 +12,21 @@ type LoginFetch=(url:string,init:RequestInit)=>Promise<Response>;
 export async function submitLogin(input:LoginAttempt,request:LoginFetch):Promise<LoginResult>{
  let challenge=input.challenge;
  const resumeDestination=(path:'/account/mfa'|'/review/admin'|'/personal'):Extract<LoginResult,{kind:'redirect'}>['location']=>{
-  if(!input.personal||!input.oauthQuery||input.oauthQuery.length>8192)return path;
+  if(!input.personal)return path;
+  if(!input.oauthQuery||input.oauthQuery.length>8192){const back=safeSessionReturn(input.returnTo);return path==='/personal'?back:path==='/account/mfa'&&input.returnTo?path+'?return_to='+encodeURIComponent(back):path;}
   return path==='/personal'?`/personal/oauth/continue?oauth_query=${encodeURIComponent(input.oauthQuery)}`:`/account/mfa?oauth_query=${encodeURIComponent(input.oauthQuery)}`;
  };
  const post=(url:string,body:unknown)=>request(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
  try{
   if(!challenge){
-   const response=await post('/api/platform/auth/sign-in/email',{email:input.email,password:input.password,rememberMe:false});
+   const response=await post('/api/platform/auth/sign-in/email',{email:input.email,password:input.password,rememberMe:!!input.sessionDuration,...(input.sessionDuration?{sessionDuration:input.sessionDuration}:{})});
    if(!response.ok)return{kind:'error',challenge:false,message:response.status===429?'尝试过于频繁，请稍后再试。':'登录未通过，请核对账号和密码。'};
    const destination=passwordLoginDestination(await response.json(),input.personal);
    if(destination!=='challenge')return{kind:'redirect',location:resumeDestination(destination)};
    challenge=true;
   }
   if(!input.code.trim())return{kind:'challenge',challenge:true,message:'请输入验证器动态码或备用恢复码。'};
-  const response=await post('/api/platform/auth/two-factor/'+(input.backup?'verify-backup-code':'verify-totp'),{code:input.code.trim(),trustDevice:false});
+  const response=await post('/api/platform/auth/two-factor/'+(input.backup?'verify-backup-code':'verify-totp'),{code:input.code.trim(),trustDevice:false,...(input.sessionDuration?{sessionDuration:input.sessionDuration}:{})});
   if(response.ok)return{kind:'redirect',location:resumeDestination(input.personal&&!input.backup?'/personal':'/account/mfa')};
   return{kind:'challenge',challenge:true,message:response.status===429?'尝试过于频繁，请稍后再试。':'验证未通过，请核对验证码；登录已失效时请重新开始。'};
  }catch{

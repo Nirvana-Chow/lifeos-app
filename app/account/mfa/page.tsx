@@ -1,3 +1,4 @@
+import {safeSessionReturn} from '../../../src/session-duration/client';
 import {headers} from 'next/headers';
 import {redirect} from 'next/navigation';
 import {readPlatformMfaState} from '../../../src/platform/runtime';
@@ -9,7 +10,7 @@ export default async function Page({searchParams}:{searchParams:Promise<Record<s
  const currentHeaders=await headers(),search=await searchParams,oauth=Object.keys(search).length?await readOAuthPageState(currentHeaders,search):null;
  const state=await readPlatformMfaState(currentHeaders),suffix=oauth?'?oauth_query='+encodeURIComponent(oauth.query):'';
  if(state.kind==='anonymous')redirect('/login'+suffix);
- if(state.kind==='ready')redirect(oauth?'/personal/oauth/continue'+suffix:'/personal');
+ if(state.kind==='ready')redirect(oauth?'/personal/oauth/continue'+suffix:safeSessionReturn(search.return_to));
  const mode=state.kind==='enroll'?state.step:state.kind;
- return <OwnerMfaPanel mode={mode} oauthQuery={oauth?.query}/>;
+ return <OwnerMfaPanel mode={mode} oauthQuery={oauth?.query} returnTo={typeof search.return_to==='string'?safeSessionReturn(search.return_to):undefined}/>;
 }
