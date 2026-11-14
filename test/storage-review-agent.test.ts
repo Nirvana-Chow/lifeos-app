@@ -9,7 +9,7 @@ import {agentOperationAvailable} from '../src/agent-api/runtime.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
 
 const origin='https://lifeos.nirvanachow.com',ownerId='synthetic-review-owner',spaceId='synthetic-review-space';
-const ids=['snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision'];
+const ids=['snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision','updateStorageReviewNote'];
 const checklist={schema:1,revision:'synthetic-review-1',context:{summary:'Synthetic only'},items:[
  {id:'S-1',title:'Synthetic document',body:'No real paths',question:'Keep?',group:'Synthetic',kind:'file',status:'pending'},
  {id:'S-2',title:'Protected example',body:'',question:'',group:'Synthetic',kind:'folder',status:'protected'},

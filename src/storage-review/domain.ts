@@ -10,9 +10,11 @@ const exact=(value:unknown,keys:readonly string[])=>object(value,keys);
 export type StorageReviewItem={id:string;title:string;body:string;question:string;group:string;kind:'file'|'folder'|'media'|'app';status:'pending'|'processed'|'protected'};
 export type StorageReviewChecklist={schema:1;revision:string;context:{summary:string};items:StorageReviewItem[]};
 export type StorageReviewDecision={id:string;decision:'keep'|'trash'|'defer'};
-export type ReviewSnapshot={revision:number;checklist:StorageReviewChecklist;decisions:StorageReviewDecision[]};
+export type StorageReviewNote={id:string;note:string};
+export type ReviewSnapshot={revision:number;checklist:StorageReviewChecklist;decisions:StorageReviewDecision[];notes?:StorageReviewNote[]};
 export type SaveChecklistInput={expectedRevision:number|null;checklist:StorageReviewChecklist};
 export type SaveDecisionInput={expectedRevision:number;checklistRevision:string;id:string;decision:'keep'|'trash'|'defer'|null};
+export type SaveNoteInput={expectedRevision:number;checklistRevision:string;id:string;note:string};
 
 const stableJson=(value:unknown):string=>Array.isArray(value)?'['+value.map(stableJson).join(',')+']':value&&typeof value==='object'?'{'+Object.entries(value).sort(([a],[b])=>a.localeCompare(b,'en')).map(([k,v])=>JSON.stringify(k)+':'+stableJson(v)).join(',')+'}':JSON.stringify(value);
 export const storageReviewJsonBytes=(value:unknown)=>Buffer.byteLength(stableJson(value),'utf8');
@@ -50,8 +52,20 @@ export function validateDecisionCommand(input:unknown):SaveDecisionInput{
  if(storageReviewJsonBytes(value)>131072)fail(413,'STORAGE_REVIEW_TOO_LARGE','审核请求超过安全大小上限。');
  return value;
 }
+export function validateNoteCommand(input:unknown):SaveNoteInput{
+ const row=exact(input,['expectedRevision','checklistRevision','id','note']);
+ const expectedRevision=validateRevision(row.expectedRevision),checklistRevision=text(row.checklistRevision,128,'清单版本'),id=text(row.id,128,'条目标识'),note=text(row.note,8000,'备注',true);
+ if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id))fail(400,'STORAGE_REVIEW_INVALID','条目标识无效。');
+ return{expectedRevision,checklistRevision,id,note};
+}
+export function assertNotedItemsRetained(previous:ReviewSnapshot,next:StorageReviewChecklist):void{
+ for(const note of previous.notes??[]){
+  const before=previous.checklist.items.find(item=>item.id===note.id),after=next.items.find(item=>item.id===note.id);
+  if(!before||!after||stableJson(before)!==stableJson(after))fail(409,'CHECKLIST_NOTE_CONFLICT','已备注条目发生变化，请先核对并明确清空原备注。');
+ }
+}
 export function validateReviewSnapshot(input:unknown):ReviewSnapshot{
- const row=exact(input,['revision','checklist','decisions']),revision=validateRevision(row.revision),checklist=validateChecklist(row.checklist);
+ const row=exact(input,['revision','checklist','decisions','notes']),revision=validateRevision(row.revision),checklist=validateChecklist(row.checklist);
  if(!Array.isArray(row.decisions)||row.decisions.length>checklist.items.length)return fail(409,'STORAGE_REVIEW_CORRUPT','审核决定记录无效。');
  const items=new Map(checklist.items.map(item=>[item.id,item])),seen=new Set<string>();
  const decisions=row.decisions.map((raw):StorageReviewDecision=>{
@@ -60,7 +74,18 @@ export function validateReviewSnapshot(input:unknown):ReviewSnapshot{
   if(!item||item.status!=='pending'||seen.has(id)||typeof decision!=='string'||!['keep','trash','defer'].includes(decision))fail(409,'STORAGE_REVIEW_CORRUPT','审核决定记录无法核对。');
   seen.add(id);return{id,decision:decision as StorageReviewDecision['decision']};
  });
- if(storageReviewJsonBytes({revision,checklist,decisions})>131072)fail(409,'STORAGE_REVIEW_CORRUPT','审核状态超过安全大小上限。');
- return{revision,checklist,decisions};
+ let notes:StorageReviewNote[]|undefined;
+ if(Object.hasOwn(row,'notes')){
+  if(!Array.isArray(row.notes)||row.notes.length>checklist.items.length)return fail(409,'STORAGE_REVIEW_CORRUPT','审核备注记录无效。');
+  const noted=new Set<string>();
+  notes=row.notes.map(raw=>{
+   const value=exact(raw,['id','note']),id=text(value.id,128,'条目标识'),note=text(value.note,8000,'备注',true);
+   if(!items.has(id)||noted.has(id)||note==='')fail(409,'STORAGE_REVIEW_CORRUPT','审核备注无法核对。');
+   noted.add(id);return{id,note};
+  });
+ }
+ const result={revision,checklist,decisions,...(notes!==undefined?{notes}:{})};
+ if(storageReviewJsonBytes(result)>131072)fail(409,'STORAGE_REVIEW_CORRUPT','审核状态超过安全大小上限。');
+ return result;
 }
 export function validateStorageReviewKey(key:string):string{try{return validateIdempotencyKey(key);}catch{return fail(400,'STORAGE_REVIEW_INVALID','请求标识无效。');}}
