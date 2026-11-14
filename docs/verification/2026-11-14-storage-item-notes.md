@@ -16,3 +16,7 @@ Root对核心修正479的定向独审C0/I0/M0通过，并独立运行浏览器�
 保留RED：纯空白原文误拒、草稿刷新/继续input/清空时基线被替换，以及共享新增操作后旧精确目录oracle未包含note。并发编辑和清空均先实际Chrome RED，再最小修为保留原checklistRevision/expectedRevision，只有明确409后的按钮才改基线。原unknown/撤权恢复回归保持。浏览器fixture曾早于异步完成就检查wire；已以明确rejected/unknown及独立确认synthetic commit作为更严格完成条件。
 
 默认权限仍关闭：0026只登记新操作且`enabled=false`，实际Agent/MCP依赖当前DB目录、原scope、grant、owner/MFA与write permit；公开HTTP业务MCP不含工程claim或事件执行。普通PR/main原CI、单writer的既有Native+HTTPS生产读回、真实跨设备与本人体验另行取证，本地合成/PG证据不替代这些结果。
+
+固定产品提交`4ec7bb4dcd0d74e6366aa311f1174e09e17632eb`已完成组合后的完整生产webpack和原同产物44项加5项Notes相关默认关闭/归档检查，buildId为`291xlm3KF2j9v19V6mu2E`。后续仅交付规则与本验证说明的文档变化按文档检查验证，没有重复App构建。
+
+实际已安装的旧business57普通durable host与本源码新client分别验证。离线合成测试直接使用固定的已安装client/native bridge源码：`getStorageReview`能原样返回notes和CRLF，但没有note语义验证；新增note在本地以`OPERATION_UNAVAILABLE`拒绝，零网络/native调用。旧client在含notes记录上执行原决定修改时，新服务端已保存并保留备注，旧收据校验却以`UNKNOWN_FIELD`报错。因此旧client不能视为新合同合格消费者；读取可用不代表既有写入已兼容。受控安装负责人须采用note-aware domain/agent-fields、操作描述、字段schema、路径白名单和对应Native registry，并保留原durable journal/身份绑定与凭据。离线测试未运行真实host、读取凭据或真实journal，也没有安装/启用生产操作；新版采用与真实入口回读仍待单独完成。
