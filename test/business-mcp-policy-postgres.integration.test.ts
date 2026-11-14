@@ -29,6 +29,7 @@ import {requireMcpAuth} from '@better-auth/mcp';
 import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {HttpBusinessClient} from '../src/mcp-http/business-client.ts';
+import {filePermissionSchema} from '../src/file-handoff/permission-contracts.ts';
 
 const enabled=process.env.RUN_BUSINESS_MCP_POLICY_POSTGRES_TESTS==='1';
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
@@ -71,7 +72,7 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
  let issue!:()=>Promise<{token:string;state:OAuthState}>;
  let active:{token:string;state:OAuthState};
  let service:ClassificationService,authority:AuthorityService,ownerActor:NonNullable<Awaited<ReturnType<AuthorityService['resolveOwnerActor']>>>;
- let ownerSessionId:string;
+ let ownerSessionId:string,ownerSessionToken:string;
  let changes:Parameters<ClassificationService['preview']>[1];
  try{
   await group('1 marked fresh split owners, real restricted identities and pre0025 legacy readiness',async()=>{
@@ -117,6 +118,7 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
   await group('5 official provider issues a real full-scope JWT after actual native owner/consent and ledger verification',async()=>{
    const sessionId=randomUUID(),sessionToken='synthetic-full-session-'+randomUUID();
    ownerSessionId=sessionId;
+   ownerSessionToken=sessionToken;
    await client.query('INSERT INTO lifeos_platform.platform_session(id,token,"userId","createdAt","updatedAt","expiresAt","mfaVerified","sessionDurationMode","sessionDurationSeconds") VALUES($1,$2,$3,statement_timestamp(),statement_timestamp(),statement_timestamp()+interval \'30 minutes\',true,\'fixed\',1800)',[sessionId,sessionToken,owner.ownerId]);
    const cookie='__Secure-lifeos-platform-candidate.session_token='+encodeURIComponent(sessionToken+'.'+createHmac('sha256',fixture.sessionSecret).update(sessionToken).digest('base64'));
    const platform={baseURL:origin,ownerId:owner.ownerId,ownerEmail:owner.ownerEmail,secret:fixture.sessionSecret,databaseURL:'',sessionSeconds:1800};
@@ -178,11 +180,21 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
    }
   });
   await group('9 token revocation and same-grant re-consent cannot be replaced by the still-valid original key at owner commit',async()=>{
-   for(const change of ['revocation','new-binding'] as const){
+   for(const change of ['revocation','new-binding','original-policy-removed'] as const){
     active=await issue();const actor=(await authority.resolveAgentActor(active.token))!,preview=await service.preview(actor,changes);await service.approve(ownerActor,body(preview));
     const before=await repository.exportSnapshot(owner.ownerId);
-    if(change==='revocation')await client.query('UPDATE lifeos_agent.oauth_business_token SET revoked=true WHERE token_id=$1',[active.state.oauthFence.tokenId]);else await issue();
+    if(change==='revocation')await client.query('UPDATE lifeos_agent.oauth_business_token SET revoked=true WHERE token_id=$1',[active.state.oauthFence.tokenId]);
+    else if(change==='new-binding')await issue();
+    else{
+     const digest=(await manager.query('SELECT lifeos_agent.current_managed_grant_digest($1) AS value',[grantId])).rows[0].value;
+     await manager.query('SELECT lifeos_agent.set_managed_business_grant($1,$2,$3,$4::jsonb,NULL)',[ownerSessionToken,grantId,digest,JSON.stringify({todo:['read','write'],requirements:['read','write']})]);
+     await assert.rejects(manager.query('SELECT lifeos_agent.set_managed_business_grant($1,$2,$3,$4::jsonb,$5)',[ownerSessionToken,grantId,digest,JSON.stringify({todo:['read','write'],requirements:['read','write']}),'all-personal-business-v1']),{code:'LG409'});
+    }
     assert.ok(await original());await assert.rejects(service.commit(ownerActor,body(preview),'revoked-full-preview-'+randomUUID()));assert.deepEqual(await repository.exportSnapshot(owner.ownerId),before);
+    if(change==='original-policy-removed'){
+     const digest=(await manager.query('SELECT lifeos_agent.current_managed_grant_digest($1) AS value',[grantId])).rows[0].value;
+     await manager.query('SELECT lifeos_agent.set_managed_business_grant($1,$2,$3,$4::jsonb,$5)',[ownerSessionToken,grantId,digest,JSON.stringify({todo:['read','write'],requirements:['read','write']}),'all-personal-business-v1']);
+    }
    }
   });
   await group('10 original OAuth advisory gate rejects a waiting old producer after a real concurrent revoke',async()=>{
@@ -208,6 +220,29 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
     const sameClient:SqlPool={connect:async()=>({query:readonly.query.bind(readonly),release(){}})};await verifyBusinessOAuthPool(sameClient,config,owner);
     await assert.rejects(readonly.query('UPDATE lifeos_platform.platform_session SET "updatedAt"=clock_timestamp() WHERE false'),{code:'25006'});
    }finally{await readonly.query('ROLLBACK');readonly.release();}
+  });
+  await group('11b separately consented files retain original MFA/digest/revision CAS and permission revocation under the full marker',async()=>{
+   const digest=(await manager.query('SELECT lifeos_agent.current_managed_grant_digest($1) AS value',[grantId])).rows[0].value;
+   const permission=(await manager.query('SELECT lifeos_agent.set_file_handoff_permission($1,$2,$3,0,$4::text[],$5) AS value',[ownerSessionToken,grantId,digest,['file-handoff:read','file-handoff:write'],'codex'])).rows[0].value;
+   assert.equal(permission.revision,1);
+   await assert.rejects(manager.query('SELECT lifeos_agent.set_file_handoff_permission($1,$2,$3,0,$4::text[],$5)',[ownerSessionToken,grantId,digest,['file-handoff:read'],'codex']),{code:'LG409'});
+   active=await issue();const lookup=await readCurrentAgentGrant(verifier,grantId,policyOptions,true);assert.ok(lookup);
+   const fileOriginal={...lookup,fileHandoff:filePermissionSchema.parse('fileHandoff'in lookup?lookup.fileHandoff:undefined)};
+   const ordinaryOnly=intersectOAuthGrant(active.state,fileOriginal);assert.ok(ordinaryOnly);assert.equal(ordinaryOnly.fileHandoff,undefined);assert.ok(!ordinaryOnly.allowedOperationIds.includes('getFileHandoff'));
+   const scopes=[...config.scopes,'file-handoff:read'],fileConfig={...config,scopes},fileClient='https://full-file-fixture.example.test/client.json';
+   await client.query('UPDATE lifeos_agent.oauth_business_control SET scopes=$1',[scopes]);
+   await verifyBusinessOAuthPool(runtime as SqlPool,fileConfig,owner);
+   await client.query('INSERT INTO lifeos_platform.platform_oauth_client(id,"clientId",disabled,"skipConsent","tokenEndpointAuthMethod","redirectUris",scopes) VALUES($1,$2,false,false,\'none\',\'["https://full-file-fixture.example.test/callback"]\'::jsonb,$3::jsonb)',[randomUUID(),fileClient,JSON.stringify(scopes)]);
+   await client.query('INSERT INTO lifeos_platform.platform_oauth_consent(id,"clientId","userId","referenceId",resources,scopes,"createdAt","updatedAt") VALUES($1,$2,$3,\'lifeos-business-mcp-v1\',$4::jsonb,$5::jsonb,statement_timestamp(),statement_timestamp())',[randomUUID(),fileClient,owner.ownerId,JSON.stringify([config.resource]),JSON.stringify(scopes)]);
+   const fileLedger=new BusinessOAuthLedger(runtime as SqlPool,fileConfig,owner.ownerId,owner.spaceId);await fileLedger.approve(ownerSessionId,fileClient,scopes);
+   const seconds=Math.floor(Date.now()/1000),state=await fileLedger.register('synthetic-full-file-sql-'+randomUUID(),{iss:config.issuer,aud:config.resource,sub:owner.ownerId,azp:fileClient,client_id:fileClient,sid:ownerSessionId,iat:seconds,exp:seconds+300,scope:scopes.join(' ')},'authorization_code');assert.ok(state);
+   const grant=intersectOAuthGrant(state,fileOriginal);assert.ok(grant);assert.ok(grant.allowedOperationIds.includes('getFileHandoff'));assert.ok(!grant.allowedOperationIds.includes('stageFileHandoff'));
+   assert.deepEqual(grant.fileHandoff?.scopes,['file-handoff:read']);
+   await repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read'],'getFileHandoff'));
+   await assert.rejects(repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read','file-handoff:write'],'stageFileHandoff')),{code:'WRITE_GRANT_REVOKED'});
+   const currentDigest=(await manager.query('SELECT lifeos_agent.current_managed_grant_digest($1) AS value',[grantId])).rows[0].value;
+   await manager.query('SELECT lifeos_agent.set_file_handoff_permission($1,$2,$3,1,ARRAY[]::text[],NULL)',[ownerSessionToken,grantId,currentDigest]);
+   await assert.rejects(repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read'],'getFileHandoff')),{code:'WRITE_GRANT_REVOKED'});
   });
   await group('12 original narrow consent remains narrow on the new schema; final full control disable and source invariants are read back',async()=>{
    const originalGrant=await original();assert.ok(originalGrant);
