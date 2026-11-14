@@ -1,11 +1,13 @@
 import {requirementEventOperations,requirementEventTransports} from '../requirement-events/operations.ts';
 import {personalRecordOperations,feedbackOperations} from './personal-operation-registry.ts';
 import {storageReviewOperations} from '../storage-review/operations.ts';
+import {fileHandoffOperations} from '../file-handoff/operations.ts';
 import type {AgentScope} from './scopes.ts';
 export type {AgentScope} from './scopes.ts';
 export const agentApiVersion = '1';
 
 export const agentOperations = [
+  ...fileHandoffOperations,
   ...personalRecordOperations,...feedbackOperations,...storageReviewOperations,...requirementEventOperations,
   {id:'snapshotRequirements',method:'GET',path:'/v1/requirements/snapshot',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read the complete server-composed public and own private requirement pool, optional owner workflow (state/purpose/nextStep), exact baseline bindings and revisions, or fail without a partial inventory.'},
   {id:'getRequirement',method:'GET',path:'/v1/requirements/{id}',module:'requirements',policyClass:'personal-business-data',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read one stable public LO-ID or private UUID, full editable fields including optional workflow (state/purpose/nextStep) and its baseline binding.'},

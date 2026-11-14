@@ -17,7 +17,7 @@ const mount='/api/platform/agent';
 const responseLimit=8*1024*1024,requestLimit=131072;
 // All executable descriptors originate in the shared reviewed source registry.
 // Remote catalog text/unknown IDs are data, never executable route registration.
-const supported=(operation:Operation)=>policyOperationScopes(operation)!==null&&(
+const supported=(operation:Operation)=>operation.module==='fileHandoff'||policyOperationScopes(operation)!==null&&(
  /^\/v1\/todos(?:\/(?:snapshot|\{id\}))?$/.test(operation.path)||
  /^\/v1\/organization\/(?:snapshot|\{type\}(?:\/\{id\})?)$/.test(operation.path)||
  /^\/v1\/requirement-events\/claims(?:\/\{id\})?$/.test(operation.path)||
@@ -74,7 +74,7 @@ export class LifeOSApiClient{
   const remote=result.data.operations;
   if(new Set(remote.map((x:any)=>x?.id)).size!==remote.length)throw new ApiError(502,'API_CATALOG_INVALID');
   for(const local of agentOperations){const matches=remote.filter((x:any)=>x?.id===local.id);if(matches.length&&(!isObject(matches[0])||matches[0].method!==local.method||matches[0].path!==local.path||!Array.isArray(matches[0].requiredScopes)||new Set(matches[0].requiredScopes).size!==matches[0].requiredScopes.length||JSON.stringify([...matches[0].requiredScopes].sort())!==JSON.stringify([...local.requiredScopes].sort())))throw new ApiError(502,'API_CONTRACT_MISMATCH');}
-  const operations=agentOperations.filter(local=>supported(local)&&remote.filter((entry:unknown)=>isObject(entry)&&entry.id===local.id).length===1&&remote.some((entry:unknown)=>isObject(entry)&&entry.id===local.id&&entry.method===local.method&&entry.path===local.path&&Array.isArray(entry.requiredScopes)&&entry.requiredScopes.length===local.requiredScopes.length&&new Set(entry.requiredScopes).size===entry.requiredScopes.length&&local.requiredScopes.every(s=>entry.requiredScopes instanceof Array&&entry.requiredScopes.includes(s))));
+  const operations=agentOperations.filter(local=>supported(local)&&(local.module!=='fileHandoff'||this.#runtime.fileHandoff==='file-handoff-v1')&&remote.filter((entry:unknown)=>isObject(entry)&&entry.id===local.id).length===1&&remote.some((entry:unknown)=>isObject(entry)&&entry.id===local.id&&entry.method===local.method&&entry.path===local.path&&Array.isArray(entry.requiredScopes)&&entry.requiredScopes.length===local.requiredScopes.length&&new Set(entry.requiredScopes).size===entry.requiredScopes.length&&local.requiredScopes.every(s=>entry.requiredScopes instanceof Array&&entry.requiredScopes.includes(s))));
   const eventTransports=Array.isArray(result.data.eventTransports)?agentEventTransports.filter(local=>(result.data.eventTransports as any[]).some(remote=>remote?.id===local.id&&remote.transport===local.transport&&remote.method===local.method&&remote.path===local.path&&JSON.stringify(remote.requiredScopes)===JSON.stringify(local.requiredScopes))):undefined;
   return{apiVersion:'2',operations,...(eventTransports?{eventTransports}:{})};
  }
@@ -142,6 +142,7 @@ export class LifeOSApiClient{
    const {parsed}=validateLocalArguments(operationId,input);
    await this.#before();const operation=(await this.#catalog()).operations.find(op=>op.id===operationId);
    if(!operation)return{ok:false,status:403,error:'OPERATION_UNAVAILABLE'};
+   if(operation.id==='downloadFileHandoff')return{ok:false,status:403,error:'BINARY_RECEIVER_REQUIRED'};
    if(operation.method==='GET')return{ok:true,...await this.#request(parsed.path,operation.method)};
    if(operation.id==='previewTodoClassification'){
     const response=await this.#request(parsed.path,operation.method,JSON.stringify(parsed.body));const preview=decodePreview(response.data);

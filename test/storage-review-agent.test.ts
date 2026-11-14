@@ -19,7 +19,7 @@ function setup(){
  repository.readCurrentSnapshot=async()=>structuredClone([...repository.rows.values()]);
  repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>fenced&&!revoked}));
  const grant=(token:string)=>token==='synthetic-review-policy'?{grantId:'synthetic-review-grant',ownerId:foreign?'another-synthetic-owner':ownerId,spaceId,businessDataPolicy:'all-personal-business-v1' as const,
-  allowedOperationIds:agentOperations.filter(op=>'policyClass'in op&&(!readOnly||op.method==='GET')).map(op=>op.id),scopes:[...new Set(agentOperations.filter(op=>'policyClass'in op&&(!readOnly||op.method==='GET')).flatMap(op=>op.requiredScopes))]}:
+  allowedOperationIds:agentOperations.filter(op=>'policyClass'in op&&op.policyClass==='personal-business-data'&&(!readOnly||op.method==='GET')).map(op=>op.id),scopes:[...new Set(agentOperations.filter(op=>'policyClass'in op&&op.policyClass==='personal-business-data'&&(!readOnly||op.method==='GET')).flatMap(op=>op.requiredScopes))]}:
   token==='synthetic-review-legacy'?{grantId:'synthetic-legacy',ownerId,spaceId,scopes:['todo:read','todo:write'] as const}:null;
  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:false,classification:false,businessDataPolicy:true,storageReview:true},repository,
   config:{ownerId,spaceId,baseURL:origin,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal']},
@@ -32,6 +32,7 @@ function setup(){
 test('storage Agent discovery is scoped and complete while old grants never gain review data',async()=>{
  const f=setup();const response=await f.request('GET','/v2/capabilities');assert.equal(response.status,200);
  const catalog=await response.json();assert.deepEqual(catalog.operations.filter((op:any)=>op.module==='storageReview').map((op:any)=>op.id),ids);
+ assert.equal(catalog.operations.some((op:any)=>op.module==='fileHandoff'),false,'The original all-business grant excludes independent file authority');
  const legacy=await(await f.request('GET','/v2/capabilities',undefined,undefined,'synthetic-review-legacy')).json();assert.equal(legacy.operations.some((op:any)=>op.module==='storageReview'),false);
 });
 

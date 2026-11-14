@@ -6,6 +6,7 @@ import {type CapabilityCatalog} from '../mcp-candidate/client.ts';
 import {argumentSchema} from '../mcp-candidate/schemas.ts';
 import {HttpBusinessClient,type BusinessDispatcher,type HttpOperationResult} from './business-client.ts';
 import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
+import {stageFileTool} from '../file-handoff/operations.ts';
 
 export const mcpHttpPath='/api/platform/mcp';
 const discoverSchema=z.union([z.strictObject({}),z.strictObject({view:z.literal('index')}),z.strictObject({operationId:z.string().min(1).max(100)})]);
@@ -15,19 +16,22 @@ const failure=(status:number,error:string,extra:Record<string,string>={})=>Respo
 
 function serverFor(client:HttpBusinessClient,token:string){
  const server=new Server({name:'lifeos-http-adapter',version:'0.1.0'},{capabilities:{tools:{}}});
- const result=(value:HttpOperationResult)=>{
+ const result=(value:HttpOperationResult,fileStage=false)=>{
   if(JSON.stringify(value).includes(token))value={ok:false,status:502,error:'API_RESPONSE_INVALID'};
-  return{content:[{type:'text' as const,text:value.outcome==='unknown'?'Outcome unknown. Preserve the original arguments and idempotency key; resend only the identical lifeos_call.':value.ok?'The API result and separate independent readback are in structuredContent.':value.error??'API_ERROR'}],structuredContent:value,isError:!value.ok};
+  return{content:[{type:'text' as const,text:value.outcome==='unknown'?(fileStage?'Outcome unknown. Preserve the handoffId, original lifeos_stage_file arguments and key. Independently get that ID; use the identical original file tool only for controlled reconciliation, never a new command or another transport.':'Outcome unknown. Preserve the original arguments and idempotency key; resend only the identical lifeos_call.'):value.ok?'The API result and separate independent readback are in structuredContent.':value.error??'API_ERROR'}],structuredContent:value,isError:!value.ok};
  };
  server.setRequestHandler('tools/list',async()=>{
   try{const catalog=await client.discover();
    const tools=[ToolSchema.parse({name:'lifeos_discover',description:'Discover currently authorized, enabled LifeOS operations and exact argument schemas.',inputSchema:{...z.toJSONSchema(discoverSchema),type:'object'},annotations:{readOnlyHint:true,openWorldHint:false}})];
-   if(catalog.operations.length)tools.push(ToolSchema.parse({name:'lifeos_call',description:'Call a current LifeOS business operation through the same API. Writes retain their original idempotency key and return a separate readback. Unknown results require the identical original call; no in-memory recovery tool is offered.',inputSchema:{type:'object',oneOf:catalog.operations.map(operation=>({type:'object',properties:{operationId:{type:'string',const:operation.id},arguments:z.toJSONSchema(argumentSchema(operation))},required:['operationId','arguments'],additionalProperties:false}))},annotations:{readOnlyHint:catalog.operations.every(operation=>operation.method==='GET'||operation.id==='previewTodoClassification'),openWorldHint:false}}));
+   const generic=catalog.operations.filter(operation=>operation.id!=='stageFileHandoff');
+   if(generic.length)tools.push(ToolSchema.parse({name:'lifeos_call',description:'Call a current LifeOS business operation through the same API. Writes retain their original idempotency key and return a separate readback. Unknown results require the identical original call; no in-memory recovery tool is offered.',inputSchema:{type:'object',oneOf:generic.map(operation=>({type:'object',properties:{operationId:{type:'string',const:operation.id},arguments:z.toJSONSchema(argumentSchema(operation))},required:['operationId','arguments'],additionalProperties:false}))},annotations:{readOnlyHint:generic.every(operation=>operation.method==='GET'||operation.id==='previewTodoClassification'),openWorldHint:false}}));
+   if(catalog.operations.some(operation=>operation.id==='stageFileHandoff'))tools.push(ToolSchema.parse(stageFileTool));
    return{tools};
   }catch{throw new ProtocolError(-32603,'API_DISCOVERY_UNAVAILABLE');}
  });
  server.setRequestHandler('tools/call',async request=>{
   const input=request.params.arguments??{};
+  if(request.params.name==='lifeos_stage_file')return result(await client.execute('stageFileHandoff',input),true);
   if(request.params.name==='lifeos_discover'){
    const parsed=discoverSchema.safeParse(input);
    if(!parsed.success)return result({ok:false,status:400,error:'INVALID_ARGUMENTS'});
@@ -47,7 +51,8 @@ function serverFor(client:HttpBusinessClient,token:string){
    catch{return result({ok:false,status:503,error:'API_DISCOVERY_UNAVAILABLE'});}
   }
   if(request.params.name!=='lifeos_call')return result({ok:false,status:403,error:'OPERATION_UNAVAILABLE'});
-  const parsed=callSchema.safeParse(input);return parsed.success?result(await client.execute(parsed.data.operationId,parsed.data.arguments)):result({ok:false,status:400,error:'INVALID_ARGUMENTS'});
+  const parsed=callSchema.safeParse(input);if(parsed.success&&parsed.data.operationId==='stageFileHandoff')return result({ok:false,status:403,error:'DEDICATED_FILE_TOOL_REQUIRED'});
+  return parsed.success?result(await client.execute(parsed.data.operationId,parsed.data.arguments)):result({ok:false,status:400,error:'INVALID_ARGUMENTS'});
  });
  server.onerror=()=>{};return server;
 }

@@ -1,4 +1,5 @@
 import {completeRecordFields} from '../agent-api/personal-records.ts';
+import {verifyFileReceipt,verifyFileCurrent} from '../file-handoff/semantic.ts';
 import {expectedStorageReviewFields} from '../storage-review/agent-fields.ts';
 import {preserveOmittedPlanning} from '../personal-candidate/planning.ts';
 import {validateTodo,validateFinance} from '../platform/domain.ts';
@@ -11,6 +12,7 @@ const equal=(a,b)=>canonical(a)===canonical(b);
 export const responseEntry=v=>v&&typeof v==='object'&&!Array.isArray(v)?(v.entry&&typeof v.entry==='object'?v.entry:typeof v.id==='string'&&(v.fields||typeof v.title==='string'&&typeof v.text==='string'&&v.source)?v:undefined):undefined;
 const entry=responseEntry;
 export function verifyReceipt(operation,args,before,data){
+ if(operation.module==='fileHandoff')return verifyFileReceipt(operation,args,data);
  if(['claimRequirementExecution','updateRequirementExecution'].includes(operation.id)){
   if(args.action==='progress')return verifyReceipt({id:'updateRequirement',module:'requirements',method:'PATCH'},{...args.input,id:args.lease.requirementId},before,data);
   if(args.action==='admit'){
@@ -54,6 +56,7 @@ export function verifyReceipt(operation,args,before,data){
  return e;
 }
 export function verifyCurrent(receipt,readback){
+ if(receipt?.entry?.sourceFileId!==undefined)return verifyFileCurrent(receipt,readback);
  const expected=entry(receipt);if(!readback?.ok)return{verified:false,state:'READBACK_UNAVAILABLE'};const current=entry(readback.data);
  if(!current||current.id!==expected.id||current.sourceId!==expected.sourceId)return{verified:false,state:'READBACK_IDENTITY_MISMATCH'};
  if(!Number.isInteger(current.revision)||current.revision<1)return{verified:false,state:'READBACK_REVISION_INVALID'};

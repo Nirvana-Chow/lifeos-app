@@ -72,6 +72,12 @@ export function RequirementsPage({container,navigationGuard}:{container?:HTMLEle
   if(!activeBinding.current)return;const epoch=++detailGeneration.current;setDetailLoading(true);
   void fetch('/api/platform/personal/requirements/'+item.id,{credentials:'same-origin',cache:'no-store'}).then(async response=>{const value=await response.json();if(epoch!==detailGeneration.current)return;if(response.status===401||response.status===403){closePrivate(true,'当前账号不能读取本人需求，请恢复本人登录。');return;}if(response.status!==200)throw Error();const entry=readRequirementItem(value.entry);setEditorItem(entry);setSelected(entry.requirement);}).catch(()=>{if(epoch===detailGeneration.current)setAvailability('需求详情读取失败，请刷新后重试。');}).finally(()=>{if(epoch===detailGeneration.current)setDetailLoading(false);});
  },[mayDepart,closePrivate]);
+ const linkedRequirementOpened=useRef(false);
+ useEffect(()=>{
+  if(!pool||!binding||linkedRequirementOpened.current)return;
+  const id=new URLSearchParams(window.location.search).get('requirement'),item=pool.items.find(item=>item.id===id);
+  if(!item||!viewButton.current)return;linkedRequirementOpened.current=true;open(item.requirement,viewButton.current);
+ },[pool,binding,open]);
  const newRequirement=(trigger:HTMLButtonElement)=>{if(!mayDepart())return;detailGeneration.current++;setDetailLoading(false);dirty.current=false;opener.current=trigger;setExpanded(false);setCreating(true);setEditorItem(null);setSelected(createPreview(emptyFields()));};
  const recover=()=>{const pending=mutation.pending;if(!pending)return;dirty.current=false;setCreating(pending.id===null);setEditorItem(pool?.items.find(item=>item.id===pending.id)??null);setSelected(pool?.items.find(item=>item.id===pending.id)?.requirement??createPreview(pending.body.fields));setExpanded(false);};
  const save=async(fields:RequirementFields)=>{if(!binding||!session||!writable||!creating&&!editorItem)return;try{await session.submit(makeRequirementCommand(binding,creating?null:editorItem!.id,fields,crypto.randomUUID(),editorItem?.revision,editorItem?.baselineBinding));}catch{setAvailability('请核对需求完整字段与计划日期。');}};

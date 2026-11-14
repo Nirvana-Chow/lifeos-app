@@ -8,6 +8,7 @@ import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
 import {ownerMaintenanceKey} from '../deployment-candidate/owner-maintenance-key.ts';
+import {filePermissionSchema} from '../file-handoff/authorization.ts';
 import type{ClassificationRepository,ClassificationTransaction,Kind,StoredEntry,Receipt,Transaction}from'./contracts.ts';import{PlatformError}from'./domain.ts';
 export interface SqlClient{query(sql:string,values?:unknown[]):Promise<{rows:Record<string,unknown>[];rowCount:number|null}>;release():void}
 export interface SqlPool{connect():Promise<SqlClient>}
@@ -46,6 +47,21 @@ function decode(row:Record<string,unknown>):StoredEntry{
  const iso=(value:unknown)=>new Date(value as string).toISOString();
  return{id:row.id as string,ownerId:row.owner_id as string,kind:row.kind as Kind,...(row.inbox_id?{inboxId:row.inbox_id as string}:{}),draft:row.draft as StoredEntry['draft'],source:{id:row.source_id as string,system:'website',externalId:row.external_id as string,version:row.source_version as number,asOf:iso(row.as_of),original:row.original},revision:row.revision as number,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),syncState:'draft',externalStatus:null};
 }
+/** Reuse the native decoder and original transaction client; no nested pool. */
+export async function readPlatformEntryOnClient(client:SqlClient,owner:string,kind:Kind,id:string,lock=false):Promise<StoredEntry|null>{
+ const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3'+(lock?' FOR UPDATE OF r':''),[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;
+}
+export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false):Promise<boolean>{
+ if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled)return false;
+ if(grant.oauthFence){
+  const oauth=await client.query('SELECT lifeos_agent.assert_oauth_business_grant($1,$2,$3,$4::jsonb,$5::text[],$6::text) AS allowed',[grant.grantId,owner,grant.spaceId,JSON.stringify(grant.oauthFence),requiredScopes,grant.operationId??null]);if(oauth.rows[0]?.allowed!==true)return false;
+ }
+ if(requiredScopes.some(scope=>scope.startsWith('file-handoff:'))){
+  const file=filePermissionSchema.safeParse(grant.fileHandoff);if(!file.success||!requiredScopes.every(scope=>file.data.scopes.includes(scope as never)))return false;
+  const result=await client.query('SELECT lifeos_agent.assert_file_handoff_permission($1,$2,$3,$4,$5::text[],$6,$7) AS allowed',[grant.grantId,owner,grant.spaceId,file.data.revision,requiredScopes,grant.operationId??null,grant.oauthFence?null:file.data.consumer]);return result.rows[0]?.allowed===true;
+ }
+ const result=await client.query(policyEnabled?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(policyEnabled?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);return result.rows[0]?.allowed===true;
+}
 export class PostgresPlatformRepository implements ClassificationRepository{
  private pool:SqlPool;private personalOwnerGate:boolean;private readonly agentWriteFenceEnabled:boolean;private readonly businessFeatures?:AgentModules;private readonly requirementEventsEnabled:boolean;
  constructor(pool:SqlPool,personalOwnerGate=false,agentWriteFenceEnabled=false,businessFeatures?:AgentModules,requirementEventsEnabled=false){this.requirementEventsEnabled=requirementEventsEnabled;this.businessFeatures=businessFeatures;this.pool=pool;this.personalOwnerGate=personalOwnerGate;this.agentWriteFenceEnabled=agentWriteFenceEnabled;}
@@ -78,17 +94,7 @@ export class PostgresPlatformRepository implements ClassificationRepository{
  private async transactionImpl<T>(owner:string,key:string,fn:(tx:Transaction,client:SqlClient)=>Promise<T>,commandLock=JSON.stringify([owner,key])):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
-  const lockGrant=async(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>{
-    if(grant.ownerId!==owner||grant.businessDataPolicy&&!this.businessFeatures?.businessDataPolicy)return false;
-    // SQL acquires the OAuth statement gate before its client/consent/binding
-    // rows, then the existing grant row. Never open a second pool from here.
-    if(grant.oauthFence){
-     const oauth=await client.query('SELECT lifeos_agent.assert_oauth_business_grant($1,$2,$3,$4::jsonb,$5::text[],$6::text) AS allowed',[grant.grantId,owner,grant.spaceId,JSON.stringify(grant.oauthFence),requiredScopes,grant.operationId??null]);
-     if(oauth.rows[0]?.allowed!==true)return false;
-    }
-    const result=await client.query(this.businessFeatures?.businessDataPolicy?'SELECT lifeos_agent.assert_current_business_grant($1,$2,$3,$4::text[],$5::text,$6::text) AS allowed':'SELECT lifeos_agent.assert_business_grant($1,$2,$3,$4::text[]) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId,requiredScopes,...(this.businessFeatures?.businessDataPolicy?[grant.businessDataPolicy??null,grant.operationId??null]:[])]);
-    return result.rows[0]?.allowed===true;
-  };
+  const lockGrant=(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>lockCurrentAgentGrant(client,owner,grant,requiredScopes,this.businessFeatures?.businessDataPolicy);
   const tx:Transaction={
    ...(this.requirementEventsEnabled?{
     assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding),
@@ -106,7 +112,7 @@ export class PostgresPlatformRepository implements ClassificationRepository{
    }}:{}),
    peek:async(kind,id)=>{const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3',[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;},
    derivedTodo:async(id)=>{const result=await client.query(select+" WHERE r.owner_id=$1 AND r.kind='todo' AND r.inbox_id=$2",[owner,id]);return result.rows[0]?decode(result.rows[0]):null;},
-   get:async(kind,id)=>{const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3 FOR UPDATE OF r',[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;},
+   get:(kind,id)=>readPlatformEntryOnClient(client,owner,kind,id,true),
    refundsFor:async(id)=>(await client.query(select+" WHERE r.owner_id=$1 AND r.kind='finance' AND r.original_entry_id=$2",[owner,id])).rows.map(decode),
    receipt:async()=>{const result=await client.query('SELECT digest,response FROM lifeos_platform.platform_command WHERE owner_id=$1 AND command_key=$2',[owner,key]);return result.rows[0]?{digest:result.rows[0].digest,result:result.rows[0].response} as Receipt:null;},
    saveReceipt:async value=>{await client.query('INSERT INTO lifeos_platform.platform_command(owner_id,command_key,digest,response) VALUES($1,$2,$3,$4::jsonb)',[owner,key,value.digest,JSON.stringify(value.result)]);},

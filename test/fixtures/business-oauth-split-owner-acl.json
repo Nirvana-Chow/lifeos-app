@@ -1,0 +1,540 @@
+{
+  "lifeos_agent.apikey": {
+    "owner": "lifeos_auth_test_bootstrap",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_issuer",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_issuer",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_issuer",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_issuer",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_key_manager",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_key_manager",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_key_manager",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_verifier",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_agent_verifier",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "UPDATE"
+      }
+    ],
+    "columnAcl": {
+      "lastRefillAt": "{lifeos_agent_verifier=w/lifeos_auth_test_bootstrap}",
+      "enabled": "{lifeos_agent_key_manager=w/lifeos_auth_test_bootstrap}",
+      "requestCount": "{lifeos_agent_verifier=w/lifeos_auth_test_bootstrap}",
+      "remaining": "{lifeos_agent_verifier=w/lifeos_auth_test_bootstrap}",
+      "lastRequest": "{lifeos_agent_verifier=w/lifeos_auth_test_bootstrap}",
+      "updatedAt": "{lifeos_agent_verifier=w/lifeos_auth_test_bootstrap,lifeos_agent_key_manager=w/lifeos_auth_test_bootstrap}"
+    }
+  },
+  "lifeos_agent.key_management_binding": {
+    "owner": "lifeos_auth_test_bootstrap",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "UPDATE"
+      }
+    ],
+    "columnAcl": {}
+  },
+  "lifeos_platform.platform_account": {
+    "owner": "lifeos_platform_candidate_migrator",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_bootstrap",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_bootstrap",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      }
+    ],
+    "columnAcl": {
+      "password": "{lifeos_platform_candidate_runtime=w/lifeos_platform_candidate_migrator}",
+      "updatedAt": "{lifeos_platform_candidate_runtime=w/lifeos_platform_candidate_migrator}"
+    }
+  },
+  "lifeos_platform.platform_session": {
+    "owner": "lifeos_platform_candidate_migrator",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "UPDATE"
+      }
+    ],
+    "columnAcl": {}
+  },
+  "lifeos_platform.platform_two_factor": {
+    "owner": "lifeos_auth_test_bootstrap",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_auth_test_bootstrap",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_auth_test_bootstrap",
+        "privilege": "SELECT"
+      }
+    ],
+    "columnAcl": {
+      "id": "{lifeos_platform_candidate_runtime=a/lifeos_auth_test_bootstrap}",
+      "secret": "{lifeos_platform_candidate_runtime=aw/lifeos_auth_test_bootstrap}",
+      "backupCodes": "{lifeos_platform_candidate_runtime=aw/lifeos_auth_test_bootstrap}",
+      "userId": "{lifeos_platform_candidate_runtime=a/lifeos_auth_test_bootstrap}",
+      "verified": "{lifeos_platform_candidate_runtime=aw/lifeos_auth_test_bootstrap}",
+      "failedVerificationCount": "{lifeos_platform_candidate_runtime=aw/lifeos_auth_test_bootstrap}",
+      "lockedUntil": "{lifeos_platform_candidate_runtime=w/lifeos_auth_test_bootstrap}"
+    }
+  },
+  "lifeos_platform.platform_user": {
+    "owner": "lifeos_platform_candidate_migrator",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_bootstrap",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_bootstrap",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      }
+    ],
+    "columnAcl": {
+      "updatedAt": "{lifeos_platform_candidate_runtime=w/lifeos_platform_candidate_migrator}",
+      "twoFactorEnabled": "{lifeos_platform_candidate_runtime=w/lifeos_platform_candidate_migrator}"
+    }
+  },
+  "lifeos_platform.platform_verification": {
+    "owner": "lifeos_platform_candidate_migrator",
+    "acl": [
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "INSERT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "MAINTAIN"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "REFERENCES"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRIGGER"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "TRUNCATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_migrator",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "UPDATE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "DELETE"
+      },
+      {
+        "grantable": false,
+        "grantee": "lifeos_platform_candidate_runtime",
+        "grantor": "lifeos_platform_candidate_migrator",
+        "privilege": "SELECT"
+      }
+    ],
+    "columnAcl": {
+      "id": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}",
+      "identifier": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}",
+      "value": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}",
+      "expiresAt": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}",
+      "createdAt": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}",
+      "updatedAt": "{lifeos_platform_candidate_runtime=a/lifeos_platform_candidate_migrator}"
+    }
+  }
+}

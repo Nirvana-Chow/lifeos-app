@@ -1,6 +1,8 @@
 import {allPersonalBusinessPolicy,type BusinessDataPolicy} from './business-policy.ts';
 import {readBusinessPolicyCatalog} from './business-policy-postgres.ts';
 import {verifyAgentBusinessReadiness,verifyAgentRequirementsReadiness} from './runtime.ts';
+import {filePermissionChangeSchema,filePermissionStateSchema,type FilePermission,type FilePermissionChange} from '../file-handoff/authorization.ts';
+import {verifyFilePermissionPool} from '../file-handoff/readiness.ts';
 import {createHmac, timingSafeEqual} from 'node:crypto';
 import {isHTTPSOrigin} from '../platform/config.ts';
 import {PlatformError} from '../platform/domain.ts';
@@ -12,6 +14,7 @@ export const issuerScopes=(mode?:'organization-v1'|'requirements-v1')=>agentScop
 const ownerSessionCookie = '__Secure-lifeos-platform-candidate.session_token';
 
 export type KeySummary = Readonly<{
+  fileHandoff?:FilePermission;
   grantDigest?: string;
   businessDataPolicy?: BusinessDataPolicy;
   id: string;
@@ -21,13 +24,15 @@ export type KeySummary = Readonly<{
   expiresAt: string | null;
   status: 'active' | 'expired' | 'revoked';
 }>;
-export type KeyOperation = 'list'|'create'|'revoke'|'setScopes';
+export type KeyOperation = 'list'|'create'|'revoke'|'setScopes'|'setFileHandoff';
 export type SetScopesInput = {id:string;expectedGrantDigest:string;scopes:readonly AgentScope[];businessDataPolicy?:BusinessDataPolicy|null};
 type IssueInput = {name: string; scopes: AgentScope[]; expiresIn: number;businessDataPolicy?:BusinessDataPolicy};
 type Issued = {grant: KeySummary; key: string};
 type KeyPage = {keys: KeySummary[]; nextCursor?: string};
 const cursorPattern = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)~([A-Za-z0-9_-]{1,80})$/;
 type Dependencies = {
+  fileHandoffAvailable?:()=>Promise<boolean>;
+  setFileHandoff?:(input:FilePermissionChange,cookie:string)=>Promise<KeySummary>;
   businessPolicyAvailable?:()=>Promise<boolean>;
   authenticate: (cookie: string) => Promise<boolean>;
   list: (cursor?: string) => Promise<KeyPage>;
@@ -44,8 +49,8 @@ function fields(body: unknown, expected: readonly string[]): Record<string, unkn
 }
 
 function safeSummary(value: KeySummary): KeySummary {
-  const {id,name,scopes,createdAt,expiresAt,status,grantDigest,businessDataPolicy} = value;
-  return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{}),...(businessDataPolicy?{businessDataPolicy}:{})};
+  const {id,name,scopes,createdAt,expiresAt,status,grantDigest,businessDataPolicy,fileHandoff} = value;
+  return {id,name,scopes,createdAt,expiresAt,status,...(grantDigest?{grantDigest}:{}),...(businessDataPolicy?{businessDataPolicy}:{}),...(fileHandoff?{fileHandoff:filePermissionStateSchema.parse(fileHandoff)}:{})};
 }
 
 export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessScopes?:'organization-v1'|'requirements-v1') {
@@ -54,13 +59,19 @@ export function createKeyIssuer(deps: Dependencies, clock = Date.now, businessSc
     try {
       if (!cookie || Buffer.byteLength(cookie) > 8192 || !await deps.authenticate(cookie)) return fail(401,'AUTH_REQUIRED');
       const policyAvailable=await deps.businessPolicyAvailable?.()===true;
+      const filesAvailable=await deps.fileHandoffAvailable?.()===true;
+      if(operation==='setFileHandoff'){
+        if(!filesAvailable||!deps.setFileHandoff)return fail(503,'KEY_MANAGEMENT_UNAVAILABLE');
+        const parsed=filePermissionChangeSchema.safeParse(body);if(!parsed.success)return fail(400,'INVALID_REQUEST');
+        return{status:200,body:{grant:safeSummary(await deps.setFileHandoff(parsed.data,cookie))}};
+      }
       if (operation === 'list') {
         const input = fields(body, ['cursor']);
         const cursor = input?.cursor;
         if (!fields(body, []) && (typeof cursor !== 'string' || !cursorPattern.test(cursor) || !Number.isFinite(Date.parse(cursor.split('~')[0]))))
           return fail(400, 'INVALID_REQUEST');
         const page = await deps.list(typeof cursor === 'string' ? cursor : undefined);
-        return {status: 200, body: {keys: page.keys.map(safeSummary), ...(policyAvailable?{availablePolicies:[allPersonalBusinessPolicy]}:{}), ...(businessScopes?{availableScopes:issuerScopes(businessScopes)}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
+        return {status: 200, body: {keys: page.keys.map(safeSummary),...(filesAvailable?{availableFileHandoff:'file-handoff-v1'}:{}), ...(policyAvailable?{availablePolicies:[allPersonalBusinessPolicy]}:{}), ...(businessScopes?{availableScopes:issuerScopes(businessScopes)}:{}), ...(page.nextCursor ? {nextCursor: page.nextCursor} : {})}};
       }
       if (operation === 'revoke') {
         const input = fields(body,['id']);
@@ -129,6 +140,7 @@ export function readSignedOwnerSession(header: string, secret: string): string |
 }
 
 export type KeyIssuerConfig = Readonly<{
+  fileHandoff?:'file-handoff-v1';
   businessScopes?:'organization-v1'|'requirements-v1';
   businessDataPolicy?:BusinessDataPolicy;
   socketPath:string; baseURL:string; databaseURL:string; databaseName:string;
@@ -136,6 +148,11 @@ export type KeyIssuerConfig = Readonly<{
 }>;
 
 export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
+  let files=false;
+  if(raw&&typeof raw==='object'&&!Array.isArray(raw)&&Object.hasOwn(raw,'fileHandoff')){
+    const value=raw as Record<string,unknown>;if(value.fileHandoff!=='file-handoff-v1')throw Error('Invalid issuer configuration');
+    const{fileHandoff:_,...base}=value;raw=base;files=true;
+  }
   const keys=['socketPath','baseURL','databaseURL','ownerId','ownerEmail','spaceId','sessionSecret','agentSecret'] as const;
   const values=fields(raw,keys)??fields(raw,[...keys,'businessScopes'])??fields(raw,[...keys,'businessScopes','businessDataPolicy']);
   if(values&&Object.hasOwn(values,'businessDataPolicy')&&(values.businessDataPolicy!==allPersonalBusinessPolicy||values.businessScopes!=='requirements-v1'))throw Error('Invalid issuer configuration');
@@ -153,10 +170,11 @@ export function readKeyIssuerConfig(raw: unknown): KeyIssuerConfig {
       !/^\S+@\S+\.\S+$/.test(config.ownerEmail)||config.ownerEmail!==config.ownerEmail.toLowerCase()||
       [config.sessionSecret,config.agentSecret].some(secret=>Buffer.byteLength(secret)<32||Buffer.byteLength(secret)>512)||
       config.sessionSecret===config.agentSecret) throw Error('Invalid issuer configuration');
-  return Object.freeze({...config,databaseName:database.pathname.slice(1)});
+  if(files&&config.businessScopes!=='requirements-v1')throw Error('Invalid issuer configuration');
+  return Object.freeze({...config,databaseName:database.pathname.slice(1),...(files?{fileHandoff:'file-handoff-v1' as const}:{})});
 }
 
-type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string;grantDigest?:string;metadata?:unknown};
+type GrantRow = {id:string;name:string|null;createdAt:Date;expiresAt:Date|null;enabled:boolean|null;permissions:unknown;cursorTime?:string;grantDigest?:string;metadata?:unknown;fileHandoff?:unknown};
 function fromRow(row: GrantRow): KeySummary {
   const permissions=typeof row.permissions==='string'?JSON.parse(row.permissions):row.permissions;
   const scopes=decodeAgentPermissions(permissions);
@@ -164,7 +182,7 @@ function fromRow(row: GrantRow): KeySummary {
   const metadata=typeof row.metadata==='string'?JSON.parse(row.metadata):row.metadata;
   const policy=metadata&&typeof metadata==='object'&&Object.hasOwn(metadata,'businessDataPolicy')?(metadata as {businessDataPolicy:unknown}).businessDataPolicy:undefined;
   if(policy!==undefined&&policy!==allPersonalBusinessPolicy)throw Error('Unexpected grant policy');
-  return {id:row.id,name:row.name??'',scopes,...(policy?{businessDataPolicy:policy}:{}),...(row.grantDigest?{grantDigest:row.grantDigest}:{}),
+  return {id:row.id,name:row.name??'',scopes,...(row.fileHandoff?{fileHandoff:filePermissionStateSchema.parse(row.fileHandoff)}:{}),...(policy?{businessDataPolicy:policy}:{}),...(row.grantDigest?{grantDigest:row.grantDigest}:{}),
     createdAt:new Date(row.createdAt).toISOString(),expiresAt:row.expiresAt?.toISOString()??null,
     status:row.enabled===false?'revoked':row.expiresAt&&row.expiresAt.valueOf()<=Date.now()?'expired':'active'};
 }
@@ -197,13 +215,30 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
     if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
     if(config.businessScopes==='requirements-v1')await verifyAgentRequirementsReadiness(pool);
     if(config.businessDataPolicy)await readBusinessPolicyCatalog(pool);
+    if(config.fileHandoff)await verifyFilePermissionPool(pool,'lifeos_agent_key_manager');
     const auth=betterAuth({baseURL:config.baseURL,secret:config.agentSecret,database:pool,
       logger:{disabled:true},telemetry:{enabled:false},plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,
         keyExpiration:{minExpiresIn:0,maxExpiresIn:365},maximumNameLength:80,startingCharactersConfig:{shouldStore:false}})]});
     await auth.$context;
     const bind=[config.ownerId,config.spaceId];
     const digestFunction=config.businessDataPolicy?'lifeos_agent.current_managed_grant_digest':'lifeos_agent.managed_grant_digest';
+    const grantDigestSql=config.fileHandoff?"CASE WHEN metadata::jsonb ? 'businessDataPolicy' THEN lifeos_agent.current_managed_grant_digest(id) ELSE lifeos_agent.managed_grant_digest(id) END":digestFunction+'(id)';
+    const fileSummarySql=config.fileHandoff?',lifeos_agent.read_file_handoff_permission(id,"referenceId",metadata::jsonb->>\'spaceId\') AS "fileHandoff"':'';
     const handle=createKeyIssuer({
+      ...(config.fileHandoff?{
+        fileHandoffAvailable:async()=>{await verifyFilePermissionPool(pool,'lifeos_agent_key_manager');return true;},
+        setFileHandoff:async(input:FilePermissionChange,cookie:string)=>{
+          const token=readSignedOwnerSession(cookie,config.sessionSecret);if(!token)throw new PlatformError(401,'AUTH_REQUIRED','Owner MFA required');
+          const client=await pool.connect();try{
+            await client.query('BEGIN');
+            await client.query('SELECT lifeos_agent.set_file_handoff_permission($1,$2,$3,$4,$5::text[],$6)',[token,input.id,input.expectedGrantDigest,input.expectedFileRevision,input.scopes,input.consumer]);
+            const result=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,${grantDigestSql} AS "grantDigest"${fileSummarySql} FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
+            if(result.rows.length!==1)throw Error('Unconfirmed file permission');const summary=fromRow(result.rows[0]);await client.query('COMMIT');return summary;
+          }catch(error){await client.query('ROLLBACK').catch(()=>{});const code=(error as {code?:string}).code;
+            if(code==='LG401')throw new PlatformError(401,'AUTH_REQUIRED','Owner MFA required');if(code==='LG403')throw new PlatformError(403,'ACCESS_DENIED','Grant unavailable');if(code==='LG409')throw new PlatformError(409,'KEY_CONFLICT','Permission changed');if(code==='LG400')throw new PlatformError(400,'INVALID_REQUEST','Invalid permission');throw error;
+          }finally{client.release();}
+        },
+      }:{}),
       ...(config.businessDataPolicy?{businessPolicyAvailable:async()=>(await readBusinessPolicyCatalog(pool)).enabled}:{}),
       authenticate:async header=>{
         if(config.businessScopes)await verifyAgentBusinessReadiness(pool);
@@ -216,8 +251,8 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
       list:async cursor=>{
         const [,time,id]=cursor ? cursorPattern.exec(cursor)! : [];
         const {rows}=await pool.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,
-          ${config.businessScopes?digestFunction+'(id) AS "grantDigest",':''}
-          to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime"
+          ${config.businessScopes?grantDigestSql+' AS "grantDigest",':''}
+          to_char("createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime"${fileSummarySql}
           FROM lifeos_agent.apikey WHERE "referenceId"=$1 AND metadata::jsonb->>'spaceId'=$2
           AND ($3::timestamptz IS NULL OR ("createdAt",id)<($3::timestamptz,$4::text))
           ORDER BY "createdAt" DESC,id DESC LIMIT 101`,[...bind,time??null,id??null]);
@@ -240,7 +275,7 @@ export async function createPostgresKeyIssuer(config: KeyIssuerConfig) {
         try {
           await client.query('BEGIN');
           await client.query(config.businessDataPolicy?'SELECT lifeos_agent.set_managed_business_grant($1,$2,$3,$4::jsonb,$5::text)':'SELECT lifeos_agent.set_managed_grant_scopes($1,$2,$3,$4::jsonb)',[token,input.id,input.expectedGrantDigest,JSON.stringify(encodeAgentPermissions(input.scopes)),...(config.businessDataPolicy?[input.businessDataPolicy??null]:[])]);
-          const {rows}=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,${digestFunction}(id) AS "grantDigest" FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
+          const {rows}=await client.query<GrantRow>(`SELECT id,name,"createdAt","expiresAt",enabled,permissions,metadata,${grantDigestSql} AS "grantDigest"${fileSummarySql} FROM lifeos_agent.apikey WHERE id=$1`,[input.id]);
           if(rows.length!==1)throw Error('Unconfirmed grant');
           const result=fromRow(rows[0]);await client.query('COMMIT');return result;
         }catch(error){

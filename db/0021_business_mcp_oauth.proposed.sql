@@ -146,6 +146,20 @@ CREATE TABLE lifeos_platform.platform_oauth_client_assertion(
 );
 CREATE TABLE lifeos_platform.platform_oauth_jwks(id text PRIMARY KEY,"publicKey" text NOT NULL,"privateKey" text NOT NULL,"createdAt" timestamptz NOT NULL,"expiresAt" timestamptz,alg text,crv text);
 
+-- New provider objects follow the actual existing identity-table owner.
+-- Existing tables, schema owners, role attributes/membership and ACLs are untouched.
+DO $$ DECLARE provider_owner name;t text; BEGIN
+ SELECT pg_get_userbyid(relowner) INTO provider_owner FROM pg_class
+ WHERE oid='lifeos_platform.platform_user'::regclass;
+ IF provider_owner IS NULL OR provider_owner IN('lifeos_platform_candidate_runtime','lifeos_agent_verifier','lifeos_agent_key_manager')
+ OR NOT pg_has_role(current_user,provider_owner,'SET')
+ OR NOT has_schema_privilege(provider_owner,'lifeos_platform','CREATE')
+ THEN RAISE EXCEPTION 'Existing identity owner must be a qualified provider object owner';END IF;
+ FOREACH t IN ARRAY ARRAY['platform_oauth_client','platform_oauth_resource','platform_oauth_client_resource','platform_oauth_refresh_token','platform_oauth_access_token','platform_oauth_consent','platform_oauth_client_assertion','platform_oauth_jwks'] LOOP
+  EXECUTE format('ALTER TABLE lifeos_platform.%I OWNER TO %I',t,provider_owner);
+ END LOOP;
+END $$;
+
 CREATE TABLE lifeos_agent.oauth_business_control(
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),enabled boolean NOT NULL DEFAULT false,
  owner_id text NOT NULL,space_id text NOT NULL,owner_email text,

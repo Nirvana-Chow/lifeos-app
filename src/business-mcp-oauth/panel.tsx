@@ -3,7 +3,7 @@ import {useState} from 'react';
 import {validOAuthRedirect} from './query';
 import type {BusinessOAuthConfig} from './boundary';
 import s from '../personal-candidate/login.module.css';
-const labels:Record<string,string>={todo:'待办',organization:'项目、领域与主题',requirements:'需求',journal:'日记',calendar:'日历',health:'健康',person:'联系人',finance:'财务',media:'收藏',career:'职业',portfolio:'作品',cooking:'烹饪',feedback:'反馈','storage-review':'文件审阅'};
+const labels:Record<string,string>={todo:'待办',organization:'项目、领域与主题',requirements:'需求',journal:'日记',calendar:'日历',health:'健康',person:'联系人',finance:'财务',media:'收藏',career:'职业',portfolio:'作品',cooking:'烹饪',feedback:'反馈','storage-review':'文件审阅','file-handoff':'明确交接的文件'};
 export function OAuthPanel({query,clientId,scopes,config,continuation=false}:{query:string;clientId:string;scopes:readonly string[];config:BusinessOAuthConfig;continuation?:boolean}){
  const[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[unknown,setUnknown]=useState(false);
  async function submit(accept:boolean){

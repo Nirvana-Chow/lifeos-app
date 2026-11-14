@@ -38,7 +38,7 @@ async function fixture({readOnly=false,legacy=false,disabledTypes=[] as string[]
  let revoked=false,loseWrite=false;
  const repository=new MemoryPort();repository.readCurrentSnapshot=async()=>structuredClone([...repository.rows.values()]);
  const transaction=repository.transaction.bind(repository);repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>true}));
- const operations=agentOperations.filter(op=>op.module!=='catalog'&&(!readOnly||op.method==='GET'));
+ const operations=agentOperations.filter(op=>op.module!=='fileHandoff'&&op.module!=='catalog'&&(!readOnly||op.method==='GET'));
  const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:legacy?['todo:read','todo:write'] as const:[...new Set(operations.flatMap(op=>op.requiredScopes))],...(!legacy?{businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:operations.map(op=>op.id)}:{})};
  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,...(!disabledTypes.includes('media')?{mediaEnabled:true}:{}),...(!disabledTypes.includes('career')?{careerEnabled:true}:{}),...(!disabledTypes.includes('portfolio')?{portfolioEnabled:true}:{}),...(!disabledTypes.includes('cooking')?{cookingEnabled:true}:{}),baseURL:origin},verify:async()=>revoked?null:grant,readCurrentGrant:async()=>revoked?null:grant,operationAvailable:()=>true,assertWritable:async()=>{}});
  const requests:string[]=[];
@@ -216,7 +216,7 @@ test('full current catalog pairs all 61 reviewed JSON operations and rejects alt
  const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-full-catalog',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  try{
   const discovery=await client.callTool({name:'lifeos_discover',arguments:{}}),descriptors=(discovery.structuredContent as {operations:Descriptor[]}).operations;
-  const want=agentOperations.filter(op=>!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,61);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
+  const want=agentOperations.filter(op=>op.module!=='fileHandoff'&&!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,61);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
   const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,61);
   for(const descriptor of descriptors){const branch=call.oneOf.find((s:Schema)=>s.properties.operationId.const===descriptor.id);assert.deepEqual(branch.properties.arguments,descriptor.inputSchema);}
   assertMatches(call,{operationId:'createMedia',arguments:fromSchema(descriptors.find(op=>op.id==='createMedia')!.inputSchema)});
