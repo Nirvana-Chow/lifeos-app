@@ -1,16 +1,17 @@
 import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {allPersonalBusinessPolicy,policyOperationScopes} from './business-policy.ts';
 import {businessPolicySqlDigests} from './business-policy-sql-digests.ts';
+import {reviewedSessionBodyDigests} from './session-freshness-sql-digests.ts';
 
 type Pool={query:(sql:string,values?:unknown[])=>Promise<{rows:Record<string,unknown>[]} >};
 export type BusinessPolicyCatalog=Readonly<{version:typeof allPersonalBusinessPolicy;enabled:boolean;operations:readonly Readonly<{id:string;requiredScopes:readonly string[];enabled:boolean}>[]}>;
 /** No client-provided registry: only the independent migration owner can register reviewed operations. */
 export async function readBusinessPolicyCatalog(pool:Pool):Promise<BusinessPolicyCatalog>{
- const {rows}=await pool.query(`WITH expected(signature,definer,grantees,digest) AS (VALUES
- ${Object.entries(businessPolicySqlDigests).map(([signature,{definer,grantees,digest}])=>`('${signature}',${definer},ARRAY[${grantees.map(role=>`'${role}'`).join(',')}]::text[],'${digest}')`).join(',\n ')}),
+ const {rows}=await pool.query(`WITH expected(signature,definer,grantees,digests) AS (VALUES
+ ${Object.entries(businessPolicySqlDigests).map(([signature,{definer,grantees,digest}])=>`('${signature}',${definer},ARRAY[${grantees.map(role=>`'${role}'`).join(',')}]::text[],ARRAY[${reviewedSessionBodyDigests(signature.split('(')[0].replace('lifeos_agent.',''),digest).map(value=>`'${value}'`).join(',')}]::text[])`).join(',\n ')}),
  owner AS (SELECT relowner FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass)
  SELECT (SELECT count(*)=${Object.keys(businessPolicySqlDigests).length} AND bool_and(p.oid IS NOT NULL AND p.proowner=o.relowner AND p.prosecdef=e.definer
- AND p.proconfig=ARRAY['search_path=pg_catalog, pg_temp']::text[] AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=e.digest
+ AND p.proconfig=ARRAY['search_path=pg_catalog, pg_temp']::text[] AND encode(sha256(convert_to(p.prosrc,'UTF8')),'hex')=ANY(e.digests)
  AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a WHERE a.privilege_type='EXECUTE' AND (a.is_grantable AND a.grantee<>p.proowner OR a.grantee NOT IN (p.proowner) AND NOT a.grantee=ANY(ARRAY(SELECT oid FROM pg_roles WHERE rolname=ANY(e.grantees)))))
  AND NOT EXISTS(SELECT 1 FROM unnest(e.grantees) role WHERE NOT has_function_privilege(role,p.oid,'EXECUTE')))
  FROM expected e LEFT JOIN pg_proc p ON p.oid=to_regprocedure(e.signature) CROSS JOIN owner o) AS functions_safe,

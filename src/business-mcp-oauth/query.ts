@@ -14,7 +14,10 @@ export async function readSignedOAuthQuery(query:string,config:BusinessOAuthConf
  return{query,clientId,scopes};
 }
 export function oauthQueryFromSearch(search:Record<string,string|string[]|undefined>):string{
- if(typeof search.oauth_query==='string'&&Object.keys(search).length===1)return search.oauth_query;
+ const keys=Object.keys(search);
+ // This outer login flag is not part of the provider's signed request. Admit
+ // only the exact transport envelope; every other parameter remains verified.
+ if(typeof search.oauth_query==='string'&&(keys.length===1||keys.length===2&&search.reauthenticate==='1'&&keys.includes('reauthenticate')))return search.oauth_query;
  const query=new URLSearchParams();for(const[key,value]of Object.entries(search)){if(Array.isArray(value))for(const item of value)query.append(key,item);else if(value!==undefined)query.append(key,value);}return query.toString();
 }
 /** Redirect authority comes from the provider's signed request, never the response alone. */
