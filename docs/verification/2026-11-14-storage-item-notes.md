@@ -1,17 +1,18 @@
-# 存储条目备注候选验证
+# 存储条目备注验证
 
 2026-11-14 · LO-FILES-001 / EXEC-STORAGE-NOTES-001 · 原 owner-storage / unified-business-ui 3.1/3.2 / Issue #41。
 
-本切片把备注与处理要求保存到原 owner-space storageReview JSON 的独立 notes 字段。旧无 notes 的清单和决定不变；所有条目包括 protected/processed 与父目录均可备注，原状态和决定不随备注改变。新清单不能静默移除或替换仍有备注的对象。单项原文不trim，最多8000字符，空字符串明确清空；沿原128KiB UTF8持久化上限、CAS、身份锁、授权fence与幂等收据。未新增schema、物理文件处理或数据导入。
+备注与处理要求保存到原owner-space storageReview JSON的独立notes字段。旧清单兼容；决定、protected/processed状态和稳定身份独立保留；新清单拒绝移除或替换仍有备注的对象。原文不trim，最多8000字符，空字符串明确清空，仍受原128KiB UTF8、CAS、身份锁、授权fence和幂等收据约束。没有扫描、上传或物理文件处理。
 
-已完成的本地验证：
+已有证据分别为：
 
-- 59项聚焦 Node 测试，零失败/跳过：原保存、隔离、路由、层级/导航、决定与unknown恢复回归，新备注原文/清空/无操作收据、UTF8大小、丢失回应原key回放、草稿原revision、字段投影和授权guard。
-- TypeScript检查通过；依赖固定 lock `720bcc1103fdd7ef7f671612ef078ef6d74924724828dc09ce0072aa2b4b7909`，只读借用同锁依赖，未安装或改锁。
-- 实际已安装 Chrome 对原 route response、CSP、owner HTTP/service 运行四个隔离MemoryPort浏览器用例，4P/0F/0S。原存储用例覆盖1920/1365/390px；备注用例覆盖1365/390px，实际编辑/键盘保存、清空、刷新、独立browser回读、并发CAS、unknown原命令恢复、后续修改不被历史receipt覆盖、授权丢失清屏、会话存储失败零写入。两个定向用例额外覆盖旧草稿刷新后继续编辑、清空，均保留原CAS并在明确409后才允许新版确认。没有调用真实业务数据或PostgreSQL。
+- 核心59项聚焦检查、4条实际Chrome合成路由流程（原1920/1365/390px，新1365/390px），零失败/跳过，覆盖原文保存、清空、刷新、独立browser、旧草稿继续编辑与清空、明确409重新确认、unknown原key恢复、后来内容不被历史receipt覆盖、撤权清屏和本机保留失败零写入。
+- 共享Agent/MCP接线合入后76项聚焦检查与TypeScript通过，官方SDK的2026/2025两种协议均实际调用新增note的保存/清空与独立GET。全原Node suite最终2311P/0F/93项显式opt-in跳过；跳过不算集成验收。新目录测试保留原53/57项兼容case，另加54/58项新目录，完整JSON目录为62；精确ID、schema、scope、工程调用拒绝和逐次授权刷新断言保留。
+- marked隔离PostgreSQL17.11实际执行0026注册与原grant fence：1P/0F/0skip，验证双registry/default-off/缺approval与错role拒绝/明确启用fixture后成功/撤权和原grant不变。原0019/0021没有改写。
+- 同合格fixture执行原`REAL PostgreSQL restricted-role/RLS` outercase：1P/0F/0skip/stderr0。原`verifyStorageReviewPersistence`直接调用和case数不变，新增断言实际核对CRLF原文、保护项备注、独立restricted pool回读、CAS、历史receipt、清空、决定保留及已备注对象不丢。
 
-保留的RED：新增接口尚未实现；纯空白原文被旧非空校验误拒；未提交草稿刷新后错误采用新remote revision。最后两项均有行为反例并完成最小修复。浏览器fixture曾在pending刚出现时就刷新/核对wire，早于异步请求实际完成；采集HTTP/wire后，改为严格等待明确rejected/unknown并独立确认synthetic写入真实commit，保留原断言，不用放宽超时或状态掩盖失败。
+Root对核心修正479的定向独审C0/I0/M0通过，并独立运行浏览器反例闭合。共享1ddc4a9及3d744e9由未修改其产品文件的Notes owner有界技术复核；发现的Skill最后句Minor已由原writer修正并同步archive，没有改scope或guard。完整生产webpack与同产物检查须在最后固定组合源码上运行，PR记录真实SHA/buildId；9987和479的历史构建不替代共享接线后的新树。
 
-当前明确未完成：MCP组负责共享API路由、schema/client/readback、Skill及独立0026 operation登记；原0019/0021保持不变，缺操作登记应failclosed。共享discovery仍5对6的严格RED另行保留。完整生产webpack build及同产物检查待串行资源槽；独立审查、普通feature PR/main集成、原CI/CD/Native+HTTPS和真实跨设备读回尚未完成。本地MemoryPort/Chrome证据不称真实PG、生产可用或本人体验验收。
+保留RED：纯空白原文误拒、草稿刷新/继续input/清空时基线被替换，以及共享新增操作后旧精确目录oracle未包含note。并发编辑和清空均先实际Chrome RED，再最小修为保留原checklistRevision/expectedRevision，只有明确409后的按钮才改基线。原unknown/撤权恢复回归保持。浏览器fixture曾早于异步完成就检查wire；已以明确rejected/unknown及独立确认synthetic commit作为更严格完成条件。
 
-独立审查对固定9987发现一个Important：旧草稿刷新后再次input会采用最新remote revision；实际浏览器证明另一端新备注可能被覆盖。编辑与清空两条真实浏览器反例均先RED（提交新版3而原基线2），最小修正后两条均提交原版本2，保留服务器新备注并显示冲突；只有明确拒绝后的确认按钮才改基线。9987完整webpack与44+2项同产物closed检查已通过，作为历史保留；修正后的源码须重新完整构建，不能复用旧绿灯。
+默认权限仍关闭：0026只登记新操作且`enabled=false`，实际Agent/MCP依赖当前DB目录、原scope、grant、owner/MFA与write permit；公开HTTP业务MCP不含工程claim或事件执行。普通PR/main原CI、单writer的既有Native+HTTPS生产读回、真实跨设备与本人体验另行取证，本地合成/PG证据不替代这些结果。
