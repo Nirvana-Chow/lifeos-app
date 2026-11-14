@@ -36,7 +36,7 @@ END $$;
 REVOKE ALL ON FUNCTION lifeos_platform.guard_session_duration() FROM PUBLIC;
 CREATE TRIGGER platform_session_duration_guard BEFORE INSERT OR UPDATE ON lifeos_platform.platform_session
  FOR EACH ROW EXECUTE FUNCTION lifeos_platform.guard_session_duration();
--- Existing runtime session table grants already authorize these operations. No new role/grant.
+-- Existing runtime session table grants already authorize these operations. No new roles or session-table privileges.
 -- Exact original source: 0010_agent_key_management.proposed.sql sha256=12fc4c24e897c7aab19f893d0aa268b6876d89a28ddab0b5942b8799709b14c9
 DO $patch$ DECLARE p pg_proc%ROWTYPE;BEGIN
  SELECT * INTO p FROM pg_proc WHERE oid=to_regprocedure('lifeos_agent.verify_management_session(text,text,text)');
