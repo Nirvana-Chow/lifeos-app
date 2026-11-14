@@ -54,7 +54,9 @@ export async function readPlatformEntryOnClient(client:SqlClient,owner:string,ki
 export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false):Promise<boolean>{
  if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled)return false;
  if(grant.oauthFence){
-  const oauth=await client.query('SELECT lifeos_agent.assert_oauth_business_grant($1,$2,$3,$4::jsonb,$5::text[],$6::text) AS allowed',[grant.grantId,owner,grant.spaceId,JSON.stringify(grant.oauthFence),requiredScopes,grant.operationId??null]);if(oauth.rows[0]?.allowed!==true)return false;
+  if(grant.oauthFence.policy!==undefined&&(grant.oauthFence.policy!=='all-personal-business-v1'||grant.businessDataPolicy!=='all-personal-business-v1'))return false;
+  const fn=grant.oauthFence.policy==='all-personal-business-v1'?'assert_policy_oauth_business_grant':'assert_oauth_business_grant';
+  const oauth=await client.query(`SELECT lifeos_agent.${fn}($1,$2,$3,$4::jsonb,$5::text[],$6::text) AS allowed`,[grant.grantId,owner,grant.spaceId,JSON.stringify(grant.oauthFence),requiredScopes,grant.operationId??null]);if(oauth.rows[0]?.allowed!==true)return false;
  }
  if(requiredScopes.some(scope=>scope.startsWith('file-handoff:'))){
   const file=filePermissionSchema.safeParse(grant.fileHandoff);if(!file.success||!requiredScopes.every(scope=>file.data.scopes.includes(scope as never)))return false;

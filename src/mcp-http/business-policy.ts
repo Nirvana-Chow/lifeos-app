@@ -1,29 +1,11 @@
-import {agentOperations} from '../agent-api/capabilities.ts';
+import {agentOperations,businessMcpOperations} from '../agent-api/capabilities.ts';
 import {organizationTypes} from '../agent-api/organization.ts';
 import {validateId} from '../platform/domain.ts';
 import {requirementId} from '../requirements-candidate/domain.ts';
 import type {Operation} from '../mcp-candidate/schemas.ts';
 
-// A shared scope or policyClass never adds operations to this HTTP surface.
-// New registry IDs require explicit business-MCP review before entering this set.
-const businessOperationIds:ReadonlySet<string>=new Set([
- 'stageFileHandoff','getFileHandoff',
- 'listTodos','snapshotTodos','getTodo','createTodo','updateTodo',
- 'snapshotOrganization','getOrganization','createOrganization','updateOrganization',
- 'snapshotRequirements','getRequirement','createRequirement','updateRequirement',
- 'snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision','updateStorageReviewNote',
- 'snapshotFeedback','getFeedback','createFeedback',
- 'snapshotJournal','getJournal','createJournal','updateJournal',
- 'snapshotCalendar','getCalendar','createCalendar','updateCalendar',
- 'snapshotHealth','getHealth','createHealth','updateHealth',
- 'snapshotPerson','getPerson','createPerson','updatePerson',
- 'snapshotFinance','getFinance','createFinance','updateFinance',
- 'snapshotMedia','getMedia','createMedia','updateMedia',
- 'snapshotCareer','getCareer','createCareer','updateCareer',
- 'snapshotPortfolio','getPortfolio','createPortfolio','updatePortfolio',
- 'snapshotCooking','getCooking','createCooking','updateCooking',
- 'previewTodoClassification',
-]);
+// Derived only from the source-owned API registry's explicit review metadata.
+const businessOperationIds:ReadonlySet<string>=new Set(businessMcpOperations.map(operation=>operation.id));
 
 export function isBusinessMcpOperation(operationId:string):boolean{return businessOperationIds.has(operationId);}
 

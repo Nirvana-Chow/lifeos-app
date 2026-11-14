@@ -48,6 +48,10 @@ export interface PlatformRepository {
 export interface SessionReader {read(headers:Headers):Promise<Principal|null>}
 
 export interface ClassificationTransaction extends Transaction {
+ /** Optional only for legacy API-key plans; OAuth plans require these same-client ports. */
+ classificationOAuthProducer?(planId:string):Promise<import('../personal-candidate/classification-oauth.ts').ClassificationOAuthProducer|null>;
+ classificationOAuthProducerRevision?(grantId:string,fence:import('../business-mcp-oauth/contracts.ts').OAuthGrantFence):Promise<string|null>;
+ saveClassificationOAuthProducer?(producer:import('../personal-candidate/classification-oauth.ts').ClassificationOAuthProducer):Promise<void>;
  getClassificationPlan(planId:string):Promise<import('../personal-candidate/classification-contracts.ts').ClassificationPlan|null>;
  lockClassificationPlan(planId:string):Promise<void>;
  saveClassificationPlan(plan:import('../personal-candidate/classification-contracts.ts').ClassificationPlan):Promise<void>;

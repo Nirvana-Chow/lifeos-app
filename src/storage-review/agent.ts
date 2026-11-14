@@ -7,6 +7,7 @@ import {readJSONBody} from '../platform/request-boundary.ts';
 import {assertAgentGrant} from '../agent-api/grant-fence.ts';
 import {StorageReviewService,storageReviewDetail} from './service.ts';
 import type {storageReviewOperations} from './operations.ts';
+import {fencedRecordRepository} from '../agent-api/personal-records.ts';
 
 export async function handleStorageReviewAgent(request:Request,options:{operation:typeof storageReviewOperations[number];recordId?:string;actor:TrustedAgentActor;authority:AuthorityService;repository:PlatformRepository;config:PersonalConfig;currentReady:()=>Promise<boolean>;assertWritable:()=>Promise<void>}):Promise<Response>{
  const {operation,actor,authority}=options;
@@ -18,7 +19,8 @@ export async function handleStorageReviewAgent(request:Request,options:{operatio
   if(write)await options.assertWritable();
  };
  const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store',Vary:'Authorization','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow, noarchive'}});
- const service=new StorageReviewService(options.repository,options.config);
+ const fence=(tx:Parameters<typeof assertAgentGrant>[0])=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id);
+ const service=new StorageReviewService(actor.oauthFence?fencedRecordRepository(options.repository,fence):options.repository,options.config);
  if(operation.method==='GET'){
   await current();const entry=await service.getEntry(actor.ownerId,options.recordId);await current();
   if(operation.id==='getStorageReview'&&!entry)throw new PlatformError(404,'NOT_FOUND','没有可访问的审核记录。');
@@ -27,7 +29,14 @@ export async function handleStorageReviewAgent(request:Request,options:{operatio
  const updating=operation.method==='PATCH',input=object(await readJSONBody(request),updating?['fields','expectedRevision']:['fields']);
  if(updating){await current();const entry=await service.getEntry(actor.ownerId,options.recordId);if(!entry)throw new PlatformError(404,'NOT_FOUND','没有可访问的审核记录。');}
  const fields=object(input.fields,operation.id==='updateStorageReviewNote'?['checklistRevision','itemId','note']:operation.id==='updateStorageReviewDecision'?['checklistRevision','itemId','decision']:['checklist']);
- const guard=()=>current(true),fence=(tx:Parameters<typeof assertAgentGrant>[0])=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id);
+ const guard=async()=>{
+  if(!actor.oauthFence)return current(true);
+  if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','请保留原请求并回读结果。');
+  authority.assertActorOrigin(actor,operation.id);
+  if(!await options.currentReady())throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','审核操作尚未就绪。');
+  await options.assertWritable();
+  // Every receipt/write is fenced on this service's original SQL transaction.
+ };
  const audit={kind:'agent-grant' as const,grantId:actor.grantId,operationId:operation.id},key=request.headers.get('idempotency-key')??'';
  const result=operation.id==='updateStorageReviewNote'
   ?await service.saveNoteResult(actor.ownerId,{expectedRevision:input.expectedRevision,checklistRevision:fields.checklistRevision,id:fields.itemId,note:fields.note},key,guard,fence,audit)

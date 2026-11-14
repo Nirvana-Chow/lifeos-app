@@ -82,7 +82,13 @@ Remote HTTP/OAuth support SHALL remain unavailable until a fixed resource/audien
 
 ### Requirement: File permissions and receiver adoption remain explicit
 
-Under task11.6, the four `fileHandoff` operations SHALL use the independently versioned `file-handoff-v1` grant permission and exact `file-handoff:read`/`file-handoff:write` scopes. Existing todo, requirements and `all-personal-business-v1` grants MUST NOT inherit them. Only the original owner/MFA key-management path may change this permission using original-grant digest plus file-permission revision CAS. Backend current-grant readers, OAuth consent/token publication and original-client SQL execution SHALL enforce the current permission. OAuth refresh/reconnect SHALL retain the original grant/owner/space command namespace and SHALL NOT confer website/Codex consumer identity.
+Under task11.6, the four `fileHandoff` operations SHALL use the independently versioned `file-handoff-v1` grant permission and exact `file-handoff:read`/`file-handoff:write` scopes. Existing todo, requirements and `all-personal-business-v1` grants MUST NOT inherit them. Only the original owner/MFA key-management path may change this permission using original-grant digest plus file-permission revision CAS.
+
+#### Scenario: File authority is read, delegated or executed
+
+- **WHEN** current file authority is read, delegated or executed
+- **THEN** backend current-grant readers, OAuth consent/token publication and original-client SQL execution SHALL enforce the current permission
+- **AND** OAuth refresh/reconnect SHALL retain the original grant/owner/space command namespace and SHALL NOT confer website/Codex consumer identity
 
 #### Scenario: File permission is withdrawn while a writer waits
 
@@ -103,3 +109,25 @@ Under task11.6, the four `fileHandoff` operations SHALL use the independently ve
 
 - **WHEN** file runtime composition intersects a separately maintained deployment overlay
 - **THEN** public build success does not establish a deployed entry; the private composition must retain the new reviewed contexts and independently pass its original release qualification before activation
+
+### Requirement: Explicit full business consent reuses the current original authority
+
+Under task11.1, business MCP exposure SHALL derive from the reviewed executable Agent registry. Full OAuth consent SHALL require both explicit `personal-business:all` and the current original `all-personal-business-v1` grant. Effective operations SHALL intersect reviewed enabled registrations, available modules and the same original grant. Narrow grants and consents MUST NOT become full by inference.
+
+#### Scenario: A reviewed business operation is delivered
+
+- **WHEN** a new personal business operation is reviewed and enabled
+- **THEN** its API, MCP and Skill contracts and approved SQL registration SHALL be delivered together without changing old Agent wire definitions
+- **AND** account/security, engineering execution, owner-approved commit and independently permitted file consumers SHALL retain their original boundaries
+
+#### Scenario: A full-policy OAuth caller previews a classification
+
+- **WHEN** the authorized caller saves a classification preview
+- **THEN** the original plan and immutable OAuth producer metadata SHALL save or roll back on the same original transaction, binding plan ID, digest, version, expiry and current token/binding/policy authority
+- **AND** expiry SHALL not exceed the original plan limit or producing token lifetime; owner subset selection SHALL retain that authority and expiry
+
+#### Scenario: Producer authority changes before owner action
+
+- **WHEN** the producing token is revoked, its binding is replaced, its original grant changes, its module becomes unavailable or plan metadata conflicts
+- **THEN** owner approval/commit/recovery SHALL fail closed rather than adopt an old plan through a still-live API key, new consent or replacement binding
+- **AND** MCP SHALL NOT expose classification approval/commit or engineering claim operations

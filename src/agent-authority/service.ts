@@ -39,7 +39,18 @@ export class AuthorityService {
     if(!this.bound(current??null)||current?.grantId!==grantId)return null;
     return {grantId,ownerId:current.ownerId,spaceId:current.spaceId,...(current.businessDataPolicy?{businessDataPolicy:current.businessDataPolicy}:{})};
   }
+  /** Immutable issued origin only. This is not current authority: transaction
+   * callers must additionally run their original same-client SQL grant fence. */
+  assertActorOrigin(actor:TrustedActor,operationId:string):void{
+    const operation=actor.kind==='owner-session'&&['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)?{requiredScopes:[] as readonly OperationScope[]}:agentOperations.find(entry=>entry.id===operationId);
+    if(!this.issued.has(actor)||actor.ownerId!==this.deps.ownerId||actor.spaceId!==this.deps.spaceId||!operation)throw Error('Authority unavailable');
+    if(actor.kind==='agent-grant'){
+      const scopes=normalizeOperationGrantScopes(actor);
+      if(!operation.requiredScopes.every(scope=>scopes.includes(scope))||(actor.businessDataPolicy||actor.oauthFence)&&!['discover','discoverV2'].includes(operationId)&&!actor.allowedOperationIds?.includes(operationId))throw Error('Authority unavailable');
+    }else if(actor.kind!=='owner-session')throw Error('Authority unavailable');
+  }
   async assertCurrentAuthority(actor: TrustedActor, operationId: string, sourceRefs: readonly AuthoritySourceRef[] = []): Promise<void> {
+    this.assertActorOrigin(actor,operationId);
     const check = this.issued.get(actor);
     // Server-owned policy only; private owner review/approval never enters Agent discovery.
     const operation = actor.kind === 'owner-session' && ['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)
