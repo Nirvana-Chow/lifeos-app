@@ -26,20 +26,20 @@
 
 ### Task 1: Native session policy and schema readiness
 Files: src/session-duration/{policy,native,readiness}.ts, db/0024_device_login_duration.proposed.sql, src/platform/auth.ts/config.ts/runtime.ts, test/session-duration-native.test.ts.
-- [ ] Write actual native memory-adapter tests for fixed1800/day/custom, invalid inputs, MFA rotation, real cookie expiry and parallel isolation; observe RED.
-- [ ] Implement server-only policy fields and request-scoped native configuration. Preserve original behavior while readiness is absent.
-- [ ] Test deferred POST rolling refresh, GET/read-only no writes, true revocation and fresh-MFA separation.
-- [ ] Add guarded isolated migration/readiness and test actual PostgreSQL auth/read-only ACLs.
+- [x] Write actual native memory-adapter tests for fixed1800/day/custom, invalid inputs, MFA rotation, real cookie expiry and parallel isolation; observe RED.
+- [x] Implement server-only policy fields and request-scoped native configuration. Preserve original behavior while readiness is absent.
+- [x] Test deferred POST rolling refresh, GET/read-only no writes, true revocation and fresh-MFA separation.
+- [x] Add guarded isolated migration/readiness and test actual PostgreSQL auth/read-only ACLs.
 
 ### Task 2: Login and owner controls
 Files: src/personal-candidate/login*, src/session-duration/{picker,guard,settings,owner-access}.*, src/personal-candidate/live-workspace.tsx, app/login/page.tsx; dedicated tests.
-- [ ] Test duration propagation through password/MFA and safe continuation, observe RED then add picker.
-- [ ] Test redacted device list/revocation and same-origin/owner/fresh-MFA denial, then wire dedicated settings.
-- [ ] Test expiry locking/draft continuity and valid-session reopen, then mount guard.
+- [x] Test duration propagation through password/MFA and safe continuation, observe RED then add picker.
+- [x] Test redacted device list/revocation and same-origin/owner/fresh-MFA denial, then wire dedicated settings.
+- [x] Test expiry locking/draft continuity and valid-session reopen, then mount guard.
 
 ### Task 3: Delivery
-- [ ] Run affected/native/HTTP/PG/UI tests, full project tests, typecheck and complete production build plus compiled-artifact check.
-- [ ] Root independent code review; correct substantive findings.
+- [x] Run affected/native/HTTP/PG/UI tests, full project tests, typecheck and complete production build plus compiled-artifact check.
+- [x] Root independent code review; correct substantive findings.
 - [ ] Coordinate main epoch and exact private overlay seams before normal feature PR/merge/CI/publication/readback.
 
 ## Source calibration
