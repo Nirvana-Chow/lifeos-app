@@ -5,6 +5,7 @@ import {chromium,expect,type Browser,type BrowserContext,type BrowserServer,type
 import {makeSignature} from 'better-auth/crypto';
 import {prepareSessionOAuthBrowser} from './helpers/session-duration-oauth-browser.ts';
 import {trackAuthThemeProcess,cleanupAuthThemeFixture,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
+import {probeDisabledNoJsAuthForm} from './helpers/owner-nojs-auth-form.ts';
 
 test('OPT-IN actual OAuth pages and native MFA preserve signed step-up continuation without replay',{skip:process.env.RUN_SESSION_DURATION_OAUTH_BROWSER_TESTS==='1'?false:'Requires isolated loopback Next and native Chrome',timeout:180000},async t=>{
  const source=resolve(process.env.LIFEOS_SESSION_BROWSER_SOURCE??resolve(import.meta.dirname,'..')),deps=resolve(import.meta.dirname,'../node_modules');
@@ -40,6 +41,17 @@ test('OPT-IN actual OAuth pages and native MFA preserve signed step-up continuat
     await page.goto(origin+'/login',{waitUntil:'networkidle'});await login(c,page);await expect(page).toHaveURL(origin+'/personal');
     for(const continuation of [false,true]){await control(c,'reset');await control(c,'unconfirmed');const signed=await query();await page.goto(origin+'/personal/oauth'+(continuation?'/continue':'')+'?oauth_query='+encodeURIComponent(signed),{waitUntil:'networkidle'});const button=page.getByRole('button',{name:continuation?'继续':'允许连接',exact:true});await button.click();await expect(page.getByRole('status')).toContainText('连接结果未确认');await expect(button).toBeDisabled();await button.evaluate(node=>(node as HTMLButtonElement).click());await page.waitForTimeout(250);const state=await control(c);assert.equal(state.requests.length,1);assert.equal(state.requests[0].query,signed);assert.equal(state.providerCalls,1);assert.equal(new URL(page.url()).pathname,'/personal/oauth'+(continuation?'/continue':''));}
    }finally{await c.close();}
+  });
+  await t.test('original no-JS consumer keeps canonical disabled POST after authenticated reopen',async()=>{
+   const c=await context(),page=await c.newPage();let nojs:BrowserContext|undefined;
+   try{
+    await page.goto(origin+'/login',{waitUntil:'networkidle'});await login(c,page);await expect(page).toHaveURL(origin+'/personal');await page.goto(origin+'/login',{waitUntil:'networkidle'});await expect(page).toHaveURL(origin+'/personal');
+    nojs=await browser!.newContext({javaScriptEnabled:false});await nojs.addCookies(await c.cookies(origin));
+    for(const[route,field]of[['/login','password'],['/account/password','currentPassword']] as const){const probe=await nojs.newPage();probe.setDefaultTimeout(5000);let terminal:Promise<'failed'|'finished'>|undefined;
+     try{({finished:terminal}=await probeDisabledNoJsAuthForm(probe,{origin,route,field,stage:value=>console.log('LOCAL_ORIGINAL_NOJS_STAGE '+value)}));}finally{await probe.close();}
+     assert.ok(['failed','finished'].includes(await terminal!));
+    }
+   }finally{await nojs?.close();await c.close();}
   });
  }finally{await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server});}
 });

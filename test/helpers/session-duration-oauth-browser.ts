@@ -6,9 +6,10 @@ import {join} from 'node:path';
 export async function prepareSessionOAuthBrowser(source:string,deps:string){
  const root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-oauth-stepup-'));
  try{
-  for(const path of ['app/login','app/personal/oauth/continue','app/api/platform/auth/[...all]','app/fixture/control','fixture','test/helpers'])await mkdir(join(root,path),{recursive:true});
+  for(const path of ['app/login','app/account/password','app/personal/oauth/continue','app/api/platform/auth/[...all]','app/fixture/control','fixture','test/helpers'])await mkdir(join(root,path),{recursive:true});
   await cp(join(source,'src'),join(root,'src'),{recursive:true});
-  for(const path of ['app/login/page.tsx','app/personal/oauth/page.tsx','app/personal/oauth/continue/page.tsx','test/helpers/session-duration.ts','test/helpers/owner-mfa-fixture.ts'])await cp(join(source,path),join(root,path));
+  await cp(join(source,'proxy.ts'),join(root,'proxy.ts'));
+  for(const path of ['app/login/page.tsx','app/account/password/page.tsx','app/personal/oauth/page.tsx','app/personal/oauth/continue/page.tsx','test/helpers/session-duration.ts','test/helpers/owner-mfa-fixture.ts'])await cp(join(source,path),join(root,path));
   await symlink(deps,join(root,'node_modules'));
   await writeFile(join(root,'package.json'),JSON.stringify({private:true,type:'module'}));
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
@@ -66,6 +67,7 @@ export async function control(request:Request){
 import {fixture,oauthConfig} from '../../fixture/session';import {readOwnerPrincipal} from './auth';
 export const getPlatformBusinessOAuthContext=async()=>{const f=await fixture();return{config:oauthConfig,platform:f.config,readAuth:f.auth};};
 export const readPlatformLoginCapability=async()=>({mode:'personal',enabled:true,sessionDuration:true});
+export const readPlatformPasswordCapability=async()=>true;
 export const readPlatformPagePrincipal=async(headers:Headers)=>{const f=await fixture();return readOwnerPrincipal(f.auth,f.config,headers);};
 `);
   await writeFile(join(root,'app/api/platform/auth/[...all]/route.ts'),`import{authHandler}from'../../../../../fixture/session';export const runtime='nodejs';export const GET=authHandler;export const POST=authHandler;`);
