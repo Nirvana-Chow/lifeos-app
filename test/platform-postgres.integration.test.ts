@@ -35,5 +35,24 @@ async function verifyStorageReviewPersistence(databaseURL:string,ownerId:string)
   const row=await repository.get(ownerId,'inbox',id);assert.ok(isStorageReviewEntry(row));assert.deepEqual(row?.source.original,{marker:'personal-storage-review-v1',spaceId});
   const history=await repository.history(ownerId,'inbox',id);assert.deepEqual(history.map(entry=>entry.revision),[3,2,1]);assert.deepEqual((history[1]!.draft as unknown as {storageReview:{decisions:{id:string;decision:string}[]}}).storageReview.decisions,[{id:'SYN-001',decision:'keep'}]);
   const fresh=new StorageReviewService(new PostgresPlatformRepository(pool as SqlPool),{ownerId,spaceId});assert.deepEqual(await fresh.get(ownerId),replaced);
+  // Notes use the same durable record, not a separate store or a new outer
+  // fixture case. A distinct restricted pool must observe the exact text.
+  const noteKey=`storage-note-${randomUUID()}`,rawNote='  Synthetic original note\r\n先核对备份，不执行文件操作。  ';
+  const noted=await fresh.saveNote(ownerId,{expectedRevision:3,checklistRevision:'synthetic-v2',id:'SYN-001',note:rawNote},noteKey);assert.equal(noted.revision,4);
+  const protectedNote=await fresh.saveNote(ownerId,{expectedRevision:4,checklistRevision:'synthetic-v2',id:'SYN-002',note:'Synthetic protected-item note'},`storage-note-${randomUUID()}`);assert.equal(protectedNote.revision,5);
+  assert.deepEqual(protectedNote.decisions,replaced.decisions);assert.deepEqual(protectedNote.checklist,replaced.checklist);
+  await assert.rejects(fresh.saveNote(ownerId,{expectedRevision:4,checklistRevision:'synthetic-v2',id:'SYN-001',note:'Stale overwrite'},`storage-note-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='REVISION_CONFLICT');
+  const removed={...checklist('synthetic-v3'),items:checklist('synthetic-v3').items.filter(item=>item.id!=='SYN-002')};
+  await assert.rejects(fresh.saveChecklist(ownerId,{expectedRevision:5,checklist:removed},`storage-note-${randomUUID()}`),error=>typeof error==='object'&&error!==null&&'code'in error&&error.code==='CHECKLIST_NOTE_CONFLICT');
+  const readerPool=new Pool({connectionString:databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,options:'-c search_path=pg_catalog,lifeos_platform'});
+  try{
+   await verifyRestrictedPool(readerPool as SqlPool);const reader=new StorageReviewService(new PostgresPlatformRepository(readerPool as SqlPool),{ownerId,spaceId});
+   assert.deepEqual(await reader.get(ownerId),protectedNote);assert.equal((await reader.getEntry(ownerId))!.fields.notes![0]!.note,rawNote);
+   assert.deepEqual(await fresh.saveNote(ownerId,{expectedRevision:3,checklistRevision:'synthetic-v2',id:'SYN-001',note:rawNote},noteKey),noted,'Original receipt remains historical and never overwrites a later note');
+   assert.deepEqual(await reader.get(ownerId),protectedNote);
+   const cleared=await reader.saveNote(ownerId,{expectedRevision:5,checklistRevision:'synthetic-v2',id:'SYN-002',note:''},`storage-note-${randomUUID()}`);
+   assert.equal(cleared.revision,6);assert.deepEqual(cleared.notes,[{id:'SYN-001',note:rawNote}]);assert.deepEqual(await fresh.get(ownerId),cleared);
+   assert.deepEqual(cleared.decisions,replaced.decisions);assert.equal(cleared.checklist.items.find(item=>item.id==='SYN-002')!.status,'protected');
+  }finally{await readerPool.end();}
  }finally{await pool.end();}
 }
