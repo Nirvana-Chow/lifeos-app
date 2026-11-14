@@ -6,6 +6,7 @@ import{readChatCandidateFlag}from'../chat-candidate/config.ts';
 import{openSync,closeSync,fstatSync,readFileSync,constants}from'node:fs';import{readPlatformConfig}from'./config.ts';import{aiSettingsRuntimeKeys,readAISettingsRuntimeConfig}from'./ai-settings-config.ts';
 import{readCalendarCandidateFlag}from'./calendar-config.ts';
 export const reviewDatabase='lifeos_platform_test_local';
+const sessionDurationFlag='LIFEOS_PERSONAL_SESSION_DURATION';
 export function readPrivateObject(path:string):Record<string,unknown>{
  let fd:number|undefined;try{fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);const st=fstatSync(fd);if(!st.isFile()||st.size>16384||(st.mode&0o077)!==0||st.uid!==process.getuid?.())throw Error();const raw=readFileSync(fd);if(raw.length>16384)throw Error();const value=JSON.parse(raw.toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))throw Error();return value;}catch{throw Error('Isolated review configuration unavailable');}finally{if(fd!==undefined)closeSync(fd);}
 }
@@ -21,9 +22,11 @@ export function validateReviewConfig(value:Record<string,unknown>):Record<string
   keys.push(...aiSettingsRuntimeKeys.filter(k=>value[k]!==undefined),...personalConfigKeys.filter(k=>value[k]!==undefined),...agentRuntimeKeys.filter(k=>value[k]!==undefined));
   for(const key of ['LIFEOS_CALENDAR_CANDIDATE','LIFEOS_CHAT_CANDIDATE','LIFEOS_CAPTURE_RUNS_CANDIDATE'])if(value[key]!==undefined)keys.push(key);
   if(value[keyManagementFlag]!==undefined)keys.push(keyManagementFlag);
+  if(value[sessionDurationFlag]!==undefined)keys.push(sessionDurationFlag);
   if(Object.keys(value).length!==keys.length||keys.some(k=>k!=='LIFEOS_PERSONAL_RECOVERY_APPROVAL'&&typeof value[k]!=='string'))throw Error();
   const env={...value} as Record<string,string>;if(typeof value.LIFEOS_PERSONAL_RECOVERY_APPROVAL!=='string')delete env.LIFEOS_PERSONAL_RECOVERY_APPROVAL;const config=readPlatformConfig(env);if(!config)throw Error();
   const personal=readPersonalConfig(env,config);const agent=readAgentRuntimeConfig(env,config,personal);
+  if(env[sessionDurationFlag]!==undefined&&(env[sessionDurationFlag]!=='native-device-v1'||!personal))throw Error();
   readAgentBusinessModules(env,personal);
   if(env[keyManagementFlag]!==undefined&&(env[keyManagementFlag]!=='1'||!agent))throw Error();
   if(personal){
@@ -42,5 +45,5 @@ export function loadReviewEnvironment(path:string,env:Record<string,string|undef
 
 /** Pure application of an already read configuration; never reopen its source. */
 export function applyReviewEnvironment(value:Record<string,string>,env:Record<string,string|undefined>):void{
- const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;delete env[keyManagementFlag];for(const key of [...personalConfigKeys,...agentRuntimeKeys])delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
+ const config=validateReviewConfig(value);delete env.LIFEOS_CAPTURE_RUNS_CANDIDATE;delete env[keyManagementFlag];delete env[sessionDurationFlag];for(const key of [...personalConfigKeys,...agentRuntimeKeys])delete env[key];delete env.LIFEOS_PERSONAL_BOOTSTRAP;delete env.LIFEOS_PERSONAL_BOOTSTRAP_DATABASE_URL;Object.assign(env,config);
 }
