@@ -3,7 +3,10 @@ import type {BusinessOAuthConfig} from './boundary.ts';
 import {oauthSqlFingerprints} from './sql-fingerprints.ts';
 import {agentOperations} from '../agent-api/capabilities.ts';
 import {isOAuthBusinessOperation} from './boundary.ts';
+import {verifyFilePermissionPool} from '../file-handoff/readiness.ts';
 export async function verifyBusinessOAuthPool(pool:SqlPool,config:BusinessOAuthConfig,owner:{ownerId:string;ownerEmail:string;spaceId:string}):Promise<void>{
+ const files=config.scopes.some(scope=>scope.startsWith('file-handoff:'));
+ if(files)await verifyFilePermissionPool(pool,'lifeos_platform_candidate_runtime');
  const client=await pool.connect();try{
   const result=await client.query(`WITH expected AS (SELECT key AS name,value AS digest FROM jsonb_each_text($1::jsonb)), migration AS(SELECT relowner FROM pg_class WHERE oid='lifeos_agent.apikey'::regclass), functions AS(SELECT p.*,e.digest FROM expected e LEFT JOIN pg_proc p ON p.proname=e.name AND p.pronamespace='lifeos_agent'::regnamespace)
    SELECT current_user='lifeos_platform_candidate_runtime' AS role,
@@ -19,8 +22,9 @@ export async function verifyBusinessOAuthPool(pool:SqlPool,config:BusinessOAuthC
   if(result.rows.length!==1||Object.values(result.rows[0]).some(value=>value!==true))throw Error('BUSINESS_MCP_OAUTH_SCHEMA_UNAVAILABLE');
   const value=(await client.query('SELECT lifeos_agent.oauth_business_activation() AS value')).rows[0]?.value as Record<string,unknown>|undefined;
   if(!value||value.enabled!==true||value.ownerId!==owner.ownerId||value.ownerEmail!==owner.ownerEmail||value.spaceId!==owner.spaceId||value.grantId!==config.grantId||value.resource!==config.resource||value.issuer!==config.issuer||!Array.isArray(value.scopes)||JSON.stringify([...value.scopes].sort())!==JSON.stringify([...config.scopes].sort()))throw Error('BUSINESS_MCP_OAUTH_ACTIVATION_UNAVAILABLE');
-  const expected=Object.fromEntries(agentOperations.filter(op=>isOAuthBusinessOperation(op.id)).map(op=>[op.id,[...op.requiredScopes]]));
-  const actual=value.operations as Record<string,unknown>|undefined;
+  const expected=Object.fromEntries(agentOperations.filter(op=>isOAuthBusinessOperation(op.id)&&(files||op.module!=='fileHandoff')).map(op=>[op.id,[...op.requiredScopes]]));
+  const raw=value.operations as Record<string,unknown>|undefined;
+  const actual=raw?Object.fromEntries(Object.entries(raw).filter(([id])=>files||!['stageFileHandoff','getFileHandoff'].includes(id))):undefined;
   if(!actual||Object.keys(actual).length!==Object.keys(expected).length||Object.entries(expected).some(([id,scopes])=>!Array.isArray(actual[id])||JSON.stringify([...(actual[id] as string[])].sort())!==JSON.stringify([...(scopes??[])].sort())))throw Error('BUSINESS_MCP_OAUTH_OPERATIONS_UNAVAILABLE');
  }finally{client.release();}
 }

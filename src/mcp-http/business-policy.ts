@@ -7,6 +7,7 @@ import type {Operation} from '../mcp-candidate/schemas.ts';
 // A shared scope or policyClass never adds operations to this HTTP surface.
 // New registry IDs require explicit business-MCP review before entering this set.
 const businessOperationIds:ReadonlySet<string>=new Set([
+ 'stageFileHandoff','getFileHandoff',
  'listTodos','snapshotTodos','getTodo','createTodo','updateTodo',
  'snapshotOrganization','getOrganization','createOrganization','updateOrganization',
  'snapshotRequirements','getRequirement','createRequirement','updateRequirement',

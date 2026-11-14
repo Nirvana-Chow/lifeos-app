@@ -3,6 +3,8 @@ import {object} from '../platform/domain.ts';
 export type McpRuntimeConfig=Readonly<{origin:string}>;
 export type CredentialProvider=()=>Promise<string|null>;
 export type McpRuntimeOptions=McpRuntimeConfig&Readonly<{
+ /** Trusted host adoption only; omitted on existing hosts. Never read from tool inputs. */
+ fileHandoff?:'file-handoff-v1';
  credentialProvider?:CredentialProvider;
  /** Explicit trusted transport format; syntax is never an authorization decision. */
  credentialFormat?:'api-key'|'business-oauth-jwt';

@@ -11,7 +11,7 @@ const maxExpanded=512*1024;
 const maxManifest=16*1024;
 const origin=skillUpdateOrigin;
 const paths=skillDocumentPaths;
-export const skillReleaseSequence=2026111401;
+export const skillReleaseSequence=2026111402;
 const hash=(bytes:Uint8Array)=>createHash('sha256').update(bytes).digest('hex');
 const hex=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const bounded=(value:unknown,limit:number):value is number=>Number.isSafeInteger(value)&&Number(value)>0&&Number(value)<=limit;

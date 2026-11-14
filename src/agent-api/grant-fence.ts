@@ -5,8 +5,9 @@ import type {OperationScope} from './personal-operation-registry.ts';
 import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {policyAuthorizationScopes} from './business-policy.ts';
 import type {OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
+import type {FilePermission} from '../file-handoff/authorization.ts';
 
-export type AgentGrantBinding = Readonly<{grantId:string;ownerId:string;spaceId:string;businessDataPolicy?:'all-personal-business-v1';operationId?:string;oauthFence?:OAuthGrantFence}>;
+export type AgentGrantBinding = Readonly<{grantId:string;ownerId:string;spaceId:string;businessDataPolicy?:'all-personal-business-v1';operationId?:string;oauthFence?:OAuthGrantFence;fileHandoff?:FilePermission}>;
 export type AgentWriteGrant = AgentGrantBinding;
 
 /** A producer may require only read scopes. Never invent write authority for a preview. */

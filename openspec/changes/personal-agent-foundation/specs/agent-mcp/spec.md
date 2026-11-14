@@ -79,3 +79,27 @@ Remote HTTP/OAuth support SHALL remain unavailable until a fixed resource/audien
 
 - **WHEN** a token is not issued for the configured LifeOS resource
 - **THEN** the adapter rejects its use without forwarding it or substituting an owner session
+
+### Requirement: File permissions and receiver adoption remain explicit
+
+Under task11.6, the four `fileHandoff` operations SHALL use the independently versioned `file-handoff-v1` grant permission and exact `file-handoff:read`/`file-handoff:write` scopes. Existing todo, requirements and `all-personal-business-v1` grants MUST NOT inherit them. Only the original owner/MFA key-management path may change this permission using original-grant digest plus file-permission revision CAS. Backend current-grant readers, OAuth consent/token publication and original-client SQL execution SHALL enforce the current permission. OAuth refresh/reconnect SHALL retain the original grant/owner/space command namespace and SHALL NOT confer website/Codex consumer identity.
+
+#### Scenario: File permission is withdrawn while a writer waits
+
+- **WHEN** an original file writer waits behind a committed scope/permission/identity change
+- **THEN** it rechecks the exact permission and OAuth fences on the original SQL client before business mutation, without changing old business grants or silently using engineering/account authority
+
+#### Scenario: An uncertain transfer already has complete original bytes
+
+- **WHEN** the original staging command is reconciled after its transfer lease expires
+- **THEN** only the known complete atomically published original may supply independently recomputed SHA/bytes; the old writer is fenced before readiness, the original command/receipt and linked target source remain stable, and no replacement URL download is inferred from expiry
+
+#### Scenario: A consumer is not adopted or cannot verify bytes
+
+- **WHEN** an old host lacks explicit executable adoption, or actual downloaded/local bytes fail SHA/size/no-overwrite checks
+- **THEN** the binary receive/ack capability stays unavailable; downloaded Skill updates, client names, prompts and Base64/model checksums cannot authorize it or produce a successful acknowledgment
+
+#### Scenario: Public runtime is covered by a private overlay
+
+- **WHEN** file runtime composition intersects a separately maintained deployment overlay
+- **THEN** public build success does not establish a deployed entry; the private composition must retain the new reviewed contexts and independently pass its original release qualification before activation

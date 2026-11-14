@@ -46,8 +46,8 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
   });
   await page.goto(origin+'/personal/journal',{waitUntil:'domcontentloaded',timeout:90000});
   await expect(page.getByRole('heading',{name:'历史上的今天',exact:true})).toBeVisible();
-  await expect(page.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
-  const link=page.getByRole('link',{name:'Synthetic diary 1',exact:true});await expect(link).toHaveAttribute('href','/personal/journal?record='+current.id);
+  await expect(page.getByRole('region',{name:'历史上的今天'}).getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
+  const link=page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 1',exact:true});await expect(link).toHaveAttribute('href','/personal/journal?record='+current.id);
   await expect(page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 2',exact:true})).toHaveCount(0);
   await link.focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
   const article=page.getByRole('article',{name:'日记原文'});await expect(article.getByText('Synthetic original diary',{exact:true})).toBeVisible();await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();
@@ -58,7 +58,9 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
   await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toHaveCount(0);
   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});
   await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
-  empty=true;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(page.getByText('当前记录库没有过去年份同月同日的日记。',{exact:true})).toBeVisible();
+  empty=true;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(page.getByRole('region',{name:'历史上的今天'}).getByRole('alert')).toHaveText('日记已不在当前快照中，请重新读取历史。');
+  await expect(page.getByRole('article',{name:'日记原文'})).toHaveCount(0);
+  await page.goto(origin+'/personal/journal');await expect(page.getByText('当前记录库没有过去年份同月同日的日记。',{exact:true})).toBeVisible();
   authorized=false;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(page.getByRole('region',{name:'历史上的今天'}).getByText('Synthetic corrected diary',{exact:true})).toHaveCount(0);
   assert.deepEqual(external,[]);assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);await page.close();
  }

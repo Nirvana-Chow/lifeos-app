@@ -14,6 +14,7 @@ async function main() {
   const issuer=await createPostgresKeyIssuer(config);
   const routes=new Map<string,KeyOperation>([
     ['/v1/keys/list','list'], ['/v1/keys/create','create'], ['/v1/keys/revoke','revoke'], ['/v1/keys/setScopes','setScopes'],
+    ['/v1/keys/setFileHandoff','setFileHandoff'],
   ]);
   const server=createServer({maxHeaderSize:16384,requestTimeout:5000},async (request,response)=>{
     response.setHeader('Cache-Control','private, no-store');

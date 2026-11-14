@@ -4,9 +4,10 @@ import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
 import type {SqlPool} from '../platform/postgres.ts';
 import {isOAuthBusinessOperation,type BusinessOAuthConfig} from './boundary.ts';
 import type {OAuthGrantFence} from './contracts.ts';
+import type {FilePermission} from '../file-handoff/authorization.ts';
 
 export type BusinessAccessClaims=Readonly<{iss:string;aud:string;sub:string;azp:string;client_id:string;sid?:string|null;iat:number;exp:number;scope:string}>;
-export type OriginalGrant=Readonly<{grantId:string;ownerId:string;spaceId:string;scopes:readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[]}>;
+export type OriginalGrant=Readonly<{grantId:string;ownerId:string;spaceId:string;scopes:readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];fileHandoff?:FilePermission}>;
 export type OAuthState=Readonly<{grantId:string;ownerId:string;spaceId:string;scopes:readonly string[];oauthFence:OAuthGrantFence}>;
 export type OAuthGrant=OriginalGrant&Readonly<{allowedOperationIds:readonly string[];oauthFence:OAuthGrantFence}>;
 export function tokenIdentity(token:string):string{return createHash('sha256').update(token).digest('hex');}
@@ -24,7 +25,9 @@ export function intersectOAuthGrant(state:OAuthState,grant:OriginalGrant|null):O
  if(!scopes.length||scopes.some(scope=>scope.endsWith(':write')&&!scopes.includes(scope.replace(/:write$/,':read') as OperationScope)))return null;
  const allowedOperationIds=agentOperations.filter(operation=>isOAuthBusinessOperation(operation.id)&&operation.requiredScopes.every(scope=>scopes.includes(scope as OperationScope))&&(!grant.businessDataPolicy||grant.allowedOperationIds?.includes(operation.id))).map(operation=>operation.id);
  if(!allowedOperationIds.length)return null;
- return Object.freeze({...grant,scopes:Object.freeze(scopes),allowedOperationIds:Object.freeze(allowedOperationIds),oauthFence:Object.freeze({...state.oauthFence})});
+ const fileScopes=scopes.filter(scope=>scope.startsWith('file-handoff:')) as FilePermission['scopes'];
+ const{fileHandoff,...base}=grant;
+ return Object.freeze({...base,...(fileHandoff&&fileScopes.length?{fileHandoff:{...fileHandoff,scopes:fileScopes}}:{}),scopes:Object.freeze(scopes),allowedOperationIds:Object.freeze(allowedOperationIds),oauthFence:Object.freeze({...state.oauthFence})});
 }
 function parseState(value:unknown):OAuthState|null{
  if(!value||typeof value!=='object')return null;const v=value as Record<string,unknown>,f=v.oauthFence as Record<string,unknown>|undefined;
@@ -36,11 +39,13 @@ export class BusinessOAuthLedger{
  constructor(pool:SqlPool,config:BusinessOAuthConfig,ownerId:string,spaceId:string){this.pool=pool;this.config=config;this.ownerId=ownerId;this.spaceId=spaceId;}
  private async query(sql:string,values:unknown[]):Promise<unknown>{const client=await this.pool.connect();try{return(await client.query(sql,values)).rows[0]?.value;}finally{client.release();}}
  async register(token:string,claims:BusinessAccessClaims,grantType:'authorization_code'|'refresh_token'):Promise<OAuthState|null>{
-  const value=await this.query('SELECT lifeos_agent.register_oauth_business_token($1,$2,$3,$4,$5::jsonb,$6) AS value',[this.config.grantId,this.ownerId,this.spaceId,tokenIdentity(token),JSON.stringify(claims),grantType]);return parseState(value);
+  const fn=this.config.scopes.some(scope=>scope.startsWith('file-handoff:'))?'register_file_handoff_oauth_token':'register_oauth_business_token';
+  const value=await this.query(`SELECT lifeos_agent.${fn}($1,$2,$3,$4,$5::jsonb,$6) AS value`,[this.config.grantId,this.ownerId,this.spaceId,tokenIdentity(token),JSON.stringify(claims),grantType]);return parseState(value);
  }
  async read(tokenId:string):Promise<OAuthState|null>{if(!/^[a-f0-9]{64}$/.test(tokenId))return null;return parseState(await this.query('SELECT lifeos_agent.read_oauth_business_token($1,$2,$3) AS value',[tokenId,this.ownerId,this.spaceId]));}
  async approve(sessionId:string,clientId:string,scopes:readonly string[]):Promise<void>{
-  if(await this.query('SELECT lifeos_agent.approve_oauth_business_binding($1,$2,$3,$4,$5,$6::text[]) AS value',[sessionId,this.config.grantId,this.ownerId,this.spaceId,clientId,scopes])!==true)throw Error('OAUTH_CONSENT_BINDING_DENIED');
+  const fn=this.config.scopes.some(scope=>scope.startsWith('file-handoff:'))?'approve_file_handoff_oauth_binding':'approve_oauth_business_binding';
+  if(await this.query(`SELECT lifeos_agent.${fn}($1,$2,$3,$4,$5,$6::text[]) AS value`,[sessionId,this.config.grantId,this.ownerId,this.spaceId,clientId,scopes])!==true)throw Error('OAUTH_CONSENT_BINDING_DENIED');
  }
  async revoke(token:string,claims:BusinessAccessClaims,providerAuthenticated=false):Promise<void>{
   if(!providerAuthenticated)throw Error('OAUTH_CLIENT_AUTHENTICATION_REQUIRED');

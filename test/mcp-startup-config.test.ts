@@ -148,3 +148,22 @@ test('enabled HTTP runtime refuses an incomplete Agent binding before SDK initia
   const response=await handleMcpHttpRequest(request);assert.equal(response.status,503);assert.deepEqual(await response.json(),{error:'MCP_API_UNAVAILABLE'});
  }finally{for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved);}
 });
+
+test('file runtime values are measured and cleared through both original launchers, with independent requirements dependencies',()=>{
+ const files={LIFEOS_FILE_HANDOFF:'file-handoff-v1',LIFEOS_FILE_HANDOFF_DIRECTORY:'/private/tmp/synthetic-files',LIFEOS_FILE_HANDOFF_ALLOWED_ORIGINS:'["https://synthetic-files.example.invalid"]',LIFEOS_FILE_HANDOFF_MAX_BYTES:'1048576',LIFEOS_FILE_HANDOFF_MAX_RESERVED_BYTES:'4194304',LIFEOS_FILE_HANDOFF_SOURCE_TIMEOUT_MS:'2000'};
+ const full={...oauthBinding,LIFEOS_PERSONAL_REQUIREMENTS:'requirements-v1',LIFEOS_AGENT_REQUIREMENTS:'requirements-v1',...files};
+ const approved=validateReviewConfig(full),platform=readPlatformConfig(approved)!,personal=readPersonalConfig(approved,platform)!;
+ assert.deepEqual(readAgentRuntimeConfig(approved,platform,personal),{databaseURL:agent.LIFEOS_AGENT_API_DATABASE_URL,secret:agent.LIFEOS_AGENT_API_SECRET});
+ for(const apply of [applyReviewEnvironment,applyBoundStartupConfig]){
+  const sink:Record<string,string|undefined>={};apply(approved,sink);for(const[key,value]of Object.entries({...oauthFlags,...files}))assert.equal(sink[key],value);
+  apply(binding,sink);for(const key of Object.keys({...oauthFlags,...files}))assert.equal(sink[key],undefined);
+ }
+ for(const change of [{LIFEOS_FILE_HANDOFF:undefined},{LIFEOS_FILE_HANDOFF:'1'},{LIFEOS_FILE_HANDOFF_DIRECTORY:undefined},{LIFEOS_FILE_HANDOFF_ALLOWED_ORIGINS:'[]'},{LIFEOS_AGENT_REQUIREMENTS:undefined},{LIFEOS_PERSONAL_REQUIREMENTS:undefined}])assert.throws(()=>validateReviewConfig({...full,...change}));
+ const dir=mkdtempSync(join(realpathSync(tmpdir()),'file-startup-')),runtimePath=join(dir,'runtime.json'),gatePath=join(dir,'gate');let runtime:number|undefined,gate:number|undefined;
+ try{
+  mkdirSync(gatePath,{mode:0o700});const bytes=JSON.stringify(full);writeFileSync(runtimePath,bytes,{mode:0o600});runtime=openSync(runtimePath,constants.O_RDONLY|constants.O_NOFOLLOW);gate=openSync(gatePath,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  const r=fstatSync(runtime,{bigint:true}),g=fstatSync(gate,{bigint:true}),proof={version:1,runtime:{dev:String(r.dev),ino:String(r.ino),sha256:createHash('sha256').update(bytes).digest('hex')},gate:{dev:String(g.dev),ino:String(g.ino)}};
+  const measured=readBoundStartupConfig(proof,{runtime,gate});for(const[key,value]of Object.entries(files))assert.equal(measured[key],value);
+  assert.throws(()=>readBoundStartupConfig({...proof,runtime:{...proof.runtime,sha256:'0'.repeat(64)}},{runtime:runtime!,gate:gate!}),/^Error: STARTUP_MOUNT_UNVERIFIED$/);
+ }finally{if(runtime!==undefined)closeSync(runtime);if(gate!==undefined)closeSync(gate);rmSync(dir,{recursive:true,force:true});}
+});

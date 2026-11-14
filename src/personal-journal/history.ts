@@ -4,6 +4,8 @@ import {normalizePersonalFields} from '../personal-candidate/business.ts';
 import {ownerRecord,recordFields,type RecordFields} from '../personal-candidate/record-model.ts';
 
 export type JournalBinding={ownerId:string;spaceId:string};
+export type JournalReference={id:string;sourceId:string;revision:number};
+export type JournalHistoryRow=RecordFields&JournalReference&{href:string};
 export type JournalHistory=ReturnType<typeof projectJournalHistory>;
 type Fetcher=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 const base='/api/platform/personal/';
@@ -19,9 +21,9 @@ export function beijingJournalDate(observedAt:string):string {
 }
 export function journalRecordHref(id:string):string{return '/personal/journal?record='+validateId(id);}
 export function projectJournalHistory(entries:PublicEntry[],observedAt:string){
- const today=beijingJournalDate(observedAt),rows=entries.map(entry=>({id:entry.id,...recordFields(entry,'journal'),href:journalRecordHref(entry.id)}));
+ const today=beijingJournalDate(observedAt),rows:JournalHistoryRow[]=entries.toSorted((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id)).map(entry=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision,...recordFields(entry,'journal'),href:journalRecordHref(entry.id)}));
  const dates=rows.map(row=>row.occurredOn).filter((date):date is string=>date!==null).sort();
- return {today,observedAt,matches:rows.filter(row=>row.occurredOn!==null&&row.occurredOn.slice(0,4)<today.slice(0,4)&&row.occurredOn.slice(5)===today.slice(5)).sort((a,b)=>b.occurredOn!.localeCompare(a.occurredOn!)||b.id.localeCompare(a.id)),coverage:{count:rows.length,dated:dates.length,undated:rows.length-dates.length,from:dates[0]??null,to:dates.at(-1)??null,historicalCompleteness:'unknown' as const}};
+ return {today,observedAt,rows,matches:rows.filter(row=>row.occurredOn!==null&&row.occurredOn.slice(0,4)<today.slice(0,4)&&row.occurredOn.slice(5)===today.slice(5)).sort((a,b)=>b.occurredOn!.localeCompare(a.occurredOn!)||b.id.localeCompare(a.id)),coverage:{count:rows.length,dated:dates.length,undated:rows.length-dates.length,from:dates[0]??null,to:dates.at(-1)??null,historicalCompleteness:'unknown' as const}};
 }
 async function read(fetcher:Fetcher,path:string):Promise<Record<string,unknown>> {
  const response=await fetcher(base+path,{credentials:'same-origin',cache:'no-store'});
@@ -43,10 +45,11 @@ export async function readJournalHistory(fetcher:Fetcher=fetch):Promise<{binding
  return {binding:after,history};
 }
 export type JournalOriginal={entry:PublicEntry;current:RecordFields;original:RecordFields;history:PublicEntry[];historyTruncated:boolean};
-export async function readJournalOriginal(fetcher:Fetcher,id:string,expected:JournalBinding):Promise<JournalOriginal>{
+export async function readJournalOriginal(fetcher:Fetcher,id:string,expected:JournalBinding,reference?:JournalReference):Promise<JournalOriginal>{
  validateId(id);const before=await status(fetcher);if(bindingKey(before)!==bindingKey(expected))throw Error('本人空间已变化，请重新读取。');
  const value=await read(fetcher,'journal/'+id),entry=ownerRecord(value.entry,'journal',before.spaceId);
  if(entry.id!==id)return invalid();
+ if(reference&&(reference.id!==entry.id||reference.sourceId!==entry.source.id||reference.revision!==entry.revision))throw Error('日记来源或版本已变化，请重新读取历史。');
  const versions=await read(fetcher,'journal/'+id+'/history');
  if(versions.scope!=='bounded-record-history'||typeof versions.truncated!=='boolean'||!Array.isArray(versions.items)||versions.items.length>100)return invalid();
  const history=versions.items.map(row=>ownerRecord(row,'journal',before.spaceId));

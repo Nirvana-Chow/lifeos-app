@@ -1,0 +1,4 @@
+.page{min-height:100dvh;padding:clamp(1rem,4vw,3rem);background:var(--background);color:var(--foreground)}
+.card{max-width:44rem;margin:0 auto;display:grid;gap:1rem;padding:clamp(1rem,3vw,2rem);border:1px solid var(--border);border-radius:var(--radius);background:var(--card)}
+.card h1{font-size:1.5rem;font-weight:600}.card h2{font-size:1.125rem;font-weight:600}.card p{line-height:1.6}.card fieldset{min-width:0;display:grid;gap:.75rem;border:0;padding:0}.card label,.details dt{font-weight:500}
+.actions{display:flex;gap:.75rem;flex-wrap:wrap}.details{display:grid;gap:.875rem}.details dd{margin:.25rem 0 0}.value{overflow-wrap:anywhere;min-width:0}.card a{text-decoration:underline;text-underline-offset:.2em}

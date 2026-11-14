@@ -1,6 +1,8 @@
 'use client';
 
-import {useEffect, useRef, useState, type FormEvent} from 'react';
+import {useCallback,useEffect, useRef, useState, type FormEvent} from 'react';
+import {FilePermissionPanel} from '../file-handoff/permission-panel';
+import {filePermissionStateSchema,type FilePermission} from '../file-handoff/permission-contracts';
 import {flushSync} from 'react-dom';
 import {Badge} from '../ui-review/ui/badge';
 import {Button} from '../ui-review/ui/button';
@@ -14,6 +16,7 @@ import styles from './account-api-keys.module.css';
 const endpoint = '/api/platform/account/api-keys';
 const statuses = {active: '有效', expired: '已到期', revoked: '已撤销'};
 type Grant = {
+  fileHandoff?:FilePermission;
   id: string;
   name: string;
   scopes: readonly AgentScope[];
@@ -23,15 +26,17 @@ type Grant = {
   expiresAt: string | null;
   status: keyof typeof statuses;
 };
-type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[]};
+type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'};
 const requestOptions = {cache: 'no-store', credentials: 'same-origin'} as const;
 async function readGrantPage(response: Response) {
-  const data: {keys: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[]} = await response.json();
+  const data: {keys: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'} = await response.json();
   if (!Array.isArray(data.keys) ||
       (data.nextCursor !== undefined && (typeof data.nextCursor !== 'string' || !data.nextCursor))) throw Error();
   if(data.availablePolicies!==undefined&&(!Array.isArray(data.availablePolicies)||data.availablePolicies.some(policy=>policy!==allPersonalBusinessPolicy)))throw Error();
   if(data.keys.some(grant=>grant.businessDataPolicy!==undefined&&grant.businessDataPolicy!==allPersonalBusinessPolicy))throw Error();
-  return {availablePolicies:data.availablePolicies,grants: data.keys, nextCursor: data.nextCursor, availableScopes: data.availableScopes === undefined ? undefined : normalizeAgentScopes(data.availableScopes)};
+  if(data.availableFileHandoff!==undefined&&data.availableFileHandoff!=='file-handoff-v1')throw Error();
+  for(const grant of data.keys)if(grant.fileHandoff)filePermissionStateSchema.parse(grant.fileHandoff);
+  return {availableFileHandoff:data.availableFileHandoff,availablePolicies:data.availablePolicies,grants: data.keys, nextCursor: data.nextCursor, availableScopes: data.availableScopes === undefined ? undefined : normalizeAgentScopes(data.availableScopes)};
 }
 
 const scopeModules = [{id: 'todo', label: '待办'}, {id: 'organization', label: '项目、领域和主题'}, {id:'requirements',label:'需求'}] as const;
@@ -42,7 +47,7 @@ const describePolicy=(policy:BusinessDataPolicy|null|undefined,scopes:readonly A
 function PolicyFields({value,onChange,disabled=false,allAvailable=true}: {value:BusinessDataPolicy|null;onChange:(value:BusinessDataPolicy|null)=>void;disabled?:boolean;allAvailable?:boolean}){
   return <label className={styles.policyFields}>授权方式<select value={value??'explicit'} disabled={disabled} onChange={event=>onChange(event.target.value===allPersonalBusinessPolicy?allPersonalBusinessPolicy:null)}>
     <option value="explicit">按模块选择权限</option><option value={allPersonalBusinessPolicy} disabled={!allAvailable}>全部个人业务数据读写（含后续已上线业务模块）</option></select>
-    {value&&<small>所有持有这把密钥的客户端均可读写当前及后续已启用的个人业务模块。实际能力以发现结果为准；不包含账户安全、密钥管理、系统设置、外部付款或下单及不可逆操作。</small>}</label>;
+    {value&&<small>所有持有这把密钥的客户端均可读写当前及后续已启用的个人业务模块。实际能力以发现结果为准；不包含账户安全、密钥管理、系统设置、外部付款或下单及不可逆操作。文件交接需单独授权。</small>}</label>;
 }
 type ScopeEdit = {current: Grant; proposed: readonly AgentScope[];proposedPolicy?:BusinessDataPolicy|null; phase: 'editing' | 'saving' | 'conflict' | 'unknown';
   frozen?: Readonly<{expectedGrantDigest: string; scopes: readonly AgentScope[];businessDataPolicy?:BusinessDataPolicy|null}>};
@@ -110,13 +115,15 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
   const newKeyButton = useRef<HTMLButtonElement>(null);
   const replacementButtons = useRef(new Map<string,HTMLButtonElement>());
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [ownBusy, setBusy] = useState(false),[fileBusy,setFileBusy]=useState(false);const busy=ownBusy||fileBusy;
   const nameInput = useRef<HTMLInputElement>(null);
   const revealHeading = useRef<HTMLHeadingElement>(null);
   const revoker = useRef<HTMLButtonElement | null>(null);
   const pageActive = useRef(true);
   const actionLock = useRef(false);
   const moreRequest = useRef<AbortController | null>(null);
+  const lockFile=useCallback((value:boolean)=>{actionLock.current=value;setFileBusy(value);},[]);
+  const fileSaved=useCallback((grant:Grant)=>setList(current=>current.kind==='ready'?{...current,grants:current.grants.map(item=>item.id===grant.id?grant:item)}:current),[]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -425,6 +432,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
             <div>
               <div className={styles.grantHeading}><strong>{grant.name}</strong><Badge variant={grant.status === 'active' ? 'default' : 'secondary'}>{statuses[grant.status]}</Badge></div>
               <p>{describePolicy(grant.businessDataPolicy,grant.scopes)}</p>
+              {grant.fileHandoff&&<p>文件交接：{grant.fileHandoff.scopes.length?grant.fileHandoff.scopes.includes('file-handoff:write')?'读取与保存':'仅读取':'未授权'}{grant.fileHandoff.consumer==='codex'?'；已授权 Codex 领取端':''}</p>}
               <dl className={styles.details}>
                 <div><dt>授权编号</dt><dd><code>{grant.id}</code></dd></div>
                 <div><dt>创建</dt><dd><time dateTime={grant.createdAt}>{formatDate(grant.createdAt)}</time></dd></div>
@@ -432,6 +440,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
               </dl>
             </div>
             {grant.status === 'active' && <div className={styles.actions}>
+              {list.availableFileHandoff&&grant.grantDigest&&<FilePermissionPanel grant={grant} disabled={busy||uncertain||!!reveal} onLock={lockFile} onSaved={fileSaved}/>}
               {list.availableScopes && grant.grantDigest && <Button type="button" variant="outline" disabled={busy || uncertain || !!reveal}
                 aria-label={'修改权限 ' + grant.name} onClick={event => {scopeTrigger.current=event.currentTarget; setScopeMessage(''); updateScopeEdit({current:grant,proposed:grant.scopes,...(list.availablePolicies||grant.businessDataPolicy?{proposedPolicy:grant.businessDataPolicy??null}:{}),phase:'editing'});}}>修改权限</Button>}
               <Button ref={node=>{if (node) replacementButtons.current.set(grant.id,node); else replacementButtons.current.delete(grant.id);}} type="button" variant="outline" disabled={busy || uncertain || !!reveal} aria-label={'替换 ' + grant.name} onClick={event => prepareCreate(event.currentTarget, grant)}>替换</Button>

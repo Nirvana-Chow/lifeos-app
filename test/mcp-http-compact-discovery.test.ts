@@ -6,7 +6,7 @@ import {createMcpHttpHandler} from '../src/mcp-http/handler.ts';
 
 const origin='https://lifeos.nirvanachow.com';
 const excluded=new Set(['discover','discoverV2','commitTodoClassification','previewTodoClassification','claimRequirementExecution','updateRequirementExecution']);
-const catalog57=agentOperations.filter(operation=>!excluded.has(operation.id));
+const catalog57=agentOperations.filter(operation=>!excluded.has(operation.id)&&operation.module!=='fileHandoff');
 // Preserve the existing cooking-closed catalog as a distinct compatibility case.
 const catalog53=catalog57.filter(operation=>operation.module!=='cooking');
 const catalog5=catalog53.filter(operation=>operation.module==='todo');

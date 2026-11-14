@@ -1,4 +1,5 @@
 import {executionArgumentSchema} from '../requirement-events/argument-schemas.ts';
+import {fileArgumentSchema,parseFileArguments} from '../file-handoff/arguments.ts';
 import {isRequirementEventOperation} from '../requirement-events/operations.ts';
 // Inherits the official-SDK structural projection from e890615 / 5eaf53f;
 // current business validation stays in the existing API/domain modules.
@@ -33,6 +34,7 @@ function envelopeSchema(operation:Operation){
 }
 /** Native contract structure, including complete fields and mutually exclusive kinds. */
 export function argumentSchema(operation:Operation):z.ZodType{
+ if(operation.module==='fileHandoff')return fileArgumentSchema(operation.id);
  if(isRequirementEventOperation(operation.id))return executionArgumentSchema(operation.id);
  const shape:Record<string,z.ZodType>={};
  if(operation.path.includes('{id}'))shape.id=operation.module==='requirements'?z.union([recordId,z.string().regex(/^LO-[A-Z]+-\d{3}$/)]):recordId;
@@ -51,6 +53,7 @@ export function argumentSchema(operation:Operation):z.ZodType{
  return z.strictObject(shape).describe(operation.method==='PATCH'?'Submit complete required fields, not a partial merge. Preserve current fields from GET; optional planning/workflow omission preserves values and null clears. Native normalizers and current authorization remain authoritative.':operation.description);
 }
 export function parseArguments(operation:Operation,input:unknown){
+ if(operation.module==='fileHandoff')return parseFileArguments(operation,input);
  if(isRequirementEventOperation(operation.id)){const parsed=executionArgumentSchema(operation.id).safeParse(input);if(!parsed.success)throw new PlatformError(400,'INVALID_ARGUMENTS','Invalid execution arguments');const args=parsed.data as any;if(operation.id==='updateRequirementExecution'&&args.id!==args.lease.id)throw new PlatformError(400,'INVALID_ARGUMENTS','Lease identity mismatch');if(args.action==='progress')validateRequirementFields(args.input.fields);const{id,idempotencyKey,...body}=args;return{path:operation.path.replace('{id}',id??''),body,key:idempotencyKey as string};}
  const parsed=envelopeSchema(operation).safeParse(input);
  if(!parsed.success)throw new PlatformError(400,'INVALID_ARGUMENTS','Invalid arguments');

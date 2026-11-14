@@ -17,6 +17,7 @@ export function readBusinessOAuthConfig(env:Record<string,string|undefined>,orig
  const grantId=env.LIFEOS_BUSINESS_MCP_GRANT_ID,raw=env.LIFEOS_BUSINESS_MCP_SCOPES;
  if(!grantId||!/^[A-Za-z0-9_-]{1,128}$/.test(grantId)||!raw||raw.length>2048)return fail();
  const scopes=raw.split(' '),supported=new Set(agentOperations.filter(operation=>isBusinessMcpOperation(operation.id)).flatMap(operation=>[...operation.requiredScopes]));
+ if(scopes.some(scope=>scope.startsWith('file-handoff:'))&&env.LIFEOS_FILE_HANDOFF!=='file-handoff-v1')return fail();
  if(!scopes.length||new Set(scopes).size!==scopes.length||scopes.some(scope=>scope!=='offline_access'&&!supported.has(scope as never))||scopes.every(scope=>scope==='offline_access')||scopes.some(scope=>scope.endsWith(':write')&&!scopes.includes(scope.replace(/:write$/,':read'))))return fail();
  return Object.freeze({resource:businessMcpResource,issuer:origin+'/api/platform/auth',grantId,scopes:Object.freeze(scopes)});
 }

@@ -18,6 +18,13 @@ test('same-day history uses recorded dates, strictly past years and stable IDs',
  assert.equal(result.matches[0].href,'/personal/journal?record='+entries[2].id);
  assert.throws(()=>journalRecordHref('../private'));
 });
+test('one verified history projection carries every saved date and its stable source revision',()=>{
+ const original=journalFixture(1,'2026-11-13'),entry={...original,revision:3,draft:{...original.draft,text:'Revised synthetic text'}},undated=journalFixture(2,null);
+ const result=projectJournalHistory([entry,undated],'2026-11-13T00:00:00.000Z');
+ assert.equal(result.rows.length,2);
+ assert.deepEqual(result.rows.find(row=>row.id===entry.id),{id:entry.id,sourceId:entry.source.id,revision:3,title:'Synthetic diary 1',text:'Revised synthetic text',occurredOn:'2026-11-13',href:journalRecordHref(entry.id)});
+ assert.equal(result.rows.find(row=>row.id===undated.id)?.occurredOn,null);
+});
 test('leap-day records are only shown on February 29 and empty coverage remains unknown',()=>{
  assert.equal(projectJournalHistory([journalFixture(1,'2020-02-29')],'2024-02-29T04:00:00.000Z').matches.length,1);
  assert.equal(projectJournalHistory([journalFixture(1,'2020-02-29')],'2025-02-28T04:00:00.000Z').matches.length,0);
@@ -44,4 +51,13 @@ test('original link reads the selected stable record and preserves immutable ori
  assert.equal(result.entry.id,entry.id);assert.equal(result.original.text,'Synthetic original diary');assert.equal(result.current.text,'Synthetic corrected diary');
  await assert.rejects(readJournalOriginal(fetcher({...routes,[root+'journal/'+entry.id]:{entry:journalFixture(2,'2025-11-13')}}),entry.id,journalStatus));
  await assert.rejects(readJournalOriginal(fetcher({...routes,[root+'status']:{...journalStatus,ownerId:'another'}}),entry.id,journalStatus));
+});
+test('an original GET must reject a reference superseded since the full snapshot',async()=>{
+ const entry=journalFixture(1,'2026-11-13');
+ const routes={[root+'status']:journalStatus,[root+'journal/'+entry.id]:{entry},[root+'journal/'+entry.id+'/history']:{items:[entry],scope:'bounded-record-history',truncated:false}};
+ const reference={id:entry.id,sourceId:entry.source.id,revision:entry.revision};
+ assert.equal((await readJournalOriginal(fetcher(routes),entry.id,journalStatus,reference)).entry.id,entry.id);
+ for(const changed of [{...reference,revision:2},{...reference,sourceId:journalFixture(2,null).source.id},{...reference,id:journalFixture(2,null).id}]){
+  await assert.rejects(readJournalOriginal(fetcher(routes),entry.id,journalStatus,changed),/版本已变化/);
+ }
 });

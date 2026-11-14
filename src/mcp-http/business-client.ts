@@ -54,7 +54,7 @@ export class HttpBusinessClient{
  constructor(origin:string,token:string,dispatch:BusinessDispatcher,signal:AbortSignal){
   this.origin=origin;this.token=token;
   this.transport=inProcessApiFetch(origin,token,dispatch,signal);
-  this.api=new LifeOSApiClient({origin,credentialProvider:async()=>token,credentialFormat:token.includes('.')?'business-oauth-jwt':'api-key'},this.transport);
+  this.api=new LifeOSApiClient({origin,credentialProvider:async()=>token,credentialFormat:token.includes('.')?'business-oauth-jwt':'api-key',fileHandoff:'file-handoff-v1'},this.transport);
  }
  async discover():Promise<CapabilityCatalog>{const catalog=await this.api.discover();return{apiVersion:catalog.apiVersion,operations:catalog.operations.filter(operation=>isBusinessMcpOperation(operation.id))};}
  private async readback(operation:Operation,args:Record<string,unknown>,data:Record<string,unknown>){
@@ -88,7 +88,8 @@ export class HttpBusinessClient{
   catch{return unknown('API_WRITE_OUTCOME_UNKNOWN');}
   if(result.status<200||result.status>=300){
    const error=typeof result.data.error==='string'&&/^[A-Z][A-Z0-9_]{0,79}$/.test(result.data.error)?result.data.error:'API_ERROR';
-   return result.status>=500?unknown(error,result.status):{ok:false,status:result.status,error};
+   const failed=result.status>=500?unknown(error,result.status):{ok:false,status:result.status,error};
+   return operation.module==='fileHandoff'&&typeof result.data.handoffId==='string'&&/^[a-f0-9-]{36}$/.test(result.data.handoffId)?{...failed,data:{handoffId:result.data.handoffId}}:failed;
   }
   try{
    let preimage=before?.ok?responseEntry(before.data):undefined;
