@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {applyReviewEnvironment,validateReviewConfig} from '../src/platform/private-config.ts';
+import {applyReviewEnvironment,validateReviewConfig,reviewDatabase} from '../src/platform/private-config.ts';
 import {applyBoundStartupConfig} from '../src/deployment-candidate/startup-mount-guard.ts';
 
 const flag='LIFEOS_PERSONAL_SESSION_DURATION';
@@ -9,12 +9,12 @@ const platform={
  LIFEOS_PLATFORM_BASE_URL:'https://review.example.test',LIFEOS_PLATFORM_TRANSPORT:'https-origin',LIFEOS_PLATFORM_HTTPS_HOST:'review.example.test',
  LIFEOS_PLATFORM_OWNER_ID:'personal-review-user',LIFEOS_PLATFORM_OWNER_EMAIL:'owner@example.test',
  LIFEOS_PLATFORM_SECRET:'synthetic-browser-config-only-000000000000',
- LIFEOS_PLATFORM_TEST_DATABASE_URL:'postgresql://lifeos_platform_candidate_runtime:fixture-only@127.0.0.1:55432/lifeos_platform_test_local',
+ LIFEOS_PLATFORM_TEST_DATABASE_URL:`postgresql://lifeos_platform_candidate_runtime:fixture-only@127.0.0.1:55432/${reviewDatabase}`,
 };
 const personal={
  LIFEOS_PERSONAL_ENABLED:'1',LIFEOS_PERSONAL_APPROVED:'personal-manual-v1',
  LIFEOS_PERSONAL_OWNER_ID:platform.LIFEOS_PLATFORM_OWNER_ID,LIFEOS_PERSONAL_OWNER_EMAIL:platform.LIFEOS_PLATFORM_OWNER_EMAIL,
- LIFEOS_PERSONAL_SPACE_ID:'personal-review-space',LIFEOS_PERSONAL_DATABASE_NAME:'lifeos_platform_test_local',LIFEOS_PERSONAL_ALLOWED_TYPES:'todo,journal',
+ LIFEOS_PERSONAL_SPACE_ID:'personal-review-space',LIFEOS_PERSONAL_DATABASE_NAME:reviewDatabase,LIFEOS_PERSONAL_ALLOWED_TYPES:'todo,journal',
 };
 const binding={...platform,...personal};
 
