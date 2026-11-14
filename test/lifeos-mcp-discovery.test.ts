@@ -211,15 +211,16 @@ test('new module source pins use current owner records and reject stale or wrong
  }finally{await f.close();}
 });
 
-test('full current catalog pairs all 61 reviewed JSON operations and rejects altered new-operation scopes',async()=>{
+test('full current catalog pairs all 62 reviewed JSON operations and rejects altered new-operation scopes',async()=>{
  const api=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:agentOperations}));
  const server=createLifeOSMcpServer({client:api}),client=new Client({name:'synthetic-full-catalog',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();await server.connect(b);await client.connect(a);
  try{
   const discovery=await client.callTool({name:'lifeos_discover',arguments:{}}),descriptors=(discovery.structuredContent as {operations:Descriptor[]}).operations;
-  const want=agentOperations.filter(op=>op.module!=='fileHandoff'&&!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,61);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
-  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,61);
+  const want=agentOperations.filter(op=>op.module!=='fileHandoff'&&!['discover','discoverV2'].includes(op.id));assert.equal(descriptors.length,62);assert.deepEqual(descriptors.map(op=>op.id).sort(),want.map(op=>op.id).sort());
+  const call=(await client.listTools()).tools.find(tool=>tool.name==='lifeos_call')!.inputSchema as Schema;assert.equal(call.oneOf.length,62);
   for(const descriptor of descriptors){const branch=call.oneOf.find((s:Schema)=>s.properties.operationId.const===descriptor.id);assert.deepEqual(branch.properties.arguments,descriptor.inputSchema);}
   assertMatches(call,{operationId:'createMedia',arguments:fromSchema(descriptors.find(op=>op.id==='createMedia')!.inputSchema)});
+  assertMatches(call,{operationId:'updateStorageReviewNote',arguments:{id:'00000000-0000-4000-8000-000000000001',expectedRevision:1,fields:{checklistRevision:'synthetic-review',itemId:'N1',note:'  exact note\n  '},idempotencyKey:'synthetic-catalog-note'}});
  }finally{await client.close();await server.close();}
  for(const suffix of ['Media','Career','Portfolio','Cooking']){
   const operation=agentOperations.find(op=>op.id==='create'+suffix)!;
@@ -229,6 +230,11 @@ test('full current catalog pairs all 61 reviewed JSON operations and rejects alt
    if(altered.id===operation.id){await assert.rejects(client.discover(),/API_CONTRACT_MISMATCH/);assert.equal((await client.execute(operation.id,args)).error,'API_CONTRACT_MISMATCH');}
    else{assert.deepEqual((await client.discover()).operations,[]);assert.equal((await client.execute(operation.id,args)).error,'OPERATION_UNAVAILABLE');}
   }
+ }
+ const note=agentOperations.find(op=>op.id==='updateStorageReviewNote')!;
+ for(const altered of [{...note,requiredScopes:['todo:read','todo:write']},{...note,requiredScopes:['storage-review:write']},{...note,path:'/v1/storage-reviews/{id}/unreviewed'}]){
+  const client=new LifeOSApiClient({origin,credentialProvider:async()=>'synthetic-catalog-key'},async()=>Response.json({apiVersion:'2',operations:[altered]}));
+  await assert.rejects(client.discover(),/API_CONTRACT_MISMATCH/);
  }
 });
 
