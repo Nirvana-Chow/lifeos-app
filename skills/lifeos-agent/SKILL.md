@@ -51,7 +51,7 @@ Use `snapshotStorageReviews` for the complete zero-or-one owner record, then `ge
 
 Every write needs its original idempotency key and an independent `getStorageReview` readback. The receipt may be historical: compare its revision/source with the current GET, report later edits separately, and preserve the original payload/key on an unknown outcome. A no-op keeps its revision. Missing authority or runtime support blocks the affected action; do not substitute owner cookies, SQL or administrative credentials.
 
-The website stores review decisions only. Process local files only within separately authorized scope after reading the saved decisions and checking the current objects and recovery path. `trash` is a candidate for authorized recoverable handling; permanent deletion requires confirmation for the exact objects and impact on that occasion. Keep/defer/protected/processed entries do not authorize deletion.
+The website stores the checklist, review decisions and per-item notes. Process local files only within separately authorized scope after reading the saved decisions and checking the current objects and recovery path. `trash` is a candidate for authorized recoverable handling; permanent deletion requires confirmation for the exact objects and impact on that occasion. Keep/defer/protected/processed entries do not authorize deletion.
 
 ## Persistent requirements
 
