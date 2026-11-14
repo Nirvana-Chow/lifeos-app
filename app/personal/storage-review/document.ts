@@ -231,8 +231,10 @@ function loadNoteDrafts(scope) {
     }
   } catch { noteDrafts = new Map(); noteDraftsReliable = false; noteDraftCorrupt = true; recoveryBlocked = true; }
 }
-function updateNoteDraft(id,note) {
-  noteDrafts.set(id,{note,checklistRevision:review.revision,expectedRevision:remote.revision});
+function updateNoteDraft(id,note,reconfirm=false) {
+  const previous = noteDrafts.get(id);
+  const baseline = previous && reconfirm!==true ? previous : {checklistRevision:review.revision,expectedRevision:remote.revision};
+  noteDrafts.set(id,{note,checklistRevision:baseline.checklistRevision,expectedRevision:baseline.expectedRevision});
   return retainNoteDrafts();
 }
 function clearNoteDraft(pending) {
@@ -567,7 +569,7 @@ async function choose(item,decision) {
 async function saveNote(item,note) {
   if (!synced || !canEdit() || pendingDecision || !reviewScope || !review.items.some(i=>i.id===item.id)) return;
   const draft = noteDrafts.get(item.id);
-  if (!draft || draft.checklistRevision!==review.revision) { announce('备注草稿所属清单已变化，请核对并编辑后再保存。'); return; }
+  if (!draft || draft.checklistRevision!==review.revision) { announce('备注草稿所属清单已变化，原草稿仍保留；请先核对原条目，不能直接保存到新清单。'); return; }
   if (!retainNoteDrafts()) { announce('备注草稿未能在本机保留，尚未发送。请保留当前页面。'); return; }
   const body = {expectedRevision:draft.expectedRevision,checklistRevision:review.revision,id:item.id,note};
   const pending = {id:item.id,decision:null,checklistRevision:review.revision,scope:reviewScope,command:freezeReviewCommand('PATCH',body,REVIEW_API+'/notes'),outcome:'new'};
@@ -735,7 +737,7 @@ async function retryDecision() {
   if (pending.outcome === 'rejected') {
     clearPendingDecision();
     if (pending.command.method==='POST') { announce('清单请求已明确拒绝。请核对最新清单，重新导入并确认保存。'); render(); }
-    else if (pending.command.url===REVIEW_API+'/notes') { const note=JSON.parse(pending.command.body).note;updateNoteDraft(item.id,note);await saveNote(item,note); }
+    else if (pending.command.url===REVIEW_API+'/notes') { const note=JSON.parse(pending.command.body).note;updateNoteDraft(item.id,note,true);await saveNote(item,note); }
     else await choose(item,pending.decision);
   } else {
     if (!retainPendingDecision()) { render(); announce('原请求无法在本机保留，尚未继续发送。请保留当前页面。'); return; }

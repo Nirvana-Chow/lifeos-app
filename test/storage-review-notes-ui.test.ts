@@ -34,3 +34,9 @@ test('an unsent draft keeps its original CAS revision after a refreshed remote s
  const context:any={synced:true,canEdit:()=>true,pendingDecision:null,reviewScope:'synthetic-space',review:{revision:'v1',items:[item]},remote:{revision:7},noteDrafts:new Map([[item.id,{note:'original draft',checklistRevision:'v1',expectedRevision:2}]]),retainNoteDrafts:()=>true,retainPendingDecision:()=>true,REVIEW_API:'/api/platform/personal/storage-review',freezeReviewCommand:(method:string,body:unknown,url:string)=>({method,body:JSON.stringify(body),url,key:'synthetic-note-key'}),writeServer:async(_method:string,body:unknown)=>{written=body;}};
  const save=runInNewContext(fn('saveNote')+'; saveNote',context);await save(item,'original draft');assert.equal(written.expectedRevision,2);
 });
+test('further edits and clearing keep the original draft base until explicit rejected-command confirmation',()=>{
+ const context:any={noteDrafts:new Map([[item.id,{note:'old draft',checklistRevision:'v1',expectedRevision:2}]]),review:{revision:'v2'},remote:{revision:7},retainNoteDrafts:()=>true};
+ const update=runInNewContext(fn('updateNoteDraft')+'; updateNoteDraft',context);
+ for(const note of ['continued edit','']){update(item.id,note);assert.deepEqual(JSON.parse(JSON.stringify(context.noteDrafts.get(item.id))),{note,checklistRevision:'v1',expectedRevision:2});}
+ update(item.id,'owner explicitly reconfirmed',true);assert.deepEqual(JSON.parse(JSON.stringify(context.noteDrafts.get(item.id))),{note:'owner explicitly reconfirmed',checklistRevision:'v2',expectedRevision:7});
+});
