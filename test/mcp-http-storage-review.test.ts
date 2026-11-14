@@ -56,13 +56,13 @@ const call=async(client:Client,operationId:string,args:Record<string,unknown>):P
 const create=(client:Client,key='synthetic-http-review-create')=>call(client,'createStorageReview',{fields:{checklist},idempotencyKey:key});
 const choose=(client:Client,id:string,expectedRevision:number,decision:string,key:string)=>call(client,'updateStorageReviewDecision',{id,expectedRevision,fields:{checklistRevision:checklist.revision,itemId:'S-1',decision},idempotencyKey:key});
 
-for(const modern of [true,false])test(`official ${modern?'2026':'2025'} HTTP MCP projects all five storage operations through the native owner writer`,async()=>{
+for(const modern of [true,false])test(`official ${modern?'2026':'2025'} HTTP MCP projects all six storage operations through the native owner writer`,async()=>{
  const f=fixture(),client=await connect(f,writer,modern);
  try{
   assert.equal(client.getNegotiatedProtocolVersion(),modern?'2026-07-28':'2025-11-25');
   const tools=(await client.listTools()).tools;assert.deepEqual(tools.map(tool=>tool.name),['lifeos_discover','lifeos_call']);
   const catalog=(await client.callTool({name:'lifeos_discover',arguments:{}})).structuredContent as any;
-  assert.equal(catalog.operations.length,5);
+  assert.equal(catalog.operations.length,6);
   assert.deepEqual(catalog.operations.map((op:any)=>op.id),storageReviewOperations.map(op=>op.id));
   for(const op of catalog.operations){assert.equal(op.inputSchema.additionalProperties,false);assert.equal(typeof op.inputSchema.properties,'object');}
   const invoke=(operationId:string,args:Record<string,unknown>)=>{
@@ -83,6 +83,10 @@ for(const modern of [true,false])test(`official ${modern?'2026':'2025'} HTTP MCP
   const owner=await f.owner.getEntry(ownerId,id);assert.deepEqual(owner,updated.data.entry);assert.equal(f.repository.historyRows.length,3);
   const protectedChoice=await call(client,'updateStorageReviewDecision',{id,expectedRevision:3,fields:{checklistRevision:next.revision,itemId:'S-2',decision:'trash'},idempotencyKey:'synthetic-http-review-protected'});
   assert.equal(protectedChoice.ok,false);assert.equal(protectedChoice.status,409);assert.equal(f.repository.historyRows.length,3);
+  const noteArgs={id,expectedRevision:3,fields:{checklistRevision:next.revision,itemId:'S-2',note:'  Original protected note\n处理要求保持原文  '},idempotencyKey:'synthetic-http-review-note'};
+  const noted=await invoke('updateStorageReviewNote',noteArgs);assert.equal(noted.verification?.verified,true,JSON.stringify(noted));assert.equal(noted.data.entry.sourceId,sourceId);assert.deepEqual(noted.readback.data.entry.fields.notes,[{id:'S-2',note:noteArgs.fields.note}]);
+  const cleared=await invoke('updateStorageReviewNote',{...noteArgs,expectedRevision:4,fields:{...noteArgs.fields,note:''},idempotencyKey:'synthetic-http-review-note-clear'});
+  assert.equal(cleared.verification?.verified,true,JSON.stringify(cleared));assert.deepEqual(cleared.readback.data.entry.fields.notes,[]);assert.deepEqual(cleared.readback.data.entry.fields.decisions,[{id:'S-1',decision:'keep'}]);assert.equal(f.repository.historyRows.length,5);
   assert.ok(f.requests.every(request=>request.authorization==='Bearer '+writer&&request.cookie===null&&request.path.startsWith('/api/platform/agent/')));
   assert.equal(JSON.stringify(updated).includes(writer),false);
  }finally{await client.close();}

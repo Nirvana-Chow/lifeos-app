@@ -20,7 +20,7 @@ const allowedIds=[
  'listTodos','snapshotTodos','getTodo','createTodo','updateTodo',
  'snapshotOrganization','getOrganization','createOrganization','updateOrganization',
  'snapshotRequirements','getRequirement','createRequirement','updateRequirement',
- 'snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision',
+ 'snapshotStorageReviews','getStorageReview','createStorageReview','updateStorageReviewChecklist','updateStorageReviewDecision','updateStorageReviewNote',
  'snapshotFeedback','getFeedback','createFeedback',
  'snapshotJournal','getJournal','createJournal','updateJournal',
  'snapshotCalendar','getCalendar','createCalendar','updateCalendar',

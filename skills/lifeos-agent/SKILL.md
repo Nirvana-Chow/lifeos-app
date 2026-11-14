@@ -47,9 +47,11 @@ Use `snapshotStorageReviews` for the complete zero-or-one owner record, then `ge
 
 `updateStorageReviewDecision` uses the record ID and expectedRevision with `{fields:{checklistRevision,itemId,decision}}`; decision is `keep`, `trash`, `defer` or null to clear that item's choice. Only pending items may change. This is an ordinary recorded choice, not evidence that the owner personally approved it, and not file deletion authorization. Agent-origin commands retain server-derived grant/operation audit; never send owner/source/actor fields.
 
+`updateStorageReviewNote` uses the same record ID and expectedRevision with `{fields:{checklistRevision,itemId,note}}`. Preserve the exact note, including whitespace and newlines, up to8000 characters; an empty string clears that item's note. GET returns optional `notes:[{id,note}]`; an older snapshot may omit notes. Preserve saved notes during unrelated decision/checklist edits. A note is explanatory text, never a decision, approval or filesystem command. The new0026 registration defaults this operation off; discovery and the original write fence must actually permit it.
+
 Every write needs its original idempotency key and an independent `getStorageReview` readback. The receipt may be historical: compare its revision/source with the current GET, report later edits separately, and preserve the original payload/key on an unknown outcome. A no-op keeps its revision. Missing authority or runtime support blocks the affected action; do not substitute owner cookies, SQL or administrative credentials.
 
-The website stores review decisions only. Process local files only within separately authorized scope after reading the saved decisions and checking the current objects and recovery path. `trash` is a candidate for authorized recoverable handling; permanent deletion requires confirmation for the exact objects and impact on that occasion. Keep/defer/protected/processed entries do not authorize deletion.
+The website stores the checklist, review decisions and per-item notes. Process local files only within separately authorized scope after reading the saved decisions and checking the current objects and recovery path. `trash` is a candidate for authorized recoverable handling; permanent deletion requires confirmation for the exact objects and impact on that occasion. Keep/defer/protected/processed entries do not authorize deletion.
 
 ## Persistent requirements
 

@@ -26,10 +26,12 @@ export async function handleStorageReviewAgent(request:Request,options:{operatio
  }
  const updating=operation.method==='PATCH',input=object(await readJSONBody(request),updating?['fields','expectedRevision']:['fields']);
  if(updating){await current();const entry=await service.getEntry(actor.ownerId,options.recordId);if(!entry)throw new PlatformError(404,'NOT_FOUND','没有可访问的审核记录。');}
- const fields=object(input.fields,operation.id==='updateStorageReviewDecision'?['checklistRevision','itemId','decision']:['checklist']);
+ const fields=object(input.fields,operation.id==='updateStorageReviewNote'?['checklistRevision','itemId','note']:operation.id==='updateStorageReviewDecision'?['checklistRevision','itemId','decision']:['checklist']);
  const guard=()=>current(true),fence=(tx:Parameters<typeof assertAgentGrant>[0])=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id);
  const audit={kind:'agent-grant' as const,grantId:actor.grantId,operationId:operation.id},key=request.headers.get('idempotency-key')??'';
- const result=operation.id==='updateStorageReviewDecision'
+ const result=operation.id==='updateStorageReviewNote'
+  ?await service.saveNoteResult(actor.ownerId,{expectedRevision:input.expectedRevision,checklistRevision:fields.checklistRevision,id:fields.itemId,note:fields.note},key,guard,fence,audit)
+  :operation.id==='updateStorageReviewDecision'
   ?await service.saveDecisionResult(actor.ownerId,{expectedRevision:input.expectedRevision,checklistRevision:fields.checklistRevision,id:fields.itemId,decision:fields.decision},key,guard,fence,audit)
   :await service.saveChecklistResult(actor.ownerId,{expectedRevision:updating?input.expectedRevision:null,checklist:fields.checklist},key,guard,fence,audit);
  return respond({entry:storageReviewDetail(result.entry),duplicate:result.duplicate},!updating&&!result.duplicate?201:200);
