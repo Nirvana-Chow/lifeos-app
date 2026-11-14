@@ -102,6 +102,7 @@ export const financeFields=z.xor([
 export const baselineBinding=z.strictObject({baselineVersion:text(120,true),itemVersion:revision,digest}).nullable().describe('Exact binding returned by requirements GET/snapshot; null only for private UUID records.');
 export function storageReviewWriteFieldsSchema(operationId:string):z.ZodType{
  const id=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+ if(operationId==='updateStorageReviewNote')return z.strictObject({checklistRevision:z.string().min(1).max(128),itemId:id,note:z.string().max(8000).describe('Exact owner text; preserve whitespace and newlines. Empty string clears this item note. No decision or filesystem action.')});
  if(operationId==='updateStorageReviewDecision')return z.strictObject({checklistRevision:z.string().min(1).max(128),itemId:id,decision:z.enum(['keep','trash','defer']).nullable()});
  const item=z.strictObject({id,title:text(240,true),body:text(16384),question:text(2000),group:text(240),kind:z.enum(['file','folder','media','app']),status:z.enum(['pending','processed','protected'])});
  return z.strictObject({checklist:z.strictObject({schema:z.literal(1),revision:z.string().min(1).max(128),context:z.strictObject({summary:text(8000)}),items:z.array(item).max(500)})}).describe('Explicitly supplied private checklist, unique stable item IDs and at most 122880 canonical UTF-8 bytes; native validation is authoritative. No scan, path execution or filesystem deletion.');
