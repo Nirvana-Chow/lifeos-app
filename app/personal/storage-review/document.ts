@@ -16,6 +16,7 @@ export const reviewDocument = `<!doctype html>
 @media(max-width:720px){.wrap{width:calc(100% - 28px)}.mast{padding:26px 0 22px}.mast .wrap{grid-template-columns:1fr;gap:15px}.controls{gap:8px}.search{flex-basis:52%}.filter{flex:1 1 110px}.actions{width:100%}.row{grid-template-columns:32px minmax(0,1fr);padding:12px 10px;gap:8px}.icon{width:30px;height:30px}.choices,.readonly{grid-column:2}.choices span{min-height:44px}.row h3{font-size:.96rem}}
 @media(max-width:720px){.child-rows{margin-left:8px}.evidence,.status,.readonly{font-size:.875rem}.row .readonly{min-width:0}}
 @media(max-width:370px){.actions button{padding-inline:8px}.choices span{padding-inline:6px}.row{grid-template-columns:26px minmax(0,1fr)}.icon{width:26px;height:26px}}
+.row-note{grid-column:1/-1;min-width:0;margin-top:12px}.row-note label{display:block;font-size:.86rem;font-weight:600;margin-bottom:5px}.row-note textarea{display:block;resize:vertical;min-height:76px;width:100%;max-width:100%;font:inherit;font-size:.9rem;line-height:1.5;padding:8px 10px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:7px}.row-note textarea:focus-visible{outline:3px solid #3d6ee4;outline-offset:2px}.note-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px}.note-actions button{font-size:.82rem;min-height:44px}.note-status{font-size:.82rem;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}.draft-state{color:var(--defer);white-space:pre-wrap;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -31,6 +32,7 @@ export const reviewDocument = `<!doctype html>
 <div class="meta"><span id="sync-state">本机预览</span><div class="actions"><a href="/login" id="sync-login" hidden>重新登录</a><button type="button" id="open-server">打开 LifeOS 清单</button><button type="button" id="save-server" disabled>保存清单到 LifeOS</button></div></div>
 <div class="meta"><span id="visible"></span><span id="counts"></span></div>
 <p class="note" id="notice" role="status" aria-live="polite"></p>
+<p class="draft-state" id="note-draft-state" role="status" aria-live="polite"></p>
 <section class="pending-input" id="pending-input" hidden aria-labelledby="pending-title"><strong id="pending-title">待确认的选择</strong><p id="pending-description"></p><div class="actions"><button type="button" id="retry-decision">确认后重试保存</button><button type="button" id="discard-decision">放弃本次输入</button></div></section>
 <div class="ledger-head" aria-hidden="true"><span>编号／资料名称</span><span>说明与空间依据</span><span>审核决定</span></div>
 <div id="list"></div>
@@ -197,7 +199,53 @@ const collapsedBranches = new Set();
 let pendingDecision = null, syncStatus = 'saved';
 let remote, synced = false, busy = false, uncertain = false, localSaved = true, sessionDenied = false;
 let reviewScope = null, pendingRetained = false, recoveryBlocked = false, reviewGeneration = 0;
+let noteDrafts = new Map(), noteDraftScope = null, noteDraftsReliable = true, noteDraftCorrupt = false;
 function announce(text) { byId('notice').textContent = text; }
+function noteDraftKey(scope) {
+  return 'lifeos.storage-review.note-drafts.v1:'+encodeURIComponent(scope);
+}
+function retainNoteDrafts() {
+  noteDraftsReliable = false;
+  if (!noteDraftScope || noteDraftScope!==reviewScope) return false;
+  try {
+    const raw = JSON.stringify({schema:1,scope:noteDraftScope,drafts:[...noteDrafts].map(([id,draft])=>({id,...draft}))});
+    if (raw.length>262144) throw Error('备注草稿过大。');
+    const key = noteDraftKey(noteDraftScope);
+    sessionStorage.setItem(key,raw);
+    noteDraftsReliable = sessionStorage.getItem(key)===raw;
+  } catch {}
+  return noteDraftsReliable;
+}
+function loadNoteDrafts(scope) {
+  if (noteDraftScope===scope) return;
+  noteDrafts = new Map(); noteDraftScope = scope; noteDraftsReliable = true; noteDraftCorrupt = false;
+  try {
+    const raw = sessionStorage.getItem(noteDraftKey(scope));
+    if (raw===null) return;
+    if (raw.length>262144) throw Error('Invalid drafts');
+    const data = JSON.parse(raw);
+    if (data?.schema!==1 || data.scope!==scope || !Array.isArray(data.drafts) || data.drafts.length>500) throw Error('Invalid drafts');
+    for (const d of data.drafts) {
+      if (!d || Object.keys(d).sort().join(',')!=='checklistRevision,expectedRevision,id,note' || typeof d.id!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(d.id) || noteDrafts.has(d.id) || typeof d.note!=='string' || d.note.includes('\\0') || d.note.length>8000 || typeof d.checklistRevision!=='string' || !d.checklistRevision || d.checklistRevision.length>128 || !Number.isSafeInteger(d.expectedRevision) || d.expectedRevision<1) throw Error('Invalid drafts');
+      noteDrafts.set(d.id,{note:d.note,checklistRevision:d.checklistRevision,expectedRevision:d.expectedRevision});
+    }
+  } catch { noteDrafts = new Map(); noteDraftsReliable = false; noteDraftCorrupt = true; recoveryBlocked = true; }
+}
+function updateNoteDraft(id,note) {
+  noteDrafts.set(id,{note,checklistRevision:review.revision,expectedRevision:remote.revision});
+  return retainNoteDrafts();
+}
+function clearNoteDraft(pending) {
+  const body = JSON.parse(pending.command.body);
+  if (noteDraftScope===pending.scope && noteDrafts.get(pending.id)?.note===body.note) {
+    noteDrafts.delete(pending.id); retainNoteDrafts();
+  }
+}
+function guardNoteNavigation(event) {
+  if (pendingDecision || busy || !noteDrafts.size) return;
+  if (noteDraftsReliable && retainNoteDrafts() && confirm('备注草稿已保留在本标签页，尚未保存到 LifeOS。返回审核页后可继续编辑。仍要离开吗？')) return;
+  event.preventDefault(); announce('已保留备注草稿。请先保存，或确认可靠保留后再离开。');
+}
 function guardReviewNavigation(event) {
   if (!busy && pendingDecision && !['new','rejected'].includes(pendingDecision.outcome)) {
     if (pendingRetained && retainPendingDecision() && confirm('原请求已保留在本标签页的会话存储中，结果仍需核对。返回审核页或重新登录后可恢复同一请求，不会自动重发。'+(!synced && !localSaved && choices.size ? ' 继续离开也将放弃仅在内存中的本机决定，可先取消并导出。' : '')+'仍要离开吗？')) return;
@@ -218,9 +266,11 @@ function parsePendingReview(raw,scope) {
   if (typeof raw !== 'string' || raw.length > 262144) throw Error('本机恢复记录无效。');
   const value = JSON.parse(raw), pending = value?.pending, command = pending?.command;
   const keys = (object,allowed)=>object && typeof object==='object' && !Array.isArray(object) && Object.keys(object).sort().join(',')===allowed.sort().join(',');
-  if (!keys(value,['schema','scope','pending']) || value.schema!==1 || value.scope!==scope || !keys(pending,['id','decision','checklistRevision','scope','command','outcome']) || pending.scope!==scope || !['new','unknown','rejected','confirmed'].includes(pending.outcome) || !keys(command,['url','method','body','key']) || command.url!==REVIEW_API || !['PATCH','POST'].includes(command.method) || typeof command.body!=='string' || command.body.length>131072 || typeof command.key!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(command.key)) throw Error('本机恢复请求无效。');
+  if (!keys(value,['schema','scope','pending']) || value.schema!==1 || value.scope!==scope || !keys(pending,['id','decision','checklistRevision','scope','command','outcome']) || pending.scope!==scope || !['new','unknown','rejected','confirmed'].includes(pending.outcome) || !keys(command,['url','method','body','key']) || ![REVIEW_API,REVIEW_API+'/notes'].includes(command.url) || !['PATCH','POST'].includes(command.method) || typeof command.body!=='string' || command.body.length>131072 || typeof command.key!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/.test(command.key)) throw Error('本机恢复请求无效。');
   const body = JSON.parse(command.body);
-  if (command.method==='PATCH') {
+  if (command.url===REVIEW_API+'/notes') {
+    if (command.method!=='PATCH' || !keys(body,['expectedRevision','checklistRevision','id','note']) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<1 || typeof body.id!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.id) || typeof body.checklistRevision!=='string' || !body.checklistRevision.trim() || body.checklistRevision.length>128 || typeof body.note!=='string' || body.note.includes('\\0') || body.note.length>8000 || pending.id!==body.id || pending.decision!==null || pending.checklistRevision!==body.checklistRevision) throw Error('本机备注恢复请求无效。');
+  } else if (command.method==='PATCH') {
     if (!keys(body,['expectedRevision','checklistRevision','id','decision']) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<1 || typeof body.id!=='string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(body.id) || typeof body.checklistRevision!=='string' || !body.checklistRevision.trim() || body.checklistRevision.length>250 || !(body.decision===null || typeof body.decision==='string' && OWN(DECISIONS,body.decision)) || pending.id!==body.id || pending.decision!==body.decision || pending.checklistRevision!==body.checklistRevision) throw Error('本机决定恢复请求无效。');
   } else {
     if (!keys(body,['expectedRevision','checklist']) || !(body.expectedRevision===null || Number.isSafeInteger(body.expectedRevision) && body.expectedRevision>0) || pending.id!=='__checklist__' || pending.decision!==null || pending.checklistRevision!==body.checklist?.revision || parseReview(body.checklist).items.length>500) throw Error('本机清单恢复请求无效。');
@@ -248,6 +298,7 @@ function restorePendingDecision() {
   if (pendingDecision) { uncertain=!['new','rejected'].includes(pendingDecision.outcome); syncStatus='error'; }
 }
 function clearPendingDecision() {
+  if (pendingDecision?.command.url===REVIEW_API+'/notes' && pendingDecision.outcome==='confirmed') clearNoteDraft(pendingDecision);
   if (pendingDecision?.scope) {
     try {
       const key = reviewRecoveryKey(pendingDecision.scope), raw = sessionStorage.getItem(key);
@@ -307,13 +358,23 @@ function parseSnapshot(value) {
   const checklist = parseReview(value.checklist);
   const decisions = readChoices(JSON.stringify({schema:1,revision:checklist.revision,choices:value.decisions}),checklist);
   if (decisions.size !== value.decisions.length) throw Error('LifeOS 返回的决定无效。');
-  return {revision:value.revision,checklist,decisions:[...decisions].map(([id,decision])=>({id,decision}))};
+  let notes;
+  if (OWN(value,'notes')) {
+    if (!Array.isArray(value.notes) || value.notes.length>checklist.items.length) throw Error('LifeOS 返回的备注无效。');
+    const seen = new Set();
+    notes = value.notes.map(n=>{
+      if (!n || Object.keys(n).sort().join(',')!=='id,note' || !checklist.items.some(i=>i.id===n.id) || seen.has(n.id) || typeof n.note!=='string' || n.note==='' || n.note.includes('\\0') || n.note.length>8000) throw Error('LifeOS 返回的备注无效。');
+      seen.add(n.id); return {id:n.id,note:n.note};
+    });
+  }
+  return {revision:value.revision,checklist,decisions:[...decisions].map(([id,decision])=>({id,decision})),...(notes!==undefined?{notes}:{})};
 }
-function freezeReviewCommand(method,body) {
-  return Object.freeze({url:REVIEW_API,method,body:JSON.stringify(body),key:crypto.randomUUID()});
+function freezeReviewCommand(method,body,url=REVIEW_API) {
+  return Object.freeze({url,method,body:JSON.stringify(body),key:crypto.randomUUID()});
 }
 function decisionMatches(snapshot,pending) {
   const original = JSON.parse(pending.command.body);
+  if (pending.command.url===REVIEW_API+'/notes') return snapshot && snapshot.revision>=original.expectedRevision && snapshot.checklist.revision===pending.checklistRevision && snapshot.checklist.items.some(i=>i.id===pending.id) && (snapshot.notes?.find(n=>n.id===pending.id)?.note ?? '')===original.note;
   if (pending.command.method==='POST') return snapshot && JSON.stringify(snapshot.checklist)===JSON.stringify(original.checklist);
   return snapshot && snapshot.revision > original.expectedRevision && snapshot.checklist.revision === pending.checklistRevision &&
     (snapshot.decisions.find(row=>row.id===pending.id)?.decision ?? null) === pending.decision;
@@ -344,19 +405,23 @@ function syncControls() {
   byId('sync-state').textContent = (synced ? ({saving:'LifeOS 清单 · 正在保存并读回',saved:'LifeOS 已保存清单',error:'LifeOS 清单 · 保存未确认'}[syncStatus]) : '本机预览') + (uncertain ? ' · 请先重新读回' : '');
   byId('sync-state').parentElement.dataset.sync = syncStatus;
   const pending = pendingDecision;
+  const notePending = pending?.command.url===REVIEW_API+'/notes';
   byId('pending-input').hidden = !pending || sessionDenied;
   if (pending && !sessionDenied) {
     const latest = choices.get(pending.id);
-    byId('pending-description').textContent = pending.command.method==='POST' ? '本次清单保存尚未确认。' : pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。';
+    byId('pending-description').textContent = pending.command.method==='POST' ? '本次清单保存尚未确认。' : notePending ? pending.id+'：本次备注「'+JSON.parse(pending.command.body).note+'」尚未确认。服务器原文：「'+(remote?.notes?.find(n=>n.id===pending.id)?.note ?? '')+'」。' : pending.id + '：本次输入「' + (pending.decision === null ? '撤销决定' : DECISIONS[pending.decision]) + '」尚未确认。服务器当前为「' + (latest ? DECISIONS[latest] : '尚未决定') + '」。';
     byId('pending-description').textContent += pendingRetained ? ' 原请求已保留在本标签页的会话存储；可确认后返回或重新登录，回来后显式恢复同一请求。' : ' 原请求未能可靠保存在本机；请保留当前页面。';
     if (pending.outcome==='new') byId('pending-description').textContent += busy ? ' 正在提交并核对原请求。' : ' 尚未发送；这是未提交草稿。';
     byId('pending-description').textContent += pending.outcome === 'rejected' ? ' 原请求已明确拒绝，可按最新版本重新确认。' : pending.outcome === 'confirmed' ? ' 原请求已收到确认，读回后不会重复写入。' : pending.outcome === 'new' ? ' 继续时只使用已保留的原请求。' : ' 原请求结果未知，重试只会恢复原请求，不会覆盖为新的决定。';
     byId('retry-decision').textContent = pending.outcome === 'rejected' ? '按最新版本重新确认' : pending.outcome === 'confirmed' ? '确认原请求结果' : '按原请求重试确认';
-    byId('retry-decision').disabled = busy || uncertain || recoveryBlocked || (pending.command.method==='POST' ? remote===undefined : !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && item.status==='pending'));
+    byId('retry-decision').disabled = busy || uncertain || recoveryBlocked || (pending.command.method==='POST' ? remote===undefined : !remote || review.revision !== pending.checklistRevision || !review.items.some(item=>item.id===pending.id && (notePending || item.status==='pending')));
     byId('discard-decision').disabled = busy;
     byId('discard-decision').textContent = ['new','rejected'].includes(pending.outcome) ? '放弃本次输入' : '保留原请求，稍后核对';
   }
   for (const input of byId('list').querySelectorAll('.choices input,.choices button')) input.disabled = !canEdit() || !!pendingDecision;
+  for (const input of byId('list').querySelectorAll('.row-note textarea,.row-note button')) input.disabled = !synced || !reviewScope || !canEdit() || !!pendingDecision;
+  const missingDrafts = [...noteDrafts.keys()].filter(id=>!review.items.some(i=>i.id===id));
+  byId('note-draft-state').textContent = noteDrafts.size ? noteDrafts.size+' 份本机备注草稿，尚未保存到 LifeOS。'+(noteDraftsReliable ? '' : ' 本机保留失败，请勿关闭页面。')+(missingDrafts.length ? ' 不在当前清单：'+missingDrafts.join('、')+'；草稿仍保留。' : '') : '';
 }
 const isSessionDenial = error => error?.status === 401 || error?.status === 403;
 function hideDeniedServerReview() {
@@ -365,6 +430,7 @@ function hideDeniedServerReview() {
   remote = undefined;
   uncertain = !!pendingDecision && !['new','rejected'].includes(pendingDecision.outcome);
   sessionDenied = true;
+  noteDrafts = new Map(); noteDraftScope = null; noteDraftsReliable = true; noteDraftCorrupt = false;
   byId('pending-description').textContent = '';
   if (synced) {
     const dialog = byId('copy-dialog');
@@ -383,12 +449,13 @@ async function openServer(automatic=false) {
   try {
     const scope = await readReviewScope();
     if (generation!==reviewGeneration) return;
+    loadNoteDrafts(scope);
     if (scope!==reviewScope) {
       if (reviewScope && synced) useReview(parseReview({schema:1,revision:'empty',items:[]}));
       reviewScope = scope;
       pendingDecision = null;
       pendingRetained = false;
-      try { restorePendingDecision(); recoveryBlocked=false; } catch { recoveryBlocked=true; }
+      try { restorePendingDecision(); recoveryBlocked=noteDraftCorrupt; } catch { recoveryBlocked=true; }
     }
     remote = await requestReview();
     if (generation!==reviewGeneration) return;
@@ -432,10 +499,10 @@ async function writeServer(method,body,match,command) {
     const agrees = fresh && match(fresh);
     const confirmed = pending?.outcome === 'confirmed';
     syncStatus = agrees || confirmed ? 'saved' : 'error';
-    if (agrees || confirmed) clearPendingDecision();
+    if (agrees || confirmed) { if (pending) pending.outcome='confirmed'; clearPendingDecision(); }
     if (fresh && (synced || agrees)) useReview(fresh.checklist,fresh,false);
     if (agrees) {
-      announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : '决定已保存，并已读回 LifeOS。');
+      announce(failure ? '已读回 LifeOS 上的决定与清单。' : method === 'POST' ? '清单已保存到 LifeOS，并已读回。' : pending?.command.url===REVIEW_API+'/notes' ? '备注已保存，并已读回 LifeOS。' : '决定已保存，并已读回 LifeOS。');
     } else if (confirmed) {
       announce('原请求已确认；最新服务器决定已有变化，已显示最新状态。可另行选择新的决定。');
     } else if (pending?.outcome === 'rejected' || !pending && failure?.status === 409) {
@@ -497,6 +564,31 @@ async function choose(item,decision) {
   }
   if (canEdit()) focusDecision(item.id,decision);
 }
+async function saveNote(item,note) {
+  if (!synced || !canEdit() || pendingDecision || !reviewScope || !review.items.some(i=>i.id===item.id)) return;
+  const draft = noteDrafts.get(item.id);
+  if (!draft || draft.checklistRevision!==review.revision) { announce('备注草稿所属清单已变化，请核对并编辑后再保存。'); return; }
+  if (!retainNoteDrafts()) { announce('备注草稿未能在本机保留，尚未发送。请保留当前页面。'); return; }
+  const body = {expectedRevision:draft.expectedRevision,checklistRevision:review.revision,id:item.id,note};
+  const pending = {id:item.id,decision:null,checklistRevision:review.revision,scope:reviewScope,command:freezeReviewCommand('PATCH',body,REVIEW_API+'/notes'),outcome:'new'};
+  pendingDecision = pending;
+  if (!retainPendingDecision()) { render(); announce('原备注请求无法在本机保留，尚未发送。'); return; }
+  await writeServer('PATCH',body,snapshot=>decisionMatches(snapshot,pending),pending.command);
+}
+function noteEditor(item,index) {
+  const section = make('section','row-note'),label = make('label','','备注与处理要求');
+  const input = make('textarea'); input.id='item-note-'+index; input.maxLength=8000; input.rows=3; label.htmlFor=input.id;
+  const saved = synced ? remote?.notes?.find(n=>n.id===item.id)?.note ?? '' : '';
+  const draft = noteDraftScope===reviewScope ? noteDrafts.get(item.id) : null;
+  input.value = draft ? draft.note : saved;
+  const status = make('span','note-status',!synced ? '保存清单到 LifeOS 后可填写备注' : draft ? '未保存草稿'+(draft.checklistRevision!==review.revision ? ' · 原清单已变化，请核对' : '') : saved ? '已保存' : '尚无备注');
+  const actions = make('div','note-actions'),save = make('button','','保存备注'),clear = make('button','','清空并保存');
+  save.type=clear.type='button';
+  input.addEventListener('input',()=>{ const kept=updateNoteDraft(item.id,input.value); status.textContent=kept ? '未保存草稿 · 已在本标签页保留' : '未保存草稿 · 本机保留失败，请勿关闭页面'; syncControls(); });
+  save.addEventListener('click',()=>void saveNote(item,input.value));
+  clear.addEventListener('click',()=>{input.value='';updateNoteDraft(item.id,'');void saveNote(item,'');});
+  actions.append(save,clear,status); section.append(label,input,actions); return section;
+}
 function store() {
   try {
     localStorage.setItem(storageKey(review.revision),JSON.stringify(serialize(review,choices)));
@@ -514,7 +606,8 @@ function metrics(shown) {
   byId('progress').value = n.selected;
   byId('counts').textContent = '独立项／子项：留 '+n.keep+' · 删除候选（待处理） '+n.trash+' · 暂缓 '+n.defer+(n.parentSelected ? ' · 父目录历史选择 '+n.parentSelected : '');
   byId('visible').textContent = '显示 '+shown+' / '+review.items.length+' 项';
-  byId('copy').disabled = byId('export').disabled = !choices.size;
+  byId('copy').disabled = !choices.size;
+  byId('export').disabled = !choices.size && !remote?.notes?.length && !noteDrafts.size;
 }
 function render() {
   const query = byId('search').value.trim().toLowerCase();
@@ -560,6 +653,7 @@ function render() {
       if (item.question) information.append(make('p','question',item.question));
       if (evidence) information.append(make('p','evidence',evidence));
       if (item.body || item.question || evidence) content.append(information);
+      content.append(noteEditor(item,index));
       row.append(content);
       if (item.status === 'pending' && !isParent) {
         const buttons = make('div','choices');
@@ -615,7 +709,8 @@ function render() {
   }
   syncControls();
 }
-for (const link of document.querySelectorAll('.return-nav a,#sync-login')) link.addEventListener('click',guardReviewNavigation);
+for (const link of document.querySelectorAll('.return-nav a,#sync-login')) { link.addEventListener('click',guardNoteNavigation); link.addEventListener('click',guardReviewNavigation); }
+window.addEventListener('beforeunload',event=>{ if (noteDrafts.size && !noteDraftsReliable || pendingDecision && !pendingRetained) { event.preventDefault(); event.returnValue=''; } });
 byId('search').addEventListener('input',render);
 byId('filter').addEventListener('change',render);
 byId('group-filter').addEventListener('change',render);
@@ -629,9 +724,10 @@ byId('discard-decision').addEventListener('click',()=>{
 async function retryDecision() {
   if (!pendingDecision || !canEdit() || pendingDecision.command.method!=='POST' && review.revision !== pendingDecision.checklistRevision) return;
   const pending = pendingDecision;
-  const item = review.items.find(item=>item.id===pending.id && item.status==='pending');
+  const item = review.items.find(item=>item.id===pending.id && (pending.command.url===REVIEW_API+'/notes' || item.status==='pending'));
   if (pending.command.method!=='POST' && !item) return;
   if (decisionMatches(remote,pending) || pending.outcome === 'confirmed') {
+    pending.outcome = 'confirmed';
     clearPendingDecision(); syncStatus = 'saved'; render();
     announce(decisionMatches(remote,pending) ? '读回的决定已与本次输入一致。' : '原请求已确认；最新服务器决定已有变化，已显示最新状态。可另行选择新的决定。');
     return;
@@ -639,6 +735,7 @@ async function retryDecision() {
   if (pending.outcome === 'rejected') {
     clearPendingDecision();
     if (pending.command.method==='POST') { announce('清单请求已明确拒绝。请核对最新清单，重新导入并确认保存。'); render(); }
+    else if (pending.command.url===REVIEW_API+'/notes') { const note=JSON.parse(pending.command.body).note;updateNoteDraft(item.id,note);await saveNote(item,note); }
     else await choose(item,pending.decision);
   } else {
     if (!retainPendingDecision()) { render(); announce('原请求无法在本机保留，尚未继续发送。请保留当前页面。'); return; }
@@ -683,7 +780,7 @@ byId('copy').addEventListener('click',async()=>{
 });
 byId('close-copy').addEventListener('click',()=>byId('copy-dialog').close());
 byId('export').addEventListener('click',()=>{
-  const data = JSON.stringify(serialize(review,choices),null,2)+'\\n';
+  const data = JSON.stringify({...serialize(review,choices),notes:synced ? remote?.notes??[] : [],noteDrafts:noteDraftScope===reviewScope ? [...noteDrafts].map(([id,draft])=>({id,...draft})) : []},null,2)+'\\n';
   const url = URL.createObjectURL(new Blob([data],{type:'application/json'}));
   const link = make('a');
   link.href = url;

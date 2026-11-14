@@ -6,7 +6,7 @@ const path = '/api/platform/personal/storage-review';
 type Options = {
   ownerId:string;
   baseURL:string;
-  service?:Pick<StorageReviewService,'get'|'saveChecklist'|'saveDecision'>;
+  service?:Pick<StorageReviewService,'get'|'saveChecklist'|'saveDecision'>&Partial<Pick<StorageReviewService,'saveNote'>>;
   assertOwner:()=>Promise<void>;
   assertWritable:()=>Promise<void>;
 };
@@ -23,7 +23,8 @@ function respond(value:unknown,status=200,extra:Record<string,string>={}) {
 
 export async function handleStorageReviewRequest(request:Request,options:Options):Promise<Response|null> {
   const url = new URL(request.url);
-  if(url.pathname!==path)return null;
+  const noteRoute=url.pathname===path+'/notes';
+  if(url.pathname!==path&&!noteRoute)return null;
   assertLocalRequest(request,options.baseURL);
   if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','资料审核仅限本人会话。');
   const guard = async(write=false)=>{
@@ -36,6 +37,7 @@ export async function handleStorageReviewRequest(request:Request,options:Options
   if(url.search)throw new PlatformError(400,'INVALID_QUERY','审核入口不支持额外查询参数。');
   const {service,ownerId}=options;
   if(!service)throw new PlatformError(503,'STORAGE_REVIEW_UNAVAILABLE','资料审核存储暂不可用。');
+  if(noteRoute&&request.method!=='PATCH')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'备注只支持单条保存。'}},405,{Allow:'PATCH'});
   if(request.method==='GET'){
     const review=await service.get(ownerId);
     await guard();
@@ -47,7 +49,8 @@ export async function handleStorageReviewRequest(request:Request,options:Options
   if(request.headers.get('origin')!==new URL(options.baseURL).origin)throw new PlatformError(403,'ORIGIN_DENIED','保存需要相同来源。');
   const input=await readJSONBody(request),key=request.headers.get('idempotency-key')??'';
   await guard(true);
-  const review=request.method==='POST'
+  if(noteRoute&&!service.saveNote)throw new PlatformError(503,'STORAGE_REVIEW_UNAVAILABLE','备注保存暂不可用。');
+  const review=noteRoute?await service.saveNote!(ownerId,input,key,()=>guard(true)):request.method==='POST'
     ?await service.saveChecklist(ownerId,input,key,()=>guard(true))
     :await service.saveDecision(ownerId,input,key,()=>guard(true));
   return respond({review});
