@@ -10,7 +10,7 @@ import {policyAuthorizationScopes} from '../src/agent-api/business-policy.ts';
 import {readBusinessPolicyCatalog} from '../src/agent-api/business-policy-postgres.ts';
 import {readCurrentAgentGrant,agentOperationAvailable,verifyAgentRequirementsReadiness,verifyAgentBusinessReadiness} from '../src/agent-api/runtime.ts';
 import type {AgentModules} from '../src/agent-api/config.ts';
-import {PostgresPlatformRepository,verifyRestrictedPool,type SqlPool} from '../src/platform/postgres.ts';
+import {PostgresPlatformRepository,verifyRestrictedPool,lockCurrentAgentGrant,type SqlPool} from '../src/platform/postgres.ts';
 import {verifyClassificationPool,classificationQueries} from '../src/personal-candidate/classification-postgres.ts';
 import {classificationOAuthProducer} from '../src/personal-candidate/classification-oauth.ts';
 import {ClassificationService,classificationPolicyRevision} from '../src/personal-candidate/classification-service.ts';
@@ -159,6 +159,12 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
    const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules,config:personal,repository,verify:async token=>token===active.token?current(active.state.oauthFence):null,readCurrentGrant:async(_id,fence)=>fence?current(fence):original(),operationAvailable:id=>agentOperationAvailable(id,personal,true,modules),assertWritable:async()=>{},classification:auth=>new ClassificationService(repository,personal,{authority:auth,assertReady:()=>verifyClassificationPool(runtime as SqlPool),assertWritable:async()=>{},policyRevision:()=>classificationPolicyRevision(personal)})});
    const consumer=new HttpBusinessClient(origin,active.token,handler,new AbortController().signal),catalog=await consumer.discover();assert.deepEqual(catalog.operations.map(op=>op.id).sort(),ordinary.map(op=>op.id).sort());
    const saved=await consumer.execute('createJournal',{fields:{title:'Synthetic full-policy journal',text:'Fixture only',occurredOn:null,personal:null},idempotencyKey:'full-policy-journal'});assert.equal(saved.ok,true);assert.equal(saved.verification?.verified,true);
+   const finance=await consumer.execute('createFinance',{fields:{kind:'expense',amountMinor:1234,currency:'CNY',occurredOn:'2030-11-05',category:'Synthetic',fromAccountRef:'cash',toAccountRef:null,originalEntryId:null,notes:'Fixture only'},idempotencyKey:'full-policy-finance'});assert.equal(finance.ok,true);assert.equal(finance.verification?.verified,true);
+   const feedback=await consumer.execute('createFeedback',{fields:{text:'Synthetic full-policy feedback',sourceLabel:'Fixture only'},idempotencyKey:'full-policy-feedback'});assert.equal(feedback.ok,true);assert.equal(feedback.verification?.verified,true);
+   const checklist={schema:1,revision:'full-policy-storage-v1',context:{summary:'Fixture only'},items:[{id:'S-1',title:'Synthetic item',body:'No actual paths',question:'Keep?',group:'Test',kind:'file',status:'pending'}]};
+   const storage=await consumer.execute('createStorageReview',{fields:{checklist},idempotencyKey:'full-policy-storage'});assert.equal(storage.ok,true);assert.equal(storage.verification?.verified,true);
+   const stored=(storage.data as {entry:{id:string;revision:number}}).entry;
+   const note=await consumer.execute('updateStorageReviewNote',{id:stored.id,expectedRevision:stored.revision,fields:{checklistRevision:checklist.revision,itemId:'S-1',note:'Synthetic original OAuth note\r\n'},idempotencyKey:'full-policy-storage-note'});assert.equal(note.ok,true);assert.equal(note.verification?.verified,true);
    const preview=await consumer.execute('previewTodoClassification',changes);assert.equal(preview.ok,true);
    const p=preview.data as {planId:string};assert.ok(p?.planId);
    assert.equal((await client.query('SELECT count(*)::int AS count FROM lifeos_platform.platform_classification_oauth_producer WHERE owner_id=$1 AND plan_id=$2',[owner.ownerId,p.planId])).rows[0].count,1);
@@ -204,6 +210,17 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
     const race=new PostgresPlatformRepository(observed,true,true,modules);const work=race.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['todo:read','organization:read'],'previewTodoClassification'));void work.catch(()=>{});
     await blocked(admin,()=>waiting,blocker);await hold.query('COMMIT');await assert.rejects(work,{code:'WRITE_GRANT_REVOKED'});
    }finally{await hold.query('ROLLBACK').catch(()=>{});hold.release();}
+  });
+  await group('10a same-client current fence notices actual SQL token expiry while its original transaction remains open',async()=>{
+   const seconds=Math.floor(Number((await runtime.query('SELECT extract(epoch FROM clock_timestamp()) AS seconds')).rows[0].seconds)),clientId='https://full-policy-fixture.example.test/client.json';
+   const state=await ledger.register('synthetic-short-expiry-sql-'+randomUUID(),{iss:config.issuer,aud:config.resource,sub:owner.ownerId,azp:clientId,client_id:clientId,sid:ownerSessionId,iat:seconds,exp:seconds+3,scope:config.scopes.join(' ')},'authorization_code');assert.ok(state);
+   const originalGrant=await original();assert.ok(originalGrant);const grant=intersectOAuthGrant(state,originalGrant);assert.ok(grant);
+   const same=await runtime.connect();try{await same.query('BEGIN');await same.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner.ownerId]);
+    const binding={...grant,operationId:'previewTodoClassification'};
+    assert.equal(await lockCurrentAgentGrant(same,owner.ownerId,binding,['todo:read','organization:read'],true),true);
+    await same.query('SELECT pg_sleep(GREATEST(0,$1::double precision-extract(epoch FROM clock_timestamp())+0.1))',[state.oauthFence.expiresAt]);
+    assert.equal(await lockCurrentAgentGrant(same,owner.ownerId,binding,['todo:read','organization:read'],true),false);
+   }finally{await same.query('ROLLBACK');same.release();}
   });
   await group('11 actual readiness rejects new body, metadata ACL/RLS/trigger drift and restores exact reviewed source',async()=>{
    const signature='lifeos_agent.read_policy_oauth_business_token(text,text,text)',row=(await client.query('SELECT pg_get_functiondef(to_regprocedure($1)) AS definition,prosrc FROM pg_proc WHERE oid=to_regprocedure($1)',[signature])).rows[0];

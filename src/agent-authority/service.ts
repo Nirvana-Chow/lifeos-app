@@ -4,7 +4,6 @@ import {agentCapabilityOperations as agentOperations} from '../agent-api/capabil
 import type {AuthoritySourceRef,TrustedActor,TrustedAgentActor,TrustedOwnerActor} from './contracts.ts';
 import {sameOAuthFence,type OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
 import type {FilePermission} from '../file-handoff/authorization.ts';
-import {isOAuthProducerRevision} from '../personal-candidate/classification-oauth.ts';
 type Owner = Readonly<{ownerId:string;spaceId:string;sessionRef:string}>;
 type Agent = Readonly<{ownerId:string;spaceId:string;grantId:string;scopes:readonly OperationScope[];authorizationRevision?:string;businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence;fileHandoff?:FilePermission}>;
 type Deps = Readonly<{ownerId:string;spaceId:string;verifyOwner:(headers:Headers)=>Promise<Owner|null>;verifyAgent:(key:string)=>Promise<Agent|null>;readCurrentAgent?:(grantId:string,oauthFence?:OAuthGrantFence)=>Promise<Agent|null>}>;
@@ -30,19 +29,28 @@ export class AuthorityService {
     this.issued.set(actor, () => this.deps.readCurrentAgent?.(grant.grantId,actor.oauthFence) ?? Promise.resolve(null)); return actor;
   }
   /** Non-secret producer snapshot, read only while the caller holds its grant fence. */
-  async currentProducerRevision(grantId:string,oauthFence?:OAuthGrantFence):Promise<string|null>{
-    const current=await this.deps.readCurrentAgent?.(grantId,oauthFence);
-    if(oauthFence&&(!current||current.businessDataPolicy!=='all-personal-business-v1'||!current.allowedOperationIds?.includes('previewTodoClassification')||!['todo:read','organization:read'].every(scope=>current.scopes.includes(scope as OperationScope))))return null;
-    return this.bound(current??null)&&current?.grantId===grantId&&sameOAuthFence(oauthFence,current.oauthFence)&&typeof current.authorizationRevision==='string'&&(oauthFence?isOAuthProducerRevision(current.authorizationRevision):/^[a-f0-9]{64}$/.test(current.authorizationRevision))?current.authorizationRevision:null;
+  async currentProducerRevision(grantId:string):Promise<string|null>{
+    const current=await this.deps.readCurrentAgent?.(grantId);
+    return this.bound(current??null)&&current?.grantId===grantId&&typeof current.authorizationRevision==='string'&&/^[a-f0-9]{64}$/.test(current.authorizationRevision)?current.authorizationRevision:null;
   }
   /** Snapshot the producer's current policy before acquiring the same-row fence. */
-  async currentProducerBinding(grantId:string,oauthFence?:OAuthGrantFence){
-    const current=await this.deps.readCurrentAgent?.(grantId,oauthFence);
-    if(oauthFence&&(!current||current.businessDataPolicy!=='all-personal-business-v1'||!current.allowedOperationIds?.includes('previewTodoClassification')||!['todo:read','organization:read'].every(scope=>current.scopes.includes(scope as OperationScope))))return null;
-    if(!this.bound(current??null)||current?.grantId!==grantId||!sameOAuthFence(oauthFence,current.oauthFence))return null;
-    return {grantId,ownerId:current.ownerId,spaceId:current.spaceId,...(current.businessDataPolicy?{businessDataPolicy:current.businessDataPolicy}:{}),...(oauthFence?{oauthFence:{...oauthFence}}:{})};
+  async currentProducerBinding(grantId:string){
+    const current=await this.deps.readCurrentAgent?.(grantId);
+    if(!this.bound(current??null)||current?.grantId!==grantId)return null;
+    return {grantId,ownerId:current.ownerId,spaceId:current.spaceId,...(current.businessDataPolicy?{businessDataPolicy:current.businessDataPolicy}:{})};
+  }
+  /** Immutable issued origin only. This is not current authority: transaction
+   * callers must additionally run their original same-client SQL grant fence. */
+  assertActorOrigin(actor:TrustedActor,operationId:string):void{
+    const operation=actor.kind==='owner-session'&&['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)?{requiredScopes:[] as readonly OperationScope[]}:agentOperations.find(entry=>entry.id===operationId);
+    if(!this.issued.has(actor)||actor.ownerId!==this.deps.ownerId||actor.spaceId!==this.deps.spaceId||!operation)throw Error('Authority unavailable');
+    if(actor.kind==='agent-grant'){
+      const scopes=normalizeOperationGrantScopes(actor);
+      if(!operation.requiredScopes.every(scope=>scopes.includes(scope))||(actor.businessDataPolicy||actor.oauthFence)&&!['discover','discoverV2'].includes(operationId)&&!actor.allowedOperationIds?.includes(operationId))throw Error('Authority unavailable');
+    }else if(actor.kind!=='owner-session')throw Error('Authority unavailable');
   }
   async assertCurrentAuthority(actor: TrustedActor, operationId: string, sourceRefs: readonly AuthoritySourceRef[] = []): Promise<void> {
+    this.assertActorOrigin(actor,operationId);
     const check = this.issued.get(actor);
     // Server-owned policy only; private owner review/approval never enters Agent discovery.
     const operation = actor.kind === 'owner-session' && ['reviewTodoClassification','approveTodoClassification','previewSelectionTodoClassification'].includes(operationId)

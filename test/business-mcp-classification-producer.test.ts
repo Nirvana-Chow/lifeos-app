@@ -15,11 +15,12 @@ async function oauthFixture(metadata=true){
  const legacy={ownerId:config.ownerId,spaceId:config.spaceId,grantId:'fixture-grant',scopes:['todo:read','organization:read'] as const,authorizationRevision:'a'.repeat(64),businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:['previewTodoClassification']};
  const oauth=()=>active?{...legacy,allowedOperationIds:available?legacy.allowedOperationIds:[],authorizationRevision:'classification-oauth-v1:'+'b'.repeat(64),oauthFence:{...currentFence}}:null;
  const authority=new AuthorityService({...config,verifyOwner:async()=>({ownerId:config.ownerId,spaceId:config.spaceId,sessionRef:'owner-session'}),verifyAgent:async key=>key==='oauth'?oauth():legacy,readCurrentAgent:async(_id,expected)=>expected?active&&sameOAuthFence(expected,currentFence)?oauth():null:legacy});
- f.port.grantFence=async(binding)=>!binding.oauthFence||active&&sameOAuthFence(binding.oauthFence,currentFence);
+ f.port.grantFence=async(binding)=>!binding.oauthFence||active&&available&&sameOAuthFence(binding.oauthFence,currentFence);
  const original=f.port.classificationTransaction.bind(f.port);
  f.port.classificationTransaction=(owner,space,key,fn)=>original(owner,space,key,async tx=>{
   const before=structuredClone(links);try{return await fn({...tx,...(metadata?{
    classificationOAuthProducer:async(id:string)=>structuredClone(links.get(id)??null),
+   classificationOAuthProducerRevision:async(_grantId:string,expected:OAuthGrantFence)=>active&&available&&sameOAuthFence(expected,currentFence)?'classification-oauth-v1:'+'b'.repeat(64):null,
    saveClassificationOAuthProducer:async(value:unknown)=>{const v=value as {planId:string};if(links.has(v.planId))throw Error('immutable producer');links.set(v.planId,structuredClone(v));},
   }:{})} as ClassificationTransaction);}catch(error){links.clear();for(const [k,v]of before)links.set(k,v);throw error;}
  });

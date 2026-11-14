@@ -151,7 +151,14 @@ export function createAgentHandler(options: Options) {
         if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
         const current=async()=>{try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');};
         const read=async<T>(run:()=>Promise<T>)=>{await current();const result=await run();await current();return result;};
-        const guard=async()=>{if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');await current();await options.assertWritable(grant);};
+        const guard=async()=>{
+          if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
+          // OAuth's original transaction fence below rechecks current authority
+          // at every receipt/write phase. A second ledger client would self-wait.
+          if(actor.oauthFence){authority.assertActorOrigin(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');}
+          else await current();
+          await options.assertWritable(grant);
+        };
         const txGuard=(tx:import('../platform/contracts.ts').Transaction)=>assertAgentGrant(tx,actor,operation.requiredScopes,operation.id);
         const records=new PersonalService(fencedRecordRepository(options.repository,txGuard),config);
         if(operation.module==='feedback'){

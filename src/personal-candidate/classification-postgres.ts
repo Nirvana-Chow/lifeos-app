@@ -2,7 +2,9 @@ import type {SqlClient,SqlPool} from '../platform/postgres.ts';
 import type {ClassificationTransaction} from '../platform/contracts.ts';
 import {PlatformError,validateId,validateIdempotencyKey} from '../platform/domain.ts';
 import {decodePlan,decodeApproval,decodeReceipt,assertApprovalMatchesPlan,classificationNoOp,classificationCanonical,type ClassificationPlan,type ClassificationReceipt} from './classification-contracts.ts';
-import {assertClassificationOAuthProducer} from './classification-oauth.ts';
+import {assertClassificationOAuthProducer,isOAuthProducerRevision} from './classification-oauth.ts';
+import {sameOAuthFence,type OAuthGrantFence} from '../business-mcp-oauth/contracts.ts';
+import {fullBusinessOAuthScopes} from '../business-mcp-oauth/boundary.ts';
 export const classificationUnavailable=()=>new PlatformError(503,'CLASSIFICATION_UNAVAILABLE','分类审核暂不可用。');
 export const classificationCommandKey=(owner:string,space:string,key:string)=>JSON.stringify([owner,'todo-classification-v1',space,key]);
 type ConstraintShape={kind:string;columns:string[];target:string|null;references:string[];expression:string|null;functionIds:string[]};
@@ -117,10 +119,15 @@ export function assertReceiptMatchesPlan(receipt:ClassificationReceipt,plan:Clas
   if(entry.id!==change.todo.id||entry.sourceId!==change.todo.sourceId||entry.revision!==change.todo.expectedRevision+(noop?0:1)||classificationCanonical(entry.personal)!==classificationCanonical(noop?change.before:change.after))throw new PlatformError(400,'INVALID_CLASSIFICATION','分类回执与计划不符。');
  }
 }
-export function classificationQueries(client:SqlClient,owner:string,space:string,key:string):Pick<ClassificationTransaction,'getClassificationPlan'|'lockClassificationPlan'|'saveClassificationPlan'|'classificationApproval'|'saveClassificationApproval'|'classificationReceipt'|'classificationPlanCommitted'|'classificationPlanReceipt'|'saveClassificationReceipt'|'classificationOAuthProducer'|'saveClassificationOAuthProducer'>{
+export function classificationQueries(client:SqlClient,owner:string,space:string,key:string):Pick<ClassificationTransaction,'getClassificationPlan'|'lockClassificationPlan'|'saveClassificationPlan'|'classificationApproval'|'saveClassificationApproval'|'classificationReceipt'|'classificationPlanCommitted'|'classificationPlanReceipt'|'saveClassificationReceipt'|'classificationOAuthProducer'|'saveClassificationOAuthProducer'|'classificationOAuthProducerRevision'>{
  validateIdempotencyKey(key);
  const getPlan=async(id:string)=>{const rows=(await client.query('SELECT plan FROM lifeos_platform.platform_classification_plan WHERE owner_id=$1 AND space_id=$2 AND plan_id=$3',[owner,space,validateId(id)])).rows;if(!rows[0])return null;const plan=decodePlan(rows[0].plan);if(plan.ownerId!==owner||plan.spaceId!==space||plan.preview.planId!==validateId(id))throw classificationUnavailable();return plan;};
  return{
+  classificationOAuthProducerRevision:async(grantId,fence)=>{
+   const result=await client.query('SELECT lifeos_agent.read_policy_oauth_business_token($1,$2,$3) AS value',[fence.tokenId,owner,space]);if(result.rows.length!==1)return null;const value=result.rows[0]?.value;
+   if(!value||typeof value!=='object')return null;const v=value as Record<string,unknown>;
+   return v.grantId===grantId&&v.ownerId===owner&&v.spaceId===space&&fence.policy==='all-personal-business-v1'&&sameOAuthFence(fence,v.oauthFence as OAuthGrantFence|undefined)&&Array.isArray(v.scopes)&&fullBusinessOAuthScopes(v.scopes)&&isOAuthProducerRevision(v.producerAuthorizationRevision)?v.producerAuthorizationRevision:null;
+  },
   classificationOAuthProducer:async id=>{
    const plan=await getPlan(id);if(!plan)return missing();
    const row=(await client.query(`SELECT jsonb_build_object('schemaVersion',1,'ownerId',owner_id,'spaceId',space_id,'grantId',grant_id,'planId',plan_id::text,'digest',digest,'proposalRevision',proposal_revision,'expiresAt',$4::text,'producerAuthorizationRevision',producer_authorization_revision,'oauthFence',oauth_fence) AS producer,expires_at=$4::timestamptz AS expiry_matches FROM lifeos_platform.platform_classification_oauth_producer WHERE owner_id=$1 AND space_id=$2 AND plan_id=$3`,[owner,space,validateId(id),plan.preview.expiresAt])).rows[0];
