@@ -5,8 +5,8 @@ import {parseMfaSetup,type MfaSetup} from './owner-mfa-flow';
 import s from './workspace.module.css';
 import m from './owner-mfa.module.css';
 
-export function OwnerMfaPanel({mode,oauthQuery}:{mode:'start'|'verify'|'incomplete'|'relogin'|'unavailable';oauthQuery?:string}){
- const suffix=oauthQuery?'?oauth_query='+encodeURIComponent(oauthQuery):'';
+export function OwnerMfaPanel({mode,oauthQuery,returnTo}:{mode:'start'|'verify'|'incomplete'|'relogin'|'unavailable';oauthQuery?:string;returnTo?:string}){
+ const suffix=oauthQuery?'?oauth_query='+encodeURIComponent(oauthQuery):returnTo?'?return_to='+encodeURIComponent(returnTo):'';
  const [setup,setSetup]=useState<MfaSetup|null>(null),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[startAgain,setStartAgain]=useState(false),canvas=useRef<HTMLCanvasElement>(null);
  useEffect(()=>{setHydrated(true);},[]);
  useEffect(()=>{let active=true;if(setup&&canvas.current){import('qrcode').then(module=>{if(active&&canvas.current)return module.toCanvas(canvas.current,setup.uri,{width:240,margin:4,errorCorrectionLevel:'M'});}).catch(()=>{if(active)setMessage('二维码未能显示，请使用下方手动设置密钥。');});}return()=>{active=false;};},[setup]);
