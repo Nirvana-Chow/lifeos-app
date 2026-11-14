@@ -30,6 +30,7 @@ import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {HttpBusinessClient} from '../src/mcp-http/business-client.ts';
 import {filePermissionSchema} from '../src/file-handoff/permission-contracts.ts';
+import {fileHandoffOperations} from '../src/file-handoff/operations.ts';
 
 const enabled=process.env.RUN_BUSINESS_MCP_POLICY_POSTGRES_TESTS==='1';
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
@@ -255,11 +256,18 @@ test('OPT-IN full0025: real current-grant/OAuth intersection and transaction-bou
    const seconds=Math.floor(Date.now()/1000),state=await fileLedger.register('synthetic-full-file-sql-'+randomUUID(),{iss:config.issuer,aud:config.resource,sub:owner.ownerId,azp:fileClient,client_id:fileClient,sid:ownerSessionId,iat:seconds,exp:seconds+300,scope:scopes.join(' ')},'authorization_code');assert.ok(state);
    const grant=intersectOAuthGrant(state,fileOriginal);assert.ok(grant);assert.ok(grant.allowedOperationIds.includes('getFileHandoff'));assert.ok(!grant.allowedOperationIds.includes('stageFileHandoff'));
    assert.deepEqual(grant.fileHandoff?.scopes,['file-handoff:read']);
-   await repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read'],'getFileHandoff'));
-   await assert.rejects(repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read','file-handoff:write'],'stageFileHandoff')),{code:'WRITE_GRANT_REVOKED'});
+   // Files retain their dedicated native fence; the ordinary policy guard must not admit them.
+   await assert.rejects(repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read'],'getFileHandoff')),{code:'GRANT_OPERATION_INVALID'});
+   const fileAllowed=async(operationId:'getFileHandoff'|'stageFileHandoff')=>{
+    const same=await runtime.connect();try{await same.query('BEGIN');await same.query("SELECT set_config('lifeos.owner_id',$1,true)",[owner.ownerId]);
+     return await lockCurrentAgentGrant(same,owner.ownerId,{...grant,operationId},fileHandoffOperations.find(operation=>operation.id===operationId)!.requiredScopes,true);
+    }finally{await same.query('ROLLBACK');same.release();}
+   };
+   assert.equal(await fileAllowed('getFileHandoff'),true);
+   assert.equal(await fileAllowed('stageFileHandoff'),false);
    const currentDigest=(await manager.query('SELECT lifeos_agent.current_managed_grant_digest($1) AS value',[grantId])).rows[0].value;
    await manager.query('SELECT lifeos_agent.set_file_handoff_permission($1,$2,$3,1,ARRAY[]::text[],NULL)',[ownerSessionToken,grantId,currentDigest]);
-   await assert.rejects(repository.transaction(owner.ownerId,randomUUID(),tx=>assertAgentGrant(tx,grant,['file-handoff:read'],'getFileHandoff')),{code:'WRITE_GRANT_REVOKED'});
+   assert.equal(await fileAllowed('getFileHandoff'),false);
   });
   await group('12 original narrow consent remains narrow on the new schema; final full control disable and source invariants are read back',async()=>{
    const originalGrant=await original();assert.ok(originalGrant);
