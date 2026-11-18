@@ -7,6 +7,21 @@ import {requirementsFixture as fixture,requirementsFixturePool} from './requirem
 export const policyFixtureImage='sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5';
 const prerequisites=['0012_todo_classification.proposed.sql','0017_personal_records_agent_operations.proposed.sql','0019_storage_review_agent_operations.proposed.sql','0021_business_mcp_oauth.proposed.sql','0023_file_handoff_permissions.proposed.sql','0026_storage_review_note_agent_operation.proposed.sql','0024_device_login_duration.proposed.sql'];
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
+const originalPolicyLock='720bcc1103fdd7ef7f671612ef078ef6d74924724828dc09ce0072aa2b4b7909';
+const patchedPolicyLock='a2397f23359e353dd011da547459b9b28accc4fb673fbdff0ea3e3fe1ef070a9';
+
+/** The external fixture runner pins the manifest for its exact source commit before launch. */
+export function readPolicyFixtureSourcePins(raw:Buffer,lockSha256:string,approvedInventorySha256?:string){
+ const pins=JSON.parse(raw.toString('utf8')) as {sourceSha:string;lockSha256:string;files:Record<string,string>};
+ assert.match(pins.sourceSha,/^[a-f0-9]{40}$/);
+ assert.ok([originalPolicyLock,patchedPolicyLock].includes(lockSha256),'Unreviewed full-policy fixture lock');
+ assert.equal(pins.lockSha256,lockSha256);
+ assert.equal(pins.files['package-lock.json'],lockSha256);
+ if(lockSha256===patchedPolicyLock||approvedInventorySha256!==undefined){
+  assert.equal(hash(raw),approvedInventorySha256,'Expected the independently pinned full source inventory');
+ }
+ return pins;
+}
 /** No lifecycle or alternate database path. The external owner creates and cleans
  * one fresh descriptor-bound fixture; this helper refuses an existing attempt. */
 export async function prepareBusinessMcpPolicyFixture(){
@@ -21,9 +36,11 @@ export async function prepareBusinessMcpPolicyFixture(){
  assert.match(descriptor.containerId,/^[a-f0-9]{64}$/);assert.equal(descriptor.purpose,'isolated-full-business-mcp-policy-qualification');
  assert.match(descriptor.forwardSession,/^dedicated-ssh-pid-[1-9][0-9]*$/);
  for(const [key,value]of Object.entries({LIFEOS_REQUIREMENTS_FIXTURE_CONTAINER_ID:descriptor.containerId,LIFEOS_REQUIREMENTS_FIXTURE_IMAGE_ID:descriptor.imageId,LIFEOS_REQUIREMENTS_FIXTURE_FORWARD_SESSION:descriptor.forwardSession,LIFEOS_REQUIREMENTS_FIXTURE_DATA_DIRECTORY:descriptor.dataDirectory}))assert.equal(process.env[key],value,key);
- const pins=JSON.parse(await readFile(process.env.LIFEOS_FULL_POLICY_SOURCE_PINS!,'utf8'));
- assert.match(pins.sourceSha,/^[a-f0-9]{40}$/);assert.equal(pins.lockSha256,'720bcc1103fdd7ef7f671612ef078ef6d74924724828dc09ce0072aa2b4b7909');
- assert.equal(hash(await readFile('package-lock.json')),pins.lockSha256);
+ const pins=readPolicyFixtureSourcePins(
+  await readFile(process.env.LIFEOS_FULL_POLICY_SOURCE_PINS!),
+  hash(await readFile('package-lock.json')),
+  process.env.LIFEOS_FULL_POLICY_SOURCE_PINS_SHA256,
+ );
  assert.ok(Object.keys(pins.files).length>1000,'Whole fixed archive inventory required');
  for(const [name,digest]of Object.entries(pins.files)){assert.ok(!name.startsWith('/')&&!name.split('/').includes('..'));assert.equal(hash(await readFile(name)),digest,name);}
  const sources=await Promise.all(prerequisites.map(async name=>({name,text:await readFile('db/'+name,'utf8')})));
