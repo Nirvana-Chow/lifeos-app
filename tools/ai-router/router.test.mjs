@@ -224,7 +224,7 @@ test('auto modes run Git locally for an exact status request', (t) => {
     assert.equal(plan.target, 'local')
     assert.ok(plan.reason)
     assert.equal(plan.requested.provider, 'dsh')
-    assert.deepEqual(plan.argv, ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'status'])
+    assert.deepEqual(plan.argv, ['git', '--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'status'])
 
     const outcome = project.invoke('auto-run', 'named', task, config)
     assert.equal(outcome.status, 0, outcome.stderr)
@@ -252,7 +252,7 @@ test('auto-run preserves real Git diff check failure without launching a provide
   const plan = JSON.parse(preview.stdout)
   assert.equal(plan.tier, 'L0')
   assert.deepEqual(plan.argv, [
-    'git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--check',
+    'git', '--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--check',
   ])
 
   const outcome = project.invoke('auto-run', 'named', task, config)
@@ -391,6 +391,25 @@ test('auto planning uses scoped edits, general and complexity tiers', (t) => {
       'codex', ...expectedArgs.codex.slice(0, -1),
       '--model', model, '--config', `model_reasoning_effort="${effort}"`, '-',
     ])
+  }
+})
+
+test('Chinese task wording preserves scope and signals difficult work', async (t) => {
+  const project = fixture(t)
+  project.setupTool()
+  const cases = [
+    ['修改 README 的标题顺便加个搜索', 'L2'],
+    ['# 按钮样式\n## 目标\n仅调整按钮字号。\n## 限制\n只改当前组件。', 'L1'],
+    ['调整数据库连接池参数', 'L3'],
+    ['排查偶发的服务超时', 'L3'],
+  ]
+  for (const [body, tier] of cases) {
+    await t.test(body.split('\n')[0], () => {
+      const task = project.writeTask(body)
+      const result = project.invoke('auto-plan', 'codex', task)
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(JSON.parse(result.stdout).tier, tier)
+    })
   }
 })
 

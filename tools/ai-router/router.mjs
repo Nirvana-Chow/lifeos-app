@@ -18,7 +18,7 @@ const codexTiers = {
   L3: { model: 'gpt-6.2-astra', effort: 'high' },
 }
 
-const gitReadOnly = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false']
+const gitReadOnly = ['git', '--no-pager', '--no-optional-locks', '-c', 'core.fsmonitor=false']
 const gitStatus = { argv: [...gitReadOnly, 'status'], reason: 'Single Git status request' }
 const localTasks = new Map([
   ['git status', gitStatus],
@@ -31,13 +31,15 @@ const localTasks = new Map([
   ['npm run build', npmTask(['run', 'build'])],
   ['npm run typecheck', npmTask(['run', 'typecheck'])],
 ])
-const taskHeading = /^(?:目标|任务|范围|goal|task|scope)$/iu
+const goalHeading = /^(?:目标|goal)$/iu
+const taskHeading = /^(?:任务|范围|task|scope)$/iu
 const supportingHeading = /^(?:限制|约束|禁止事项|权限(?:与限制|边界)?|架构约束|验收(?:与回执|标准)?|已知(?:信息|事实)|背景|现状|(?:architecture )?constraints|permission(?: boundary|s)?|acceptance criteria|context|background)$/iu
 const forbiddenAction = /^(?:请\s*)?(?:不得|禁止|不要|无需|跳过|不(?:改|动|调|做|迁|涉及|访问|运行)|do not\b|don't\b|never\b|avoid\b|no\b)/iu
 const complexitySignals = [
   /架构(?!师)|跨(?:模块|服务|系统|仓库)|竞态|死锁|数据丢失|鉴权绕过|安全漏洞/u,
   /(?:数据库|数据)(?:迁移|回滚|一致性)|(?:权限|授权|访问)(?:边界|控制)|(?:修复|修改|设计|审计|排查|诊断|重构|变更|迁移).{0,16}(?:数据库|生产数据|安全策略|权限|鉴权|身份认证)/u,
-  /(?:排查|诊断|定位|修复).{0,25}(?:并发|间歇|生产故障|线上故障)/u,
+  /(?:排查|诊断|定位|修复).{0,25}(?:并发|间歇|偶发|生产故障|线上故障)/u,
+  /(?:调整|配置).{0,10}数据库连接池/u,
   /\b(?:architecture|cross[- ](?:module|service|repository|system)|race condition|deadlock|data loss|security vulnerability|privilege escalation|authorization bypass)\b/iu,
   /\b(?:(?:database|schema|production data) (?:migration|rollback)|(?:permission|authorization|access) (?:boundary|control)|(?:fix|refactor|audit|diagnose|investigate|change) (?:the |an? )?(?:auth(?:entication|orization)?|database|permissions?|intermittent|concurrency))\b/iu,
 ]
@@ -49,7 +51,7 @@ const simpleStyleChange = [
   /^(?:请\s*)?(?:仅|只)?(?:调整|修改|设置|更改|增大|减小).{0,24}(?:按钮|标题|链接|标签|图标|徽章|输入框)(?:的)?(?:字号|字重|颜色|间距|圆角|边距).{0,18}$/u,
   /^(?:please\s+)?(?:change|adjust|set|update)\b.{0,30}\b(?:button|heading|link|label|icon|badge|input)\b.{0,15}\b(?:font size|font weight|colou?r|spacing|border radius|margin|padding)\b.{0,30}$/iu,
 ]
-const additionalAction = /[。！？!?；;，,、]|\.\s|\b(?:and|then|also)\b|(?:随后|然后|另外|同时|以及|并(?:且|再|实现|执行|改|更新|测试|添加|调整|修复|验证|重构|部署)|再(?:改|查|跑|写))/iu
+const additionalAction = /[。！？!?；;，,、]|\.\s|\b(?:and|then|also)\b|(?:随后|然后|另外|顺便|顺带|同时|以及|并(?:且|再|实现|执行|改|更新|测试|添加|调整|修复|验证|重构|部署)|再(?:改|查|跑|写))/iu
 
 function npmTask(args) {
   return {
@@ -132,6 +134,8 @@ function taskProse(task) {
   const prose = []
   let fence
   let supporting = false
+  let startsWithTitle = false
+  let hasGoal = false
   for (const raw of task.replace(/<!--[\s\S]*?(?:-->|$)/gu, '').split(/\r?\n/u)) {
     const marker = /^ {0,3}(\x60{3,}|~{3,})(.*)$/u.exec(raw)
     if (fence) {
@@ -146,11 +150,24 @@ function taskProse(task) {
     }
     if (/^(?: {4}|\t| {0,3}>)/u.test(raw)) continue
     const line = raw.trim().replace(/^(?:[-*+] |\d+[.)] )/u, '')
-    const heading = /^#{1,6}\s+(.+?)\s*#*$/u.exec(line)
-    if (heading) supporting = supportingHeading.test(heading[1])
-    if (heading && (supporting || taskHeading.test(heading[1]))) continue
-    const text = (heading?.[1] ?? line).replace(/(\x60+).*?\1/gu, ' ').replace(/[*_]{1,3}/gu, '').trim()
-    if (text && !forbiddenAction.test(text)) prose.push({ text, supporting })
+    const heading = /^(#{1,6})\s+(.+?)\s*#*$/u.exec(line)
+    const label = heading?.[2]
+    if (label) {
+      supporting = supportingHeading.test(label)
+      if (goalHeading.test(label)) {
+        hasGoal = true
+        continue
+      }
+      if (supporting || taskHeading.test(label)) continue
+    }
+    const text = (label ?? line).replace(/(\x60+).*?\1/gu, ' ').replace(/[*_]{1,3}/gu, '').trim()
+    if (text && !forbiddenAction.test(text)) {
+      if (prose.length === 0 && heading?.[1] === '#' && !hasGoal) startsWithTitle = true
+      prose.push({ text, supporting })
+    }
+  }
+  if (startsWithTitle && hasGoal && prose.slice(1).some(({ supporting }) => !supporting)) {
+    return prose.slice(1)
   }
   return prose
 }
@@ -220,7 +237,7 @@ function canRunGit() {
   // GIT_CONFIG changes "git config" only, so omit it when checking effective settings.
   delete env.GIT_CONFIG
   const result = spawnSync('git', [
-    'config', '--includes', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$',
+    '--no-pager', 'config', '--includes', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$',
   ], { env, stdio: 'ignore', timeout: 5000, shell: false })
   return !result.error && result.status === 1
 }
