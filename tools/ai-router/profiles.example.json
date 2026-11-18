@@ -1,0 +1,11 @@
+{
+  "codex": {
+    "provider": "codex"
+  },
+  "claude": {
+    "provider": "claude"
+  },
+  "dsh": {
+    "provider": "dsh"
+  }
+}
