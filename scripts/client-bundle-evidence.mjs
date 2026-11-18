@@ -7,11 +7,12 @@ import {pathToFileURL} from 'node:url';
 // Inventories every JS file in Next's client static tree once by path. It is
 // not a route transfer estimate: chunks may be shared or loaded on demand.
 export function collectBundle(root,sourceSha){
- if(!/^[0-9a-f]{40}$/.test(sourceSha))throw Error('invalid source');
+ if(typeof sourceSha!=='string'||!/^[0-9a-f]{40}$/.test(sourceSha))throw Error('invalid source');
  const regular=path=>{const st=lstatSync(path);if(!st.isFile()||st.isSymbolicLink())throw Error('not a regular file');return readFileSync(path);};
  const proof=JSON.parse(regular(join(root,'.image-source-proof.json')).toString());
- if(proof.sourceSha!==sourceSha||!/^[0-9a-f]{64}$/.test(proof.sourceTreeDigest))throw Error('source mismatch');
- const locks=Array.isArray(proof.files)?proof.files.filter(file=>file.path==='package-lock.json'):[];if(locks.length!==1||!/^[0-9a-f]{64}$/.test(locks[0].sha256))throw Error('missing locked dependency proof');
+ if(proof.sourceSha!==sourceSha||typeof proof.sourceTreeDigest!=='string'||!/^[0-9a-f]{64}$/.test(proof.sourceTreeDigest))throw Error('source mismatch');
+ const locks=Array.isArray(proof.files)?proof.files.filter(file=>file.path==='package-lock.json'):[];
+ if(locks.length!==1||typeof locks[0].sha256!=='string'||!/^[0-9a-f]{64}$/.test(locks[0].sha256))throw Error('missing locked dependency proof');
  if(createHash('sha256').update(regular(join(root,'package-lock.json'))).digest('hex')!==locks[0].sha256)throw Error('lock proof mismatch');
  const buildId=regular(join(root,'.next/BUILD_ID')).toString().trim();if(!/^[A-Za-z0-9_-]{1,128}$/.test(buildId))throw Error('invalid build id');
  const base=join(root,'.next/static'),files=[];

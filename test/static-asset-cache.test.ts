@@ -20,7 +20,7 @@ const security={
  'content-security-policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 test('returned config uses locked native matchers to reserve private cache overrides for non-build paths',async t=>{
- assert.equal(require('next/package.json').version,'16.4.1');
+ assert.equal(require('next/package.json').version,'16.4.5');
  const actual=await rules(),compiled=actual.map(rule=>{assert.equal(tryToParsePath(rule.source).error,undefined);return{...rule,match:getPathMatch(rule.source,{strict:true,sensitive:false,removeUnnamedParams:true,regexModifier:(regex:string)=>modifyRouteRegex(regex)})};});
  // These are path-policy cases, not fabricated proof that a static file exists or is cacheable.
  const cases:[string,string,boolean][]=[
