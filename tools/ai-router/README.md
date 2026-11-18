@@ -22,6 +22,46 @@ node ai-router/router.mjs run codex ai-router/task.example.md
 
 在 LifeOS 源码仓库中，上述命令里的工具目录是 `tools/ai-router/`。在图形客户端中，也可以直接打开相同的项目、选好分支，把任务文件正文发给它。
 
+## 自动按任务难度选档
+
+从项目目录预览路由，再执行相同的任务。
+
+```sh
+node ai-router/router.mjs auto-plan codex ai-router/task.example.md
+node ai-router/router.mjs auto-run codex ai-router/task.example.md
+```
+
+| 档位 | 识别范围 | Codex 默认请求 |
+| --- | --- | --- |
+| L0 | 整份文件是下方支持的一条固定命令或 Git 状态请求 | 本地执行 Git 检查。项目脚本需手动启动 |
+| L1 | 一项明确的文字修改或局部样式调整，例如按钮字号 | `gpt-6.2-sol` · low |
+| L2 | 常规开发或难度不明确 | `gpt-6.2-sol` · medium |
+| L3 | 架构、跨模块、困难故障、权限和数据库等高风险工作 | `gpt-6.2-astra` · high |
+
+L0 支持 `git status`、`查看 Git 状态`、`git diff --check`、`npm test`、`npm run build` 和 `npm run typecheck`。Git 检查使用原生命令和退出码。如果 Git 配置含可执行的 clean 或 process 过滤器，或无法核实配置，工具会提示在受信项目内直接运行该命令。npm 命令会运行项目自定义脚本，预览标记 `requiresManualRun: true`。请在受信项目里手动运行预览中的命令。npm 请求的 `auto-run` 会返回退出码 2，保留当前权限并结束，整个过程无需模型。
+
+`auto-plan` 只在本地分析，输出档位 `tier`、判定理由 `reason`、执行目标 `target` 和预计使用的 `argv`。分档参考任务文字。围栏代码和常见模板标题不参与判定。给状态查询再加一条任务会把完整文件交给所选客户端。也可以用原来的 `plan` 和 `run` 明确使用手动配置。
+
+自动分档继承所选配置的客户端和读写权限。Claude Code 沿用现有配置，也可通过 `tiers` 为指定档位配置模型和推理强度。DeepSeek Harness 沿用客户端内的选型。配置最外层的 `model` 和 `effort` 优先于档位配置。若所选模型和档位默认不同，且未提供可用于该模型的强度设置，则由客户端决定。
+
+```json
+{
+  "my-codex": {
+    "provider": "codex",
+    "access": "edit",
+    "tiers": {
+      "L3": {"model": "gpt-6.2-astra", "effort": "high"}
+    }
+  },
+  "my-claude": {
+    "provider": "claude",
+    "tiers": {
+      "L1": {"model": "haiku", "effort": "low"}
+    }
+  }
+}
+```
+
 ## 配置模型、命令位置和读写权限
 
 把以下示例存成自己机器上的 `profiles.local.json`，然后在命令最后传入该文件路径。每个名字对应一组配置。下例中的模型和命令路径根据本机实际安装与账户能力调整。
