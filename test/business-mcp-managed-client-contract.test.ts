@@ -5,8 +5,8 @@ test('managed registration accepts only the canonical ChatGPT callback and origi
  assert.deepEqual(parseManagedClientCommand(command),command);
  for(const value of [null,[],{}, {...command,scope:'todo:write'},{...command,clientId:'https://evil.example/client'},{...command,commandId:'new-key'},{...command,callback:command.callback+'?code=x'},{...command,callback:command.callback+'#x'},{...command,callback:command.callback.replace('chatgpt.com','chatgpt.com:443')},{...command,callback:command.callback.replace('chatgpt.com','chatgpt.com.evil.example')},{...command,callback:command.callback.replace('https://','http://')},{...command,callback:command.callback.replace('chatgpt.com','owner@chatgpt.com')},{...command,callback:command.callback.replace('fixtureCallback1','..')},{...command,callback:command.callback.replace('fixtureCallback1','fixture%2fCallback')},{...command,callback:'https://127.0.0.1/connector/oauth/fixtureCallback1'},{...command,callback:'https://chatgpt.com\\@127.0.0.1/connector/oauth/fixtureCallback1'},{...command,callback:command.callback+'\n'}])assert.equal(parseManagedClientCommand(value),null,JSON.stringify(value));
 });
+const setup={clientId:'https://lifeos.nirvanachow.com/oauth/clients/chatgpt',authorizationEndpoint:'https://lifeos.nirvanachow.com/api/platform/auth/oauth2/authorize',tokenEndpoint:'https://lifeos.nirvanachow.com/api/platform/auth/oauth2/token',resource:'https://lifeos.nirvanachow.com/api/platform/mcp',scopes:['todo:read','offline_access'],tokenEndpointAuthMethod:'none',codeChallengeMethod:'S256',registered:false};
 test('the setup UI accepts only the fixed nonsecret configuration response and rejects raw or incomplete SDK objects',()=>{
- const setup={clientId:'https://lifeos.nirvanachow.com/oauth/clients/chatgpt',authorizationEndpoint:'https://lifeos.nirvanachow.com/api/platform/auth/oauth2/authorize',tokenEndpoint:'https://lifeos.nirvanachow.com/api/platform/auth/oauth2/token',resource:'https://lifeos.nirvanachow.com/api/platform/mcp',scopes:['todo:read','offline_access'],tokenEndpointAuthMethod:'none',codeChallengeMethod:'S256',registered:false};
  assert.deepEqual(readManagedClientSetup(setup),setup);
  const registered={...setup,registered:true,...command};assert.deepEqual(readManagedClientSetup(registered),registered);
  for(const value of [null,{}, {...setup,client_secret:'synthetic-forbidden-secret'},{...setup,tokenEndpoint:'https://other.example/token'},{...setup,codeChallengeMethod:'plain'},{...setup,scopes:['todo:read','todo:read']},{...registered,commandId:undefined}])assert.equal(readManagedClientSetup(value),null);
@@ -14,4 +14,17 @@ test('the setup UI accepts only the fixed nonsecret configuration response and r
 test('the original UUID is canonical and cannot contain a trailing line terminator',()=>{
  assert.equal(parseManagedClientCommand({...command,commandId:command.commandId+'\n'}),null);
  assert.equal(parseManagedClientCommand({...command,commandId:command.commandId+'\r\n'}),null);
+});
+
+test('managed setup accepts the explicit full policy and keeps narrow and file authority separate',()=>{
+ const full='personal-business:all';
+ for(const state of [{registered:false},{registered:true,...command}]){
+  for(const scopes of [[full],[full,'offline_access'],['file-handoff:read',full,'offline_access','file-handoff:write'],['journal:read','journal:write','offline_access']]){
+   const configuration={...setup,...state,scopes};
+   assert.deepEqual(readManagedClientSetup(configuration),configuration);
+  }
+  for(const scopes of [[full,'journal:read'],[full,'file-handoff:write'],[full,full],[full,'admin:all'],['personal-business:ALL']]){
+   assert.equal(readManagedClientSetup({...setup,...state,scopes}),null);
+  }
+ }
 });

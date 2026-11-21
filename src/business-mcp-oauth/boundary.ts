@@ -1,12 +1,9 @@
+import {allPersonalBusinessOAuthScope,fullBusinessOAuthScopes} from './scope-policy.ts';
+export {allPersonalBusinessOAuthScope,fullBusinessOAuthScopes} from './scope-policy.ts';
 import {agentOperations,oauthBusinessMcpOperations,policyOAuthBusinessMcpOperations} from '../agent-api/capabilities.ts';
 import {isBusinessMcpOperation} from '../mcp-http/business-policy.ts';
 import {allPersonalBusinessPolicy,policyAuthorizationScopes} from '../agent-api/business-policy.ts';
 export const businessMcpResource='https://lifeos.nirvanachow.com/api/platform/mcp';
-export const allPersonalBusinessOAuthScope='personal-business:all' as const;
-/** Full policy is explicit. Ordinary narrow scopes cannot be mixed into it. */
-export function fullBusinessOAuthScopes(scopes:readonly string[]):boolean{
- return scopes.includes(allPersonalBusinessOAuthScope)&&new Set(scopes).size===scopes.length&&scopes.every(scope=>[allPersonalBusinessOAuthScope,'offline_access','file-handoff:read','file-handoff:write'].includes(scope))&&(!scopes.includes('file-handoff:write')||scopes.includes('file-handoff:read'));
-}
 export type BusinessOAuthConfig=Readonly<{resource:string;issuer:string;grantId:string;scopes:readonly string[]}>;
 type ConfiguredGrant=Readonly<{grantId:string;ownerId:string;spaceId:string;scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[];fileHandoff?:Readonly<{scopes:readonly string[]}>}>;
 export function configuredOAuthGrantAvailable(config:BusinessOAuthConfig,grant:ConfiguredGrant|null,owner:{ownerId:string;spaceId:string}):boolean{

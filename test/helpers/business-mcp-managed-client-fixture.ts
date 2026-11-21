@@ -7,8 +7,8 @@ export const managedFixtureConfig={baseURL:'https://lifeos.nirvanachow.com',owne
 export const managedFixtureOAuth={resource:managedFixtureConfig.baseURL+'/api/platform/mcp',issuer:managedFixtureConfig.baseURL+'/api/platform/auth',grantId:'synthetic-reviewed-grant',scopes:['todo:read','todo:write','offline_access']};
 export const managedFixtureCallback='https://chatgpt.com/connector/oauth/fixtureCallback1';
 
-export async function managedClientFixture(){
- const config={...managedFixtureConfig},oauth={...managedFixtureOAuth,scopes:[...managedFixtureOAuth.scopes]},now=new Date(),password='Synthetic-only-managed-password-0001';
+export async function managedClientFixture(scopes:readonly string[]=managedFixtureOAuth.scopes){
+ const config={...managedFixtureConfig},oauth={...managedFixtureOAuth,scopes:[...scopes]},now=new Date(),password='Synthetic-only-managed-password-0001';
  const db:Record<string,Record<string,unknown>[]>={platform_user:[{id:config.ownerId,name:'Synthetic owner',email:config.ownerEmail,emailVerified:false,twoFactorEnabled:false,createdAt:now,updatedAt:now}],platform_account:[{id:'managed-fixture-account',accountId:config.ownerId,providerId:'credential',userId:config.ownerId,password:await hashPassword(password),createdAt:now,updatedAt:now}],platform_session:[],platform_verification:[],platform_rate_limit:[],platform_two_factor:[],platform_oauth_client:[],platform_oauth_resource:[],platform_oauth_client_resource:[],platform_oauth_refresh_token:[],platform_oauth_access_token:[],platform_oauth_consent:[],platform_oauth_client_assertion:[],platform_oauth_jwks:[]};
  const auth=createPlatformAuth(config,memoryAdapter(db),{requireMfa:true,businessOAuth:oauth,disableSessionRefresh:true});await auth.$context;
  const native=async(path:string,body:Record<string,unknown>,cookie='')=>{
