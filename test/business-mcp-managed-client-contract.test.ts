@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {parseManagedClientCommand,readManagedClientSetup} from '../src/business-mcp-oauth/managed-client-contract.ts';
+import {parseManagedClientCommand,parseManagedClientWriteCommand,readManagedClientSetup} from '../src/business-mcp-oauth/managed-client-contract.ts';
 const command={callback:'https://chatgpt.com/connector/oauth/fixtureCallback1',commandId:'99fa7b22-534a-49e1-b527-8e8420244bc4'};
 test('managed registration accepts only the canonical ChatGPT callback and original UUID body',()=>{
  assert.deepEqual(parseManagedClientCommand(command),command);
@@ -27,4 +27,19 @@ test('managed setup accepts the explicit full policy and keeps narrow and file a
    assert.equal(readManagedClientSetup({...setup,...state,scopes}),null);
   }
  }
+});
+
+test('replacement requires the exact create fields plus a distinct canonical expected receipt',()=>{
+ const replacement={...command,expectedCommandId:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
+ assert.deepEqual(parseManagedClientWriteCommand(command),command);
+ assert.deepEqual(parseManagedClientWriteCommand(replacement),replacement);
+ assert.equal(parseManagedClientCommand(replacement),null);
+ for(const invalid of [
+  {...replacement,expectedCommandId:command.commandId},
+  {...replacement,expectedCommandId:replacement.expectedCommandId.toUpperCase()},
+  {...replacement,expectedCommandId:'not-a-receipt'},
+  {...replacement,scope:'todo:write'},
+  {...replacement,callback:command.callback+'?state=x'},
+  {...replacement,callback:command.callback.replace('chatgpt.com','external.example')},
+ ])assert.equal(parseManagedClientWriteCommand(invalid),null);
 });

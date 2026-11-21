@@ -4,8 +4,8 @@ import type {BusinessOAuthConfig} from './boundary.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {assertLocalRequest,readJSONBody} from '../platform/request-boundary.ts';
 import {OwnerRecoveryBusy} from '../personal-candidate/owner-recovery-lock.ts';
-import {managedChatGptClientId,managedClientPath,parseManagedClientCommand,type ManagedClientState,type ManagedClientSetup} from './managed-client-contract.ts';
-import {ManagedClientConflict,ManagedClientUnknown,readManagedClient,registerManagedClient} from './managed-client.ts';
+import {isManagedClientReplacement,managedChatGptClientId,managedClientPath,parseManagedClientWriteCommand,type ManagedClientState,type ManagedClientSetup} from './managed-client-contract.ts';
+import {ManagedClientConflict,ManagedClientUnknown,readManagedClient,registerManagedClient,replaceManagedClient} from './managed-client.ts';
 export type ManagedClientHttpOptions={auth:PlatformAuth;platform:PlatformConfig;config:BusinessOAuthConfig;owner:(headers:Headers)=>ReturnType<typeof readVerifiedOwnerSession>;assertReady:()=>Promise<void>;withOwnerLock:<T>(run:()=>Promise<T>)=>Promise<T>};
 const privateHeaders={'Cache-Control':'private, no-store',Vary:'Cookie','X-Content-Type-Options':'nosniff'};
 const failure=(status:number,code:string)=>Response.json({error:{code}},{status,headers:privateHeaders});
@@ -20,15 +20,21 @@ export function createManagedClientHandler(options:ManagedClientHttpOptions){ret
   const cookie=request.headers.get('cookie');
   if(request.headers.has('authorization')||!cookie||cookie.length>8192)return failure(401,'AUTH_REQUIRED');
   const headers=new Headers({cookie,host:new URL(options.platform.baseURL).host,origin:options.platform.baseURL,'x-platform-client':'127.0.0.1'});
-  const command=request.method==='POST'?parseManagedClientCommand(await readJSONBody(request)):null;
+  const command=request.method==='POST'?parseManagedClientWriteCommand(await readJSONBody(request)):null;
   if(request.method==='POST'&&!command)return failure(400,'INVALID_MANAGED_CLIENT_REQUEST');
   return await options.withOwnerLock(async()=>{
    if(!await options.owner(headers))return failure(401,'AUTH_REQUIRED');
    await options.assertReady();
-   const result=command?await registerManagedClient(options.auth,options.config,options.platform.ownerId,headers,command):{created:false,state:await readManagedClient(options.auth,options.config,options.platform.ownerId)};
+   let state:ManagedClientState,created=false,duplicate=false;
+   if(command&&isManagedClientReplacement(command)){
+    ({state,duplicate}=await replaceManagedClient(options.auth,options.config,options.platform.ownerId,command));
+   }else if(command){
+    ({state,created}=await registerManagedClient(options.auth,options.config,options.platform.ownerId,headers,command));
+    duplicate=!created;
+   }else state=await readManagedClient(options.auth,options.config,options.platform.ownerId);
    if(!await options.owner(headers))return failure(401,'AUTH_REQUIRED');
    await options.assertReady();
-   return Response.json({configuration:setup(options.config,result.state),...(command?{verified:true,duplicate:!result.created}:{})},{status:command&&result.created?201:200,headers:privateHeaders});
+   return Response.json({configuration:setup(options.config,state),...(command?{verified:true,duplicate}:{})},{status:created?201:200,headers:privateHeaders});
   });
  }catch(error){
   if(error instanceof PlatformError)return failure(error.status,error.code);

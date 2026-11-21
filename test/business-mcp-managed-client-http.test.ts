@@ -53,3 +53,29 @@ test('JSON and exact-route boundaries and a different native owner reject withou
  for(const [url,method,h,payload,status] of [[path+'?client_id=other','POST',headers,body,404],[path,'DELETE',headers,body,405],[path,'POST',{...headers,'content-type':'text/plain'},body,415],[path,'POST',headers,'{',400]] as const){const response=await handler(new Request(f.config.baseURL+url,{method,headers:h,body:payload}));assert.equal(response.status,status);}
  f.db.platform_user[0].email='other-owner@example.invalid';assert.equal((await handler(new Request(f.config.baseURL+path,{method:'POST',headers,body}))).status,401);assert.equal(f.db.platform_oauth_client.length,0);
 });
+
+
+test('owner replaces the exact saved callback and retries the same command without a second write',async()=>{
+ const f=await managedClientFixture(),handler=createManagedClientHandler({auth:f.auth,platform:f.config,config:f.oauth,owner:h=>readVerifiedOwnerSession(f.auth,f.config,h),assertReady:async()=>{},withOwnerLock:async run=>run()});
+ const headers={host:'lifeos.nirvanachow.com',origin:f.config.baseURL,'content-type':'application/json',cookie:f.cookie};
+ const post=(body:unknown,h=headers)=>handler(new Request(f.config.baseURL+path,{method:'POST',headers:h,body:JSON.stringify(body)}));
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ const replacement={callback:managedFixtureCallback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ assert.equal((await post(replacement)).status,409);
+ assert.equal((await post(original)).status,201);
+ assert.equal((await post({...replacement,expectedCommandId:randomUUID()})).status,409);
+ assert.equal((await post({...replacement,callback:original.callback})).status,409);
+ assert.equal((await post(replacement,{...headers,origin:'https://other.example'})).status,403);
+ assert.equal((await post(replacement,{...headers,cookie:''})).status,401);
+ const changed=await post(replacement);assert.equal(changed.status,200);
+ const saved=await changed.json();assert.equal(saved.verified,true);assert.equal(saved.duplicate,false);
+ assert.equal(saved.configuration.callback,replacement.callback);assert.equal(saved.configuration.commandId,replacement.commandId);
+ assert.equal('expectedCommandId' in saved.configuration,false);
+ const row=JSON.stringify(f.db.platform_oauth_client);
+ const replay=await post(replacement);assert.equal(replay.status,200);assert.equal((await replay.json()).duplicate,true);
+ assert.equal((await post({...replacement,expectedCommandId:randomUUID()})).status,409);
+ assert.equal((await post({...replacement,commandId:randomUUID()})).status,409);
+ assert.equal((await post(original)).status,409);
+ assert.equal(JSON.stringify(f.db.platform_oauth_client),row);
+ const read=await handler(new Request(f.config.baseURL+path,{headers}));assert.deepEqual((await read.json()).configuration,saved.configuration);
+});

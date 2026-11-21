@@ -4,7 +4,7 @@ import {ownerRecoveryLock} from '../src/personal-candidate/owner-recovery-lock.t
 import {createManagedClientHandler} from '../src/business-mcp-oauth/managed-client-http.ts';import {registerManagedClient,readManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
 import {verifyBusinessOAuthPool} from '../src/business-mcp-oauth/readiness.ts';
 import {BusinessOAuthLedger,validateBusinessClaims,intersectOAuthGrant,tokenIdentity} from '../src/business-mcp-oauth/ledger.ts';import {createBusinessOAuthHttp} from '../src/business-mcp-oauth/http.ts';
-import {managedChatGptClientId} from '../src/business-mcp-oauth/managed-client-contract.ts';import {requireMcpAuth} from '@better-auth/mcp';import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
+import {managedChatGptClientId,type ManagedClientWriteCommand} from '../src/business-mcp-oauth/managed-client-contract.ts';import {requireMcpAuth} from '@better-auth/mcp';import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
 import {readCurrentAgentGrant} from '../src/agent-api/runtime.ts';import {createAgentHandler} from '../src/agent-api/http.ts';import {PostgresPlatformRepository} from '../src/platform/postgres.ts';import {HttpBusinessClient} from '../src/mcp-http/business-client.ts';
 import {prepareBusinessOAuthFixture} from './helpers/business-mcp-oauth-stage-pg.ts';import {requirementsFixture as f,requirementsFixturePool as pool} from './helpers/requirements-stage-pg.ts';
 
@@ -22,7 +22,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
   const auth=createPlatformAuth(config,runtime,{requireMfa:true,businessOAuth:oauth,disableSessionRefresh:true}),readAuth=createPlatformAuth(config,runtime,{requireMfa:true,disableSessionRefresh:true,readOnlySessions:true});await auth.$context;
   const ready=()=>verifyBusinessOAuthPool(runtime,oauth,{ownerId,ownerEmail:f.email,spaceId}),lock=ownerRecoveryLock(runtime,ownerId);
   const handler=createManagedClientHandler({auth,config:oauth,platform:config,owner:h=>readVerifiedOwnerSession(readAuth,config,h),assertReady:ready,withOwnerLock:lock});
-  const request=(method:string,body=command)=>handler(new Request(origin+'/api/platform/business-mcp/client',{method,headers:{...Object.fromEntries(headers),'content-type':'application/json'},...(method==='POST'?{body:JSON.stringify(body)}:{})}));
+  const request=(method:string,body:ManagedClientWriteCommand=command)=>handler(new Request(origin+'/api/platform/business-mcp/client',{method,headers:{...Object.fromEntries(headers),'content-type':'application/json'},...(method==='POST'?{body:JSON.stringify(body)}:{})}));
   await t.test('fixed missing SDK projection remains absent without CIMD discovery',async()=>{assert.deepEqual(await readManagedClient(auth,oauth,ownerId),{registered:false});assert.equal((await request('GET')).status,200);});
   await t.test('two real transactions arbitrate fixed ID uniqueness and recover a lost successful response',async()=>{
    const hold=await admin.connect();try{
@@ -64,6 +64,62 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    assert.equal(denied.status,401);assert.deepEqual(await denied.json(),{error:'AUTH_REQUIRED'});
    assert.deepEqual(await client.execute('getTodo',{id:entry.id}),{ok:false,status:403,error:'API_DISCOVERY_UNAVAILABLE'});
    await admin.query('UPDATE lifeos_agent.apikey SET enabled=true WHERE id=$1',[grantId]);
+   const binding=async()=>{
+    const {rows}=await admin.query('SELECT enabled, revision::int AS revision FROM lifeos_agent.oauth_business_binding WHERE client_id=$1 AND owner_id=$2',[managedChatGptClientId,ownerId]);
+    assert.equal(rows.length,1);
+    return rows[0] as {enabled:boolean;revision:number};
+   };
+   const before=await binding();
+   assert.equal(before.enabled,true);
+   assert.ok(await current());
+   const replacement={callback:'https://chatgpt.com/connector/oauth/fixturePGcallback2',commandId:randomUUID(),expectedCommandId:command.commandId};
+   const changed=await request('POST',replacement);
+   assert.equal(changed.status,200);
+   const expected={registered:true,callback:replacement.callback,commandId:replacement.commandId};
+   const saved=await changed.json();
+   assert.equal(saved.verified,true);
+   assert.equal(saved.duplicate,false);
+   for(const [key,value] of Object.entries(expected))assert.equal(saved.configuration[key],value);
+   assert.deepEqual((await (await request('GET')).json()).configuration,saved.configuration);
+   const revoked={enabled:false,revision:before.revision+1};
+   assert.deepEqual(await binding(),revoked);
+   assert.equal(await ledger.read(tokenIdentity(token)),null);
+   assert.deepEqual(await client.execute('getTodo',{id:entry.id}),{ok:false,status:403,error:'API_DISCOVERY_UNAVAILABLE'});
+
+   const replay=await request('POST',replacement);
+   assert.equal(replay.status,200);
+   assert.equal((await replay.json()).duplicate,true);
+   assert.equal((await request('POST',{...replacement,commandId:randomUUID()})).status,409);
+   assert.deepEqual(await binding(),revoked);
+
+   const authorizationResult=async(callback:string)=>{
+    const newParams=new URLSearchParams(params);
+    newParams.set('redirect_uri',callback);
+    newParams.set('state',randomUUID());
+    const result=await http(new Request(oauth.issuer+'/oauth2/authorize?'+newParams,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));
+    assert.equal(result.status,302);
+    const location=new URL(result.headers.get('location')!,origin);
+    assert.equal(location.origin,origin);
+    return location;
+   };
+   const oldLocation=await authorizationResult(command.callback);
+   assert.equal(oldLocation.pathname,'/api/platform/auth/error');
+   assert.equal(oldLocation.searchParams.get('error'),'invalid_redirect');
+   const newLocation=await authorizationResult(replacement.callback);
+   assert.equal(newLocation.pathname,'/personal/oauth');
+   const freshConsent=await http(new Request(oauth.issuer+'/oauth2/consent',{method:'POST',headers:{host:'lifeos.nirvanachow.com',origin,cookie,'content-type':'application/json'},body:JSON.stringify({accept:true,oauth_query:newLocation.search.slice(1)})}));
+   assert.equal(freshConsent.status,200);
+   const freshRedirect=new URL((await freshConsent.json()).url);
+   assert.equal(freshRedirect.origin+freshRedirect.pathname,replacement.callback);
+   const freshCode=freshRedirect.searchParams.get('code');
+   assert.ok(freshCode);
+   const exchange=await http(new Request(oauth.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:managedChatGptClientId,grant_type:'authorization_code',code:freshCode,redirect_uri:replacement.callback,resource:oauth.resource,code_verifier:codeVerifier})}));
+   assert.equal(exchange.status,200);
+   const freshToken=(await exchange.json()).access_token;
+   assert.equal(typeof freshToken,'string');
+   assert.ok(await ledger.read(tokenIdentity(freshToken)));
+   assert.equal(await ledger.read(tokenIdentity(token)),null);
+
   });
   await t.test('the original maintenance lock and current MFA prevent registration reads or changes during reset',async()=>{
    await lock(async()=>{await admin.query('UPDATE lifeos_platform.platform_two_factor SET verified=false WHERE "userId"=$1',[ownerId]);const busy=await request('POST');assert.equal(busy.status,409);assert.equal((await busy.json()).error.code,'OWNER_ACCOUNT_BUSY');});

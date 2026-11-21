@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
+import {managedChatGptClientId} from '../src/business-mcp-oauth/managed-client-contract.ts';
+import {registerManagedClient,replaceManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
 import {managedClientFixture,managedFixtureCallback} from './helpers/business-mcp-managed-client-fixture.ts';
 
 test('official managed registration uses the fixed HTTPS ID and none without granting business authority',async()=>{
@@ -17,4 +19,31 @@ test('official managed registration cannot use a password-only owner session',as
  for(const row of db.platform_session)row.mfaVerified=false;
  await assert.rejects(auth.api.adminCreateOAuthClient({headers:new Headers({cookie}),body:{redirect_uris:[managedFixtureCallback],token_endpoint_auth_method:'none',require_pkce:true,skip_consent:false}}),{status:'UNAUTHORIZED'});
  assert.equal(db.platform_oauth_client.length,0);
+});
+
+test('the provider accepts only the replacement callback and requests new owner consent',async()=>{
+ const {auth,oauth,config,cookie,db}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ const replacement={callback:managedFixtureCallback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ const authorize=async(callback:string)=>{
+  const query=new URLSearchParams({
+   client_id:managedChatGptClientId,redirect_uri:callback,resource:oauth.resource,
+   scope:oauth.scopes.join(' '),response_type:'code',state:randomUUID(),prompt:'consent',
+   code_challenge:createHash('sha256').update('v'.repeat(43)).digest('base64url'),code_challenge_method:'S256',
+  });
+  const response=await auth.handler(new Request(oauth.issuer+'/oauth2/authorize?'+query,{headers:{cookie,accept:'text/html'}}));
+  assert.equal(response.status,302);
+  const target=new URL(response.headers.get('location')!,config.baseURL);
+  assert.equal(target.origin,config.baseURL);
+  return target;
+ };
+ const denied=await authorize(original.callback);
+ assert.equal(denied.pathname,'/api/platform/auth/error');
+ assert.equal(denied.searchParams.get('error'),'invalid_redirect');
+ const consent=await authorize(replacement.callback);
+ assert.equal(consent.pathname,'/personal/oauth');
+ assert.equal(db.platform_oauth_consent.length,0);
+ assert.equal(db.platform_oauth_access_token.length,0);
 });
