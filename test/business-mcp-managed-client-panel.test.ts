@@ -11,7 +11,7 @@ test('managed owner page labels the exact callback and keeps submission disabled
 });
 test('an existing managed configuration is displayed without a creation form or automatic replacement',()=>{
  const html=renderAuthComponent('src/business-mcp-oauth/managed-client-panel.tsx','ManagedClientPanel',{initial:{...setup,registered:true,callback:'https://chatgpt.com/connector/oauth/fixtureCallback1',commandId:'99fa7b22-534a-49e1-b527-8e8420244bc4'}});
- assert.match(html,/fixtureCallback1/);assert.doesNotMatch(html,/<form/);assert.doesNotMatch(html,/<button\b[^>]*>保存连接配置<\/button>/);
+ assert.match(html,/fixtureCallback1/);assert.match(html,/<button\b[^>]*>更换回调地址<\/button>/);assert.doesNotMatch(html,/<form/);assert.doesNotMatch(html,/<button\b[^>]*>保存连接配置<\/button>/);
 });
 
 test('full-policy registration and independent account-page readback render the same configured scopes',async()=>{
