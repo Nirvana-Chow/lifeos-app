@@ -20,7 +20,7 @@ SDK `getOAuthClient` 对缺失 HTTPS ID 会进入 CIMD，并且省略 managed �
 
 技术前置由发布负责人完成：固定 main 的原 CI、原私有自动发布与 Native+HTTPS 读回；合格 schema、runtime/control 一致、当前批准原 grant/scopes、restricted readiness、旧 Key/native/MFA 基线。不能仅因页面源码存在而跳过这些门禁。
 
-1. 打开 `https://lifeos.nirvanachow.com/account/mcp`，使用原账号登录并完成两步验证。页面先展示现有配置；已有配置时会显示当前回调和「更换回调地址」。
+1. 在私人空间的「设置 → 通用 → 账号与连接」选择「ChatGPT 连接设置」，也可以直接打开 `https://lifeos.nirvanachow.com/account/mcp`。使用原账号登录并完成两步验证。页面先展示现有配置；已有配置时会显示当前回调和「更换回调地址」。
 2. 打开 ChatGPT → 插件 → 添加 → 自定义 MCP，MCP URL 填 `https://lifeos.nirvanachow.com/api/platform/mcp`。在高级 OAuth 中选择「用户自定义 OAuth 客户端」，Token 认证方式选 `none`；保留当前这份连接草稿。
 3. 将这份 ChatGPT 草稿显示的完整回调地址复制到 LifeOS 页面，首次设置点击「保存连接配置」。如果重新创建的 ChatGPT 草稿给出了不同地址，从「更换回调地址」进入编辑，核对并保存新地址。如果两个地址完全相同，直接继续。若结果未确认，保留本页，先点击「核对保存结果」；页面保留原 callback/UUID，显式重试仍使用原请求。不要另建请求或换草稿来猜结果。
 4. 回到同一份 ChatGPT 草稿，填写 LifeOS 页面给出的值：
