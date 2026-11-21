@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import test from 'node:test';import {randomUUID,createHmac,createHash} from 'node:crypto';import {setTimeout as delay} from 'node:timers/promises';
 import type {PlatformAuth} from '../src/platform/auth.ts';import {createPlatformAuth,readVerifiedOwnerSession} from '../src/platform/auth.ts';
 import {ownerRecoveryLock} from '../src/personal-candidate/owner-recovery-lock.ts';
-import {createManagedClientHandler} from '../src/business-mcp-oauth/managed-client-http.ts';import {registerManagedClient,readManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
+import {createManagedClientHandler} from '../src/business-mcp-oauth/managed-client-http.ts';import {registerManagedClient,readManagedClient,readManagedCredentialRegistration} from '../src/business-mcp-oauth/managed-client.ts';
 import {verifyBusinessOAuthPool} from '../src/business-mcp-oauth/readiness.ts';
 import {BusinessOAuthLedger,validateBusinessClaims,intersectOAuthGrant,tokenIdentity} from '../src/business-mcp-oauth/ledger.ts';import {createBusinessOAuthHttp} from '../src/business-mcp-oauth/http.ts';
 import {managedChatGptClientId,type ManagedClientWriteCommand} from '../src/business-mcp-oauth/managed-client-contract.ts';import {requireMcpAuth} from '@better-auth/mcp';import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
@@ -44,7 +44,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
   await t.test('registered provided none uses signed consent S256 and the original CRUD writer and current-grant fence',async()=>{
    const ledger=new BusinessOAuthLedger(runtime,oauth,ownerId,spaceId);
    const verify=async(token:string):Promise<ReturnType<typeof validateBusinessClaims>>=>{let claims:ReturnType<typeof validateBusinessClaims>=null;await requireMcpAuth(auth,(_r,value)=>{claims=validateBusinessClaims(value,oauth,ownerId);return new Response(null,{status:204});},{resource:oauth.resource,issuer:oauth.issuer})(new Request(oauth.resource,{headers:{authorization:'Bearer '+token}}));return claims;};
-   const http=createBusinessOAuthHttp({origin,config:oauth,assertReady:ready,owner:h=>readVerifiedOwnerSession(readAuth,config,h),handler:r=>auth.handler(r),verifyQuery:q=>verifyOAuthQueryParams(q,config.secret),verifyToken:verify,ledger});
+   const http=createBusinessOAuthHttp({origin,config:oauth,assertReady:ready,managedClient:{read:()=>readManagedCredentialRegistration(auth,oauth,ownerId),withOwnerLock:lock},owner:h=>readVerifiedOwnerSession(readAuth,config,h),handler:r=>auth.handler(r),verifyQuery:q=>verifyOAuthQueryParams(q,config.secret),verifyToken:verify,ledger});
    const codeVerifier='v'.repeat(43),params=new URLSearchParams({client_id:managedChatGptClientId,redirect_uri:command.callback,resource:oauth.resource,response_type:'code',scope:oauth.scopes.join(' '),state:randomUUID(),code_challenge:createHash('sha256').update(codeVerifier).digest('base64url'),code_challenge_method:'S256',prompt:'consent'});
    const authorize=await http(new Request(oauth.issuer+'/oauth2/authorize?'+params,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));assert.equal(authorize.status,302);
    const consentURL=new URL(authorize.headers.get('location')!,origin);assert.equal(consentURL.pathname,'/personal/oauth');
@@ -77,6 +77,10 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    assert.ok(pendingCode);
    // Consent revokes earlier binding revisions. Get a current credential on the original registration.
    const redeem=async(fields:Record<string,string>)=>http(new Request(oauth.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:managedChatGptClientId,resource:oauth.resource,...fields})}));
+   await lock(async()=>{
+    const busy=await redeem({grant_type:'refresh_token',refresh_token:issued.refresh_token});
+    assert.equal(busy.status,503);
+   });
    const originalRefresh=await redeem({grant_type:'refresh_token',refresh_token:issued.refresh_token});
    assert.equal(originalRefresh.status,200);
    const active=await originalRefresh.json();

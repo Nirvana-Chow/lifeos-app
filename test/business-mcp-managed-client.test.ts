@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';import {randomUUID} from 'node:crypto';
 import type {PlatformAuth} from '../src/platform/auth.ts';
-import {readManagedClient,registerManagedClient,replaceManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
+import {readManagedClient,readManagedCredentialRegistration,registerManagedClient,replaceManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
 import {managedClientFixture,managedFixtureCallback} from './helpers/business-mcp-managed-client-fixture.ts';
 test('fixed managed client is absent before registration and exact registration is independently read back',async()=>{
  const {auth,oauth,config,cookie,db}=await managedClientFixture(),command={callback:managedFixtureCallback,commandId:randomUUID()},headers=new Headers({cookie});
@@ -81,4 +81,25 @@ test('two different replacements from the same receipt commit at most one callba
  const winner=commands[results.indexOf(succeeded[0])];
  await assert.rejects(replaceManagedClient(auth,oauth,config.ownerId,{...winner,expectedCommandId:randomUUID()}),{message:'MANAGED_CLIENT_CONFLICT'});
  assert.deepEqual(await readManagedClient(auth,oauth,config.ownerId),saved);
+});
+
+test('replacing a callback changes its server-issued generation only once, independently of supplied receipts',async()=>{
+ const {auth,oauth,config,cookie}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ const read=()=>readManagedCredentialRegistration(auth,oauth,config.ownerId);
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ assert.deepEqual(await read(),{callback:original.callback,generation:null});
+ const replacement={callback:original.callback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ const first=await read();
+ assert.ok(first?.generation);
+ assert.notEqual(first.generation,replacement.commandId);
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ assert.deepEqual(await read(),first);
+ const restored={...original,expectedCommandId:replacement.commandId};
+ await replaceManagedClient(auth,oauth,config.ownerId,restored);
+ const second=await read();
+ assert.ok(second?.generation);
+ assert.notEqual(second.generation,first.generation);
+ await assert.rejects(registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original),{message:'MANAGED_CLIENT_CONFLICT'});
 });

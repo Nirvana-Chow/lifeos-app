@@ -1,24 +1,28 @@
+import {randomUUID} from 'node:crypto';
 import type {PlatformAuth} from '../platform/auth.ts';
 import type {BusinessOAuthConfig} from './boundary.ts';
-import {isManagedClientReplacement,managedChatGptClientId,managedClientName,managedClientVersion,parseManagedClientWriteCommand,type ManagedClientCommand,type ManagedClientState,type ManagedClientReplaceCommand,type ManagedClientWriteCommand} from './managed-client-contract.ts';
+import {isManagedClientReplacement,managedChatGptClientId,managedClientName,managedClientVersion,validManagedCommandId,parseManagedClientWriteCommand,type ManagedClientCommand,type ManagedClientState,type ManagedClientReplaceCommand,type ManagedClientWriteCommand} from './managed-client-contract.ts';
 export class ManagedClientConflict extends Error{constructor(){super('MANAGED_CLIENT_CONFLICT');}}
 export class ManagedClientUnknown extends Error{constructor(){super('MANAGED_CLIENT_UNKNOWN');}}
 const selected=['clientId','clientDiscoveryId','userId','referenceId','name','disabled','skipConsent','requirePKCE','tokenEndpointAuthMethod','scopes','grantTypes','responseTypes','applicationType','clientCredentialsScopes','redirectUris','metadata','enableEndSession','subjectType','dpopBoundAccessTokens','uri','icon','contacts','tos','policy','softwareId','softwareVersion','softwareStatement','postLogoutRedirectUris','backchannelLogoutUri','backchannelLogoutSessionRequired','jwksUri'];
 const same=(a:unknown,b:readonly string[])=>Array.isArray(a)&&a.length===b.length&&a.every(v=>typeof v==='string')&&JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
 const absent=(value:unknown)=>value===undefined||value===null;
-async function readRegistration(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string):Promise<ManagedClientWriteCommand|null>{
+type Registration=ManagedClientWriteCommand&{credentialGeneration?:string};
+async function readRegistration(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string):Promise<Registration|null>{
  const {adapter}=await auth.$context;
  // No provider getClient call: a missing HTTPS ID must never trigger CIMD discovery.
  const row=await adapter.findOne<Record<string,unknown>>({model:'platform_oauth_client',where:[{field:'clientId',value:managedChatGptClientId}],select:[...selected]});
  if(!row)return null;
  const metadata=row.metadata as Record<string,unknown>|null;
  const hasPrevious=!!metadata&&Object.hasOwn(metadata,'previous_command_id');
+ const generation=metadata?.credential_generation;
+ if(hasPrevious&&!validManagedCommandId(generation))throw new ManagedClientConflict();
  const command=parseManagedClientWriteCommand({callback:Array.isArray(row.redirectUris)&&row.redirectUris.length===1?row.redirectUris[0]:null,commandId:metadata?.command_id,...(hasPrevious?{expectedCommandId:metadata?.previous_command_id}:{})});
  const noExtra=['referenceId','uri','icon','contacts','tos','policy','softwareId','softwareVersion','softwareStatement','postLogoutRedirectUris','backchannelLogoutUri','backchannelLogoutSessionRequired','jwksUri'].every(key=>absent(row[key]));
- if(!command||!metadata||typeof metadata!=='object'||Array.isArray(metadata)||Object.keys(metadata).length!==(hasPrevious?3:2)||metadata.lifeos_managed_client!==managedClientVersion||row.clientId!==managedChatGptClientId||row.clientDiscoveryId!==null||row.userId!==ownerId||row.name!==managedClientName||row.disabled!==false||row.skipConsent!==false||row.requirePKCE!==true||row.tokenEndpointAuthMethod!=='none'||row.applicationType!=='web'||row.enableEndSession!==false||!absent(row.subjectType)&&row.subjectType!=='public'||!absent(row.dpopBoundAccessTokens)&&row.dpopBoundAccessTokens!==false||!same(row.scopes,config.scopes)||!same(row.grantTypes,['authorization_code','refresh_token'])||!same(row.responseTypes,['code'])||!same(row.clientCredentialsScopes,[])||!noExtra)throw new ManagedClientConflict();
+ if(!command||!metadata||typeof metadata!=='object'||Array.isArray(metadata)||Object.keys(metadata).length!==(hasPrevious?4:2)||metadata.lifeos_managed_client!==managedClientVersion||row.clientId!==managedChatGptClientId||row.clientDiscoveryId!==null||row.userId!==ownerId||row.name!==managedClientName||row.disabled!==false||row.skipConsent!==false||row.requirePKCE!==true||row.tokenEndpointAuthMethod!=='none'||row.applicationType!=='web'||row.enableEndSession!==false||!absent(row.subjectType)&&row.subjectType!=='public'||!absent(row.dpopBoundAccessTokens)&&row.dpopBoundAccessTokens!==false||!same(row.scopes,config.scopes)||!same(row.grantTypes,['authorization_code','refresh_token'])||!same(row.responseTypes,['code'])||!same(row.clientCredentialsScopes,[])||!noExtra)throw new ManagedClientConflict();
  const links=await adapter.findMany<{clientId:string;resourceId:string}>({model:'platform_oauth_client_resource',where:[{field:'clientId',value:managedChatGptClientId}],select:['clientId','resourceId'],limit:2});
  if(links.length!==1||links[0].clientId!==managedChatGptClientId||links[0].resourceId!==config.resource)throw new ManagedClientConflict();
- return command;
+ return hasPrevious?{...command,credentialGeneration:generation as string}:command;
 }
 async function readAfterWrite(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string){
  try{return await readRegistration(auth,config,ownerId);}
@@ -30,8 +34,12 @@ function project(command:ManagedClientWriteCommand|null):ManagedClientState{
 export async function readManagedClient(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string):Promise<ManagedClientState>{
  return project(await readRegistration(auth,config,ownerId));
 }
-function metadataFor(command:ManagedClientWriteCommand){
- return {lifeos_managed_client:managedClientVersion,command_id:command.commandId,...(isManagedClientReplacement(command)?{previous_command_id:command.expectedCommandId}:{})};
+function metadataFor(command:Registration){
+ return {lifeos_managed_client:managedClientVersion,command_id:command.commandId,...(isManagedClientReplacement(command)?{previous_command_id:command.expectedCommandId,credential_generation:command.credentialGeneration}:{})};
+}
+export async function readManagedCredentialRegistration(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string){
+ const saved=await readRegistration(auth,config,ownerId);
+ return saved?{callback:saved.callback,generation:saved.credentialGeneration??null}:null;
 }
 export async function registerManagedClient(auth:PlatformAuth,config:BusinessOAuthConfig,ownerId:string,headers:Headers,command:ManagedClientCommand):Promise<{created:boolean;state:ManagedClientState}>{
  const matches=(saved:ManagedClientWriteCommand)=>!isManagedClientReplacement(saved)&&saved.callback===command.callback&&saved.commandId===command.commandId;
@@ -64,7 +72,7 @@ export async function replaceManagedClient(auth:PlatformAuth,config:BusinessOAut
    {field:'clientId',value:managedChatGptClientId},{field:'userId',value:ownerId},
    {field:'clientDiscoveryId',value:null},{field:'disabled',value:false},
    {field:'metadata',value:JSON.stringify(metadataFor(before))},
-  ],update:{redirectUris:[command.callback],metadata:metadataFor(command)}});
+  ],update:{redirectUris:[command.callback],metadata:metadataFor({...command,credentialGeneration:randomUUID()})}});
   applied=count===1;
  }catch{/* A committed change can lose its response. Always reconcile by reading the fixed record. */}
  const saved=await readAfterWrite(auth,config,ownerId);

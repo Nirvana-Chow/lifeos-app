@@ -1,3 +1,5 @@
+import {readManagedCredentialRegistration} from './managed-client.ts';
+import {ownerRecoveryLock} from '../personal-candidate/owner-recovery-lock.ts';
 import {requireMcpAuth} from '@better-auth/mcp';
 import {verifyOAuthQueryParams} from '@better-auth/oauth-provider';
 import type {PlatformAuth} from '../platform/auth.ts';
@@ -38,6 +40,6 @@ export async function handleBusinessOAuthRequest(request:Request):Promise<Respon
    await verifyBusinessOAuthPool(context.pool,context.config,{ownerId:context.personal.ownerId,ownerEmail:context.platform.ownerEmail,spaceId:context.personal.spaceId});
    const grant=await readGrant(context.config.grantId);if(!configuredOAuthGrantAvailable(context.config,grant,context.personal))throw Error('OAUTH_CURRENT_GRANT_UNAVAILABLE');
   };
-  return createBusinessOAuthHttp({origin:context.platform.baseURL,config:context.config,assertReady,owner:headers=>readVerifiedOwnerSession(context.readAuth,context.platform,headers),handler:r=>context.auth.handler(r),verifyQuery:query=>verifyOAuthQueryParams(query,context.platform.secret),verifyToken:token=>verifyToken(context.auth,context.config,context.personal.ownerId,token),ledger:context.ledger})(request);
+  return createBusinessOAuthHttp({origin:context.platform.baseURL,config:context.config,assertReady,managedClient:{read:()=>readManagedCredentialRegistration(context.auth,context.config,context.personal.ownerId),withOwnerLock:ownerRecoveryLock(context.pool,context.personal.ownerId)},owner:headers=>readVerifiedOwnerSession(context.readAuth,context.platform,headers),handler:r=>context.auth.handler(r),verifyQuery:query=>verifyOAuthQueryParams(query,context.platform.secret),verifyToken:token=>verifyToken(context.auth,context.config,context.personal.ownerId,token),ledger:context.ledger})(request);
  }catch{return unavailable();}
 }

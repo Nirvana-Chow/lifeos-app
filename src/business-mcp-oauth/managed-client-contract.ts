@@ -10,20 +10,20 @@ export const managedClientPath='/api/platform/business-mcp/client';
 export const managedClientName='LifeOS ChatGPT';
 export const managedClientVersion='chatgpt-v1';
 export function validManagedCallback(value:unknown):value is string{return typeof value==='string'&&/^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{8,128}$/.test(value)&&!/[\r\n]/.test(value);}
-function validCommandId(value:unknown):value is string{
+export function validManagedCommandId(value:unknown):value is string{
  return typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 }
 export function parseManagedClientCommand(value:unknown):ManagedClientCommand|null{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'callback')||!Object.hasOwn(value,'commandId'))return null;
  const data=value as Record<string,unknown>;
- return validManagedCallback(data.callback)&&validCommandId(data.commandId)?{callback:data.callback,commandId:data.commandId}:null;
+ return validManagedCallback(data.callback)&&validManagedCommandId(data.commandId)?{callback:data.callback,commandId:data.commandId}:null;
 }
 export function parseManagedClientWriteCommand(value:unknown):ManagedClientWriteCommand|null{
  if(!value||typeof value!=='object'||!Object.hasOwn(value,'expectedCommandId'))return parseManagedClientCommand(value);
  if(Array.isArray(value)||Object.keys(value).length!==3)return null;
  const {expectedCommandId,...rest}=value as Record<string,unknown>;
  const command=parseManagedClientCommand(rest);
- return command&&validCommandId(expectedCommandId)&&command.commandId!==expectedCommandId?{...command,expectedCommandId}:null;
+ return command&&validManagedCommandId(expectedCommandId)&&command.commandId!==expectedCommandId?{...command,expectedCommandId}:null;
 }
 export type ManagedClientState={registered:false}|({registered:true}&ManagedClientCommand);
 export type ManagedClientSetup={clientId:string;authorizationEndpoint:string;tokenEndpoint:string;resource:string;scopes:string[];tokenEndpointAuthMethod:'none';codeChallengeMethod:'S256'}&ManagedClientState;

@@ -47,3 +47,58 @@ test('the provider accepts only the replacement callback and requests new owner 
  assert.equal(db.platform_oauth_consent.length,0);
  assert.equal(db.platform_oauth_access_token.length,0);
 });
+
+test('previously issued refresh and authorization code stay unusable after new consent and callback reuse',async()=>{
+ const {auth,oauth,config,cookie}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ const {createBusinessOAuthHttp}=await import('../src/business-mcp-oauth/http.ts');
+ const {verifyOAuthQueryParams}=await import('@better-auth/oauth-provider');
+ const {requireMcpAuth}=await import('@better-auth/mcp');
+ const {validateBusinessClaims}=await import('../src/business-mcp-oauth/ledger.ts');
+ const {readManagedCredentialRegistration}=await import('../src/business-mcp-oauth/managed-client.ts');
+ const http=createBusinessOAuthHttp({
+  origin:config.baseURL,config:oauth,assertReady:async()=>{},owner:async()=>({sessionRef:'synthetic-verified-session'}),
+  handler:request=>auth.handler(request),verifyQuery:q=>verifyOAuthQueryParams(q,config.secret),
+  verifyToken:async token=>{
+   let claims=null as ReturnType<typeof validateBusinessClaims>;
+   await requireMcpAuth(auth,(_request,value)=>{claims=validateBusinessClaims(value,oauth,config.ownerId);return new Response(null,{status:204});},{resource:oauth.resource,issuer:oauth.issuer})(new Request(oauth.resource,{headers:{authorization:'Bearer '+token}}));
+   return claims;
+  },
+  managedClient:{withOwnerLock:async run=>run(),read:()=>readManagedCredentialRegistration(auth,oauth,config.ownerId)},
+  ledger:{approve:async()=>{},register:async()=>({} as never),revoke:async()=>{}},
+ });
+ const codeVerifier='v'.repeat(43);
+ const obtainCode=async(callback:string)=>{
+  const query=new URLSearchParams({client_id:managedChatGptClientId,redirect_uri:callback,resource:oauth.resource,scope:oauth.scopes.join(' '),response_type:'code',state:randomUUID(),prompt:'consent',code_challenge:createHash('sha256').update(codeVerifier).digest('base64url'),code_challenge_method:'S256'});
+  const authorize=await http(new Request(oauth.issuer+'/oauth2/authorize?'+query,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));
+  assert.equal(authorize.status,302);
+  const url=new URL(authorize.headers.get('location')!,config.baseURL);
+  assert.equal(url.pathname,'/personal/oauth');
+  const consent=await http(new Request(oauth.issuer+'/oauth2/consent',{method:'POST',headers:{host:'lifeos.nirvanachow.com',origin:config.baseURL,cookie,'content-type':'application/json'},body:JSON.stringify({accept:true,oauth_query:url.search.slice(1)})}));
+  assert.equal(consent.status,200);
+  const code=new URL((await consent.json()).url).searchParams.get('code');
+  assert.ok(code);
+  return code;
+ };
+ const exchange=async(fields:Record<string,string>)=>http(new Request(oauth.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:managedChatGptClientId,resource:oauth.resource,...fields})}));
+ const codeFields=(callback:string,code:string)=>({grant_type:'authorization_code',redirect_uri:callback,code,code_verifier:codeVerifier});
+ const refreshFields=(token:string)=>({grant_type:'refresh_token',refresh_token:token});
+ const originalExchange=await exchange(codeFields(original.callback,await obtainCode(original.callback)));
+ assert.equal(originalExchange.status,200);
+ const previousRefresh=(await originalExchange.json()).refresh_token;
+ const pendingCode=await obtainCode(original.callback);
+ const replacement={callback:original.callback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ const restored={callback:original.callback,commandId:randomUUID(),expectedCommandId:replacement.commandId};
+ await replaceManagedClient(auth,oauth,config.ownerId,restored);
+ const newExchange=await exchange(codeFields(restored.callback,await obtainCode(restored.callback)));
+ assert.equal(newExchange.status,200);
+ const currentRefresh=(await newExchange.json()).refresh_token;
+ for(const stale of [refreshFields(previousRefresh),codeFields(original.callback,pendingCode)]){
+  const denied=await exchange(stale);
+  assert.equal(denied.status,400);
+  assert.equal((await denied.json()).error,'invalid_grant');
+ }
+ assert.equal((await exchange(refreshFields(currentRefresh))).status,200);
+});
