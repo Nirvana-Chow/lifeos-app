@@ -164,7 +164,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
   </fieldset></form>}
   {pending&&<p className={s.value}>本次提交的回调地址：{pending.callback}</p>}
   {message&&<p role="status" aria-live="polite">{message}</p>}
-  {needsLogin&&<a href="/login" target="_blank" rel="noopener noreferrer">在新标签页登录 LifeOS</a>}
+  {needsLogin&&<a href="/login?reauthenticate=1" target="_blank" rel="noopener noreferrer">在新标签页登录 LifeOS</a>}
   <div className={s.actions}>
    <Button type="button" variant="outline" disabled={!hydrated||busy} onClick={check}>核对保存结果</Button>
    {pending&&recovery==='retry'&&<Button type="button" disabled={busy} onClick={()=>save()}>使用原请求重试</Button>}

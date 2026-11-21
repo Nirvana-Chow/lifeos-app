@@ -80,7 +80,7 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  await change(desktop).click();await field(desktop).fill(second);
  signedIn=false;await save(desktop).click();
  const login=desktop.getByRole('link',{name:'在新标签页登录 LifeOS'});
- await expect(login).toHaveAttribute('href','/login');
+ await expect(login).toHaveAttribute('href','/login?reauthenticate=1');
  await expect(login).toHaveAttribute('target','_blank');
  await check(desktop).click();await expect(login).toBeVisible();
  await expect(desktop.getByText('本次提交的回调地址：'+second,{exact:true})).toBeVisible();
