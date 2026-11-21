@@ -24,10 +24,12 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
 
  const commands:{callback:string;commandId:string;expectedCommandId?:string}[]=[];
  let failure:'before'|'after'|null=null;
+ let signedIn=true;
  for(const page of [desktop,mobile]){
   await page.route('**'+path,async route=>{
    const req=route.request(),post=req.method()==='POST',fault=post?failure:null;
    if(post){commands.push(req.postDataJSON());failure=null;}
+   if(!signedIn)return route.fulfill({status:401,body:''});
    if(fault==='before')return route.fulfill({status:503,body:''});
    const response=await request(req.method(),req.postData()??undefined);
    if(post&&response.ok)await snapshot();
@@ -73,6 +75,17 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  await expect(status(desktop)).toContainText('回调地址已更换');
  assert.deepEqual(commands[3],commands[2]);assert.equal(commands[2].expectedCommandId,commands[0].commandId);
  await desktop.reload();await expect(desktop.getByText('当前 ChatGPT 回调地址：'+third,{exact:true})).toBeVisible();
+ await change(desktop).click();await field(desktop).fill(second);
+ signedIn=false;await save(desktop).click();
+ const login=desktop.getByRole('link',{name:'在新标签页登录 LifeOS'});
+ await expect(login).toHaveAttribute('href','/login');
+ await expect(login).toHaveAttribute('target','_blank');
+ await check(desktop).click();await expect(login).toBeVisible();
+ await expect(desktop.getByText('本次提交的回调地址：'+second,{exact:true})).toBeVisible();
+ signedIn=true;await check(desktop).click();await expect(login).toHaveCount(0);
+ await desktop.getByRole('button',{name:'使用原请求重试'}).click();
+ await expect(status(desktop)).toContainText('回调地址已更换');
+ assert.deepEqual(commands[5],commands[4]);
  await desktop.getByRole('link',{name:'返回设置'}).click();
  await expect(desktop).toHaveURL(origin+'/personal?page=settings&panel=general');
 }

@@ -28,6 +28,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
  const [pending,setPending]=useState<ManagedClientWriteCommand|null>(null);
  const [recovery,setRecovery]=useState<'check'|'retry'|'discard'>('check');
  const [busy,setBusy]=useState(false),[hydrated,setHydrated]=useState(false);
+ const [needsLogin,setNeedsLogin]=useState(false);
  const [message,setMessage]=useState(initialConflict?'当前客户端配置存在冲突，请核对保存结果。':'');
  const working=useRef(false);
  const input=useRef<HTMLInputElement>(null);
@@ -78,11 +79,19 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
    :'连接配置已保存。请返回 ChatGPT 完成连接授权。');
  }
 
+ function checkSession(response:Response){
+  const expired=response.status===401;
+  setNeedsLogin(expired);
+  if(expired)setMessage('请在新标签页重新登录 LifeOS，然后回到本页核对保存结果。');
+  return !expired;
+ }
+
  async function check(){
   if(working.current||!hydrated)return;
   working.current=true;setBusy(true);setRecovery('check');
   try{
    const response=await fetch(managedClientPath,{cache:'no-store'});
+   if(!checkSession(response))return;
    const next=response.ok&&readManagedClientSetup((await response.json()).configuration);
    if(!next)throw Error('unverified');
    setConfiguration(next);
@@ -114,6 +123,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
   working.current=true;setBusy(true);retain(command);setMessage('正在保存…');
   try{
    const response=await fetch(managedClientPath,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)});
+   if(!checkSession(response))return;
    if(response.status===400){
     retain(null);setEditRevision(isManagedClientReplacement(command)?command.expectedCommandId:null);
     setMessage('回调地址未通过检查，请核对后重新填写。');return;
@@ -150,6 +160,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
   </fieldset></form>}
   {pending&&<p className={s.value}>本次提交的回调地址：{pending.callback}</p>}
   {message&&<p role="status" aria-live="polite">{message}</p>}
+  {needsLogin&&<a href="/login" target="_blank" rel="noopener noreferrer">在新标签页登录 LifeOS</a>}
   <div className={s.actions}>
    <Button type="button" variant="outline" disabled={!hydrated||busy} onClick={check}>核对保存结果</Button>
    {pending&&recovery==='retry'&&<Button type="button" disabled={busy} onClick={()=>save()}>使用原请求重试</Button>}

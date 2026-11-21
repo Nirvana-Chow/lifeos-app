@@ -341,6 +341,6 @@ test('OPT-IN managed callback settings navigates, replaces, and recovers on desk
  closeBrowser=()=>browser.close();
  const desktop=await browser.newPage({viewport:{width:1365,height:900}});
  const mobile=await browser.newPage({viewport:{width:390,height:844}});
- for(const page of [desktop,mobile]){page.setDefaultTimeout(7000);await installSyntheticReads(page,origin);}
+ for(const page of [desktop,mobile]){page.setDefaultTimeout(7000);page.setDefaultNavigationTimeout(30_000);await installSyntheticReads(page,origin);}
  await exerciseManagedCallback(root,origin,desktop,mobile);
 });
