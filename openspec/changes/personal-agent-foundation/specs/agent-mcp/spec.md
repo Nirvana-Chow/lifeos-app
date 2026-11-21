@@ -131,3 +131,17 @@ Under task11.1, business MCP exposure SHALL derive from the reviewed executable 
 - **WHEN** the producing token is revoked, its binding is replaced, its original grant changes, its module becomes unavailable or plan metadata conflicts
 - **THEN** owner approval/commit/recovery SHALL fail closed rather than adopt an old plan through a still-live API key, new consent or replacement binding
 - **AND** MCP SHALL NOT expose classification approval/commit or engineering claim operations
+
+### Requirement: Owner replacement of a managed ChatGPT callback
+
+The account settings SHALL let the MFA-verified owner replace the single redirect URI of the existing managed ChatGPT client. Replacement SHALL require an allowed ChatGPT callback and the revision the owner viewed. The server SHALL preserve the client identity and permission settings and verify the saved result independently.
+
+#### Scenario: A new ChatGPT draft has a different callback
+
+- **WHEN** the owner replaces the registered URI with the new draft’s allowed URI
+- **THEN** the settings display the new URI after reload, the previous URI is no longer registered, and a new business connection requires owner authorization
+
+#### Scenario: Another device already saved a replacement
+
+- **WHEN** a replacement is submitted against a superseded revision
+- **THEN** the server reports a conflict and the owner can read the current configuration before deciding whether to edit again

@@ -9,6 +9,7 @@ import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 import {confirmDiscard} from './helpers/personal-workspace-browser-fixture.ts';
 import {requirements} from '../src/platform/requirements.ts';
+import {exerciseManagedCallback} from './helpers/managed-callback-browser.ts';
 
 const source=resolve(import.meta.dirname,'..');
 const ids=Array.from({length:7},(_,index)=>`${String(index+1).repeat(8)}-1111-4111-8111-${String(index+1).repeat(12)}`);
@@ -56,7 +57,7 @@ async function expectAboveFooter(page:Page,control:import('@playwright/test').Lo
   return !!box&&!!footer&&box.y>=0&&box.y+box.height<=footer.y+1;
  }).toBe(true);
 }
-async function fixture(root:string){
+async function fixture(root:string,managedCallback=false){
  await mkdir(join(root,'app/personal'),{recursive:true});
  await Promise.all([
   ...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
@@ -67,10 +68,14 @@ async function fixture(root:string){
   symlink(join(source,'node_modules'),join(root,'node_modules')),
   symlink(join(source,'components'),join(root,'components')),
  ]);
- await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformPagePrincipal=async()=>({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true;\n');
+ await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformMfaState=async()=>({kind:"ready"}); export const readPlatformPagePrincipal=async()=>({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true;\n');
+ if(managedCallback){
+  await cp(join(source,'app/account/mcp'),join(root,'app/account/mcp'),{recursive:true});
+  await writeFile(join(root,'src/business-mcp-oauth/managed-client-runtime.ts'),'import {readFile} from "node:fs/promises"; export async function handleManagedClientRequest(){return new Response(await readFile("managed-setup.json","utf8"),{headers:{"content-type":"application/json"}});}');
+ }
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],
-  {cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+  {cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1',LIFEOS_BUSINESS_MCP_OAUTH:'business-mcp-oauth-v1'},stdio:['ignore','pipe','pipe']});
  return server;
 }
 
@@ -90,6 +95,8 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    await page.getByRole('button',{name:'设置',exact:true}).click();
    const settings=page.locator('[data-settings-page]');await expect(settings).toBeVisible();
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+   const mcpLink=settings.getByRole('link',{name:'ChatGPT 连接设置',exact:true});
+   await expect(mcpLink).toHaveAttribute('href','/account/mcp');
    const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
    await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),settings.getByRole('button',{name:'保存密码',exact:true})]){
@@ -311,4 +318,29 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
  for(const direction of ['后退','前进'])await checkPending(direction);
  for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
  authorized=false;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await expect(original).toHaveCount(0);await expect(categories.getByRole('link',{name:'反馈 Inbox',exact:true})).toHaveCount(0);assert.equal(writes,1);
+});
+
+test('OPT-IN managed callback settings navigates, replaces, and recovers on desktop and mobile',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:145_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-managed-callback-browser-'));
+ let closeBrowser:(()=>Promise<void>)|undefined;
+ let stopServer:(()=>Promise<void>)|undefined;
+ t.after(async()=>{
+  try{await closeBrowser?.();}
+  finally{try{await stopServer?.();}finally{await rm(root,{recursive:true,force:true});}}
+ });
+ const server=await fixture(root,true),stopped=once(server,'exit');
+ stopServer=async()=>{server.kill('SIGTERM');await stopped;};
+ const origin=await new Promise<string>((accept,reject)=>{
+  let output='';const timer=setTimeout(()=>reject(Error('Managed callback fixture startup timeout')),30000);
+  server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});
+  server.once('exit',()=>{clearTimeout(timer);reject(Error('Managed callback fixture exited'));});
+ });
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
+ closeBrowser=()=>browser.close();
+ const desktop=await browser.newPage({viewport:{width:1365,height:900}});
+ const mobile=await browser.newPage({viewport:{width:390,height:844}});
+ for(const page of [desktop,mobile]){page.setDefaultTimeout(7000);page.setDefaultNavigationTimeout(30_000);await installSyntheticReads(page,origin);}
+ await exerciseManagedCallback(root,origin,desktop,mobile);
 });

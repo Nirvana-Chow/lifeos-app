@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';import {randomUUID} from 'node:crypto';
 import type {PlatformAuth} from '../src/platform/auth.ts';
-import {readManagedClient,registerManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
+import {readManagedClient,readManagedCredentialRegistration,registerManagedClient,replaceManagedClient} from '../src/business-mcp-oauth/managed-client.ts';
 import {managedClientFixture,managedFixtureCallback} from './helpers/business-mcp-managed-client-fixture.ts';
 test('fixed managed client is absent before registration and exact registration is independently read back',async()=>{
  const {auth,oauth,config,cookie,db}=await managedClientFixture(),command={callback:managedFixtureCallback,commandId:randomUUID()},headers=new Headers({cookie});
@@ -35,4 +35,96 @@ test('managed client metadata origin resource links and security settings must a
  const changes=[(r:Record<string,unknown>)=>r.clientDiscoveryId='cimd',(r:Record<string,unknown>)=>r.userId='other-owner',(r:Record<string,unknown>)=>r.skipConsent=true,(r:Record<string,unknown>)=>r.requirePKCE=false,(r:Record<string,unknown>)=>r.disabled=true,(r:Record<string,unknown>)=>r.tokenEndpointAuthMethod='client_secret_basic',(r:Record<string,unknown>)=>r.grantTypes=['client_credentials'],(r:Record<string,unknown>)=>r.clientCredentialsScopes=['todo:write'],(r:Record<string,unknown>)=>r.metadata={lifeos_managed_client:'forged'},(r:Record<string,unknown>)=>r.name='Changed client'];
  for(const change of changes){const {auth,oauth,config,cookie,db}=await managedClientFixture();await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),{callback:managedFixtureCallback,commandId:randomUUID()});change(db.platform_oauth_client[0]);await assert.rejects(readManagedClient(auth,oauth,config.ownerId),{message:'MANAGED_CLIENT_CONFLICT'});}
  const {auth,oauth,config,cookie,db}=await managedClientFixture();await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),{callback:managedFixtureCallback,commandId:randomUUID()});db.platform_oauth_client_resource.push({id:'extra-link',clientId:db.platform_oauth_client[0].clientId,resourceId:'https://other.example/resource'});await assert.rejects(readManagedClient(auth,oauth,config.ownerId),{message:'MANAGED_CLIENT_CONFLICT'});
+});
+
+test('uncertain replacement reconciles one write attempt against the exact stored receipt',async()=>{
+ for(const persisted of [false,true]){
+  const {auth,oauth,config,cookie}=await managedClientFixture();
+  const command={callback:managedFixtureCallback,commandId:randomUUID()};
+  const replacement={callback:managedFixtureCallback+'2',commandId:randomUUID(),expectedRevision:command.commandId};
+  await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),command);
+  const context=await auth.$context;
+  let attempts=0;
+  const uncertain={...auth,$context:Promise.resolve({...context,adapter:{...context.adapter,transaction:async(run:Parameters<typeof context.adapter.transaction>[0])=>{
+   attempts++;
+   if(persisted)await context.adapter.transaction(run);
+   throw Error('Synthetic response lost');
+  }}})} satisfies PlatformAuth;
+  const result=replaceManagedClient(uncertain,oauth,config.ownerId,replacement);
+  if(persisted){
+   const recovered=await result;
+   const registration=await readManagedCredentialRegistration(auth,oauth,config.ownerId);
+   assert.ok(registration?.generation);
+   const expected={registered:true,callback:replacement.callback,commandId:replacement.commandId,revision:registration.generation};
+   assert.deepEqual(recovered,{duplicate:true,state:expected});
+   assert.deepEqual(await replaceManagedClient(uncertain,oauth,config.ownerId,replacement),{duplicate:true,state:expected});
+   assert.deepEqual(await readManagedClient(auth,oauth,config.ownerId),expected);
+  }else{
+   await assert.rejects(result,{message:'MANAGED_CLIENT_UNKNOWN'});
+   assert.deepEqual(await readManagedClient(auth,oauth,config.ownerId),{registered:true,...command});
+  }
+  assert.equal(attempts,1);
+ }
+});
+
+test('two different replacements from the same receipt commit at most one callback',async()=>{
+ const {auth,oauth,config,cookie}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ const commands=['one','two'].map(suffix=>({callback:managedFixtureCallback+suffix,commandId:randomUUID(),expectedRevision:original.commandId}));
+ const results=await Promise.allSettled(commands.map(command=>replaceManagedClient(auth,oauth,config.ownerId,command)));
+ const succeeded=results.filter(result=>result.status==='fulfilled');
+ const failed=results.filter(result=>result.status==='rejected');
+ assert.equal(succeeded.length,1);
+ assert.equal(failed.length,1);
+ assert.equal(failed[0].reason.message,'MANAGED_CLIENT_CONFLICT');
+ const saved=await readManagedClient(auth,oauth,config.ownerId);
+ assert.deepEqual(saved,succeeded[0].value.state);
+ assert.equal(succeeded[0].value.duplicate,false);
+ const winner=commands[results.indexOf(succeeded[0])];
+ await assert.rejects(replaceManagedClient(auth,oauth,config.ownerId,{...winner,expectedRevision:randomUUID()}),{message:'MANAGED_CLIENT_CONFLICT'});
+ assert.deepEqual(await readManagedClient(auth,oauth,config.ownerId),saved);
+});
+
+test('replacing a callback changes its server-issued generation only once, independently of supplied receipts',async()=>{
+ const {auth,oauth,config,cookie}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ const read=()=>readManagedCredentialRegistration(auth,oauth,config.ownerId);
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ assert.deepEqual(await read(),{callback:original.callback,generation:null});
+ const replacement={callback:original.callback+'new',commandId:randomUUID(),expectedRevision:original.commandId};
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ const first=await read();
+ assert.ok(first?.generation);
+ assert.notEqual(first.generation,replacement.commandId);
+ await replaceManagedClient(auth,oauth,config.ownerId,replacement);
+ assert.deepEqual(await read(),first);
+ const restored={...original,expectedRevision:first.generation};
+ await replaceManagedClient(auth,oauth,config.ownerId,restored);
+ const second=await read();
+ assert.ok(second?.generation);
+ assert.notEqual(second.generation,first.generation);
+ await assert.rejects(replaceManagedClient(auth,oauth,config.ownerId,replacement),{message:'MANAGED_CLIENT_CONFLICT'});
+ assert.deepEqual(await read(),second);
+ await assert.rejects(registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original),{message:'MANAGED_CLIENT_CONFLICT'});
+});
+
+test('failed consent removal rolls back the callback and preserves other owners, clients and consent references',async()=>{
+ const {auth,oauth,config,cookie,db}=await managedClientFixture();
+ const original={callback:managedFixtureCallback,commandId:randomUUID()};
+ await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
+ const clientId=db.platform_oauth_client[0].clientId;
+ const consent={clientId,userId:config.ownerId,referenceId:'lifeos-business-mcp-v1'};
+ const retained=[{...consent,id:'other-owner',userId:'other'},{...consent,id:'other-client',clientId:'other'},{...consent,id:'other-reference',referenceId:'other'}];
+ db.platform_oauth_consent.push({...consent,id:'current'},...retained);
+ const before=structuredClone(db.platform_oauth_consent);
+ const context=await auth.$context;
+ const failDelete:typeof context.adapter.transaction=async run=>context.adapter.transaction(transaction=>run({...transaction,deleteMany:async()=>{throw Error('Synthetic consent cleanup failure');}}));
+ const fault={...auth,$context:Promise.resolve({...context,adapter:{...context.adapter,transaction:failDelete}})};
+ const change={callback:original.callback+'new',commandId:randomUUID(),expectedRevision:original.commandId};
+ await assert.rejects(replaceManagedClient(fault,oauth,config.ownerId,change),{message:'MANAGED_CLIENT_UNKNOWN'});
+ assert.deepEqual(await readManagedClient(auth,oauth,config.ownerId),{registered:true,...original});
+ assert.deepEqual(db.platform_oauth_consent,before);
+ await replaceManagedClient(auth,oauth,config.ownerId,change);
+ assert.deepEqual(db.platform_oauth_consent,retained);
 });

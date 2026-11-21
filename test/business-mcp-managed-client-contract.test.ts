@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {parseManagedClientCommand,readManagedClientSetup} from '../src/business-mcp-oauth/managed-client-contract.ts';
+import {parseManagedClientCommand,parseManagedClientWriteCommand,readManagedClientSetup} from '../src/business-mcp-oauth/managed-client-contract.ts';
 const command={callback:'https://chatgpt.com/connector/oauth/fixtureCallback1',commandId:'99fa7b22-534a-49e1-b527-8e8420244bc4'};
 test('managed registration accepts only the canonical ChatGPT callback and original UUID body',()=>{
  assert.deepEqual(parseManagedClientCommand(command),command);
@@ -9,6 +9,9 @@ const setup={clientId:'https://lifeos.nirvanachow.com/oauth/clients/chatgpt',aut
 test('the setup UI accepts only the fixed nonsecret configuration response and rejects raw or incomplete SDK objects',()=>{
  assert.deepEqual(readManagedClientSetup(setup),setup);
  const registered={...setup,registered:true,...command};assert.deepEqual(readManagedClientSetup(registered),registered);
+ const changed={...registered,revision:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
+ assert.deepEqual(readManagedClientSetup(changed),changed);
+ assert.equal(readManagedClientSetup({...changed,revision:'stale'}),null);
  for(const value of [null,{}, {...setup,client_secret:'synthetic-forbidden-secret'},{...setup,tokenEndpoint:'https://other.example/token'},{...setup,codeChallengeMethod:'plain'},{...setup,scopes:['todo:read','todo:read']},{...registered,commandId:undefined}])assert.equal(readManagedClientSetup(value),null);
 });
 test('the original UUID is canonical and cannot contain a trailing line terminator',()=>{
@@ -27,4 +30,19 @@ test('managed setup accepts the explicit full policy and keeps narrow and file a
    assert.equal(readManagedClientSetup({...setup,...state,scopes}),null);
   }
  }
+});
+
+test('replacement requires the exact create fields plus a distinct canonical expected receipt',()=>{
+ const replacement={...command,expectedRevision:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
+ assert.deepEqual(parseManagedClientWriteCommand(command),command);
+ assert.deepEqual(parseManagedClientWriteCommand(replacement),replacement);
+ assert.equal(parseManagedClientCommand(replacement),null);
+ for(const invalid of [
+  {...replacement,expectedRevision:command.commandId},
+  {...replacement,expectedRevision:replacement.expectedRevision.toUpperCase()},
+  {...replacement,expectedRevision:'not-a-receipt'},
+  {...replacement,scope:'todo:write'},
+  {...replacement,callback:command.callback+'?state=x'},
+  {...replacement,callback:command.callback.replace('chatgpt.com','external.example')},
+ ])assert.equal(parseManagedClientWriteCommand(invalid),null);
 });
