@@ -51,7 +51,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    const consent=await http(new Request(oauth.issuer+'/oauth2/consent',{method:'POST',headers:{host:'lifeos.nirvanachow.com',origin,cookie,'content-type':'application/json'},body:JSON.stringify({accept:true,oauth_query:consentURL.search.slice(1)})}));assert.equal(consent.status,200);
    const code=new URL((await consent.json()).url).searchParams.get('code');assert.ok(code);
    const response=await http(new Request(oauth.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:managedChatGptClientId,grant_type:'authorization_code',code,redirect_uri:command.callback,resource:oauth.resource,code_verifier:codeVerifier})}));assert.equal(response.status,200);
-   const token=(await response.json()).access_token;assert.equal(typeof token,'string');assert.ok(await verify(token));const state=await ledger.read(tokenIdentity(token));assert.ok(state);
+   const issued=await response.json(),token=issued.access_token;assert.equal(typeof issued.refresh_token,'string');assert.equal(typeof token,'string');assert.ok(await verify(token));const state=await ledger.read(tokenIdentity(token));assert.ok(state);
    const original=()=>readCurrentAgentGrant(verifier,grantId),current=async()=>{const value=await ledger.read(tokenIdentity(token));return value?intersectOAuthGrant(value,await original()):null;};
    const agent=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:false,classification:false},config:{ownerId,ownerEmail:f.email,spaceId,baseURL:origin,databaseName:f.database,approval:'personal-manual-v1',allowedTypes:['todo']},repository:new PostgresPlatformRepository(runtime,true,true,{organization:false,classification:false}),verify:async raw=>{const claims=await verify(raw);if(!claims)return null;const value=await ledger.read(tokenIdentity(raw));return value&&value.oauthFence.expiresAt===claims.exp?intersectOAuthGrant(value,await original()):null;},readCurrentGrant:async(id,fence)=>{if(id!==grantId||!fence)return null;const value=await ledger.read(fence.tokenId);return value&&value.oauthFence.bindingId===fence.bindingId&&value.oauthFence.bindingRevision===fence.bindingRevision?intersectOAuthGrant(value,await original()):null;},operationAvailable:()=>true,assertWritable:async()=>{}});
    const client=new HttpBusinessClient(origin,token,agent,new AbortController().signal),fields={title:'Synthetic managed none task',notes:'Fixture only',dueOn:null,status:'open'};
@@ -69,9 +69,20 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
     assert.equal(rows.length,1);
     return rows[0] as {enabled:boolean;revision:number};
    };
+   const pending=await http(new Request(oauth.issuer+'/oauth2/authorize?'+params,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));
+   const pendingURL=new URL(pending.headers.get('location')!,origin);
+   const pendingConsent=await http(new Request(oauth.issuer+'/oauth2/consent',{method:'POST',headers:{host:'lifeos.nirvanachow.com',origin,cookie,'content-type':'application/json'},body:JSON.stringify({accept:true,oauth_query:pendingURL.search.slice(1)})}));
+   assert.equal(pendingConsent.status,200);
+   const pendingCode=new URL((await pendingConsent.json()).url).searchParams.get('code');
+   assert.ok(pendingCode);
+   // Consent revokes earlier binding revisions. Get a current credential on the original registration.
+   const redeem=async(fields:Record<string,string>)=>http(new Request(oauth.issuer+'/oauth2/token',{method:'POST',headers:{host:'lifeos.nirvanachow.com','content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:managedChatGptClientId,resource:oauth.resource,...fields})}));
+   const originalRefresh=await redeem({grant_type:'refresh_token',refresh_token:issued.refresh_token});
+   assert.equal(originalRefresh.status,200);
+   const active=await originalRefresh.json();
+   assert.ok(await ledger.read(tokenIdentity(active.access_token)));
    const before=await binding();
    assert.equal(before.enabled,true);
-   assert.ok(await current());
    const replacement={callback:'https://chatgpt.com/connector/oauth/fixturePGcallback2',commandId:randomUUID(),expectedCommandId:command.commandId};
    const changed=await request('POST',replacement);
    assert.equal(changed.status,200);
@@ -119,6 +130,14 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    assert.equal(typeof freshToken,'string');
    assert.ok(await ledger.read(tokenIdentity(freshToken)));
    assert.equal(await ledger.read(tokenIdentity(token)),null);
+   assert.equal(await ledger.read(tokenIdentity(active.access_token)),null);
+   const obsoleteRefresh=await redeem({grant_type:'refresh_token',refresh_token:active.refresh_token});
+   assert.equal(obsoleteRefresh.status,400);
+   assert.equal((await obsoleteRefresh.json()).error,'invalid_grant');
+   const obsoleteCode=await redeem({grant_type:'authorization_code',code:pendingCode,redirect_uri:command.callback,code_verifier:codeVerifier});
+   assert.equal(obsoleteCode.status,400);
+   assert.equal((await obsoleteCode.json()).error,'invalid_grant');
+   assert.ok(await ledger.read(tokenIdentity(freshToken)));
 
   });
   await t.test('the original maintenance lock and current MFA prevent registration reads or changes during reset',async()=>{
