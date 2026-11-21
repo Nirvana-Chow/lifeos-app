@@ -1,3 +1,4 @@
+import {allPersonalBusinessOAuthScope,fullBusinessOAuthScopes} from './scope-policy.ts';
 export const managedChatGptClientId='https://lifeos.nirvanachow.com/oauth/clients/chatgpt';
 export type ManagedClientCommand={callback:string;commandId:string};
 export const managedClientPath='/api/platform/business-mcp/client';
@@ -11,10 +12,16 @@ export function parseManagedClientCommand(value:unknown):ManagedClientCommand|nu
 }
 export type ManagedClientState={registered:false}|({registered:true}&ManagedClientCommand);
 export type ManagedClientSetup={clientId:string;authorizationEndpoint:string;tokenEndpoint:string;resource:string;scopes:string[];tokenEndpointAuthMethod:'none';codeChallengeMethod:'S256'}&ManagedClientState;
+function validManagedScopes(value:unknown):value is string[]{
+ if(!Array.isArray(value)||value.length===0||value.length>64)return false;
+ if(value.includes(allPersonalBusinessOAuthScope))return fullBusinessOAuthScopes(value);
+ return new Set(value).size===value.length&&value.every(scope=>typeof scope==='string'&&/^(offline_access|[a-z][a-z0-9-]*:(read|write))$/.test(scope));
+}
+
 export function readManagedClientSetup(value:unknown):ManagedClientSetup|null{
  if(!value||typeof value!=='object'||Array.isArray(value))return null;
  const r=value as Record<string,unknown>,keys=['clientId','authorizationEndpoint','tokenEndpoint','resource','scopes','tokenEndpointAuthMethod','codeChallengeMethod','registered',...(r.registered===true?['callback','commandId']:[])];
- if(Object.keys(r).length!==keys.length||Object.keys(r).some(key=>!keys.includes(key))||r.clientId!==managedChatGptClientId||r.authorizationEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/authorize'||r.tokenEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/token'||r.resource!=='https://lifeos.nirvanachow.com/api/platform/mcp'||r.tokenEndpointAuthMethod!=='none'||r.codeChallengeMethod!=='S256'||![true,false].includes(r.registered as boolean)||!Array.isArray(r.scopes)||r.scopes.length<1||r.scopes.length>64||new Set(r.scopes).size!==r.scopes.length||!r.scopes.every(scope=>typeof scope==='string'&&/^(offline_access|[a-z][a-z0-9-]*:(read|write))$/.test(scope)))return null;
+ if(Object.keys(r).length!==keys.length||Object.keys(r).some(key=>!keys.includes(key))||r.clientId!==managedChatGptClientId||r.authorizationEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/authorize'||r.tokenEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/token'||r.resource!=='https://lifeos.nirvanachow.com/api/platform/mcp'||r.tokenEndpointAuthMethod!=='none'||r.codeChallengeMethod!=='S256'||![true,false].includes(r.registered as boolean)||!validManagedScopes(r.scopes))return null;
  if(r.registered===true&&!parseManagedClientCommand({callback:r.callback,commandId:r.commandId}))return null;
  return r as ManagedClientSetup;
 }
