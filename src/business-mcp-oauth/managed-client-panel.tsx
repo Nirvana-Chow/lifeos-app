@@ -11,13 +11,17 @@ import s from './managed-client-panel.module.css';
 
 const storageKey='lifeos-managed-chatgpt-command-v1';
 
+function currentRevision(setup:ManagedClientSetup){
+ return setup.registered?(setup.revision??setup.commandId):null;
+}
+
 function isSaved(setup:ManagedClientSetup,command:ManagedClientWriteCommand){
  return setup.registered&&setup.commandId===command.commandId&&setup.callback===command.callback;
 }
 
 function canRetry(setup:ManagedClientSetup,command:ManagedClientWriteCommand){
  return isManagedClientReplacement(command)
-  ?setup.registered&&setup.commandId===command.expectedCommandId
+  ?currentRevision(setup)===command.expectedRevision
   :!setup.registered;
 }
 
@@ -102,7 +106,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
     }else{
      setRecovery('discard');setMessage('配置已在其他操作中更改。请使用最新配置，再决定是否更换。');
     }
-   }else if(editRevision&&(!next.registered||editRevision!==next.commandId)){
+   }else if(editRevision&&editRevision!==currentRevision(next)){
     closeEditor();setMessage('配置已更新，已载入当前地址。请重新开始更换。');
    }else setMessage(next.registered?'已读取当前连接配置。':'尚未保存连接配置。');
   }catch{setMessage('暂时无法核对，请保留本页后再试。');}
@@ -112,9 +116,9 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
  async function save(event?:FormEvent){
   event?.preventDefault();
   if(working.current||!hydrated||!configuration)return;
-  if(pending?recovery!=='retry':configuration.registered&&editRevision!==configuration.commandId)return;
+  if(pending?recovery!=='retry':configuration.registered&&editRevision!==currentRevision(configuration))return;
   const command=pending??parseManagedClientWriteCommand({
-   callback,commandId:crypto.randomUUID(),...(editRevision?{expectedCommandId:editRevision}:{}),
+   callback,commandId:crypto.randomUUID(),...(editRevision?{expectedRevision:editRevision}:{}),
   });
   if(!command){setMessage('请输入当前 ChatGPT 草稿给出的完整回调地址。');return;}
   if(!pending&&configuration.registered&&configuration.callback===command.callback){
@@ -125,7 +129,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
    const response=await fetch(managedClientPath,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)});
    if(!checkSession(response))return;
    if(response.status===400){
-    retain(null);setEditRevision(isManagedClientReplacement(command)?command.expectedCommandId:null);
+    retain(null);setEditRevision(isManagedClientReplacement(command)?command.expectedRevision:null);
     setMessage('回调地址未通过检查，请核对后重新填写。');return;
    }
    if(!response.ok)throw Error('unverified');
@@ -145,7 +149,7 @@ export function ManagedClientPanel({initial,initialConflict=false}:{initial:Mana
    <h2 id="managed-saved-title">已保存的配置</h2>
    <p className={s.value}>当前 ChatGPT 回调地址：{configuration.callback}</p>
    {!editing&&!pending&&<Button ref={editButton} type="button" variant="outline" disabled={!hydrated||busy} onClick={()=>{
-    setEditRevision(configuration.commandId);setCallback('');setMessage('');
+    setEditRevision(currentRevision(configuration));setCallback('');setMessage('');
    }}>更换回调地址</Button>}
   </section>}
   {!configuration&&<p>连接设置暂不可用。请稍后核对。</p>}

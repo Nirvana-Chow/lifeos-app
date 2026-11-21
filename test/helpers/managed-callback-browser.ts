@@ -22,7 +22,7 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  assert.equal((await request('POST',JSON.stringify({callback:managedFixtureCallback,commandId:createId}))).status,201);
  await snapshot();
 
- const commands:{callback:string;commandId:string;expectedCommandId?:string}[]=[];
+ const commands:{callback:string;commandId:string;expectedRevision?:string}[]=[];
  let failure:'before'|'after'|null=null;
  let signedIn=true;
  for(const page of [desktop,mobile]){
@@ -61,10 +61,12 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  assert.equal(commands.length,1);
  assert.equal(await mobile.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
  await mobile.reload();await expect(mobile.getByText('当前 ChatGPT 回调地址：'+second,{exact:true})).toBeVisible();
+ const savedRevision=(await (await request()).json()).configuration.revision;
+ assert.ok(savedRevision);assert.notEqual(savedRevision,commands[0].commandId);
 
  await save(desktop).click();await check(desktop).click();
  await desktop.getByRole('button',{name:'放弃旧请求，使用最新配置'}).click();
- assert.equal(commands.length,2);assert.equal(commands[1].expectedCommandId,createId);
+ assert.equal(commands.length,2);assert.equal(commands[1].expectedRevision,createId);
  await expect(desktop.getByText('当前 ChatGPT 回调地址：'+second,{exact:true})).toBeVisible();
 
  await change(desktop).click();await field(desktop).fill(third);
@@ -73,7 +75,7 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  await desktop.reload();await check(desktop).click();
  await desktop.getByRole('button',{name:'使用原请求重试'}).click();
  await expect(status(desktop)).toContainText('回调地址已更换');
- assert.deepEqual(commands[3],commands[2]);assert.equal(commands[2].expectedCommandId,commands[0].commandId);
+ assert.deepEqual(commands[3],commands[2]);assert.equal(commands[2].expectedRevision,savedRevision);
  await desktop.reload();await expect(desktop.getByText('当前 ChatGPT 回调地址：'+third,{exact:true})).toBeVisible();
  await change(desktop).click();await field(desktop).fill(second);
  signedIn=false;await save(desktop).click();
