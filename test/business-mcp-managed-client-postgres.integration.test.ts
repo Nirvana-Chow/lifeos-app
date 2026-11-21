@@ -87,7 +87,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    assert.ok(await ledger.read(tokenIdentity(active.access_token)));
    const before=await binding();
    assert.equal(before.enabled,true);
-   const replacement={callback:'https://chatgpt.com/connector/oauth/fixturePGcallback2',commandId:randomUUID(),expectedCommandId:command.commandId};
+   const replacement={callback:'https://chatgpt.com/connector/oauth/fixturePGcallback2',commandId:randomUUID(),expectedRevision:command.commandId};
    const changed=await request('POST',replacement);
    assert.equal(changed.status,200);
    const expected={registered:true,callback:replacement.callback,commandId:replacement.commandId};
@@ -96,7 +96,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
    assert.equal(saved.duplicate,false);
    for(const [key,value] of Object.entries(expected))assert.equal(saved.configuration[key],value);
    assert.deepEqual((await (await request('GET')).json()).configuration,saved.configuration);
-   const revoked={enabled:false,revision:before.revision+1};
+   const revoked={enabled:false,revision:before.revision+2};
    assert.deepEqual(await binding(),revoked);
    assert.equal(await ledger.read(tokenIdentity(token)),null);
    assert.deepEqual(await client.execute('getTodo',{id:entry.id}),{ok:false,status:403,error:'API_DISCOVERY_UNAVAILABLE'});
@@ -109,6 +109,7 @@ test('OPT-IN fresh PG fixed managed registration has real uniqueness unknown rec
 
    const authorizationResult=async(callback:string)=>{
     const newParams=new URLSearchParams(params);
+    newParams.delete('prompt');
     newParams.set('redirect_uri',callback);
     newParams.set('state',randomUUID());
     const result=await http(new Request(oauth.issuer+'/oauth2/authorize?'+newParams,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));

@@ -9,6 +9,9 @@ const setup={clientId:'https://lifeos.nirvanachow.com/oauth/clients/chatgpt',aut
 test('the setup UI accepts only the fixed nonsecret configuration response and rejects raw or incomplete SDK objects',()=>{
  assert.deepEqual(readManagedClientSetup(setup),setup);
  const registered={...setup,registered:true,...command};assert.deepEqual(readManagedClientSetup(registered),registered);
+ const changed={...registered,revision:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
+ assert.deepEqual(readManagedClientSetup(changed),changed);
+ assert.equal(readManagedClientSetup({...changed,revision:'stale'}),null);
  for(const value of [null,{}, {...setup,client_secret:'synthetic-forbidden-secret'},{...setup,tokenEndpoint:'https://other.example/token'},{...setup,codeChallengeMethod:'plain'},{...setup,scopes:['todo:read','todo:read']},{...registered,commandId:undefined}])assert.equal(readManagedClientSetup(value),null);
 });
 test('the original UUID is canonical and cannot contain a trailing line terminator',()=>{
@@ -30,14 +33,14 @@ test('managed setup accepts the explicit full policy and keeps narrow and file a
 });
 
 test('replacement requires the exact create fields plus a distinct canonical expected receipt',()=>{
- const replacement={...command,expectedCommandId:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
+ const replacement={...command,expectedRevision:'ef0cb8cf-116e-4aaf-b7dd-992071c39692'};
  assert.deepEqual(parseManagedClientWriteCommand(command),command);
  assert.deepEqual(parseManagedClientWriteCommand(replacement),replacement);
  assert.equal(parseManagedClientCommand(replacement),null);
  for(const invalid of [
-  {...replacement,expectedCommandId:command.commandId},
-  {...replacement,expectedCommandId:replacement.expectedCommandId.toUpperCase()},
-  {...replacement,expectedCommandId:'not-a-receipt'},
+  {...replacement,expectedRevision:command.commandId},
+  {...replacement,expectedRevision:replacement.expectedRevision.toUpperCase()},
+  {...replacement,expectedRevision:'not-a-receipt'},
   {...replacement,scope:'todo:write'},
   {...replacement,callback:command.callback+'?state=x'},
   {...replacement,callback:command.callback.replace('chatgpt.com','external.example')},

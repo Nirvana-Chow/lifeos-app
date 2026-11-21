@@ -1,10 +1,10 @@
 import {allPersonalBusinessOAuthScope,fullBusinessOAuthScopes} from './scope-policy.ts';
 export const managedChatGptClientId='https://lifeos.nirvanachow.com/oauth/clients/chatgpt';
 export type ManagedClientCommand={callback:string;commandId:string};
-export type ManagedClientReplaceCommand=ManagedClientCommand&{expectedCommandId:string};
+export type ManagedClientReplaceCommand=ManagedClientCommand&{expectedRevision:string};
 export type ManagedClientWriteCommand=ManagedClientCommand|ManagedClientReplaceCommand;
 export function isManagedClientReplacement(command:ManagedClientWriteCommand):command is ManagedClientReplaceCommand{
- return 'expectedCommandId' in command;
+ return 'expectedRevision' in command;
 }
 export const managedClientPath='/api/platform/business-mcp/client';
 export const managedClientName='LifeOS ChatGPT';
@@ -19,13 +19,13 @@ export function parseManagedClientCommand(value:unknown):ManagedClientCommand|nu
  return validManagedCallback(data.callback)&&validManagedCommandId(data.commandId)?{callback:data.callback,commandId:data.commandId}:null;
 }
 export function parseManagedClientWriteCommand(value:unknown):ManagedClientWriteCommand|null{
- if(!value||typeof value!=='object'||!Object.hasOwn(value,'expectedCommandId'))return parseManagedClientCommand(value);
+ if(!value||typeof value!=='object'||!Object.hasOwn(value,'expectedRevision'))return parseManagedClientCommand(value);
  if(Array.isArray(value)||Object.keys(value).length!==3)return null;
- const {expectedCommandId,...rest}=value as Record<string,unknown>;
+ const {expectedRevision,...rest}=value as Record<string,unknown>;
  const command=parseManagedClientCommand(rest);
- return command&&validManagedCommandId(expectedCommandId)&&command.commandId!==expectedCommandId?{...command,expectedCommandId}:null;
+ return command&&validManagedCommandId(expectedRevision)&&command.commandId!==expectedRevision?{...command,expectedRevision}:null;
 }
-export type ManagedClientState={registered:false}|({registered:true}&ManagedClientCommand);
+export type ManagedClientState={registered:false}|({registered:true;revision?:string}&ManagedClientCommand);
 export type ManagedClientSetup={clientId:string;authorizationEndpoint:string;tokenEndpoint:string;resource:string;scopes:string[];tokenEndpointAuthMethod:'none';codeChallengeMethod:'S256'}&ManagedClientState;
 function validManagedScopes(value:unknown):value is string[]{
  if(!Array.isArray(value)||value.length===0||value.length>64)return false;
@@ -35,8 +35,8 @@ function validManagedScopes(value:unknown):value is string[]{
 
 export function readManagedClientSetup(value:unknown):ManagedClientSetup|null{
  if(!value||typeof value!=='object'||Array.isArray(value))return null;
- const r=value as Record<string,unknown>,keys=['clientId','authorizationEndpoint','tokenEndpoint','resource','scopes','tokenEndpointAuthMethod','codeChallengeMethod','registered',...(r.registered===true?['callback','commandId']:[])];
+ const r=value as Record<string,unknown>,keys=['clientId','authorizationEndpoint','tokenEndpoint','resource','scopes','tokenEndpointAuthMethod','codeChallengeMethod','registered',...(r.registered===true?['callback','commandId',...(Object.hasOwn(r,'revision')?['revision']:[])]:[])];
  if(Object.keys(r).length!==keys.length||Object.keys(r).some(key=>!keys.includes(key))||r.clientId!==managedChatGptClientId||r.authorizationEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/authorize'||r.tokenEndpoint!=='https://lifeos.nirvanachow.com/api/platform/auth/oauth2/token'||r.resource!=='https://lifeos.nirvanachow.com/api/platform/mcp'||r.tokenEndpointAuthMethod!=='none'||r.codeChallengeMethod!=='S256'||![true,false].includes(r.registered as boolean)||!validManagedScopes(r.scopes))return null;
- if(r.registered===true&&!parseManagedClientCommand({callback:r.callback,commandId:r.commandId}))return null;
+ if(r.registered===true&&(!parseManagedClientCommand({callback:r.callback,commandId:r.commandId})||Object.hasOwn(r,'revision')&&!validManagedCommandId(r.revision)))return null;
  return r as ManagedClientSetup;
 }

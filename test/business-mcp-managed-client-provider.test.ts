@@ -24,7 +24,7 @@ test('official managed registration cannot use a password-only owner session',as
 test('the provider accepts only the replacement callback and requests new owner consent',async()=>{
  const {auth,oauth,config,cookie,db}=await managedClientFixture();
  const original={callback:managedFixtureCallback,commandId:randomUUID()};
- const replacement={callback:managedFixtureCallback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ const replacement={callback:managedFixtureCallback+'new',commandId:randomUUID(),expectedRevision:original.commandId};
  await registerManagedClient(auth,oauth,config.ownerId,new Headers({cookie}),original);
  await replaceManagedClient(auth,oauth,config.ownerId,replacement);
  const authorize=async(callback:string)=>{
@@ -69,11 +69,15 @@ test('previously issued refresh and authorization code stay unusable after new c
   ledger:{approve:async()=>{},register:async()=>({} as never),revoke:async()=>{}},
  });
  const codeVerifier='v'.repeat(43);
- const obtainCode=async(callback:string)=>{
+ const authorizationTarget=async(callback:string,prompt:string|null)=>{
   const query=new URLSearchParams({client_id:managedChatGptClientId,redirect_uri:callback,resource:oauth.resource,scope:oauth.scopes.join(' '),response_type:'code',state:randomUUID(),prompt:'consent',code_challenge:createHash('sha256').update(codeVerifier).digest('base64url'),code_challenge_method:'S256'});
+  if(prompt===null)query.delete('prompt');else query.set('prompt',prompt);
   const authorize=await http(new Request(oauth.issuer+'/oauth2/authorize?'+query,{headers:{host:'lifeos.nirvanachow.com',cookie,accept:'text/html'}}));
   assert.equal(authorize.status,302);
-  const url=new URL(authorize.headers.get('location')!,config.baseURL);
+  return new URL(authorize.headers.get('location')!,config.baseURL);
+ };
+ const obtainCode=async(callback:string,prompt:string|null='consent')=>{
+  const url=await authorizationTarget(callback,prompt);
   assert.equal(url.pathname,'/personal/oauth');
   const consent=await http(new Request(oauth.issuer+'/oauth2/consent',{method:'POST',headers:{host:'lifeos.nirvanachow.com',origin:config.baseURL,cookie,'content-type':'application/json'},body:JSON.stringify({accept:true,oauth_query:url.search.slice(1)})}));
   assert.equal(consent.status,200);
@@ -88,11 +92,16 @@ test('previously issued refresh and authorization code stay unusable after new c
  assert.equal(originalExchange.status,200);
  const previousRefresh=(await originalExchange.json()).refresh_token;
  const pendingCode=await obtainCode(original.callback);
- const replacement={callback:original.callback+'new',commandId:randomUUID(),expectedCommandId:original.commandId};
+ const replacement={callback:original.callback+'new',commandId:randomUUID(),expectedRevision:original.commandId};
  await replaceManagedClient(auth,oauth,config.ownerId,replacement);
- const restored={callback:original.callback,commandId:randomUUID(),expectedCommandId:replacement.commandId};
+ const afterFirst=await readManagedCredentialRegistration(auth,oauth,config.ownerId);
+ assert.ok(afterFirst?.generation);
+ const restored={callback:original.callback,commandId:randomUUID(),expectedRevision:afterFirst.generation};
  await replaceManagedClient(auth,oauth,config.ownerId,restored);
- const newExchange=await exchange(codeFields(restored.callback,await obtainCode(restored.callback)));
+ const silent=await authorizationTarget(restored.callback,'none');
+ assert.equal(silent.origin+silent.pathname,restored.callback);
+ assert.equal(silent.searchParams.get('error'),'consent_required');
+ const newExchange=await exchange(codeFields(restored.callback,await obtainCode(restored.callback,null)));
  assert.equal(newExchange.status,200);
  const currentRefresh=(await newExchange.json()).refresh_token;
  for(const stale of [refreshFields(previousRefresh),codeFields(original.callback,pendingCode)]){
