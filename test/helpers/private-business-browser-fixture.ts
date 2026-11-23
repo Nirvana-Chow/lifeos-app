@@ -2,7 +2,7 @@ import {recordSyntheticCapture} from '../../scripts/synthetic-rendered-qualifica
 import assert from 'node:assert/strict';
 import {readFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
-import {chromium,expect,type Browser,type BrowserContext,type Cookie,type Page,type Request as BrowserRequest} from '@playwright/test';
+import {chromium,expect,type Browser,type BrowserContext,type Cookie,type Locator,type Page,type Request as BrowserRequest} from '@playwright/test';
 import ts from 'typescript';
 import type {PublicEntry} from '../../src/platform/contracts.ts';
 import {personalEntryType} from '../../src/personal-candidate/service.ts';
@@ -225,16 +225,38 @@ async function navigateDestination(page:Page,id:string,path:string,heading:strin
   await expect(page.getByText(/项目与行动总项|导出记录窗口/)).toHaveCount(0);
  }
 }
+export async function assertWorkspaceModule(navigation:Locator,module:string,items:readonly (readonly [name:string,href?:string])[],timeout?:number){
+ const options={timeout};
+ await expect(navigation.getByRole('group')).toHaveCount(1,options);
+ const group=navigation.getByRole('group',{name:module,exact:true});
+ await expect(group).toBeVisible(options);
+ const controls=navigation.getByRole('button').or(navigation.getByRole('link'));
+ await expect(controls).toHaveText(items.map(([name])=>name),options);
+ for(const [index,[name,href]] of items.entries()){
+  const control=controls.nth(index);
+  await expect(control).toHaveRole(href?'link':'button',options);
+  await expect(control).toHaveAccessibleName(name,options);
+  await expect(group.getByRole(href?'link':'button',{name,exact:true})).toBeVisible(options);
+  if(href)await expect(control).toHaveAttribute('href',href,options);
+ }
+ await expect(navigation.locator('summary')).toHaveCount(0,options);
+}
 export async function assertPrivateFixtureNavigation(page:Page){
- const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
- await expect(navigation.getByRole('button')).toHaveText(['总览','事项']);
- await expect(navigation.getByRole('link')).toHaveText(['搜索本人记录','日记','做饭','存储审核']);
- await expect(navigation.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
- await expect(navigation.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
- await expect(navigation.getByRole('link',{name:'日记',exact:true})).toHaveAttribute('href','/personal/journal');
- await expect(navigation.getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
- await expect(navigation.locator('summary')).toHaveCount(0);
  const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
+ const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
+ const switcher=(drawerOpen?page.getByRole('dialog',{name:'LifeOS',exact:true}):page.locator('header')).getByRole('navigation',{name:'切换模块',exact:true});
+ await expect(switcher.getByRole('button')).toHaveText(['安排与推进','生活记录','资料与工具']);
+ const modules=[
+  ['安排与推进',[['总览'],['事项'],['搜索本人记录','/personal/search']]],
+  ['生活记录',[['日记','/personal/journal'],['做饭','/personal/cooking']]],
+  ['资料与工具',[['存储审核','/personal/storage-review']]],
+ ] as const;
+ for(const [module,items] of modules){
+  const button=switcher.getByRole('button',{name:module,exact:true});
+  await button.click();
+  await expect(switcher.getByRole('button',{pressed:true})).toHaveAccessibleName(module);
+  await assertWorkspaceModule(navigation,module,items);
+ }
  // The TLS fixture binds workspace state to URLs; the native surface fixture
  // renders the same workspace without syncUrl and only exercises local state.
  const urlBound=new URL(page.url()).origin===privateOrigin;
@@ -294,7 +316,7 @@ async function verifyPrivateAppearanceAndDraftsBody(f:PrivateFixture,setPhase:(p
   setPhase('dark-selection');await switchTheme(page,'dark');await themeState(page,'dark','dark');setPhase('dark-storage-readback');assert.equal(await page.evaluate(key=>localStorage.getItem(key),themeStorageKey),'dark');
   setPhase('dark-reload');await page.reload({waitUntil:'domcontentloaded'});await checkFirstVisibleTheme(page,'dark','dark','saved-dark-reload');await themeState(page,'dark','dark');
   // The retained Schedule bookmark tests first paint on a new document.
-  setPhase('dark-navigation');await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true})).toHaveCount(0);await page.goto(privateOrigin+'/personal/schedule',{waitUntil:'domcontentloaded'});await readyHeading(page,'日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
+  setPhase('dark-navigation');await expect(page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'安排与推进',exact:true})).toBeVisible();await page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'安排与推进',exact:true}).click();await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('link',{name:'日程',exact:true})).toHaveCount(0);await page.goto(privateOrigin+'/personal/schedule',{waitUntil:'domcontentloaded'});await readyHeading(page,'日程');await checkFirstVisibleTheme(page,'dark','dark','saved-dark-navigation');
   setPhase('os-media');await page.emulateMedia({colorScheme:'dark'});await switchTheme(page,'light');await themeState(page,'light','light');await page.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await page.reload({waitUntil:'domcontentloaded'});await themeState(page,'dark','system');await page.emulateMedia({colorScheme:'light'});await themeState(page,'light','system');
   // Storage events reach the other window only. The source is still dark after removeItem.
   setPhase('cross-tab');const sibling=await context.newPage();try{await sibling.goto(privateOrigin+'/personal/finance',{waitUntil:'domcontentloaded'});await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(key=>localStorage.removeItem(key),themeStorageKey);await themeState(page,'light','system');await switchTheme(sibling,'light');await switchTheme(sibling,'dark');await themeState(page,'dark','dark');await sibling.evaluate(()=>localStorage.clear());await themeState(page,'light','system');}finally{await sibling.close();}

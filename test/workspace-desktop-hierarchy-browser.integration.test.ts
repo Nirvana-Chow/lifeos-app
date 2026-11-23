@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
-import {assertPrivateFixtureNavigation} from './helpers/private-business-browser-fixture.ts';
+import {assertPrivateFixtureNavigation,assertWorkspaceModule} from './helpers/private-business-browser-fixture.ts';
 import {MemoryPort} from './helpers/platform.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 
@@ -24,18 +24,53 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
  const page=await browser.newPage({viewport:{width:1365,height:900}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  let enabled=true;
- await page.route('**/api/platform/**',route=>route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}}));
+ const writes:string[]=[];
+ await page.route('**/api/platform/**',route=>{
+  if(route.request().method()!=='GET')writes.push(route.request().method());
+  return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}});
+ });
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
- await expect(nav.getByRole('group',{name:'生活记录'}).getByRole('link',{name:'日记',exact:true})).toBeVisible();
- await expect(nav.getByRole('group',{name:'安排与推进'}).getByRole('link',{name:'日程',exact:true})).toBeVisible();
- await expect(nav.getByRole('group',{name:'长期积累'}).getByRole('link',{name:'财务',exact:true})).toBeVisible();
+ const moduleSwitch=page.locator('header').getByRole('navigation',{name:'切换模块'});
+ const planning=[['总览'],['事项'],['搜索本人记录','/personal/search'],['日程','/personal/schedule']] as const;
+ const records=[['日记','/personal/journal'],['做饭','/personal/cooking']] as const;
+ await expect(moduleSwitch.getByRole('button')).toHaveText(['安排与推进','生活记录','长期积累','资料与工具']);
+ await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('安排与推进');
+ await assertWorkspaceModule(nav,'安排与推进',planning);
+ await expect(page.locator('header')).toHaveCSS('background-image','none');
+ await expect(page.getByRole('button',{name:'LifeOS 总览',exact:true}).locator('svg path')).toHaveCount(1);
+ const overviewCards=page.locator('.lo-overview-grid > .lo-panel');
+ await expect(overviewCards).toHaveCount(2);
+ for(const card of await overviewCards.all()){
+  await expect(card).not.toHaveCSS('box-shadow','none');
+  await expect(card.locator('.lo-panel-heading')).toHaveCSS('box-shadow','none');
+ }
+ const historyLength=await page.evaluate(()=>history.length);
+ for(const [module,items] of [
+  ['生活记录',records],
+  ['长期积累',[['财务','/personal/finance']]],
+  ['资料与工具',[['存储审核','/personal/storage-review']]],
+ ] as const){
+  await moduleSwitch.getByRole('button',{name:module,exact:true}).click();
+  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName(module);
+  await assertWorkspaceModule(nav,module,items);
+ }
+ await expect(page).toHaveURL(origin+'/personal');
+ assert.equal(await page.evaluate(()=>history.length),historyLength);
+ await moduleSwitch.getByRole('button',{name:'生活记录',exact:true}).click();
  const domains=page.getByRole('region',{name:'生活维度',exact:true});
  await expect(domains.getByRole('heading',{name:'合成领域',exact:true})).toBeVisible();
  await expect(domains.getByText('合成下一步',{exact:true})).toBeVisible();
  await expect(domains.getByRole('heading',{name:'未关联领域',exact:true})).toBeVisible();
  await domains.getByRole('button',{name:/合成项目甲/}).click();await expect(page).toHaveURL(/page=tasks/);
- await page.getByRole('navigation',{name:'浏览位置'}).getByRole('button',{name:'后退',exact:true}).click();await expect(domains).toBeVisible();
+ const breadcrumb=page.getByRole('navigation',{name:'浏览位置'});
+ await expect(breadcrumb).toHaveCount(1);
+ await assertWorkspaceModule(nav,'安排与推进',planning);
+ await breadcrumb.getByRole('button',{name:'后退',exact:true}).click();await expect(domains).toBeVisible();
+ await assertWorkspaceModule(nav,'生活记录',records);
+ await breadcrumb.getByRole('button',{name:'前进',exact:true}).click();await expect(page).toHaveURL(/page=tasks/);
+ await assertWorkspaceModule(nav,'安排与推进',planning);
+ await breadcrumb.getByRole('button',{name:'后退',exact:true}).click();await expect(domains).toBeVisible();
  await page.getByRole('button',{name:'收起侧栏',exact:true}).click();await expect(nav.getByRole('link',{name:'日记',exact:true})).toBeVisible();await page.getByRole('button',{name:'展开侧栏',exact:true}).click();
  await page.getByRole('button',{name:'设置',exact:true}).click();
  const settings=page.getByRole('navigation',{name:'设置分类'});
@@ -44,10 +79,30 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.getByRole('button',{name:'合成草稿保护 关'}).click();await settings.getByRole('button',{name:'通用',exact:true}).click();await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();await page.getByRole('button',{name:'合成草稿保护 开'}).click();
  await settings.getByRole('button',{name:'通用',exact:true}).click();await expect(page.getByRole('heading',{name:'外观',exact:true})).toBeVisible();
  await page.getByRole('navigation',{name:'浏览位置'}).getByRole('button',{name:'后退',exact:true}).click();await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();await page.getByRole('navigation',{name:'浏览位置'}).getByRole('button',{name:'前进',exact:true}).click();await expect(page.getByRole('heading',{name:'外观',exact:true})).toBeVisible();
- await page.getByRole('combobox',{name:'明暗模式',exact:true}).selectOption('dark');await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
+ const appearance=page.getByRole('combobox',{name:'明暗模式',exact:true});
+ await appearance.selectOption('dark');await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
+ await appearance.focus();
+ await moduleSwitch.getByRole('button',{name:'长期积累',exact:true}).click();
+ await expect(appearance).toBeFocused();
  for(const width of [1024,390]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);await expect(settings.getByRole('button',{name:'通用',exact:true})).toBeVisible();}
+ await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
+ const mobileSwitch=drawer.getByRole('navigation',{name:'切换模块'});
+ const mobileRecords=mobileSwitch.getByRole('button',{name:'生活记录',exact:true});
+ await mobileRecords.click();
+ const target=await mobileRecords.boundingBox();assert.ok(target&&target.width>=44&&target.height>=44);
+ await expect(mobileRecords).toHaveCSS('font-size','16px');
+ await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'生活记录',records);
+ await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
+ await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ await expect(mobileSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('生活记录');
+ await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'生活记录',records);
+ await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
  await page.goto(origin+'/personal?partial=1',{waitUntil:'networkidle'});await expect(page.getByRole('region',{name:'生活维度'}).getByText('仅显示已读取的领域与项目，完整范围待确认。',{exact:true})).toBeVisible();
- enabled=false;await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:'打开导航',exact:true}).click();await expect(page.getByRole('dialog').getByRole('link',{name:'日记',exact:true})).toHaveCount(0);
+ enabled=false;await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ await expect(mobileSwitch.getByRole('button')).toHaveText(['安排与推进']);
+ await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'安排与推进',[['总览'],['事项']]);
+ assert.deepEqual(writes,[]);
  assert.deepEqual(errors,[]);
 });
 
@@ -75,10 +130,28 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
  });
  const open=async(width=1365)=>{await page.setViewportSize({width,height:844});await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
  for(const width of [1365,390]){await open(width);await assertPrivateFixtureNavigation(page);t.diagnostic('original navigation oracle passed '+width);}
- for(const change of ['extra','href','missing','order','storage-href','storage-missing','unadvertised','closed']){
+ for(const change of ['extra','href','missing','order','role','storage-href','storage-missing','unadvertised','closed']){
   enabled=change!=='closed';advertised=change!=='unadvertised';await open();
-  if(change!=='closed'&&change!=='unadvertised')await page.getByRole('navigation',{name:'主导航',exact:true}).evaluate((nav,change)=>{const search=nav.querySelector('a[href="/personal/search"]')!,storage=nav.querySelector('a[href="/personal/storage-review"]')!;if(change==='extra'){const link=document.createElement('a');link.href='/personal/extra';link.textContent='额外入口';nav.append(link);}else if(change==='href')search.setAttribute('href','/personal/search/extra');else if(change==='missing')search.remove();else if(change==='storage-href')storage.setAttribute('href','/personal/storage-review/extra');else if(change==='storage-missing')storage.remove();else nav.append(search);},change);
-  await assert.rejects(assertPrivateFixtureNavigation(page),change.endsWith('href')?/toHaveAttribute/:/toHaveText/);t.diagnostic('strict navigation rejection: '+change);
+  if(change==='closed'||change==='unadvertised'){
+   await assert.rejects(assertPrivateFixtureNavigation(page),/toHaveText/);
+  }else{
+   const storage=change.startsWith('storage-');
+   const module=storage?'资料与工具':change==='order'?'生活记录':'安排与推进';
+   await page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:module,exact:true}).click();
+   const nav=page.getByRole('navigation',{name:'主导航',exact:true});
+   const items=storage?[['存储审核','/personal/storage-review']] as const:change==='order'?[['日记','/personal/journal'],['做饭','/personal/cooking']] as const:[['总览'],['事项'],['搜索本人记录','/personal/search']] as const;
+   await nav.evaluate((nav,{change,href})=>{
+    const link=nav.querySelector<HTMLAnchorElement>('a[href="'+href+'"]')!;
+    if(change==='extra'){const extra=document.createElement('a');extra.href='/personal/extra';extra.textContent='额外入口';nav.append(extra);}
+    else if(change.endsWith('href'))link.setAttribute('href',href+'/extra');
+    else if(change.endsWith('missing'))link.remove();
+    else if(change==='role'){const button=document.createElement('button');button.textContent=link.textContent;link.replaceWith(button);}
+    else link.parentElement!.append(link);
+   },{change,href:items.find(([,href])=>href)![1]});
+   // These mutations are already applied when checking the oracle.
+   await assert.rejects(assertWorkspaceModule(nav,module,items,500),change.endsWith('href')?/toHaveAttribute/:change==='role'?/toHaveRole/:/toHaveText/);
+  }
+  t.diagnostic('strict navigation rejection: '+change);
  }
  assert.ok(statusReads>0);assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
 });
