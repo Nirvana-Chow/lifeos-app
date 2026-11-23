@@ -82,6 +82,11 @@ const viewItems = [
 ] as const;
 type WorkspaceHistoryEntry = {scope: string; index: number};
 const workspaceHistoryKey = '__lifeosWorkspace';
+const moduleHistoryKey = '__lifeosWorkspaceModule';
+function historyModule(state: unknown): string | null {
+  const module = state && typeof state === 'object' ? (state as Record<string, unknown>)[moduleHistoryKey] : null;
+  return typeof module === 'string' ? module : null;
+}
 function workspaceHistoryEntry(state: unknown): WorkspaceHistoryEntry | null {
   const entry = state && typeof state === 'object' ? (state as Record<string, unknown>)[workspaceHistoryKey] : null;
   if (!entry || typeof entry !== 'object') return null;
@@ -158,7 +163,17 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const settingsSection=page==='settings'||page==='requirements';
   const settingsLabels:Record<SettingsPanel,string>={general:'通用',topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
-  const moduleGroups=groupWorkspaceModules(ownerModules.links);
+  const [chosenModule,setChosenModule]=useState<string|null>(null);
+  const moduleGroups=groupWorkspaceModules(ownerModules.links).filter((group,index)=>index===0||group.links.length>0);
+  const pathModule=moduleGroups.find(group=>group.links.some(link=>link.href===ownerModules.path))?.label;
+  const activeModule=moduleGroups.find(group=>group.label===chosenModule)?.label??pathModule??moduleGroups[0]?.label;
+  const visibleModuleGroups=moduleGroups.filter(group=>group.label===activeModule);
+  const moduleSwitch=(compact=false)=>(
+    <nav aria-label="切换模块" className={compact?workspaceStyles.mobileModules:workspaceStyles.headerModules}>
+      {moduleGroups.map(group=><Button key={group.label} variant="ghost" aria-pressed={group.label===activeModule} data-workspace-nav
+        onClick={()=>chooseModule(group.label)}>{group.label}</Button>)}
+    </nav>
+  );
   const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
   const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review');
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
@@ -188,11 +203,31 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     const index=currentHistory.current?.index??0;
     setHistoryControls({back:navigation?.canGoBack??(props.syncUrl?index>0:window.history.length>1),forward:navigation?.canGoForward??index<historyLimit.current});
   }
+  function chooseModule(module: string | null) {
+    setChosenModule(module);
+    if (historyModule(window.history.state) === module) return;
+    window.history.replaceState({...window.history.state, [moduleHistoryKey]:module}, '');
+    if (props.syncUrl) currentHistoryState.current = window.history.state;
+  }
+  useEffect(()=>{
+    const restoreModule = (event: PageTransitionEvent) => {
+      setChosenModule(historyModule(window.history.state));
+      if (event.persisted) setMobileOpen(false);
+    };
+    setChosenModule(historyModule(window.history.state));
+    window.addEventListener('pageshow',restoreModule);
+    return ()=>window.removeEventListener('pageshow',restoreModule);
+  },[]);
   useEffect(()=>{
     if(props.syncUrl)return;
+    const onPopState = (event: PopStateEvent) => {
+      setChosenModule(historyModule(event.state));
+      setMobileOpen(false);
+      updateHistoryControls();
+    };
     updateHistoryControls();
-    window.addEventListener('popstate',updateHistoryControls);
-    return()=>window.removeEventListener('popstate',updateHistoryControls);
+    window.addEventListener('popstate',onPopState);
+    return()=>window.removeEventListener('popstate',onPopState);
   },[props.syncUrl]);
   const data = state.status === "ready" ? state.data : null,
     tasks = data?.tasks ?? emptyTasks;
@@ -302,6 +337,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         return;
       }
       setPage(isTaskLink ? "tasks" : historyPage);
+      setChosenModule(historyModule(event.state));
       setClassificationPlanId(nextLocation.modal==='classification'?nextLocation.planId:null);
       setSettingsPanel(nextLocation.panel??'general');
       if(!overlayChange)setFilter(defaultFilter);
@@ -364,7 +400,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       if (window.location.pathname + window.location.search !== href) {
         const active = currentHistory.current;
         const entry = {scope: active?.scope ?? crypto.randomUUID(), index: (active?.index ?? 0) + 1};
-        window.history.pushState({...window.history.state, [workspaceHistoryKey]: entry}, '', href);
+        window.history.pushState({...window.history.state, [workspaceHistoryKey]: entry, [moduleHistoryKey]:null}, '', href);
         currentHistory.current = entry;
         historyLimit.current=entry.index;
         updateHistoryControls();
@@ -373,6 +409,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }
       currentHref.current = href;
     }
+    if (chosenModule !== null) chooseModule(null);
     setClassificationPlanId(null);
     setPage(next);
     if(next==='settings')setSettingsPanel(nextSettingsPanel);
@@ -401,9 +438,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const navigation = (
     <>
       <nav className="lo-nav" aria-label="主导航">
-        {moduleGroups.map((group,index)=>(index===0||group.links.length>0)&&<div key={group.label} role="group" aria-label={group.label} className={workspaceStyles.navigationGroup}>
+        {visibleModuleGroups.map(group=><div key={group.label} role="group" aria-label={group.label} className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>{group.label}</span>
-        {index===0&&navItems.map(({ id, label, icon: Icon }) => (
+        {group.label===moduleGroups[0]?.label&&navItems.map(({ id, label, icon: Icon }) => (
           <Button
             variant="ghost"
             key={id}
@@ -589,10 +626,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           data-workspace-nav
           onClick={() => navigate("overview")}
         >
+          <svg aria-hidden="true" viewBox="0 0 28 28" width="21" height="21" fill="currentColor"><path d="M3 18V6c0-2.6 1.4-4 3.3-4 2 0 3.3 1.4 3.3 4v10.8c0 2.9 1.3 4.1 4 4.1 2.7 0 6.4-1.1 9.5-2.3 1.8-.7 3.1.2 3.3 1.6.2 1.3-.6 2.3-2.3 3C20 24.8 15.6 26 11.4 26 5.4 26 3 23.2 3 18Z"/></svg>
           LifeOS
         </Button>
-        <span className="lo-header-divider" />
-        <span className="lo-header-context">{title}</span>
+        {moduleSwitch()}
         <div className="lo-header-actions">
           <ThemeSwitch/>
           {access.authenticated === true && access.writable === false && (
@@ -1004,6 +1041,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           >
             <X size={20} />
           </Button>
+          {moduleSwitch(true)}
           {navigation}
         </DialogContent>
       </Dialog>
