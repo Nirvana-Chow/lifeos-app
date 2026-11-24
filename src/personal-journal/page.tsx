@@ -9,5 +9,5 @@ import s from './history.module.css';
 export function JournalRecordPage(){
  const guard=useRef<(()=>boolean)|null>(null);
  const mayLeave=()=>guard.current?.()!==false;
- return <LifeOSWorkspace state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} contentPage={{wide:true,title:'日记',content:<div className={s.page}><JournalHistoryPanel onBeforeOpen={mayLeave}/><PersonalRecordWorkbench type="journal" navigationGuard={guard}/></div>}} onBeforeNavigate={mayLeave}/>;
+ return <LifeOSWorkspace desktopNavigation state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} contentPage={{wide:true,title:'日记',content:<div className={s.page}><JournalHistoryPanel onBeforeOpen={mayLeave}/><PersonalRecordWorkbench type="journal" navigationGuard={guard}/></div>}} onBeforeNavigate={mayLeave}/>;
 }

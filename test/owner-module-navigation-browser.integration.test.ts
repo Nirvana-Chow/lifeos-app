@@ -19,7 +19,7 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  await mkdir(join(root,'app','personal','storage-review'),{recursive:true});
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),...['response.ts','document.ts'].map(name=>cp(join(source,'app','personal','storage-review',name),join(root,'app','personal','storage-review',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','personal','storage-review','route.ts'),`import {storageReviewResponse} from './response';export const dynamic='force-dynamic';export function GET(){return storageReviewResponse(async()=>({id:'module-owner'}));}`);
- await writeFile(join(root,'app','[[...section]]','page.tsx'),`'use client';import {usePathname,useSearchParams} from 'next/navigation';import {readWorkspaceLocation} from '../../src/workbench/private-navigation';import {LifeOSWorkspace} from '../../src/ui-review/workspace';import {RequirementUpdates} from '../../src/ui-review/requirement-updates';import {PersonalCalendarPage} from '../../src/calendar-candidate/personal-page';export default function Page(){const path=usePathname(),location=readWorkspaceLocation(Object.fromEntries(useSearchParams()));if(path==='/personal/schedule')return <PersonalCalendarPage/>;return <LifeOSWorkspace initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal']}} viewPreferenceScope={JSON.stringify(['module-owner','module-space'])} {...(path.endsWith('/updates')?{contentPage:{title:'更新记录',content:<RequirementUpdates/>}}:{})}/>;}`);
+ await writeFile(join(root,'app','[[...section]]','page.tsx'),`'use client';import {useState} from 'react';import {usePathname,useSearchParams} from 'next/navigation';import {readWorkspaceLocation} from '../../src/workbench/private-navigation';import {LifeOSWorkspace} from '../../src/ui-review/workspace';import {RequirementUpdates} from '../../src/ui-review/requirement-updates';import {PersonalCalendarPage} from '../../src/calendar-candidate/personal-page';import {LivePersonalWorkspace} from '../../src/personal-candidate/live-workspace';export default function Page(){const path=usePathname(),query=useSearchParams(),location=readWorkspaceLocation(Object.fromEntries(query));const [connected]=useState(()=>query.has('connected'));if(path==='/personal/schedule')return <PersonalCalendarPage/>;if(connected)return <LivePersonalWorkspace initialPage={location.page} initialSettingsPanel={location.panel}/>;return <LifeOSWorkspace initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal']}} viewPreferenceScope={JSON.stringify(['module-owner','module-space'])} {...(path.endsWith('/updates')?{contentPage:{title:'更新记录',content:<RequirementUpdates/>}}:{})}/>;}`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout')),30000);const check=()=>{const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);child.stdout.off('data',check);accept(match[0]);}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit'));});check();});
@@ -27,24 +27,30 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  let enabled=false,lose=false,storageAvailable=true;const sha='a'.repeat(40),config={ownerId:'module-owner',ownerEmail:'fixture@example.invalid',spaceId:'module-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());const page=await browser.newPage({viewport:{width:390,height:844}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  const writes:string[]=[];
- await page.route('**/api/platform/**',async route=>{const request=route.request();if(request.method()!=='GET')writes.push(request.method());const handler=createPersonalPlatformHandler({config:{...config,...(enabled?{calendarEnabled:true,requirementSupportEnabled:true}:{})},repository:repo,storageVerified:storageAvailable,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{},releaseArtifact:()=>({sourceSha:sha,sourceTreeDigest:'b'.repeat(64),buildId:'synthetic-build'})});const response=await handler(new Request(request.url(),{method:request.method(),headers:{...request.headers(),host:new URL(origin).host},...(request.postData()?{body:request.postData()!}:{})}));if(lose&&request.method()==='POST'){lose=false;await route.abort();return;}await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
+ await page.route('**/api/platform/**',async route=>{const request=route.request(),url=new URL(request.url());if(request.method()==='GET'&&url.pathname==='/api/platform/personal/overview')return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});if(request.method()!=='GET')writes.push(request.method());const handler=createPersonalPlatformHandler({config:{...config,...(enabled?{calendarEnabled:true,requirementSupportEnabled:true}:{})},repository:repo,storageVerified:storageAvailable,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{},releaseArtifact:()=>({sourceSha:sha,sourceTreeDigest:'b'.repeat(64),buildId:'synthetic-build'})});const response=await handler(new Request(request.url(),{method:request.method(),headers:{...request.headers(),host:new URL(origin).host},...(request.postData()?{body:request.postData()!}:{})}));if(lose&&request.method()==='POST'){lose=false;await route.abort();return;}await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});await expect(page.getByRole('dialog',{name:'LifeOS 已更新'})).toHaveCount(0);assert.equal(repo.rows.size,0);
  enabled=true;await page.reload({waitUntil:'networkidle'});const dialog=page.getByRole('dialog',{name:'LifeOS 已更新'});await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'查看本次',exact:true}).click();await expect(dialog.getByRole('heading',{level:3})).toHaveText(currentReleaseSummary.title);await expect(dialog.getByRole('listitem')).toHaveText([...currentReleaseSummary.changes]);await expect(dialog.getByText('需求池持久化与交付流程调整',{exact:true})).toHaveCount(0);
  lose=true;await dialog.locator('button[data-slot="button"]').filter({hasText:/^关闭$/}).click();await expect(dialog.getByRole('button',{name:'继续上次保存'})).toBeVisible();assert.equal(repo.rows.size,1);await dialog.getByRole('button',{name:'继续上次保存'}).click();await expect(dialog).toHaveCount(0);assert.equal(repo.rows.size,1);assert.equal(repo.receipts.size,1);
  assert.deepEqual(writes,['POST','POST']);
  await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
- const menu=page.getByRole('dialog',{name:'LifeOS',exact:true});
+ const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
+ const menu=drawer.or(page.locator('aside.lo-sidebar:visible'));
+ const opener=page.getByRole('button',{name:'打开导航',exact:true});
  const openMenu=async()=>{
   await expect(page.locator('.lo-mobile-sidebar')).toHaveCount(0);
-  await page.getByRole('button',{name:'打开导航',exact:true}).click();
-  await expect(menu).toBeVisible();
+  if(await opener.isVisible()){
+   await opener.click();
+   await expect(drawer).toBeVisible();
+  }else await expect(menu).toBeVisible();
  };
  const readyMenu=async()=>{
   await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^生活记录$/})).toHaveCount(1);
   await openMenu();
  };
- const closeMenu=()=>menu.getByRole('button',{name:'关闭导航',exact:true}).click();
- const switcher=menu.getByRole('navigation',{name:'切换模块',exact:true});
+ const closeMenu=async()=>{
+  if(await drawer.isVisible())await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
+ };
+ const switcher=drawer.getByRole('navigation',{name:'切换模块',exact:true}).or(page.locator('header nav[aria-label="切换模块"]:visible'));
  const nav=menu.getByRole('navigation',{name:'主导航',exact:true});
  const planning=[['总览'],['事项'],['搜索本人记录','/personal/search'],['日程','/personal/schedule']] as const;
  const records=[['日记','/personal/journal'],['做饭','/personal/cooking']] as const;
@@ -56,6 +62,9 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  await expect(page).toHaveURL(origin+'/personal/schedule');
  await expect(page.getByRole('heading',{level:1,name:'日程',exact:true})).toBeVisible();
  await readyMenu();
+ await expect(opener).toBeHidden();
+ await expect(page.locator('aside').getByRole('navigation',{name:'主导航'})).toBeVisible();
+ assert.ok(await page.locator('.lo-shell').evaluate(el=>el.scrollWidth>el.clientWidth));
  await assertWorkspaceModule(nav,'安排与推进',planning);
  await expect(nav.getByRole('link',{name:'日程',exact:true})).toHaveAttribute('aria-current','page');
  await switcher.getByRole('button',{name:'生活记录',exact:true}).click();
@@ -64,6 +73,7 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  await page.goBack({waitUntil:'domcontentloaded'});
  await expect(page).toHaveURL(origin+'/personal');
  await readyMenu();
+ await expect(drawer).toBeVisible();
  await assertWorkspaceModule(nav,'安排与推进',planning);
  await closeMenu();
  await page.goForward({waitUntil:'domcontentloaded'});
@@ -93,5 +103,33 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  storageAvailable=false;await page.goto(origin+'/personal',{waitUntil:'networkidle'});await page.reload({waitUntil:'networkidle'});await openMenu();
  await expect(switcher.getByRole('button')).toHaveText(['安排与推进']);
  await assertWorkspaceModule(nav,'安排与推进',[['总览'],['事项']]);
+ storageAvailable=true;enabled=true;
+ for(const width of [1365,390]){
+  await page.setViewportSize({width,height:844});
+  await page.goto(origin+'/personal?connected=1&page=tasks',{waitUntil:'networkidle'});
+  await expect(page.getByRole('heading',{level:1,name:'待办'})).toBeVisible();
+  await expect(opener).toBeHidden();
+  await expect(nav.getByRole('button',{name:'事项'})).toHaveAttribute('aria-current','page');
+  if(width===390){
+   await page.evaluate(()=>{
+    const footer=document.createElement('footer');
+    footer.className='lifeos-filing-footer';
+    footer.textContent='合成页脚';
+    document.body.append(footer);
+    window.dispatchEvent(new Event('resize'));
+   });
+   const sidebarSettings=page.locator('aside').getByRole('button',{name:'设置',exact:true});
+   const footer=page.locator('.lifeos-filing-footer');
+   await expect.poll(async()=>{
+    const [control,bar]=await Promise.all([sidebarSettings.boundingBox(),footer.boundingBox()]);
+    return !!control&&!!bar&&control.y+control.height<=bar.y;
+   }).toBe(true);
+   await sidebarSettings.click();
+   await expect(page.getByRole('heading',{level:1,name:'设置'})).toBeVisible();
+  }
+  await page.goto(origin+'/personal?connected=1&page=settings&panel=security',{waitUntil:'networkidle'});
+  await expect(page.locator('aside').getByRole('button',{name:'安全与密码'})).toHaveAttribute('aria-current','page');
+  await expect(page.getByRole('heading',{level:2,name:'安全与密码'})).toBeVisible();
+ }
  assert.deepEqual(writes,['POST','POST']);assert.equal(repo.rows.size,1);assert.equal(repo.receipts.size,1);assert.deepEqual(errors,[]);
 });

@@ -179,7 +179,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     </nav>
   );
   const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
-  const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review');
+  const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review'||link.id==='file-handoffs');
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
@@ -627,7 +627,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   return (
     <div
       data-lifeos-surface="personal"
-      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigationPreview ? workspaceStyles.desktopNavigationPreview : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
+      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigation ? workspaceStyles.desktopNavigation : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
       onMouseDownCapture={event => {
         const target = event.target as Element;
         if (target.closest?.("[data-workspace-nav], a[href]") && document.activeElement?.matches("input, textarea, select")) event.preventDefault();

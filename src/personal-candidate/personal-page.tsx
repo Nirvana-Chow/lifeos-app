@@ -10,7 +10,7 @@ import type {WorkspacePage} from '../ui-review/contract';
 /** Account content shares the workspace chrome without loading Todo records. */
 export function PersonalPage({title,children,initialPage='settings',canNavigate,wide}: {title:string;children:ReactNode;initialPage?:WorkspacePage;canNavigate?:()=>boolean;wide?:boolean}) {
  const router=useRouter();
- return <LifeOSWorkspace
+ return <LifeOSWorkspace desktopNavigation
   state={{status:'unknown'}}
   access={{authenticated:true,writable:null,loginAllowed:true}}
   initialPage={initialPage}

@@ -76,8 +76,8 @@ export type TaskFilter = {
   due?: "all" | "today" | "overdue";
 };
 export type LifeOSWorkspaceProps = {
-  /** Opt in from the isolated navigation review fixture. */
-  desktopNavigationPreview?: boolean;
+  /** Keep desktop navigation on narrow viewports for the shared owner workspace. */
+  desktopNavigation?: boolean;
   /** Verified owner+space scope for browser-only layout preferences; absent disables persistence. */
   viewPreferenceScope?: string | null;
   state: WorkspaceState;

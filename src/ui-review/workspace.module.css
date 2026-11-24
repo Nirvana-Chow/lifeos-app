@@ -94,12 +94,16 @@
 
 /* Keep navigation and the content frame on one horizontally scrollable surface. */
 @media(max-width:850px) {
- .shell.desktopNavigationPreview { overflow-x:auto; }
- .desktopNavigationPreview > :global(.lo-header),
- .desktopNavigationPreview > :global(.lo-body) { min-width:900px; }
- .desktopNavigationPreview > :global(.lo-body) { display:grid; }
- .desktopNavigationPreview :global(.lo-sidebar) { display:flex; }
- .desktopNavigationPreview .headerModules { display:flex; }
- .desktopNavigationPreview :global(.lo-header) > :global(.lo-mobile-menu) { display:none!important; }
- .desktopNavigationPreview .headerModules button { min-height:44px; }
+ .shell.desktopNavigation { overflow-x:auto; }
+ .desktopNavigation > :global(.lo-header),
+ .desktopNavigation > :global(.lo-body) { min-width:900px; }
+ .shell.desktopNavigation > :global(.lo-body) {
+  display:grid;
+  height:calc(100% - var(--lo-header-height) - var(--lo-filing-footer-space,0px));
+ }
+ .shell.desktopNavigation > :global(.lo-body) > :global(.lo-main) { padding-bottom:var(--lo-content-padding); }
+ .desktopNavigation :global(.lo-sidebar) { display:flex; }
+ .desktopNavigation .headerModules { display:flex; }
+ .desktopNavigation :global(.lo-header) > :global(.lo-mobile-menu) { display:none!important; }
+ .desktopNavigation .headerModules button { min-height:44px; }
 }
