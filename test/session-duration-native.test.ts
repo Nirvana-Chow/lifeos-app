@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {memoryAdapter} from 'better-auth/adapters/memory';
-import {hashPassword} from 'better-auth/crypto';
-import {createPlatformAuth,readOwnerPrincipal,readVerifiedOwnerSession} from '../src/platform/auth.ts';
-import {readPlatformConfig} from '../src/platform/config.ts';
+import {authRequest,createPlatformAuth,readOwnerMfaState,readOwnerPrincipal,readVerifiedOwnerSession} from '../src/platform/auth.ts';
+import {submitLogin} from '../src/personal-candidate/login-flow.ts';
+import type {SessionDuration} from '../src/session-duration/policy.ts';
 import {mergeSyntheticAuthCookies,enrollSyntheticOwnerMfa,syntheticOwnerTotp} from './helpers/owner-mfa-fixture.ts';
 const day=86400;
 import {sessionDurationFixture as fixture} from './helpers/session-duration.ts';
@@ -58,4 +58,105 @@ test('MFA challenge and native rotation retain the duration; old MFA cannot auth
  assert.ok(await readVerifiedOwnerSession(f.auth,f.config,new Headers({cookie})));
  row.createdAt=new Date(Date.now()-1801*1000);
  assert.equal((await readOwnerPrincipal(f.auth,f.config,new Headers({cookie})))?.userId,f.config.ownerId,'ordinary session remains valid');assert.equal(await readVerifiedOwnerSession(f.auth,f.config,new Headers({cookie})),null,'sensitive authority expires separately');
+});
+
+test('expired devices can sign in again, sign out independently, and use a backup code only once',async t=>{
+ const f=await fixture(true),context=await f.auth.$context;
+ const readAuth=createPlatformAuth(f.config,memoryAdapter(f.db),{requireMfa:true,sessionDuration:true,readOnlySessions:true,disableSessionRefresh:true});
+ const guards={
+  requireMfa:true,sessionDuration:true,
+  readMfaState:(headers:Headers)=>readOwnerMfaState(readAuth,f.config,headers),
+  withOwnerLock:async <T,>(run:()=>Promise<T>)=>run(), // This memory fixture issues requests serially.
+  trustedDeviceCookieNames:[context.createAuthCookie('trust_device').name],
+  sessionCookieNames:[context.authCookies.sessionToken.name],
+  twoFactorCookieNames:[context.createAuthCookie('two_factor').name],
+ };
+ const send=(path:string,body:Record<string,unknown>,cookie:string,method='POST')=>authRequest(new Request(f.config.baseURL+'/api/platform/auth/'+path,{
+  method,headers:{host:new URL(f.config.baseURL).host,origin:f.config.baseURL,'content-type':'application/json',cookie},
+  ...(method==='POST'?{body:JSON.stringify(body)}:{}),
+ }),f.config,request=>(method==='GET'?readAuth:f.auth).handler(request),guards);
+ const state=(cookie:string)=>readOwnerMfaState(readAuth,f.config,new Headers({cookie}));
+ const owner=(cookie:string)=>readVerifiedOwnerSession(readAuth,f.config,new Headers({cookie}));
+ const initial=await send('sign-in/email',{email:f.config.ownerEmail,password:f.password},'');
+ assert.equal(initial.status,200);
+ const {cookie:expiredCookie,backupCodes}=await enrollSyntheticOwnerMfa(f.auth,f.config.ownerId,f.password,send,mergeSyntheticAuthCookies(initial));
+ const first=await owner(expiredCookie);
+ assert.ok(first);
+ const firstRow=f.db.platform_session.find(row=>row.id===first.sessionRef)!;
+ assert.equal(firstRow.sessionDurationSeconds,1800);
+
+ const returnTo='/personal?page=tasks&create=todo';
+ async function login(sessionDuration:SessionDuration,cookie=''){
+  const code=await syntheticOwnerTotp(f.auth,f.config.ownerId);
+  const steps:Array<[string,SessionDuration]>=[];
+  let factor:Response|undefined;
+  const result=await submitLogin({personal:true,challenge:false,email:f.config.ownerEmail,password:f.password,code,backup:false,sessionDuration,returnTo},async(url,init)=>{
+   const path=url.slice('/api/platform/auth/'.length),body=JSON.parse(String(init.body));
+   steps.push([path,body.sessionDuration]);
+   const response=await send(path,body,cookie);
+   cookie=mergeSyntheticAuthCookies(response,cookie);
+   assert.equal(response.status,200);
+   if(path==='sign-in/email')assert.deepEqual(await state(cookie),{kind:'anonymous'});
+   else factor=response;
+   return response;
+  });
+  assert.deepEqual(steps,[['sign-in/email',sessionDuration],['two-factor/verify-totp',sessionDuration]]);
+  assert.deepEqual(result,{kind:'redirect',location:returnTo});
+  assert.ok(factor);
+  return {cookie,factor};
+ }
+
+ const second=await login({mode:'rolling'});
+ const secondSession=await owner(second.cookie);
+ assert.ok(secondSession);
+ assert.notEqual(secondSession.sessionRef,first.sessionRef);
+
+ t.mock.timers.enable({apis:['Date'],now:new Date(firstRow.expiresAt as Date).valueOf()+1});
+ assert.deepEqual(await state(expiredCookie),{kind:'anonymous'});
+ const fixed={mode:'fixed',seconds:3*day} as const;
+ const replacement=await login(fixed,expiredCookie);
+ const replacementSession=await owner(replacement.cookie);
+ assert.ok(replacementSession);
+ assert.notEqual(replacementSession.sessionRef,first.sessionRef);
+ const replacementRow=f.db.platform_session.find(row=>row.id===replacementSession.sessionRef)!;
+ assert.equal(replacementRow.sessionDurationSeconds,fixed.seconds);
+ assertLifetime(replacement.factor,replacementRow,fixed.seconds);
+ assert.deepEqual(await state(expiredCookie),{kind:'anonymous'});
+
+ const signedOut=await send('sign-out',{},replacement.cookie);
+ assert.equal(signedOut.status,200);
+ assert.equal(mergeSyntheticAuthCookies(signedOut,replacement.cookie),'');
+ assert.deepEqual(await state(replacement.cookie),{kind:'anonymous'});
+ assert.equal(f.db.platform_session.some(row=>row.id===replacementSession.sessionRef),false);
+ assert.equal((await state(second.cookie)).kind,'ready');
+ const readSecond=await send('get-session',{},second.cookie,'GET');
+ assert.equal(readSecond.status,200);
+ assert.equal((await readSecond.json()).session.id,secondSession.sessionRef);
+
+ const backupCode=backupCodes[0];
+ assert.ok(backupCode);
+ const fallback=async()=>{
+  let cookie='',passwordStatus=0,factorStatus=0;
+  const result=await submitLogin({personal:true,challenge:false,email:f.config.ownerEmail,password:f.password,code:backupCode,backup:true,sessionDuration:fixed,returnTo},async(url,init)=>{
+   const path=url.slice('/api/platform/auth/'.length);
+   const response=await send(path,JSON.parse(String(init.body)),cookie);
+   cookie=mergeSyntheticAuthCookies(response,cookie);
+   if(path==='sign-in/email')passwordStatus=response.status;
+   else factorStatus=response.status;
+   return response;
+  });
+  assert.equal(passwordStatus,200);
+  return {result,cookie,factorStatus};
+ };
+ t.mock.timers.tick(61_000);
+ const recovered=await fallback();
+ assert.equal(recovered.factorStatus,200);
+ assert.deepEqual(recovered.result,{kind:'redirect',location:'/account/mfa?return_to='+encodeURIComponent(returnTo)});
+ const recoveredOwner=await owner(recovered.cookie);
+ assert.ok(recoveredOwner);
+ assert.equal(f.db.platform_session.find(row=>row.id===recoveredOwner.sessionRef)?.sessionDurationSeconds,fixed.seconds);
+ const reuse=await fallback();
+ assert.ok([400,401].includes(reuse.factorStatus),`unexpected backup-code reuse status ${reuse.factorStatus}`);
+ assert.equal(reuse.result.kind,'challenge');
+ assert.deepEqual(await state(reuse.cookie),{kind:'anonymous'});
 });
