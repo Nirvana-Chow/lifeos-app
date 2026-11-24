@@ -1303,6 +1303,12 @@
 .lo-shell .lo-main-bounded { overflow:hidden; }
 .lo-main-bounded > .lo-content { height:100%; min-height:0; display:flex; flex-direction:column; }
 .lo-main-bounded > .lo-content > :not(.lo-workspace-view):not([data-category-grid]):not([data-requirements-page]) { flex-shrink:0; }
+/* Keep the bounded viewport and let vertical scrolling continue to the filing footer. */
+.lo-shell .lo-main-bounded:has(> .lo-filing-slot > .lifeos-filing-footer) { overflow-y:auto; }
+.lo-main-bounded:has(> .lo-filing-slot > .lifeos-filing-footer) > .lo-content,
+.lo-main-bounded:has(> .lo-filing-slot > .lifeos-filing-footer) :is(.lo-list-rows,.lo-board-cards,[data-slot="data-grid-table-viewport"]) {
+  overscroll-behavior-y:auto;
+}
 .lo-workspace-view { flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
 .lo-workspace-view .lo-task-list { display:flex; flex-direction:column; height:100%; min-height:0; }
 .lo-list-columns { flex-shrink:0; }

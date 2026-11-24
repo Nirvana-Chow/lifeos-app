@@ -261,21 +261,41 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     !!filter.areaId ||
     !!filter.projectId ||
     filter.status !== "pending" || !!filter.inboxOnly || (!!filter.due && filter.due !== "all");
-  useEffect(() => {
+  const filingSlot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
     if (!portalContainer) return;
-    const update = () => {
-      const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
-      if (footer) portalContainer.style.setProperty("--lo-filing-footer-space", `${footer.getBoundingClientRect().height}px`);
-      else portalContainer.style.removeProperty("--lo-filing-footer-space");
+    const slot = filingSlot.current;
+    if (!slot) return;
+    const body = document.body;
+    let footer: HTMLElement | null = null;
+    let nextSibling: ChildNode | null = null;
+    const measure = () => {
+      if (footer?.parentNode === slot) {
+        portalContainer.style.setProperty("--lo-filing-footer-space", `${footer.getBoundingClientRect().height}px`);
+      } else {
+        portalContainer.style.removeProperty("--lo-filing-footer-space");
+      }
     };
-    update();
-    const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
-    const observer = new ResizeObserver(update);
-    if (footer) observer.observe(footer);
-    window.addEventListener("resize", update);
+    const sizeObserver = new ResizeObserver(measure);
+    const adoptFooter = () => {
+      if (footer?.parentNode === slot) return;
+      sizeObserver.disconnect();
+      footer = body.querySelector<HTMLElement>(":scope > .lifeos-filing-footer");
+      if (footer) {
+        nextSibling = footer.nextSibling;
+        slot.append(footer);
+        sizeObserver.observe(footer);
+      }
+      measure();
+    };
+    // The deployment can append its existing footer before or after hydration.
+    const bodyObserver = new MutationObserver(adoptFooter);
+    bodyObserver.observe(body, {childList: true});
+    adoptFooter();
     return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
+      bodyObserver.disconnect();
+      sizeObserver.disconnect();
+      if (footer?.parentNode === slot) body.insertBefore(footer, nextSibling?.parentNode === body ? nextSibling : null);
       portalContainer.style.removeProperty("--lo-filing-footer-space");
     };
   }, [portalContainer]);
@@ -1036,6 +1056,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {page === "requirements" && <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>}
           </>}
           </div>
+          <div className="lo-filing-slot" ref={filingSlot}/>
         </main>
       </div>
       {classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
