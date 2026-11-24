@@ -51,6 +51,9 @@ export class PersonalWorkspaceController{
  getTaskEntry(task:Pick<WorkspaceTask,'id'|'revision'>):PublicEntry|null{
   if(this.value.state.status!=='ready')return null;const e=this.entries.find(e=>e.id===task.id&&e.kind==='todo'&&e.revision===task.revision);return e?structuredClone(e):null;
  }
+ getClassificationEntries():readonly PublicEntry[]|null{
+  return this.value.state.status==='ready'&&this.value.state.data.coverage==='complete'?this.entries:null;
+ }
  getRelationOptions():Record<string,PublicEntry[]>{
   const result:Record<string,PublicEntry[]>={domain:[],project:[],topic:[]};if(this.value.state.status!=='ready'||!this.binding)return result;
   for(const e of this.entries){const type=editorFromEntry(e,this.binding.spaceId).type;if(type in result)result[type].push(structuredClone(e));}return result;
