@@ -177,8 +177,31 @@ function watchPrivateTransport(page:Page,{legacy=false}:{legacy?:boolean}={}){
  return {async close(){page.off('request',request);page.off('response',response);await Promise.all(pending);if(forbidden||mutations)console.error('PRIVATE_TRANSPORT_FAILURE '+JSON.stringify({forbidden:Math.min(forbidden,1000000),mutations:Math.min(mutations,1000000)}));assert.equal(forbidden,0,'private transport boundary');assert.equal(mutations,0,'UI group must not mutate business data');},facts:()=>({privateResponses,rsc})};
 }
 export async function readyHeading(page:Page,heading:string){
- if(heading==='设置'){await expect(page.getByRole('heading',{level:1,name:'设置',exact:true})).toBeVisible();await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();return;}
  await expect(page.getByRole('heading',{level:1,name:heading,exact:true})).toBeVisible();
+ if(heading==='设置'){
+  const settings=page.locator('[data-settings-page]');
+  const general=settings.locator('[data-settings-panel="general"]');
+  await expect(settings).toBeVisible();
+  await expect(general).toBeVisible();
+  const mobile=await page.evaluate(()=>matchMedia('(max-width: 850px)').matches);
+  const categories=(container:Locator)=>container.getByRole('navigation',{name:'设置分类',exact:true});
+  if(mobile){
+   const url=page.url(),menu=page.getByRole('button',{name:'打开导航',exact:true});
+   // The heading can be server-rendered before the Header handles clicks.
+   await expect(page.locator(themeButtonSelector)).toBeEnabled();
+   await menu.click();
+   const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
+   await expect(categories(drawer).getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
+   await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
+   await expect(drawer).toHaveCount(0);
+   await expect(menu).toBeFocused();
+   await expect(page).toHaveURL(url);
+   await expect(general).toBeVisible();
+  }else{
+   await expect(categories(page.locator('aside.lo-sidebar')).getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
+  }
+  return;
+ }
  if(heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
  else if(heading==='搜索本人记录'){
   const form=page.getByRole('search');await expect(form).toHaveCount(1);await expect(form).toBeVisible();
