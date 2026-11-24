@@ -1045,12 +1045,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
             </div>
           </section>}
-          {page === "requirements" && <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>}
+          {page === "requirements" && (access.authenticated === true
+            ? <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>
+            : <DataState state={state} onRefresh={onRefresh}/>)}
           </>}
           </div>
         </main>
       </div>
-      {classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
+      {access.authenticated === true && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
         if (props.classificationCloseGuard?.current?.()===false) return;
         const href=workspaceHref(page); window.history.replaceState(window.history.state,'',href); currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(null);
       }, id => {

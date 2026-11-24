@@ -9,6 +9,7 @@ import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 import {confirmDiscard} from './helpers/personal-workspace-browser-fixture.ts';
 import {requirements} from '../src/platform/requirements.ts';
+import {requirementBinding} from '../src/requirements-candidate/service.ts';
 import {exerciseManagedCallback} from './helpers/managed-callback-browser.ts';
 
 const source=resolve(import.meta.dirname,'..');
@@ -437,6 +438,34 @@ test('OPT-IN overview draft survives rejected logout, Settings and matters page 
  await expect(input).toHaveCount(0);
  assert.equal(signOutRequests,1,'confirmed logout uses the existing sign-out endpoint once');
  assert.equal(writes(),0,'confirmed logout does not submit the draft');
+});
+
+test('OPT-IN confirmed header logout clears already loaded private requirements',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-requirements-logout-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=requirements');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage();t.after(()=>page.close());
+ await installSyntheticReads(page,origin);
+ await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal'],requirementsEnabled:true}}));
+ const baseline=requirements(),example=baseline.requirements.find(item=>item.roadmap)!;
+ const title='合成退出后应清除的私有需求';
+ await page.route(origin+'/api/platform/personal/requirements/snapshot',route=>route.fulfill({json:{scope:'full-current-requirements-snapshot',total:1,truncated:false,observedAt:'2030-11-02T00:00:00Z',baseline,items:[{
+  id:example.id,revision:1,sourceId:'11111111-1111-4111-8111-111111111111',baselineBinding:requirementBinding(baseline,example.id),baselineConflict:false,
+  requirement:{...example,title},fields:{title,body:'合成需求正文',phaseId:example.roadmap!.phaseId,priority:example.roadmap!.priority,plannedStartOn:null,plannedEndOn:null},
+ }]}}));
+ await page.route(origin+'/api/platform/auth/sign-out',route=>route.fulfill({json:{success:true}}));
+ await page.goto(origin+'/personal?page=requirements');
+ await expect(page.getByText(title,{exact:true})).toBeVisible();
+ const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
+ const response=page.waitForResponse(result=>result.url()===origin+'/api/platform/auth/sign-out');
+ await logout.click();
+ assert.equal((await response).status(),200);
+ await expect(logout).toHaveCount(0);
+ await expect(page.getByText(title,{exact:true})).toHaveCount(0,{timeout:3000});
+ await expect(page.locator('[data-requirements-page]')).toHaveCount(0);
 });
 
 test('OPT-IN settings category returns to the requested panel after requirement browsing',{
