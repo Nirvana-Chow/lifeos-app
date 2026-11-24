@@ -67,6 +67,7 @@ test('task toolbar opens a private, read-only classification preview', {
     const page = await browser.newPage({viewport: {width, height: 900}});
     await page.context().addCookies([{url: origin, name: 'fixture-owner', value: '1'}]);
     let incomplete = false;
+    let revised = false;
     let writes = 0;
     await page.route('**/api/platform/personal/**', async route => {
       const request = route.request(), url = new URL(request.url());
@@ -76,7 +77,7 @@ test('task toolbar opens a private, read-only classification preview', {
         storageVerified: true, writable: false, ownerId: 'synthetic-owner', spaceId: space, allowedTypes: ['todo', 'project', 'topic']}});
       if (url.pathname.endsWith('/overview')) return route.fulfill({json: {scope: 'full-current-snapshot',
         today: url.searchParams.get('today'), observedAt: '2030-01-01T00:00:00Z', truncated: incomplete,
-        total: entries.length, items: entries}});
+        total: entries.length, items: revised ? entries.map((entry, index) => index ? entry : {...entry, revision: 2}) : entries}});
       return route.abort();
     });
     await page.goto(origin + '/personal?page=tasks');
@@ -93,6 +94,22 @@ test('task toolbar opens a private, read-only classification preview', {
     await independent.getByRole('checkbox', {name: '纳入预览'}).uncheck();
     await expect(independent.getByText('已排除')).toBeVisible();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    const visibility = (state: 'hidden' | 'visible') => page.evaluate(state => {
+      Object.defineProperty(document, 'visibilityState', {configurable: true, value: state});
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, state);
+    await visibility('hidden');
+    await expect(page.getByRole('article')).toHaveCount(0);
+    await visibility('visible');
+    await expect(independent.getByText('建议项目 合成整理 · 建议标签 合成标签')).toBeVisible();
+    await expect(independent.getByText('已排除')).toBeVisible();
+    revised = true;
+    await visibility('hidden');
+    await expect(page.getByRole('article')).toHaveCount(0);
+    await visibility('visible');
+    await expect(page.getByText('已重新核对范围，旧预览建议已清除。')).toBeVisible();
+    await expect(independent.getByText('已排除')).toHaveCount(0);
+    await expect(independent.getByText('建议项目 未归组 · 建议标签 无')).toBeVisible();
     incomplete = true;
     await page.getByRole('button', {name: '重新读取'}).click();
     await expect(page.getByText('无法核对完整待办快照。')).toBeVisible();

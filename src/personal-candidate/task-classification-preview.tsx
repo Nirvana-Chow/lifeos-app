@@ -10,20 +10,37 @@ import styles from './task-classification-preview.module.css';
 
 type Proposal = {project: string; topics: string[]};
 const pageSize = 20;
+const noEntries: readonly PublicEntry[] = [];
 
 export function TaskClassificationPreview() {
   const host = useRef<PersonalWorkspaceController | null>(null);
   const [entries, setEntries] = useState<readonly PublicEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [draftEpoch, setDraftEpoch] = useState(0);
   useEffect(() => {
     const controller = new PersonalWorkspaceController({
       fetcher: (url, init) => fetch(url, init), origin: window.location.origin,
       today: () => new Date().toLocaleDateString('sv-SE'), key: () => crypto.randomUUID(),
     });
     host.current = controller;
+    let confirmedSnapshot: string | null = null;
     const stop = controller.subscribe(() => {
       const {state} = controller.getSnapshot();
-      setEntries(controller.getClassificationEntries());
+      const next = controller.getClassificationEntries();
+      const binding = controller.getEditorBinding();
+      if (next && binding) {
+        const identity = JSON.stringify([binding.ownerId, binding.spaceId,
+          next.map(entry => [entry.id, entry.source.id, entry.revision]).sort((a, b) =>
+            String(a[0]).localeCompare(String(b[0])))]);
+        if (confirmedSnapshot !== null && identity !== confirmedSnapshot) {
+          setDraftEpoch(epoch => epoch + 1);
+        }
+        confirmedSnapshot = identity;
+      } else if (state.status === 'forbidden' && confirmedSnapshot !== null) {
+        confirmedSnapshot = null;
+        setDraftEpoch(epoch => epoch + 1);
+      }
+      setEntries(next);
       setFailed(state.status === 'error' || state.status === 'forbidden');
     });
     const visibility = () => {
@@ -44,26 +61,31 @@ export function TaskClassificationPreview() {
     <a href="/personal?page=tasks">返回待办</a>
     <h1>待办分类预览</h1>
     <p>在这里拟定项目和标签。预览仅在当前页面显示。</p>
-    {entries ? <Preview entries={entries} onRefresh={refresh}/> : <>
-      <p role="status">{failed ? '无法核对完整待办快照。' : '正在读取完整待办快照。'}</p>
-      {failed && <Button variant="outline" onClick={refresh}>重新读取</Button>}
-    </>}
+    {draftEpoch > 0 && entries && <p role="status">已重新核对范围，旧预览建议已清除。</p>}
+    <Preview key={draftEpoch} entries={entries} failed={failed} onRefresh={refresh}/>
   </main>;
 }
 
-function Preview({entries, onRefresh}: {entries: readonly PublicEntry[]; onRefresh: () => void}) {
+function Preview({entries, failed, onRefresh}: {
+  entries: readonly PublicEntry[] | null; failed: boolean; onRefresh: () => void;
+}) {
   const [proposals, setProposals] = useState<Record<string, Proposal>>({});
   const [excluded, setExcluded] = useState<Record<string, boolean>>({});
   const [page, setPage] = useState(0);
   const {todos, projects, topics, lookup} = useMemo(() => {
-    const lookup = new Map(entries.map(entry => [entry.id, entry]));
+    const snapshot = entries ?? noEntries;
+    const lookup = new Map(snapshot.map(entry => [entry.id, entry]));
     const hasType = (entry: PublicEntry, type: 'project' | 'topic') =>
       'text' in entry.draft && entry.draft.personal?.type === type;
-    const todos = entries.filter(entry => entry.kind === 'todo')
+    const todos = snapshot.filter(entry => entry.kind === 'todo')
       .map(entry => ({id: entry.id, fields: validateTodo(entry.draft)}));
-    return {lookup, todos, projects: entries.filter(entry => hasType(entry, 'project')),
-      topics: entries.filter(entry => hasType(entry, 'topic'))};
+    return {lookup, todos, projects: snapshot.filter(entry => hasType(entry, 'project')),
+      topics: snapshot.filter(entry => hasType(entry, 'topic'))};
   }, [entries]);
+  if (!entries) return <>
+    <p role="status">{failed ? '无法核对完整待办快照。' : '正在读取完整待办快照。'}</p>
+    {failed && <Button variant="outline" onClick={onRefresh}>重新读取</Button>}
+  </>;
   const title = (id: string) => {
     const draft = lookup.get(id)?.draft;
     return draft && 'title' in draft ? draft.title : '关联不可用';
