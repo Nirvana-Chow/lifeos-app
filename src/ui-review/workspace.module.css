@@ -90,3 +90,16 @@
 @media(max-width:850px) {
  .shell .settingsNavigation :is(button,a) { min-height:44px; font-size:16px; }
 }
+
+
+/* Keep navigation and the content frame on one horizontally scrollable surface. */
+@media(max-width:850px) {
+ .shell.desktopNavigationPreview { overflow-x:auto; }
+ .desktopNavigationPreview > :global(.lo-header),
+ .desktopNavigationPreview > :global(.lo-body) { min-width:900px; }
+ .desktopNavigationPreview > :global(.lo-body) { display:grid; }
+ .desktopNavigationPreview :global(.lo-sidebar) { display:flex; }
+ .desktopNavigationPreview .headerModules { display:flex; }
+ .desktopNavigationPreview :global(.lo-header) > :global(.lo-mobile-menu) { display:none!important; }
+ .desktopNavigationPreview .headerModules button { min-height:44px; }
+}

@@ -17,17 +17,17 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await mkdir(join(root,'app','personal'),{recursive:true});
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
- await writeFile(join(root,'app','personal','page.tsx'),`'use client';import {useEffect,useState} from 'react';import {LifeOSWorkspace} from '../../src/ui-review/workspace';export default function Page(){const[dirty,setDirty]=useState(false),[partial,setPartial]=useState(false);useEffect(()=>setPartial(new URLSearchParams(window.location.search).has('partial')),[]);return <LifeOSWorkspace syncUrl state={{status:'ready',data:{tasks:[],projects:[{id:'project-a',title:'合成项目甲',revision:1,area:{id:'area-a',title:'合成领域'},stage:'active',nextStep:'合成下一步'},{id:'project-b',title:'合成未关联项目',revision:1,area:null,stage:'active',nextStep:null}],areas:[{id:'area-a',title:'合成领域',revision:1}],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:partial?'partial':'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','topic']}} viewPreferenceScope={JSON.stringify(['hierarchy-owner','hierarchy-space'])} availableSettingsPanels={['security','api-keys']} renderSettingsPanel={panel=><section><h2>{panel==='security'?'安全面板':'密钥面板'}</h2><button onClick={()=>setDirty(!dirty)}>合成草稿保护 {dirty?'开':'关'}</button></section>} settingsCloseGuard={{current:()=>!dirty}}/>;}`);
+ await writeFile(join(root,'app','personal','page.tsx'),`'use client';import {useEffect,useState} from 'react';import {LifeOSWorkspace} from '../../src/ui-review/workspace';import {readWorkspaceLocation} from '../../src/workbench/private-navigation';export default function Page(){const[dirty,setDirty]=useState(false),[query,setQuery]=useState<URLSearchParams|null>(null);useEffect(()=>setQuery(new URLSearchParams(window.location.search)),[]);if(!query)return null;const initial=readWorkspaceLocation(Object.fromEntries(query));return <LifeOSWorkspace desktopNavigationPreview syncUrl initialPage={initial.page} initialSettingsPanel={initial.panel} state={{status:'ready',data:{tasks:[],projects:[{id:'project-a',title:'合成项目甲',revision:1,area:{id:'area-a',title:'合成领域'},stage:'active',nextStep:'合成下一步'},{id:'project-b',title:'合成未关联项目',revision:1,area:null,stage:'active',nextStep:null}],areas:[{id:'area-a',title:'合成领域',revision:1}],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:query.has('partial')?'partial':'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','topic']}} viewPreferenceScope={JSON.stringify(['hierarchy-owner','hierarchy-space'])} availableSettingsPanels={['security','api-keys']} renderSettingsPanel={panel=><section><h2>{panel==='security'?'安全面板':'密钥面板'}</h2><button onClick={()=>setDirty(!dirty)}>合成草稿保护 {dirty?'开':'关'}</button></section>} settingsCloseGuard={{current:()=>!dirty}}/>;}`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3010'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout '+output)),30000);const check=()=>{if(output.includes('Ready in')){clearTimeout(timer);child.stdout.off('data',check);accept('http://127.0.0.1:3010');}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit '+output));});check();});
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
  const page=await browser.newPage({viewport:{width:1365,height:900}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- let enabled=true;
+ let enabled=true,fileHandoffEnabled=false;
  const writes:string[]=[];
  await page.route('**/api/platform/**',route=>{
   if(route.request().method()!=='GET')writes.push(route.request().method());
-  return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}});
+  return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,fileHandoffEnabled,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}});
  });
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
@@ -69,12 +69,21 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   const rows=Map.groupBy(bounds,bound=>bound?.y);
   assert.deepEqual([...rows.values()].map(row=>row.length),[4]);
   for(const bound of [...bounds,await domains.getByRole('button',{name:'查看全部项目'}).boundingBox(),await domains.getByRole('button',{name:/合成项目甲/}).boundingBox()]){
-   assert.ok(bound&&bound.width>=44&&bound.height>=44&&bound.x>=0&&bound.x+bound.width<=width);
+   assert.ok(bound&&bound.width>=44&&bound.height>=44&&bound.x>=0&&bound.x+bound.width<=Math.max(width,900));
   }
   const region=await metrics.boundingBox(),domainCard=await domains.boundingBox(),lowerCard=await overviewCards.first().boundingBox();
   assert.ok(region&&domainCard&&lowerCard&&region.y+region.height<domainCard.y&&domainCard.y+domainCard.height<lowerCard.y);
   assert.ok(region&&domainCard&&Math.abs(region.width-domainCard.width)<=8);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  const shell=page.locator('.lo-shell');
+  if(width===390){
+   assert.ok(await shell.evaluate(el=>el.scrollWidth>el.clientWidth&&getComputedStyle(el).overflowX==='auto'));
+   await expect(page.getByRole('button',{name:'打开导航'})).toBeHidden();
+   await expect(nav).toBeVisible();
+   await metricButtons.last().scrollIntoViewIfNeeded();
+   assert.ok(await shell.evaluate(el=>el.scrollLeft>0));
+   await shell.evaluate(el=>{el.scrollLeft=0});
+  }
   t.diagnostic(`Overview ${width}px: ${bounds.map(bound=>`${bound?.width}×${bound?.height}`).join(', ')}; no document overflow`);
  }
  await page.setViewportSize({width:1365,height:900});
@@ -155,35 +164,63 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(general).toBeVisible();
  await page.setViewportSize({width:1024,height:844});await expect(settings.getByRole('button',{name:'通用',exact:true})).toBeVisible();
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
- await page.getByRole('button',{name:'打开导航',exact:true}).click();
- const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
- await expect(drawer.getByRole('navigation',{name:'切换模块'})).toHaveCount(0);
- const mobileGeneral=drawer.getByRole('navigation',{name:'设置分类'}).getByRole('button',{name:'通用',exact:true});
- await expect(mobileGeneral).toHaveAttribute('aria-current','page');
- await expect(mobileGeneral).toHaveCSS('min-height','44px');
- await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
- await breadcrumb.getByRole('button',{name:'返回总览',exact:true}).click();
- await page.getByRole('button',{name:'打开导航',exact:true}).click();
- const mobileSwitch=drawer.getByRole('navigation',{name:'切换模块'});
- const mobileRecords=mobileSwitch.getByRole('button',{name:'生活记录',exact:true});
- await mobileRecords.click();
- const target=await mobileRecords.boundingBox();assert.ok(target&&target.width>=44&&target.height>=44);
- await expect(mobileRecords).toHaveCSS('font-size','16px');
- await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'生活记录',records);
- await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
- await page.getByRole('button',{name:'打开导航',exact:true}).click();
- await expect(mobileSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('生活记录');
- await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'生活记录',records);
- await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
+ await expect(settings.getByRole('button',{name:'通用'})).toHaveAttribute('aria-current','page');
+ await expect(moduleSwitch).toBeVisible();
+ await expect(page.getByRole('button',{name:'打开导航'})).toBeHidden();
+ await page.goto(origin+'/personal?page=settings&panel=security',{waitUntil:'networkidle'});
+ await expect(settings.getByRole('button',{name:'安全与密码'})).toHaveAttribute('aria-current','page');
+ await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();
+ await page.getByRole('button',{name:'合成草稿保护 关'}).click();
+ await settings.getByRole('button',{name:'通用'}).focus();
+ await page.keyboard.press('Enter');
+ await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();
+ await page.getByRole('button',{name:'合成草稿保护 开'}).click();
+ await settings.getByRole('button',{name:'通用'}).click();
+ await expect(general).toBeVisible();
+ for(const width of [1365,390]){
+  await page.setViewportSize({width,height:844});
+  await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});
+  await expect(location).toHaveText('待办');
+  await expect(nav.getByRole('button',{name:'事项'})).toHaveAttribute('aria-current','page');
+  await overviewLink.click();
+  const cdp=await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setPageScaleFactor',{pageScaleFactor:2});
+  await expect.poll(()=>page.evaluate(()=>visualViewport?.scale)).toBe(2);
+  const recordsModule=moduleSwitch.getByRole('button',{name:'生活记录'});
+  await recordsModule.focus();
+  await page.keyboard.press('Enter');
+  await assertWorkspaceModule(nav,'生活记录',records);
+  const lastMetric=metricButtons.last();
+  await lastMetric.evaluate(button=>button.scrollIntoView({inline:'end',block:'nearest'}));
+  const points=await lastMetric.evaluate(button=>{
+   const r=button.getBoundingClientRect(),v=visualViewport!;
+   const x=r.x+r.width/2,y=r.y+r.height/2;
+   return [[x-v.offsetLeft,y-v.offsetTop],[(x-v.offsetLeft)*v.scale,(y-v.offsetTop)*v.scale],[x,y]];
+  });
+  for(const [x,y] of points){
+   await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});
+   await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});
+   if(page.url().includes('page=projects'))break;
+   if(page.url().includes('page=tasks'))await page.evaluate(()=>history.back());
+  }
+  await expect(page).toHaveURL(/page=projects/);
+  await cdp.send('Emulation.setPageScaleFactor',{pageScaleFactor:1});
+  await cdp.detach();
+  t.diagnostic(`${width}px at 200%: keyboard module selection and pointer opened Projects`);
+ }
  await page.goto(origin+'/personal?partial=1',{waitUntil:'networkidle'});await expect(page.getByRole('region',{name:'生活维度'}).getByText('仅显示已读取的领域与项目，完整范围待确认。',{exact:true})).toBeVisible();
  await expect(metricButtons).toHaveText(['待办—','今日到期—','已逾期—','推进中项目—']);
  for(const [index,label] of ['待办','今日到期','已逾期','推进中项目'].entries()){
   await expect(metricButtons.nth(index)).toHaveAccessibleName(label+'：未知');
   await expect(metricButtons.nth(index)).toBeDisabled();
  }
- enabled=false;await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:'打开导航',exact:true}).click();
- await expect(mobileSwitch.getByRole('button')).toHaveText(['安排与推进']);
- await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'安排与推进',[['总览'],['事项']]);
+ fileHandoffEnabled=true;
+ await page.reload({waitUntil:'networkidle'});
+ await moduleSwitch.getByRole('button',{name:'资料与工具'}).click();
+ await expect(nav.getByRole('link',{name:'文件交接'})).toHaveAttribute('href','/personal/file-handoffs');
+ enabled=false;await page.reload({waitUntil:'networkidle'});
+ await expect(moduleSwitch.getByRole('button')).toHaveText(['安排与推进']);
+ await assertWorkspaceModule(nav,'安排与推进',[['总览'],['事项']]);
  assert.deepEqual(writes,[]);
  assert.deepEqual(errors,[]);
 });

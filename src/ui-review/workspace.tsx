@@ -627,7 +627,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   return (
     <div
       data-lifeos-surface="personal"
-      className={`lo-shell ${workspaceStyles.shell} ${collapsed ? "lo-is-collapsed" : ""}`}
+      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigationPreview ? workspaceStyles.desktopNavigationPreview : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
       onMouseDownCapture={event => {
         const target = event.target as Element;
         if (target.closest?.("[data-workspace-nav], a[href]") && document.activeElement?.matches("input, textarea, select")) event.preventDefault();
