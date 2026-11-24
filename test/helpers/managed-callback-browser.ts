@@ -49,7 +49,11 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
  const status=(p:Page)=>p.getByRole('status').filter({hasText:/回调地址|保存结果|最新配置/});
  const second=managedFixtureCallback+'2',third=managedFixtureCallback+'3';
 
- await change(desktop).focus();await desktop.keyboard.press('Enter');
+ const replace=change(desktop);
+ await expect(replace).toBeEnabled();
+ await replace.focus();
+ await expect(replace).toBeFocused();
+ await desktop.keyboard.press('Enter');
  await expect(field(desktop)).toBeFocused();await field(desktop).fill(third);
  await desktop.getByRole('button',{name:'取消更换'}).click();
  await expect(change(desktop)).toBeFocused();assert.equal(commands.length,0);
