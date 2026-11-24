@@ -10,6 +10,7 @@ const previewOrigin = 'http://activity-review.test';
 const files = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/review.css', ['review.css', 'text/css; charset=utf-8']],
+  ['/view.mjs', ['view.mjs', 'text/javascript; charset=utf-8']],
   ['/review.mjs', ['review.mjs', 'text/javascript; charset=utf-8']],
   ['/fixtures.mjs', ['fixtures.mjs', 'text/javascript; charset=utf-8']],
   ['/activity.mjs', ['activity.mjs', 'text/javascript; charset=utf-8']],

@@ -9,6 +9,7 @@ const { chromium } = require('playwright');
 const origin = 'http://activity-review.test';
 const paths = new Map([
   ['/review.css', 'text/css; charset=utf-8'],
+  ['/view.mjs', 'text/javascript; charset=utf-8'],
   ['/review.mjs', 'text/javascript; charset=utf-8'],
   ['/activity.mjs', 'text/javascript; charset=utf-8'],
   ['/fixtures.mjs', 'text/javascript; charset=utf-8'],
@@ -60,10 +61,10 @@ async function open(mode) {
     if (mime) {
       const body = await readFile(new URL('.' + pathname, import.meta.url), 'utf8');
       // Exercise a plausible shortcut without changing candidate assets on disk.
-      const served = mode === 'shortcut' && pathname === '/review.mjs'
+      const served = mode === 'shortcut' && pathname === '/view.mjs'
         ? body.replace("[entry.when.date, 'observed']", "[entry.when.date, 'complete']")
         : body;
-      if (mode === 'shortcut' && pathname === '/review.mjs') assert.notEqual(served, body);
+      if (mode === 'shortcut' && pathname === '/view.mjs') assert.notEqual(served, body);
       return route.fulfill({ body: served, contentType: mime });
     }
     unexpected.push(pathname);

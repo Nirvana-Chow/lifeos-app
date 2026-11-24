@@ -1,4 +1,4 @@
-:root {
+:root, :host {
   color-scheme: light;
   --paper: #f4f6f7;
   --card: #fff;
@@ -15,7 +15,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-inline-size: 940px; background: var(--paper); color: var(--ink); }
+body, .activity-document { margin: 0; min-inline-size: 940px; background: var(--paper); color: var(--ink); }
 h1, h2, h3, p, ul, dl, dd { margin: 0; }
 button, input, summary { font: inherit; }
 button, summary { cursor: pointer; }
