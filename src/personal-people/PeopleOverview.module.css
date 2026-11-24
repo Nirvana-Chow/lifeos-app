@@ -26,12 +26,11 @@
   font-weight: 600;
 }
 
-.empty, .meta, .notes {
+.empty, .meta {
   margin: 0;
   font-size: 1rem;
   line-height: 1.55;
 }
 
 .empty, .meta { color: var(--muted-foreground); }
-.notes { white-space: pre-wrap; }
 .card button { min-height: 2.75rem; }

@@ -74,24 +74,39 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   if(type==='health'){await page.getByRole('button',{name:'运动',exact:true}).click();await expect(page.getByText('暂无已完成的运动记录。飞盘、跑步、力量训练等都可记录；已有计划不会当作完成。',{exact:true})).toBeVisible();await page.getByRole('button',{name:'表格',exact:true}).click();}
   await page.getByRole('button',{name:'Unsent synthetic '+type,exact:true}).click();const dialog=page.getByRole('dialog');assert.ok(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1));await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(errors,[]);assert.deepEqual(writes,type==='health'?['POST','POST','PATCH']:type==='career'||type==='media'?['POST','PATCH','PATCH']:['POST','PATCH']);assert.equal(repo.rows.get(id)!.revision,type==='career'||type==='media'?3:2);if(type==='media'||type==='career'||type==='portfolio')await page.getByRole('button',{name:type==='portfolio'?'概览':type==='career'?'求职看板':'看板',exact:true}).click();
   if(type==='person'){
-   const namesake='Synthetic namesake';
-   const people=await Promise.all(['first','second'].map(note=>service.mutate(config.ownerId,'person',null,{spaceId:config.spaceId,confirmed:true,fields:{title:namesake,text:'Synthetic profile '+note,occurredOn:null,personal:emptyPersonPersonal()}},'person-overview-fixture-'+note)));
+   const namesake='Synthetic namesake', privateStart='Synthetic private note starts here ', privateEnd=' synthetic final marker';
+   const longNote=privateStart+'x'.repeat(16384-privateStart.length-privateEnd.length)+privateEnd;
+   const notes=[longNote,'Synthetic profile second'];
+   const people=await Promise.all(notes.map((text,index)=>service.mutate(config.ownerId,'person',null,{spaceId:config.spaceId,confirmed:true,fields:{title:namesake,text,occurredOn:null,personal:{...emptyPersonPersonal(),relationship:index===0?'合成关系甲':'合成关系乙'}}},'person-overview-fixture-'+index)));
    await page.getByRole('button',{name:'刷新',exact:true}).click();
    await page.getByRole('button',{name:'人物概览',exact:true}).click();
    const overview=page.getByRole('region',{name:'人物概览'});
    await expect(overview.getByRole('heading',{name:namesake,exact:true})).toHaveCount(2);
-   for(const [idx,record] of people.entries()){
-    const notes=idx===0?'Synthetic profile first':'Synthetic profile second';
-    const button=overview.getByRole('button',{name:'查看 '+namesake+'（'+record.entry.id+'）',exact:true});
-    await expect(button).toBeVisible();
-    await button.focus();
-    await button.press('Enter');
-    await expect(page.getByRole('dialog').getByLabel('备注',{exact:true})).toHaveValue(notes);
-    await page.getByRole('button',{name:'关闭',exact:true}).click();
+   const cardHtml=await overview.innerHTML();
+   assert.ok(!cardHtml.includes(privateStart)&&!cardHtml.includes(privateEnd)&&!cardHtml.includes(notes[1]));
+   for(const record of people)assert.ok(!cardHtml.includes(record.entry.id),'UUID is absent from visible text and accessible labels');
+   const search=page.getByRole('textbox',{name:'搜索人物'});
+   for(const [idx,query] of [privateEnd.trim(),notes[1]].entries()){
+    const summary=idx===0?'合成关系甲':'合成关系乙';
+    const card=overview.getByRole('listitem').filter({hasText:summary});
+    const detail=card.getByRole('button',{name:/^查看 Synthetic namesake（同名档案 [12]）$/});
+    const label=await detail.getAttribute('aria-label');
+    await search.fill(query);
+    await expect(overview.getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
+    await expect(detail).toHaveAttribute('aria-label',label!);
+    await search.focus();
+    for(const name of ['人物列表','人物概览','刷新','新增人物']){
+     await page.keyboard.press('Tab');
+     await expect(page.getByRole('button',{name,exact:true})).toBeFocused();
+    }
+    await page.keyboard.press('Tab');
+    await expect(detail).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog').getByLabel('备注',{exact:true})).toHaveValue(notes[idx]);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await search.clear();
    }
-   await page.getByRole('textbox',{name:'搜索人物'}).fill('Synthetic profile second');
-   await expect(overview.getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
-   await expect(overview.getByText('人物 ID '+people[1].entry.id)).toBeVisible();
    await page.getByRole('textbox',{name:'搜索人物'}).fill('unmatched synthetic search');
    await expect(overview.getByText('没有符合搜索条件的人物。')).toBeVisible();
    await page.getByRole('textbox',{name:'搜索人物'}).clear();
