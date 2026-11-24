@@ -7,7 +7,7 @@ import test from 'node:test';
 import {chromium,expect} from '@playwright/test';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
-test('OPT-IN visible palettes and truthful task/project/requirement Gantt',{
+test('OPT-IN stored palette, hidden preset controls and truthful task/project/requirement Gantt',{
  skip:process.env.RUN_APPEARANCE_GANTT_BROWSER_TESTS!=='1'&&'Requires isolated synthetic Next fixture and native Chrome',timeout:180_000,
 },async()=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-appearance-gantt-'));
@@ -27,22 +27,24 @@ export default function Page(){return <main data-lifeos-surface className="lo-sh
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],detached:true});serverProcess=trackAuthThemeProcess(server,true);server.stderr.resume();
   const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.once('error',error=>{clearTimeout(timer);reject(error);});server.stdout.on('data',chunk=>{output=(output+String(chunk)).slice(-65536);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
   browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
-  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(8000);let writes=0;const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light',storageState:{cookies:[],origins:[{origin,localStorage:[{name:'lifeos-ui-palette',value:'sage-teal'}]}]}});page.setDefaultTimeout(8000);let writes=0;const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',route=>{const request=route.request();if(!['GET','HEAD'].includes(request.method())){writes++;return route.abort();}return new URL(request.url()).origin===origin?route.continue():route.abort();});
   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});await expect(page.locator('[data-task-grid="reui"]')).toBeVisible();
   const baselineFont=await page.locator('.lo-shell').evaluate(node=>getComputedStyle(node).fontSize);
   await page.getByRole('button',{name:'设置',exact:true}).click();const settings=page.locator('[data-settings-page]');
-  await expect(settings.getByRole('group',{name:'配色预设',exact:true})).toBeVisible();await expect(settings.getByRole('radio')).toHaveCount(3);
-  await settings.getByRole('radio',{name:'鼠尾草 · 青绿',exact:true}).check();await settings.getByLabel('明暗模式',{exact:true}).selectOption('dark');
+  await expect(settings.getByRole('group',{name:'配色预设',exact:true})).toHaveCount(0);await expect(settings.getByRole('radio')).toHaveCount(0);
+  const theme=page.locator('header [data-slot="theme-toggle"]');
+  await theme.focus();await page.keyboard.press('Space');
+  await expect(theme).toHaveAttribute('data-theme-preference','dark');
   assert.equal(await page.locator('html').getAttribute('data-lifeos-palette'),'sage-teal');assert.equal(await page.locator('html').getAttribute('data-lifeos-theme'),'dark');
   assert.equal(await page.locator('.lo-shell').evaluate(node=>getComputedStyle(node).fontSize),baselineFont);
-  await page.getByRole('button',{name:'事项',exact:true}).click();await page.reload({waitUntil:'networkidle'});await expect(page.locator('[data-task-grid="reui"]')).toBeVisible();
+  await page.reload({waitUntil:'networkidle'});await expect(page.locator('[data-task-grid="reui"]')).toBeVisible();
   assert.equal(await page.locator('html').getAttribute('data-lifeos-palette'),'sage-teal');assert.equal(await page.locator('html').getAttribute('data-lifeos-theme'),'dark');
   await page.getByRole('button',{name:'甘特',exact:true}).click();const taskGantt=page.getByRole('region',{name:'待办甘特',exact:true});await expect(taskGantt.getByRole('heading',{name:'尚无完整排期',exact:true})).toBeVisible();await expect(taskGantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(taskGantt.locator('[data-gantt-milestone]')).toHaveCount(1);await expect(taskGantt.getByRole('img',{name:'截止 2030-11-05',exact:true})).toBeVisible();await expect(taskGantt.getByRole('button',{name:'查看待办 合成到期待办',exact:true})).toBeVisible();await taskGantt.getByRole('button',{name:'查看待办表格',exact:true}).click();await expect(page.locator('[data-task-grid="reui"]')).toBeVisible();
   await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();const projectGantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(projectGantt.getByRole('heading',{name:'尚无完整排期',exact:true})).toBeVisible();await expect(projectGantt).toContainText('1 项项目未完整排期');await projectGantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();
   const viewport=page.locator('[data-slot="data-grid-table-viewport"]');assert.equal(await viewport.evaluate(node=>getComputedStyle(node).scrollbarWidth),'thin');
   await page.setViewportSize({width:360,height:800});await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.getByRole('button',{name:'设置',exact:true}).click();
-  await settings.getByRole('radio',{name:'雾紫 · 紫罗兰',exact:true}).check();const mobile=await settings.getByRole('radio').first().locator('..').evaluate(node=>({font:parseFloat(getComputedStyle(node).fontSize),height:node.getBoundingClientRect().height}));assert.ok(mobile.font>=16);assert.ok(mobile.height>=44);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await expect(settings.getByRole('radio')).toHaveCount(0);const mobile=await theme.evaluate(node=>({font:parseFloat(getComputedStyle(node).fontSize),height:node.getBoundingClientRect().height}));assert.ok(mobile.font>=16);assert.ok(mobile.height>=44);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.keyboard.press('Escape');await page.goto(origin+'/schedule',{waitUntil:'networkidle',timeout:60000});const gantt=page.getByRole('region',{name:'需求甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.locator('[data-requirement-id]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-05 至 2030-11-08',exact:true})).toBeVisible();await expect(gantt.getByRole('heading',{name:'未排期（3）',exact:true})).toBeVisible();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.equal(writes,0);assert.deepEqual(errors,[]);console.log('APPEARANCE_GANTT_BROWSER_PASS '+JSON.stringify({desktopFont:baselineFont,mobile,paletteRefresh:true,completeBars:1,partialBars:0,writes}));
  }finally{await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}

@@ -1,5 +1,6 @@
 .control {
   position: relative;
+  display: flex;
   flex: none;
   font: var(--lo-font-body);
   color: var(--foreground);
@@ -18,7 +19,8 @@
 .control button.toggle:disabled {
   visibility: hidden;
 }
-.control button.toggle:hover {
+.control button.toggle:hover,
+.control button.toggle[aria-pressed=true] {
   background: var(--accent);
   color: var(--foreground);
 }

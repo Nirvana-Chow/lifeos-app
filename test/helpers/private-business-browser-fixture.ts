@@ -266,9 +266,13 @@ export async function assertPrivateFixtureNavigation(page:Page){
  await expect(page.locator('aside button[aria-label="设置"]')).toHaveAttribute('aria-current','page');
  if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal?page=settings&panel=general');
  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+ if(drawerOpen)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ await expect(page.getByRole('navigation',{name:'主导航',exact:true})).toHaveCount(0);
  await categories.getByRole('button',{name:'需求池',exact:true}).click();
  await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
+ if(drawerOpen)await page.getByRole('button',{name:'打开导航',exact:true}).click();
  await expect(categories.getByRole('button',{name:'需求池',exact:true})).toHaveAttribute('aria-current','page');
+ if(drawerOpen)await page.getByRole('button',{name:'关闭导航',exact:true}).click();
  await expect(page.locator('aside button[aria-label="设置"]')).toHaveAttribute('aria-current','page');
  if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal?page=requirements');
  await page.getByRole('button',{name:'返回总览',exact:true}).click();

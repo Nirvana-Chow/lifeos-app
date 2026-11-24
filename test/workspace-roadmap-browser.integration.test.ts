@@ -141,9 +141,11 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(settings).toBeVisible();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
   await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);
-  await categories.getByRole('button',{name:'标签',exact:true}).click();
+  const openCategories=async()=>{if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
+  const closeCategories=async()=>{if(width<850)await page.getByRole('button',{name:'关闭导航',exact:true}).click();};
+  await openCategories();await categories.getByRole('button',{name:'标签',exact:true}).click();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
-  await expect(categories.getByRole('button',{name:'标签',exact:true})).toHaveAttribute('aria-current','page');
+  await openCategories();await expect(categories.getByRole('button',{name:'标签',exact:true})).toHaveAttribute('aria-current','page');await closeCategories();
   const topics=settings.getByRole('region',{name:'标签',exact:true});
   await expect(topics.getByText('合成主题',{exact:true})).toBeVisible();
   await expect(topics.getByRole('link',{name:'编辑标签',exact:true})).toHaveAttribute('href','/personal/edit?type=topic&id='+ids[6]);
@@ -155,9 +157,9 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal?page=areas');
   await nav('设置');await expect(settings).toBeVisible();
   if(width>=1024)await page.setViewportSize({width,height:768});
-  await categories.getByRole('button',{name:'需求池',exact:true}).click();
+  await openCategories();await categories.getByRole('button',{name:'需求池',exact:true}).click();
   await expect(settings).toHaveCount(0);
-  await expect(categories.getByRole('button',{name:'需求池',exact:true})).toHaveAttribute('aria-current','page');
+  await openCategories();await expect(categories.getByRole('button',{name:'需求池',exact:true})).toHaveAttribute('aria-current','page');await closeCategories();
   await expect(page).toHaveURL(origin+'/personal?page=requirements');
   await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);

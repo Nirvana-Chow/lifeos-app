@@ -45,10 +45,11 @@ test('workspace settings navigation hides support routes until owner scope and b
    assert.ok(jsxOnly.has(name),'unexpected workspace dependency '+name);return components;
   },module,module.exports);
   const tree=module.exports.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:false,loginAllowed:true},initialPage:'settings',viewPreferenceScope:preferenceScope,onNavigatePage:(page:string)=>navigated.push(page)});
-  const navigation=nodes(tree,node=>node.type==='nav'&&node.props?.['aria-label']==='设置分类');assert.equal(navigation.length,1);
-  const pool=nodes(navigation[0],node=>node.props?.children==='需求池'&&typeof node.props?.onClick==='function');assert.equal(pool.length,1);
+  const sidebar=nodes(tree,node=>node.type==='aside');assert.equal(sidebar.length,1);
+ const navigation=nodes(sidebar[0],node=>node.type==='nav'&&node.props?.['aria-label']==='设置分类');assert.equal(navigation.length,1);
+  const pool=nodes(navigation[0],node=>node.props?.['aria-label']==='需求池'&&typeof node.props?.onClick==='function');assert.equal(pool.length,1);
   pool[0].props.onClick();assert.deepEqual(navigated,['requirements'],'the pool keeps its existing finite workspace destination');
-  return nodes(navigation[0],node=>!!node.props?.href).map(node=>node.props.href);
+  return nodes(navigation[0],node=>node.type==='owner-links').flatMap(node=>node.props.links.map((link:{href:string})=>link.href));
  }
  for(const closed of [null,{}, {...status,storageVerified:false},{...status,requirementsEnabled:false},{...status,requirementSupportEnabled:false}])assert.deepEqual(settings(closed),[]);
  assert.deepEqual(settings(status,JSON.stringify(['foreign-owner','space'])),[]);

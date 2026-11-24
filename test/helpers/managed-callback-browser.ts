@@ -38,7 +38,8 @@ export async function exerciseManagedCallback(root:string,origin:string,desktop:
   });
   await page.goto(origin+'/personal?page=settings&panel=general');
   const link=page.getByRole('link',{name:'ChatGPT 连接设置',exact:true});
-  await expect(link).toHaveAttribute('href','/account/mcp');await link.click();
+  await expect(link).toHaveCount(0);
+  await page.goto(origin+'/account/mcp');
   await expect(page.getByRole('heading',{name:'已保存的配置'})).toBeVisible();
  }
  const change=(p:Page)=>p.getByRole('button',{name:'更换回调地址',exact:true});

@@ -34,7 +34,11 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  assert.deepEqual(writes,['POST','POST']);
  await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
  const menu=page.getByRole('dialog',{name:'LifeOS',exact:true});
- const openMenu=()=>page.getByRole('button',{name:'打开导航',exact:true}).click();
+ const openMenu=async()=>{
+  await expect(page.locator('.lo-mobile-sidebar')).toHaveCount(0);
+  await page.getByRole('button',{name:'打开导航',exact:true}).click();
+  await expect(menu).toBeVisible();
+ };
  const readyMenu=async()=>{
   await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^生活记录$/})).toHaveCount(1);
   await openMenu();
@@ -70,6 +74,8 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  await switcher.getByRole('button',{name:'资料与工具',exact:true}).click();
  await assertWorkspaceModule(nav,'资料与工具',tools);
  await menu.getByRole('button',{name:'设置',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'设置',exact:true,level:1})).toBeVisible();
+ await readyMenu();
  const productLinks=page.getByRole('navigation',{name:'设置分类'});
  const product=productLinks.getByRole('group',{name:'产品与反馈',exact:true});
  const productItems=[['阶段路线图','/personal/requirements/roadmap'],['反馈 Inbox','/personal/requirements/feedback'],['更新记录','/personal/requirements/updates']] as const;
@@ -78,12 +84,12 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
  await expect(productLinks.getByRole('group',{name:'资料与工具',exact:true}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await product.getByRole('link',{name:'更新记录',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal/requirements/updates');await expect(page.getByText('本版本更新提醒已关闭。',{exact:true})).toBeVisible();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
- await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});const settings=page.getByRole('navigation',{name:'设置分类'});await expect(settings.getByRole('group',{name:'资料与工具'}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
+ await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});await openMenu();const settings=page.getByRole('navigation',{name:'设置分类'});await expect(settings.getByRole('group',{name:'资料与工具'}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await settings.getByRole('link',{name:'存储审核',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/storage-review');await expect(page.getByRole('heading',{name:'存储审核',exact:true,level:1})).toBeVisible();await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');await expect(page.locator('#open-server')).toBeEnabled();await page.getByRole('link',{name:'← LifeOS 主站',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
  enabled=false;await page.goto(origin+'/personal',{waitUntil:'networkidle'});await openMenu();
  await assertWorkspaceModule(nav,'安排与推进',[['总览'],['事项'],['搜索本人记录','/personal/search']]);
  await switcher.getByRole('button',{name:'资料与工具',exact:true}).click();await assertWorkspaceModule(nav,'资料与工具',tools);
- await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});for(const label of ['阶段路线图','反馈 Inbox','更新记录'])await expect(settings.getByRole('link',{name:label,exact:true})).toHaveCount(0);
+ await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});await openMenu();for(const label of ['阶段路线图','反馈 Inbox','更新记录'])await expect(settings.getByRole('link',{name:label,exact:true})).toHaveCount(0);
  storageAvailable=false;await page.goto(origin+'/personal',{waitUntil:'networkidle'});await page.reload({waitUntil:'networkidle'});await openMenu();
  await expect(switcher.getByRole('button')).toHaveText(['安排与推进']);
  await assertWorkspaceModule(nav,'安排与推进',[['总览'],['事项']]);
