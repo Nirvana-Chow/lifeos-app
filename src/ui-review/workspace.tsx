@@ -842,8 +842,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <>
               <div className="lo-task-toolbar">
                 {page === "tasks" && props.viewPreferenceScope && data?.coverage === "complete" &&
-                  <Button asChild variant="outline"><a href="/personal/task-classification-preview"
-                    onClick={event => { if (props.onBeforeNavigate?.() === false) event.preventDefault(); }}>分类预览</a></Button>}
+                  <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>}
                 <label className="lo-search">
                   <Search size={17} />
                   <Input
