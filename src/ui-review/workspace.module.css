@@ -116,7 +116,8 @@
 
 /* Keep the desktop pane width while making an individual control reachable after panning. */
 @media(max-width:850px) {
- .shell.desktopNavigation .settingsPanel :global([aria-label="修改密码"]) :is(label,button) {
+ .shell.desktopNavigation .settingsPanel :global([aria-label="修改密码"]) :is(label,button),
+ .shell.desktopNavigation :global(.lo-filter-panel) > label {
   max-inline-size:calc(100vw - 2 * var(--lo-content-padding));
   justify-self:start;
   width:100%;
