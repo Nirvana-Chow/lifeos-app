@@ -101,7 +101,8 @@ test('personal navigation hides unfinished business and record management',()=>{
  for(const initialPage of ['overview','tasks','settings'] as const){
   const html=workspace({initialPage});
   assert.doesNotMatch(html,/href="\/personal\/(?:schedule|settings\/data|edit\?type=journal)"|更多业务|href="\/review\/admin/);
-  assert.match(html,/aria-label="事项"/);
+  if(initialPage==='settings'){assert.match(html,/aria-label="设置分类"/);assert.doesNotMatch(html,/aria-label="事项"/);}
+  else assert.match(html,/aria-label="事项"/);
   assert.doesNotMatch(html,/aria-label="帮助"/);
  }
 });
@@ -136,7 +137,8 @@ test('settings renders a dedicated page and its opener uses the departure guard'
  assert.ok(elements(tree,n=>n.props['data-settings-page']!==undefined).length);
  const trigger=elements(tree,n=>n.props['aria-label']==='设置')[0];trigger.props.onClick({currentTarget:null});
  assert.equal(captured,0);assert.equal(left,1,'settings is an ordinary guarded page departure');
- assert.ok(elements(tree,n=>n.props['aria-label']==='事项').length);
+ assert.equal(elements(tree,n=>n.props['aria-label']==='事项').length,0);
+ assert.equal(elements(tree,n=>n.type==='aside'&&elements(n,child=>child.props?.['aria-label']==='设置分类').length>0).length,1);
 });
 
 test('settings downloads preserve background drafts and departing links respect panel guard',()=>{
@@ -151,7 +153,7 @@ test('requirement navigation guard also blocks departure to the standalone setti
  let departures=0,guards=0,overlays=0;const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true},initialPage:'requirements',onNavigatePage:()=>departures++,onBeforeSettingsChange:()=>{overlays++;return true;}});
  const page=elements(tree,n=>n.type?.name==='RequirementsPage')[0];assert.ok(page);page.props.navigationGuard.current=()=>{guards++;return false;};
- const nav=elements(tree,n=>n.props?.['aria-label']==='事项')[0];assert.equal(nav.props.onClick(),false);assert.equal(departures,0);assert.equal(guards,1);
+ const nav=elements(tree,n=>n.props?.['aria-label']==='返回总览')[0];assert.equal(nav.props.onClick(),false);assert.equal(departures,0);assert.equal(guards,1);
  elements(tree,n=>n.props?.['aria-label']==='设置')[0].props.onClick({currentTarget:null});assert.equal(overlays,0);assert.equal(guards,2);
 });
 

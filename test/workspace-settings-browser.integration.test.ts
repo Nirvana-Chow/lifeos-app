@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import {cp, mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {once} from 'node:events';
+import {on, once} from 'node:events';
 import test from 'node:test';
 import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
@@ -79,37 +79,195 @@ async function fixture(root:string,managedCallback=false){
  return server;
 }
 
+async function prepareSettingsFixture(server:Awaited<ReturnType<typeof fixture>>,firstPage:string) {
+ const started=performance.now();
+ const stopped=new AbortController();
+ const onExit=(code:number|null,signal:NodeJS.Signals|null)=>
+  stopped.abort(new Error('Next exited (code '+code+', signal '+signal+')'));
+ const onError=(error:Error)=>stopped.abort(error);
+ server.once('exit',onExit);
+ server.once('error',onError);
+ let startupOutput='',diagnostics='',origin:string|undefined,phase='listener startup';
+ const capture=(chunk:Buffer)=>{diagnostics=(diagnostics+chunk.toString()).slice(-4000);};
+ server.stdout.on('data',capture);
+ server.stderr.on('data',capture);
+ try{
+  const startupSignal=AbortSignal.any([AbortSignal.timeout(30_000),stopped.signal]);
+  for await(const [chunk] of on(server.stdout,'data',{signal:startupSignal})){
+   startupOutput=(startupOutput+String(chunk)).slice(-4000);
+   const address=startupOutput.match(/Local:\s+(http:\/\/127\.0\.0\.1:\d+)/)?.[1];
+   if(address&&/Ready in\b/.test(startupOutput)){origin=address;break;}
+  }
+  if(!origin)throw new Error('Missing the ready loopback listener');
+  phase='first-page compilation and response';
+  const requestStarted=performance.now();
+  // Drain the actual route's HTML before opening a browser. Chrome still
+  // makes its own timed navigation in a fresh context.
+  const signal=AbortSignal.any([AbortSignal.timeout(55_000),stopped.signal]);
+  const response=await fetch(new URL(firstPage,origin),{redirect:'manual',signal});
+  if(response.status!==200||!response.headers.get('content-type')?.startsWith('text/html')){
+   await response.body?.cancel();
+   throw new Error('Expected HTTP 200 HTML, received HTTP '+response.status);
+  }
+  const html=await response.text();
+  if(!html.includes('id="personal-main"')||!html.includes('</html>')){
+   throw new Error('The complete personal workspace document was not rendered');
+  }
+  signal.throwIfAborted();
+  console.log('SETTINGS_FIXTURE_READY '+JSON.stringify({
+   firstPage,startupMs:Math.round(requestStarted-started),pageMs:Math.round(performance.now()-requestStarted),
+  }));
+  return origin;
+ }catch(error){
+  const elapsed=Math.round(performance.now()-started);
+  throw new Error('Settings fixture readiness failed during '+phase+' for '+firstPage+
+   ' after '+elapsed+'ms: '+String(error)+'\n'+diagnostics.trim(),{cause:error});
+ }finally{
+  server.off('exit',onExit);
+  server.off('error',onError);
+  server.stdout.off('data',capture);
+  server.stderr.off('data',capture);
+  server.stdout.resume();
+  server.stderr.resume();
+ }
+}
+
 test('OPT-IN short Settings keeps security and logout reachable above the filing footer',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-short-settings-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Short Settings fixture startup timeout')),30000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('Short Settings fixture exited'));});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=tasks');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  for(const width of [1365,390])for(const height of [240,300]){
   const page=await browser.newPage({viewport:{width,height},colorScheme:width===1365?'light':'dark'});page.setDefaultTimeout(5000);
   try{
    const writes=await installSyntheticReads(page,origin);
+   const debugRequests:string[]=[];page.on('request',r=>{if(!['GET','HEAD'].includes(r.method()))debugRequests.push(r.method()+' '+new URL(r.url()).pathname);});
    await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:55_000});await readyHeading(page,'待办');await addSyntheticFooter(page);
    if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
    await page.getByRole('button',{name:'设置',exact:true}).click();
    const settings=page.locator('[data-settings-page]');await expect(settings).toBeVisible();
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
    const mcpLink=settings.getByRole('link',{name:'ChatGPT 连接设置',exact:true});
-   await expect(mcpLink).toHaveAttribute('href','/account/mcp');
+   await expect(mcpLink).toHaveCount(0);
+   await expect(settings.getByRole('group',{name:'配色预设',exact:true})).toHaveCount(0);
+   await expect(settings.getByRole('region',{name:'外观设置',exact:true})).toHaveCount(0);
+   await expect(page.locator('header [data-slot="theme-toggle"]')).toBeEnabled();
    const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+   const openCategories=async()=>{if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
+   await openCategories();await expect(categories.getByRole('group',{name:'偏好与账号',exact:true})).toBeVisible();
    await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),settings.getByRole('button',{name:'保存密码',exact:true})]){
     await control.scrollIntoViewIfNeeded();await expectAboveFooter(page,control);
     assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings security control receives pointer input');
    }
-   await categories.getByRole('button',{name:'通用',exact:true}).click();
+   await openCategories();await categories.getByRole('button',{name:'通用',exact:true}).click();
    const logout=page.getByRole('button',{name:'退出登录',exact:true});await logout.scrollIntoViewIfNeeded();await expectAboveFooter(page,logout);
    assert.equal(await logout.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings logout receives pointer input');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight===innerHeight&&document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'short Settings scroll stays inside the document');
    for(let step=0;step<3;step++)await page.getByRole('button',{name:'后退',exact:true}).click();
    await readyHeading(page,'待办');await expect(page).toHaveURL(origin+'/personal?page=tasks');
-   assert.equal(writes(),0,'short Settings browsing and history never mutate records');
+   assert.equal(writes(),0,'short Settings browsing and history never mutate records: '+debugRequests.join(', '));
+  }finally{await page.close();}
+ }
+});
+
+test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop/mobile deep links',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:150_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-settings-header-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=security');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const screenshots=join(source,'.review-results');await mkdir(screenshots,{recursive:true});
+ const security=origin+'/personal?page=settings&panel=security',general=origin+'/personal?page=settings&panel=general';
+ for(const width of [1440,360]){
+  const mobile=width===360;
+  const page=await browser.newPage({viewport:{width,height:900},colorScheme:'light',isMobile:mobile,hasTouch:mobile,
+   storageState:{cookies:[],origins:[{origin,localStorage:[{name:'lifeos-ui-palette',value:'sage-teal'}]}]}});
+  try{
+   const writes=await installSyntheticReads(page,origin);
+   await page.route(origin+'/api/platform/auth/device-sessions',route=>route.request().method()==='GET'
+    ?route.fulfill({json:{sessions:[],truncated:false}}):route.fallback());
+   const attemptedWrites:string[]=[];
+   page.on('request',request=>{if(!['GET','HEAD'].includes(request.method()))attemptedWrites.push(request.method()+' '+new URL(request.url()).pathname);});
+   await page.goto(security,{waitUntil:'domcontentloaded',timeout:55_000});
+   const main=page.locator('#personal-main'),panel=main.locator('[data-settings-panel]');
+   const password=panel.getByLabel('原密码',{exact:true}),theme=page.locator('header [data-slot="theme-toggle"]');
+   const system=page.locator('header').getByRole('button',{name:'跟随系统',exact:true});
+   const categories=(mobile?page.getByRole('dialog'):page.locator('aside')).getByRole('navigation',{name:'设置分类',exact:true});
+   await expect(password).toBeEnabled({timeout:15_000});
+   await expect(page).toHaveURL(security);
+   await expect(theme).toBeEnabled();
+   await theme.focus();await page.keyboard.press('Space');
+   await expect(theme).toBeFocused();
+   await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
+   await page.reload({waitUntil:'domcontentloaded'});
+   await expect(theme).toHaveAttribute('data-theme-preference','dark');
+   await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
+   await expect(page.locator('html')).toHaveAttribute('data-lifeos-palette','sage-teal');
+   await expect(panel.getByRole('button',{name:'重新读取设备列表',exact:true})).toBeEnabled();
+   if(mobile)for(const control of [theme,system]){
+    const box=await control.boundingBox();assert.ok(box&&box.width>=44&&box.height>=44);
+   }
+   const geometry=await panel.evaluate(node=>{
+    const bounds=node.getBoundingClientRect(),content=node.closest('.lo-content')!.getBoundingClientRect();
+    const form=node.querySelector('[aria-label="修改密码"]')!.getBoundingClientRect();
+    return {documentFits:document.documentElement.scrollWidth<=document.documentElement.clientWidth,
+     panelFits:node.scrollWidth<=node.clientWidth,panelStart:bounds.left,contentStart:content.left,
+     panelWidth:bounds.width,contentWidth:content.width,formStart:form.left,formWidth:form.width};
+   });
+   assert.ok(geometry.documentFits&&geometry.panelFits,JSON.stringify(geometry));
+   assert.equal(geometry.panelStart,geometry.contentStart);
+   assert.equal(geometry.panelWidth,geometry.contentWidth);
+   assert.equal(geometry.formStart,geometry.panelStart);
+   assert.ok(geometry.panelWidth-geometry.formWidth<=20,JSON.stringify(geometry));
+   console.log('SETTINGS_HEADER_LAYOUT '+JSON.stringify({width,...geometry}));
+   await page.screenshot({path:join(screenshots,`settings-header-security-${width}.png`),animations:'disabled'});
+   if(mobile){
+    await page.getByRole('button',{name:'打开导航',exact:true}).click();
+    await expect(categories.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-current','page');
+    await page.screenshot({path:join(screenshots,'settings-header-mobile-drawer.png'),animations:'disabled'});
+    await page.getByRole('button',{name:'关闭导航',exact:true}).click();
+   }
+   await password.fill('synthetic-password-draft');
+   if(mobile)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+   await expect(main.getByRole('navigation',{name:'设置分类',exact:true})).toHaveCount(0);
+   await expect(categories.getByRole('button',{name:'外观',exact:true})).toHaveCount(0);
+   const generalButton=categories.getByRole('button',{name:'通用',exact:true});
+   for(const accept of [false,true]){
+    const [message]=await Promise.all([page.waitForEvent('dialog').then(async dialog=>{
+     const message=dialog.message();
+     if(accept)await dialog.accept();else await dialog.dismiss();
+     return message;
+    }),generalButton.click()]);
+    assert.equal(message,'放弃尚未保存的密码修改？');
+    if(!accept){
+     await expect(page).toHaveURL(security);
+     await expect(password).toHaveValue('synthetic-password-draft');
+     await expect(categories).toBeVisible();
+    }
+   }
+   await expect(page).toHaveURL(general);
+   await expect(password).toHaveCount(0);
+   if(mobile)await expect(categories).toHaveCount(0);
+   await expect(panel.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+   await expect(panel.getByRole('region',{name:'外观设置',exact:true})).toHaveCount(0);
+   await expect(panel.getByRole('radio')).toHaveCount(0);
+   await expect(panel.locator('a[href="/account/mcp"]')).toHaveCount(0);
+   await theme.focus();await page.keyboard.press('Enter');
+   await expect(theme).toHaveAttribute('data-theme-preference','light');
+   await system.focus();await page.keyboard.press('Enter');
+   await expect(system).toHaveAttribute('aria-pressed','true');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('lifeos-ui-theme')),'system');
+   await page.goto('about:blank');
+   await page.goto(general,{waitUntil:'domcontentloaded'});
+   await expect(theme).toHaveAttribute('data-theme-preference','system');
+   await expect(page.locator('html')).toHaveAttribute('data-lifeos-palette','sage-teal');
+   await expect(panel.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+   await page.screenshot({path:join(screenshots,`settings-header-general-${width}.png`),animations:'disabled'});
+   assert.equal(writes(),0,attemptedWrites.join(', '));
   }finally{await page.close();}
  }
 });
@@ -119,7 +277,7 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-settings-browser-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await new Promise<string>((accept,reject)=>{let text='';const timer=setTimeout(()=>reject(Error('fixture start timeout')),30000);server.stdout.on('data',chunk=>{text+=String(chunk);const match=text.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>reject(Error('fixture exited')));});
+ const origin=await prepareSettingsFixture(server,'/personal?page=tasks');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  await mkdir(join(source,'.review-results'),{recursive:true});
  for(const width of [1365,390]){
@@ -148,17 +306,26 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   const reads=personalReads;
   await nav();const settings=page.locator('#personal-main'),settingsPage=page.locator('[data-settings-page]');await expect(settingsPage).toBeVisible();
   await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);await expect(page.locator('[data-task-grid]')).toHaveCount(0);
-  await settings.getByRole('button',{name:'安全与密码',exact:true}).click();await expect(settings.getByRole('textbox',{name:'本人账号'})).toBeVisible();
+  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+  const openCategories=async()=>{if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
+  await openCategories();await categories.getByRole('button',{name:'安全与密码',exact:true}).click();await expect(settings.getByRole('textbox',{name:'本人账号'})).toBeVisible();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
-  await expect(settings.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-current','page');
+  await openCategories();await expect(categories.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-current','page');
+  if(width<850)await page.getByRole('button',{name:'关闭导航',exact:true}).click();
   await page.screenshot({path:join(source,`.review-results/settings-security-${width}.png`),animations:'disabled'});
   await settings.getByLabel('原密码',{exact:true}).fill('synthetic-refused-draft');const refuse=(d:import('@playwright/test').Dialog)=>void d.dismiss();page.on('dialog',refuse);
-  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');page.off('dialog',refuse);await settings.getByLabel('原密码',{exact:true}).fill('');
+  await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');
+  await openCategories();await categories.getByRole('button',{name:'通用',exact:true}).click();
+  await expect(categories).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+  if(width<850)await page.getByRole('button',{name:'关闭导航',exact:true}).click();
+  await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');page.off('dialog',refuse);await settings.getByLabel('原密码',{exact:true}).fill('');
   await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
   await page.getByRole('button',{name:'后退',exact:true}).click();await expect(settingsPage).toHaveCount(0);await expect(page.getByRole('textbox',{name:'搜索待办',exact:true})).toHaveValue('');
   await page.getByRole('button',{name:'前进',exact:true}).click();await expect(settingsPage).toBeVisible();await page.getByRole('button',{name:'前进',exact:true}).click();await expect(settings.getByLabel('原密码',{exact:true})).toBeVisible();
   await settings.getByLabel('原密码',{exact:true}).fill('synthetic-unsaved-password');let confirmations=0;const accept=(d:import('@playwright/test').Dialog)=>{confirmations++;void d.accept();};page.on('dialog',accept);
-  if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.getByRole('button',{name:'事项',exact:true}).click();await expect(settingsPage).toHaveCount(0);page.off('dialog',accept);assert.equal(confirmations,1,'one page departure confirms unsaved password once');
+  await page.getByRole('button',{name:'返回总览',exact:true}).click();await expect(settingsPage).toHaveCount(0);page.off('dialog',accept);assert.equal(confirmations,1,'one page departure confirms unsaved password once');
+  if(width<850)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+  await page.getByRole('button',{name:'事项',exact:true}).click();
   assert.equal(personalReads,reads,'client page transitions retain the verified data controller');
   await viewport.evaluate(e=>e.scrollTop=0);await page.getByRole('gridcell',{name:'合成待办甲',exact:true}).dblclick();
   const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await input.fill('未保存合成草稿');
@@ -232,7 +399,7 @@ test('OPT-IN overview draft survives rejected Settings and matters page departur
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-overview-settings-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Overview fixture startup timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('Overview fixture exited'));});});
+ const origin=await prepareSettingsFixture(server,'/personal');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});t.after(()=>page.close());
  const writes=await installSyntheticReads(page,origin);
@@ -254,7 +421,7 @@ test('OPT-IN settings category returns to the requested panel after requirement 
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-settings-return-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('settings return fixture timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('settings return fixture exited'));});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=security');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1365,height:900}});t.after(()=>page.close());
  const writes=await installSyntheticReads(page,origin);
@@ -272,7 +439,7 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-settings-feedback-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('feedback fixture timeout')),30_000);server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});server.once('exit',()=>{clearTimeout(timer);reject(Error('feedback fixture exited'));});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=general');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1365,height:900}});t.after(()=>page.close());let writes=0,authorized=true;
  await page.route('**/*',async route=>{
@@ -332,11 +499,7 @@ test('OPT-IN managed callback settings navigates, replaces, and recovers on desk
  });
  const server=await fixture(root,true),stopped=once(server,'exit');
  stopServer=async()=>{server.kill('SIGTERM');await stopped;};
- const origin=await new Promise<string>((accept,reject)=>{
-  let output='';const timer=setTimeout(()=>reject(Error('Managed callback fixture startup timeout')),30000);
-  server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});
-  server.once('exit',()=>{clearTimeout(timer);reject(Error('Managed callback fixture exited'));});
- });
+ const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=general');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
  closeBrowser=()=>browser.close();
  const desktop=await browser.newPage({viewport:{width:1365,height:900}});
