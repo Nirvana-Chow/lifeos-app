@@ -38,7 +38,7 @@ test('OPT-IN journal activity retains owner and restoration guards at the canoni
   await new Promise<void>(done => probe.close(() => done()));
   const origin = 'http://127.0.0.1:' + port;
   const server = spawn(process.execPath, [join(source, 'node_modules/next/dist/bin/next'), 'dev', '--webpack', '--hostname', '127.0.0.1', '--port', String(port)], {
-    cwd: root, env: { PATH: process.env.PATH, NEXT_TELEMETRY_DISABLED: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: root, env: { PATH: process.env.PATH, NODE_ENV: 'development', NEXT_TELEMETRY_DISABLED: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const stopped = once(server, 'exit');
   let log = '';
