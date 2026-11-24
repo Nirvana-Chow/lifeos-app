@@ -673,7 +673,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
           )}
-
+          {access.authenticated === true && props.onLogout && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lo-icon-button lo-logout"
+              aria-label="退出登录"
+              title="退出登录"
+              data-workspace-nav
+              onClick={() => {
+                if (props.saving || props.uncertain) return;
+                if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return;
+                if (classificationPlanId && props.classificationCloseGuard?.current?.() === false) return;
+                if (settingsOpen && props.settingsCloseGuard?.current?.() === false) return;
+                props.onLogout?.();
+              }}
+            >
+              <LogOut size={17} aria-hidden="true" />
+            </Button>
+          )}
         </div>
       </header>
       <div className="lo-body">
@@ -1007,12 +1025,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                     前往登录
                   </Button>
                 )}
-              {access.authenticated === true && props.onLogout && (
-                <Button variant="ghost" className="lo-logout" onClick={props.onLogout}>
-                  <LogOut size={17} />
-                  退出登录
-                </Button>
-              )}
             </div>
           )}
               {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="标签">
