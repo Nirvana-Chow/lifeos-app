@@ -103,14 +103,14 @@ test('header logout delegates to the existing handler only after page guards all
  assert.equal(logouts,1);
  assert.equal(logout(render({access:{...access,authenticated:false}})).length,0);
 });
-test('unverified access unmounts independent private workspace views',()=>{
+test('unverified access starts without private requirements and confirmed logout clears classification',()=>{
  const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
  for(const authenticated of [null,false]){
   let classificationRenders=0;
   const tree=LifeOSWorkspace({state:{status:'forbidden',message:'已退出。'},access:{authenticated,writable:false,loginAllowed:true},initialPage:'requirements',
    initialModal:'classification',initialClassificationPlanId:'synthetic-plan',renderClassification:()=>{classificationRenders++;return null;}});
   assert.equal(elements(tree,n=>n.type?.name==='RequirementsPage').length,0);
-  assert.equal(classificationRenders,0);
+  assert.equal(classificationRenders,authenticated===false?0:1);
  }
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{

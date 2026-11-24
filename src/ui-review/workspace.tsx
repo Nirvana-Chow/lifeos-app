@@ -195,6 +195,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     menuButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
+  const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
+  const [retainedPrivateScope, setRetainedPrivateScope] = useState<string | null>(null);
+  if (access.authenticated === false && retainedPrivateScope !== null) setRetainedPrivateScope(null);
+  if (verifiedPrivateScope && verifiedPrivateScope !== retainedPrivateScope) setRetainedPrivateScope(verifiedPrivateScope);
+  const showPrivateRequirements = access.authenticated === true && (props.viewPreferenceScope === undefined || !!verifiedPrivateScope);
+  const retainPrivateRequirements = access.authenticated !== false && (showPrivateRequirements || retainedPrivateScope !== null);
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
@@ -1047,14 +1053,20 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
             </div>
           </section>}
-          {page === "requirements" && (access.authenticated === true
-            ? <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>
-            : <DataState state={state} onRefresh={onRefresh}/>)}
+          {page === "requirements" && <>
+            {retainPrivateRequirements && <RequirementsPage
+              key={verifiedPrivateScope ?? retainedPrivateScope}
+              concealed={!showPrivateRequirements}
+              container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null}
+              navigationGuard={requirementNavigationGuard}
+            />}
+            {!showPrivateRequirements && <DataState state={state} onRefresh={onRefresh}/>}
+          </>}
           </>}
           </div>
         </main>
       </div>
-      {access.authenticated === true && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
+      {access.authenticated !== false && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
         if (props.classificationCloseGuard?.current?.()===false) return;
         const href=workspaceHref(page); window.history.replaceState(window.history.state,'',href); currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(null);
       }, id => {

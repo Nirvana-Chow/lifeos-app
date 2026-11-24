@@ -468,6 +468,41 @@ test('OPT-IN confirmed header logout clears already loaded private requirements'
  await expect(page.locator('[data-requirements-page]')).toHaveCount(0);
 });
 
+test('OPT-IN requirements draft survives only same-owner tab revalidation',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-requirements-suspend-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=requirements');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage();t.after(()=>page.close());
+ const writes=await installSyntheticReads(page,origin);
+ const baseline=requirements();
+ let ownerId='synthetic-owner';
+ await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal'],requirementsEnabled:true}}));
+ await page.route(origin+'/api/platform/personal/requirements/snapshot',route=>route.fulfill({json:{scope:'full-current-requirements-snapshot',total:0,truncated:false,observedAt:'2030-11-02T00:00:00Z',baseline,items:[]}}));
+ await page.goto(origin+'/personal?page=requirements');
+ const add=page.getByRole('button',{name:'新增需求',exact:true});
+ const draft=page.getByLabel('需求标题',{exact:true});
+ await add.click();
+ await draft.fill('合成未保存需求草稿');
+ const visibility=(state:'hidden'|'visible')=>page.evaluate(state=>{
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:state});
+  document.dispatchEvent(new Event('visibilitychange'));
+ },state);
+ await visibility('hidden');
+ await expect(draft).toHaveCount(0);
+ await expect(page.locator('[data-requirements-page]')).toHaveCount(0);
+ await visibility('visible');
+ await expect(draft).toHaveValue('合成未保存需求草稿',{timeout:8000});
+ await visibility('hidden');
+ ownerId='synthetic-new-owner';
+ await visibility('visible');
+ await expect(add).toBeEnabled();
+ await expect(draft).toHaveCount(0);
+ assert.equal(writes(),0);
+});
+
 test('OPT-IN settings category returns to the requested panel after requirement browsing',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:90_000,
 },async t=>{
