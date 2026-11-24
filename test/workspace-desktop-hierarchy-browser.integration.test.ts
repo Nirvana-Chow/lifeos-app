@@ -45,6 +45,68 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await expect(card).not.toHaveCSS('box-shadow','none');
   await expect(card.locator('.lo-panel-heading')).toHaveCSS('box-shadow','none');
  }
+ const metrics=page.getByRole('region',{name:'任务指标',exact:true});
+ const domains=page.getByRole('region',{name:'生活维度',exact:true});
+ const breadcrumb=page.getByRole('navigation',{name:'浏览位置'});
+ const overviewLink=breadcrumb.getByRole('button',{name:'返回总览'});
+ const back=breadcrumb.getByRole('button',{name:'后退'});
+ const forward=breadcrumb.getByRole('button',{name:'前进'});
+ const location=breadcrumb.locator('[aria-current="page"]');
+ await expect(location).toHaveText('总览');
+ await expect(back).toBeDisabled();
+ await expect(forward).toBeDisabled();
+ const [trailStart,trailEnd,backPosition,forwardPosition]=await Promise.all(
+  [overviewLink,location,back,forward].map(control=>control.boundingBox())
+ );
+ assert.ok(trailStart&&trailEnd&&backPosition&&forwardPosition);
+ assert.ok(trailStart.x<trailEnd.x&&trailEnd.x+trailEnd.width<backPosition.x&&backPosition.x<forwardPosition.x);
+ assert.ok(backPosition.x-trailEnd.x-trailEnd.width>backPosition.width);
+ const metricButtons=metrics.getByRole('button');
+ await expect(metricButtons).toHaveText(['待办0','今日到期0','已逾期0','推进中项目2']);
+ for(const width of [1365,390]){
+  await page.setViewportSize({width,height:900});
+  const bounds=await Promise.all((await metricButtons.all()).map(button=>button.boundingBox()));
+  const rows=Map.groupBy(bounds,bound=>bound?.y);
+  assert.deepEqual([...rows.values()].map(row=>row.length),[4]);
+  for(const bound of [...bounds,await domains.getByRole('button',{name:'查看全部项目'}).boundingBox(),await domains.getByRole('button',{name:/合成项目甲/}).boundingBox()]){
+   assert.ok(bound&&bound.width>=44&&bound.height>=44&&bound.x>=0&&bound.x+bound.width<=width);
+  }
+  const region=await metrics.boundingBox(),domainCard=await domains.boundingBox(),lowerCard=await overviewCards.first().boundingBox();
+  assert.ok(region&&domainCard&&lowerCard&&region.y+region.height<domainCard.y&&domainCard.y+domainCard.height<lowerCard.y);
+  assert.ok(region&&domainCard&&Math.abs(region.width-domainCard.width)<=8);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  t.diagnostic(`Overview ${width}px: ${bounds.map(bound=>`${bound?.width}×${bound?.height}`).join(', ')}; no document overflow`);
+ }
+ await page.setViewportSize({width:1365,height:900});
+ if(process.env.LIFEOS_OVERVIEW_SCREENSHOT){
+  const candidate=await page.locator('main').evaluateHandle(main=>{
+   const label=document.createElement('p');
+   label.textContent='未上线 · 合成数据';
+   label.style.cssText='display:block;margin:0 0 12px;padding:8px 12px;background:#fff3cf;color:#493600;border-radius:6px;font-size:15px';
+   main.prepend(label);
+   return label;
+  });
+  await page.screenshot({path:process.env.LIFEOS_OVERVIEW_SCREENSHOT});
+  await candidate.evaluate(label=>label.remove());
+  await candidate.dispose();
+ }
+ for(const [name,due] of [['待办：0','all'],['今日到期：0','today'],['已逾期：0','overdue']] as const){
+  const button=metricButtons.filter({hasText:name.split('：')[0]});
+  await expect(button).toHaveAccessibleName(name);
+  if(due==='today'){
+   await button.focus();
+   await expect(button).toBeFocused();
+   await page.keyboard.press('Enter');
+  }else await button.click();
+  await expect(page).toHaveURL(/page=tasks/);
+  await page.getByRole('button',{name:'筛选',exact:true}).click();
+  await expect(page.getByRole('combobox',{name:'状态',exact:true})).toHaveValue('pending');
+  await expect(page.getByLabel('到期筛选')).toHaveValue(due);
+  await page.goto(origin+'/personal',{waitUntil:'networkidle'});
+ }
+ await metricButtons.getByText('推进中项目',{exact:true}).click();
+ await expect(page).toHaveURL(/page=projects/);
+ await page.goto(origin+'/personal',{waitUntil:'networkidle'});
  const historyLength=await page.evaluate(()=>history.length);
  for(const [module,items] of [
   ['生活记录',records],
@@ -58,15 +120,16 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(page).toHaveURL(origin+'/personal');
  assert.equal(await page.evaluate(()=>history.length),historyLength);
  await moduleSwitch.getByRole('button',{name:'生活记录',exact:true}).click();
- const domains=page.getByRole('region',{name:'生活维度',exact:true});
  await expect(domains.getByRole('heading',{name:'合成领域',exact:true})).toBeVisible();
  await expect(domains.getByText('合成下一步',{exact:true})).toBeVisible();
  await expect(domains.getByRole('heading',{name:'未关联领域',exact:true})).toBeVisible();
  await domains.getByRole('button',{name:/合成项目甲/}).click();await expect(page).toHaveURL(/page=tasks/);
- const breadcrumb=page.getByRole('navigation',{name:'浏览位置'});
  await expect(breadcrumb).toHaveCount(1);
  await assertWorkspaceModule(nav,'安排与推进',planning);
- await breadcrumb.getByRole('button',{name:'后退',exact:true}).click();await expect(domains).toBeVisible();
+ await expect(location).toHaveText('待办');
+ await back.focus();await page.keyboard.press('Enter');await expect(domains).toBeVisible();
+ await expect(location).toHaveText('总览');
+ await expect(forward).toBeEnabled();
  await assertWorkspaceModule(nav,'生活记录',records);
  await breadcrumb.getByRole('button',{name:'前进',exact:true}).click();await expect(page).toHaveURL(/page=tasks/);
  await assertWorkspaceModule(nav,'安排与推进',planning);
@@ -113,6 +176,11 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'生活记录',records);
  await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();
  await page.goto(origin+'/personal?partial=1',{waitUntil:'networkidle'});await expect(page.getByRole('region',{name:'生活维度'}).getByText('仅显示已读取的领域与项目，完整范围待确认。',{exact:true})).toBeVisible();
+ await expect(metricButtons).toHaveText(['待办—','今日到期—','已逾期—','推进中项目—']);
+ for(const [index,label] of ['待办','今日到期','已逾期','推进中项目'].entries()){
+  await expect(metricButtons.nth(index)).toHaveAccessibleName(label+'：未知');
+  await expect(metricButtons.nth(index)).toBeDisabled();
+ }
  enabled=false;await page.reload({waitUntil:'networkidle'});await page.getByRole('button',{name:'打开导航',exact:true}).click();
  await expect(mobileSwitch.getByRole('button')).toHaveText(['安排与推进']);
  await assertWorkspaceModule(drawer.getByRole('navigation',{name:'主导航'}),'安排与推进',[['总览'],['事项']]);

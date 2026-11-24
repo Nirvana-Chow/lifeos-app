@@ -682,13 +682,15 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <div data-matters-filters-expanded={filtersOpen&&(page==="tasks"||page==="inbox")?"":undefined} className={contentPage ? contentPage.wide?"lo-content lo-content-wide":"lo-content lo-content-account" : page === "settings" ? `lo-content lo-content-wide ${workspaceStyles.settingsContent}` :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <nav aria-label="浏览位置" className={workspaceStyles.breadcrumbs}>
+            <div className={workspaceStyles.breadcrumbTrail}>
+              <Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>LifeOS</Button><ChevronRight aria-hidden="true" size={14}/>
+              {settingsSection&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight aria-hidden="true" size={14}/></>}
+              <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
+            </div>
             <div className={workspaceStyles.historyButtons}>
               <Button variant="ghost" data-workspace-nav aria-label="后退" disabled={!historyControls.back} onClick={()=>traverseHistory('back')}><ArrowLeft size={16}/></Button>
               <Button variant="ghost" data-workspace-nav aria-label="前进" disabled={!historyControls.forward} onClick={()=>traverseHistory('forward')}><ArrowRight size={16}/></Button>
             </div>
-            <Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>LifeOS</Button><ChevronRight size={14}/>
-            {settingsSection&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight size={14}/></>}
-            <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
           </nav>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
@@ -765,6 +767,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             </nav>}
           {page === "overview" && (
             <>
+              <section className="lo-metrics" aria-label="任务指标">
+                {([
+                  {label:"待办",value:metrics.pending,metric:"pending"},
+                  {label:"今日到期",value:metrics.dueToday,metric:"today"},
+                  {label:"已逾期",value:metrics.overdue,metric:"overdue"},
+                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
+                ] as const).map(({label,value,metric}) => (
+                  <button type="button" key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
+                    <span>{label}</span><strong>{value === null ? "—" : value}</strong>
+                  </button>
+                ))}
+              </section>
               {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
                 <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
                 {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
@@ -774,18 +788,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 </section>)}</div>
                 {domains.length===0&&<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无领域或推进中项目':'暂无领域或推进中项目，可在事项中整理领域与项目。'}</p>}
               </section>}
-              <section className="lo-metrics" aria-label="任务指标">
-                {([
-                  {label:"待办",value:metrics.pending,metric:"pending"},
-                  {label:"今日到期",value:metrics.dueToday,metric:"today"},
-                  {label:"已逾期",value:metrics.overdue,metric:"overdue"},
-                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
-                ] as const).map(({label,value,metric}) => (
-                  <button key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
-                    <span>{label}</span><strong>{value === null ? "—" : value}</strong>
-                  </button>
-                ))}
-              </section>
               <div className="lo-overview-grid">
                 <section className="lo-panel" hidden={state.status !== "ready"}>
                   <div className="lo-panel-heading">
