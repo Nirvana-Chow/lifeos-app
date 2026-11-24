@@ -39,7 +39,7 @@ function harness(f:ReturnType<typeof fixture>){
  const listen={addEventListener(name:string,fn:Function){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name)!.add(fn);},removeEventListener(name:string,fn:Function){listeners.get(name)?.delete(fn);}};
  const window={...listen,confirm:()=>false,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})},document={...listen,visibilityState:'visible'};
  const jsx={jsx:(type:unknown,props:any)=>({type,props}),jsxs:(type:unknown,props:any)=>({type,props}),Fragment:'fragment'},module={exports:{} as any};
- const imports:Record<string,unknown>={'react/jsx-runtime':jsx,react,'@tanstack/react-table':{useTable:(options:any)=>{tableOptions=options;return{};}},'../ui-review/reui/data-grid':{DataGrid:'grid',DataGridContainer:'grid-container',dataGridFeatures:{}},'../ui-review/reui/data-grid-table-virtual':{DataGridTableVirtual:'virtual'},'../ui-review/ui/button':{Button:'button'},'../ui-review/ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'h2',DialogDescription:'p'},'./domain':domain,'./client':client,'./workbench.module.css':{default:{}}};
+ const imports:Record<string,unknown>={'react/jsx-runtime':jsx,react,'@tanstack/react-table':{useTable:(options:any)=>{tableOptions=options;return{};}},'../ui-review/reui/data-grid':{DataGrid:'grid',DataGridContainer:'grid-container',dataGridFeatures:{}},'../ui-review/reui/data-grid-table-virtual':{DataGridTableVirtual:'virtual'},'../ui-review/ui/button':{Button:'button'},'../ui-review/ui/dialog':{Dialog:'dialog',DialogContent:'dialog-content',DialogTitle:'h2',DialogDescription:'p'},'./domain':domain,'./recorded-flow':{RecordedFlowDiagram:'recorded-flow'},'./client':client,'./workbench.module.css':{default:{}}};
  const code=ts.transpileModule(readFileSync(new URL('../src/personal-finance/workbench.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
  new Function('require','module','exports','window','document','fetch','sessionStorage',code)((key:string)=>{assert.ok(key in imports,'unexpected import '+key);return imports[key];},module,module.exports,window,document,f.fetcher,f.store);
  const guard:{current:(()=>boolean)|null}={current:null};
@@ -88,5 +88,21 @@ test('a definite linked-refund rejection permits explicit latest-version editing
 });
 test('failed GET readback followed by a definite 4xx never exposes edit or discard or replaces the original command',async()=>{
  const f=fixture();let h=harness(f);try{await start(h);await enter(h);f.failReadback();find(h.render(),node=>node.type==='form')!.props.onSubmit({preventDefault(){}});await settle();assert.equal(f.repo.rows.size,1);const retained=[...f.values.values()][0];h.dispose();h=harness(f);await start(h);f.reject(400,'INVALID_REFUND_SOURCE');h.button('重试原请求').props.onClick();await settle();assert.equal(find(h.render(),node=>node.type==='button'&&text(node)==='继续编辑'),undefined);assert.equal(find(h.render(),node=>node.type==='button'&&text(node)==='放弃本次保存'),undefined);assert.equal(find(h.render(),node=>node.type==='fieldset')!.props.disabled,true);assert.deepEqual(f.writes[1],f.writes[0]);assert.equal([...f.values.values()][0],retained);assert.equal(h.button('记一笔').props.disabled,true);
+ }finally{h.dispose();}
+});
+
+test('filtering the ledger cannot replace the authorized snapshot powering the chart', async () => {
+ const f=fixture(),h=harness(f);
+ try{
+  await f.seed({kind:'income',amountMinor:10000,notes:'synthetic income'});
+  await f.seed({amountMinor:2901,notes:'synthetic expense'});
+  const tree=await start(h);
+  const search=find(tree,node=>node.type==='input'&&node.props.placeholder==='摘要、分类或账户');
+  assert.ok(search);
+  search.props.onChange({target:{value:'synthetic income'}});
+  const chart=find(h.render(),node=>node.type==='recorded-flow');
+  assert.ok(chart);
+  assert.equal(chart.props.netExpense,2901n);
+  assert.equal(chart.props.difference,7099n);
  }finally{h.dispose();}
 });
