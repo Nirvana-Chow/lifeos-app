@@ -573,6 +573,18 @@ export async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'||key==='private-health'){
   const notice=key==='private-finance'?page.getByRole('heading',{level:3,name:'财务记录尚未开放',exact:true}):page.locator('[data-personal-record-module="health"]').getByRole('alert');
   await expect(notice).toBeVisible();
+  await notice.evaluate(element=>{
+   const shell=element.closest('.lo-shell');
+   if(!shell||shell.scrollWidth<=shell.clientWidth)return;
+   const range=document.createRange();range.selectNodeContents(element);
+   const lines=Array.from(range.getClientRects());
+   if(!lines.length)return;
+   const left=Math.min(...lines.map(line=>line.left));
+   const right=Math.max(...lines.map(line=>line.right));
+   const viewport=document.documentElement.clientWidth;
+   if(right>viewport)shell.scrollLeft+=right-viewport+3;
+   else if(left<0)shell.scrollLeft+=left-3;
+  });
   const fits=await notice.evaluate(element=>{
    const range=document.createRange();
    range.selectNodeContents(element);

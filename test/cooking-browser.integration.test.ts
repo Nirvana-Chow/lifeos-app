@@ -96,6 +96,9 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
  const path=await target.getAttribute('href');
  assert.ok(path?.startsWith('/personal/cooking/'));
+ const warm = await page.request.get(origin+path,{timeout:30000,maxRedirects:0});
+ assert.equal(warm.status(),200,'the isolated recipe route is ready before timing its browser transition');
+ await warm.dispose();
  await target.click();
  await expect(page).toHaveURL(origin+path);
  await expect(page.getByRole('heading',{name:'西红柿炒鸡蛋',exact:true})).toBeVisible();

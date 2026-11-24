@@ -107,3 +107,18 @@
  .desktopNavigation :global(.lo-header) > :global(.lo-mobile-menu) { display:none!important; }
  .desktopNavigation .headerModules button { min-height:44px; }
 }
+
+/* A short viewport must let the navigation scroll past both sidebar actions. */
+@media(max-width:850px) and (max-height:480px) {
+ .shell.desktopNavigation :global(.lo-sidebar) { overflow-y:auto; }
+ .shell.desktopNavigation :global(.lo-sidebar) :global(.lo-nav) { flex:none; overflow:visible; }
+}
+
+/* Keep the desktop pane width while making an individual control reachable after panning. */
+@media(max-width:850px) {
+ .shell.desktopNavigation .settingsPanel :global([aria-label="修改密码"]) :is(label,button) {
+  max-inline-size:calc(100vw - 2 * var(--lo-content-padding));
+  justify-self:start;
+  width:100%;
+ }
+}
