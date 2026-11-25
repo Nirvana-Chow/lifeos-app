@@ -228,3 +228,35 @@ test('read diagnostics distinguish authentication, storage verification and snap
   assert.equal(f.writes.length,0);
  }
 });
+
+test('only an explicitly identified task can open read-only after a compatible list failure',async()=>{
+ for(const mode of ['supported','missing','mismatch','foreign','denied-list','denied-detail'] as const){
+  const f=fixture();
+  let itemReads=0;
+  const controller=new PersonalWorkspaceController({fetcher:async(input,init)=>{
+   const path=String(input);
+   if(path.includes('/overview'))return Response.json({error:{code:'DATA_READER_INCOMPATIBLE'}},{status:mode==='denied-list'?403:409});
+   if(path.endsWith('/todo/'+id)){
+    itemReads++;
+    if(mode==='missing')return Response.json({}, {status:404});
+    if(mode==='denied-detail')return Response.json({}, {status:401});
+    const {entry}=await (await f.fetcher(input,init)).json();
+    if(mode==='mismatch')entry.id=sourceId;
+    if(mode==='foreign')entry.source.original.spaceId='foreign-space';
+    return Response.json({entry});
+   }
+   return f.fetcher(input,init);
+  },origin:'http://127.0.0.1:3331',today:()=> '2026-10-27',key:()=>crypto.randomUUID()});
+  await controller.refresh(id);
+  assert.equal(itemReads,mode==='denied-list'?0:1);
+  const snapshot=controller.getSnapshot();
+  assert.equal(snapshot.singleTask?.entry.id,mode==='supported'?id:undefined);
+  assert.equal(snapshot.state.status,mode.startsWith('denied')?'forbidden':'error');
+  assert.equal(snapshot.access.writable,false);
+  assert.equal(controller.getEditorBinding(),null);
+  assert.equal(await controller.saveTask({id,revision:3},{title:'No write',text:'',date:'',status:'open'}),null);
+  assert.equal(f.writes.length,0);
+  controller.suspend();
+  assert.equal(controller.getSnapshot().singleTask,undefined);
+ }
+});
