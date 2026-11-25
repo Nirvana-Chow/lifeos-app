@@ -585,7 +585,7 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-settings-feedback-')),server=await fixture(root),stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
- const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=general');
+ const origin=await prepareSettingsFixture(server,'/personal?page=settings&panel=security');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const page=await browser.newPage({viewport:{width:1365,height:900}});t.after(()=>page.close());let writes=0,authorized=true;
  await page.route('**/*',async route=>{
@@ -607,12 +607,13 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
   page.on('dialog',handler);
   try{await Promise.all([action(),seen]);if(destination)await expect(page).toHaveURL(destination);assert.equal(count,1,'one explicit feedback departure has one confirmation');}finally{page.off('dialog',handler);}
  };
- await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'networkidle'});
+ await page.goto(origin+'/personal?page=settings&panel=security',{waitUntil:'domcontentloaded'});
  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
+ await expect(categories.getByRole('link',{name:'反馈 Inbox',exact:true})).toBeVisible();
  await categories.getByRole('link',{name:'反馈 Inbox',exact:true}).click();
  const original=page.getByRole('textbox',{name:'原文',exact:true});await expect(original).toBeEnabled();
  await categories.getByRole('link',{name:'更新记录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/requirements/updates');
- await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();
+ await page.goBack({waitUntil:'domcontentloaded'});await expect(original).toBeEnabled();
  // Exercise the privacy recheck required when a document returns from bfcache.
  const privacyRead=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/status');
  await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
@@ -623,7 +624,7 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
  for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
  await expect(page).toHaveURL(origin+'/personal/requirements/feedback');await expect(original).toHaveValue('Synthetic unsaved feedback');assert.equal(writes,0);
  feedbackPhase='link-accepted';await confirmFeedback(true,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click(),origin+'/personal/requirements/updates');
- await page.goBack({waitUntil:'networkidle'});await expect(original).toBeEnabled();await original.fill('Synthetic pending feedback');
+ await page.goBack({waitUntil:'domcontentloaded'});await expect(original).toBeEnabled();await original.fill('Synthetic pending feedback');
  await page.getByRole('button',{name:'保存反馈',exact:true}).click();await expect(page.getByRole('button',{name:'恢复原请求并回读',exact:true})).toBeVisible();assert.equal(writes,1);
  const checkPending=async(name:string)=>{const dialog=page.waitForEvent('dialog'),action=page.getByRole('button',{name,exact:true}).click({noWaitAfter:true});const alert=await dialog;assert.equal(alert.type(),'alert');assert.match(alert.message(),/保存结果尚未确认/);await alert.accept();await action;};
  await checkPending('设置');

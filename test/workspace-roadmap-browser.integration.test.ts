@@ -162,8 +162,12 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(page.getByText('LO-TASK-001',{exact:true})).toBeVisible();
   if(width>=1024){
    await page.screenshot({path:join(source,`.review-results/workspace-requirements-density-${width}-${theme}.png`)});
-   const metrics=await page.locator('[data-requirements-page]').evaluate(node=>{
-    const intro=node.querySelector('header')!.getBoundingClientRect(),controls=node.querySelector('[role="search"]')!.parentElement!.getBoundingClientRect(),viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();
+   const requirementsPage=page.locator('[data-requirements-page]');
+   await expect(requirementsPage.getByRole('search',{name:'筛选需求',exact:true})).toBeVisible();
+   await expect(requirementsPage.locator('[data-slot="data-grid-table-viewport"]')).toBeVisible();
+   const metrics=await requirementsPage.evaluate(node=>{
+    const controls=node.querySelector('[role="search"]')!.parentElement!.getBoundingClientRect(),viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();
+    const intro=node.getBoundingClientRect();
     const rect=(element:Element)=>{const r=element.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};
     return {topControls:controls.bottom-intro.top,readableRows:Array.from(node.querySelectorAll('[data-requirement-id]')).filter(item=>{const r=item.getBoundingClientRect();return r.top>=viewport.top&&r.bottom<=viewport.bottom;}).length,
      settingsNavigation:rect(document.querySelector('[aria-label="设置分类"]')!),breadcrumbs:rect(document.querySelector('[aria-label="浏览位置"]')!),viewport:{top:viewport.top,bottom:viewport.bottom,height:viewport.height},rows:Array.from(node.querySelectorAll('[data-requirement-id]')).slice(0,9).map(rect)};
@@ -183,11 +187,15 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   const contentBounds=(await page.locator('#personal-main').boundingBox())!;await expect.poll(async()=>{const bounds=(await detail.boundingBox())!;return Math.abs(bounds.x-contentBounds.x)+Math.abs(bounds.y-contentBounds.y)+Math.abs(bounds.width-contentBounds.width)+Math.abs(bounds.height-contentBounds.height);}).toBeLessThan(4);
   await page.screenshot({path:join(source,`.review-results/workspace-requirement-detail-${width}-${theme}.png`)});
   await page.keyboard.press('Escape');await expect(detail).toHaveCount(0);
+  assert.equal(page.url(),origin+'/personal?page=requirements','requirements URL after closing detail');
   await page.getByLabel('搜索需求',{exact:true}).fill('');
   await page.locator('#personal-main').evaluate(element=>element.scrollTo({top:0}));
   await page.screenshot({path:join(source,`.review-results/workspace-requirements-${width}-${theme}.png`)});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`${width}/${theme} must contain horizontal table scrolling`);
-  await page.reload({waitUntil:'domcontentloaded'});
+  assert.equal(page.url(),origin+'/personal?page=requirements','requirements URL before refresh');
+  const readback=await page.reload({waitUntil:'domcontentloaded'});
+  assert.equal(readback?.url(),origin+'/personal?page=requirements','requirements URL of refresh response');
+  assert.equal(page.url(),origin+'/personal?page=requirements','requirements URL after refresh');
   await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
   assert.equal(writes,0,'browsing, sorting and filtering must not write business records');
   await page.close();

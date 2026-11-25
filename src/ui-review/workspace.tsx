@@ -385,7 +385,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     if(props.syncUrl){
       const active=currentHistory.current??{scope:crypto.randomUUID(),index:0},entry={scope:active.scope,index:active.index+1};
       const href=workspaceLocationHref({page:'settings',panel});
-      window.history.pushState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
+      window.history.pushState({[workspaceHistoryKey]:entry},'',href);
       currentHistory.current=entry;historyLimit.current=entry.index;currentHistoryState.current=window.history.state;currentHref.current=href;currentBrowserIndex.current=browserHistoryIndex();updateHistoryControls();
     }
     setSettingsPanel(panel);
@@ -415,7 +415,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       if (window.location.pathname + window.location.search !== href) {
         const active = currentHistory.current;
         const entry = {scope: active?.scope ?? crypto.randomUUID(), index: (active?.index ?? 0) + 1};
-        window.history.pushState({...window.history.state, [workspaceHistoryKey]: entry, [moduleHistoryKey]:null}, '', href);
+        window.history.pushState({[workspaceHistoryKey]: entry, [moduleHistoryKey]:null}, '', href);
         currentHistory.current = entry;
         historyLimit.current=entry.index;
         updateHistoryControls();
@@ -474,7 +474,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>
           <ClipboardList size={19} aria-hidden="true"/><span>需求池</span>
         </Button>
-        {page!=='requirements'&&<OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>}
+        {(page!=='requirements'||contentPage)&&<OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>}
       </div>
       {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>
