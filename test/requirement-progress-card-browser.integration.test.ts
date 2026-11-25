@@ -127,7 +127,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
  await expect(thoughts.getByRole('link',{name:'合成日记近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
- await expect(thoughts.getByText('Memos 尚未接入')).toBeVisible();
+ await expect(thoughts.getByText(/Memos/i)).toHaveCount(0);
  const excerpt=thoughts.getByText('合成日记正文第一行 第二行保持原文。',{exact:true});
  await expect(excerpt).toBeVisible();
  assert.equal(await excerpt.textContent(),'合成日记正文第一行\n第二行保持原文。');
