@@ -16,7 +16,15 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
 }, async t => {
   const source = resolve(import.meta.dirname, '..');
   const root = await mkdtemp(join(tmpdir(), 'lifeos-activity-browser-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  let closeBrowser: (() => Promise<void>) | undefined;
+  let stopServer: (() => Promise<void>) | undefined;
+  t.after(async () => {
+    try { await closeBrowser?.(); }
+    finally {
+      try { await stopServer?.(); }
+      finally { await rm(root, { recursive: true, force: true }); }
+    }
+  });
   await mkdir(join(root, 'app/personal/activity'), { recursive: true });
   await mkdir(join(root, 'app/login'), { recursive: true });
   await Promise.all([
@@ -44,7 +52,7 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   const stopped = once(server, 'exit');
   let log = '';
   server.stderr.on('data', data => { log += String(data); });
-  t.after(async () => { if (server.exitCode === null) server.kill('SIGTERM'); await stopped; });
+  stopServer = async () => { if (server.exitCode === null) server.kill('SIGTERM'); await stopped; };
   await new Promise<void>((done, fail) => {
     const timer = setTimeout(() => fail(Error(log || 'Fixture startup timed out')), 30000);
     server.once('exit', () => { clearTimeout(timer); fail(Error(log || 'Fixture exited')); });
@@ -52,7 +60,7 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   });
 
   const browser = await chromium.launch({ executablePath: process.env.LIFEOS_TEST_CHROMIUM_PATH });
-  t.after(() => browser.close());
+  closeBrowser = () => browser.close();
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(origin + '/personal/activity');
