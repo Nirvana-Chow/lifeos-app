@@ -38,7 +38,12 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
    const result=await readJournalHistory();
    const id=new URLSearchParams(window.location.search).get('record');
    const reference=id?result.history.rows.find(row=>row.id===id):null;
-   if(id&&!reference)throw Error('日记已不在当前快照中，请重新读取历史。');
+   if(id&&!reference){
+    if(token!==generation.current)return;
+    setSnapshot(result);
+    setError('日记已不在当前快照中，可从下方选择其他记录。');
+    return;
+   }
    const original=id?await readJournalOriginal(fetch,id,result.binding,reference!):null;
    if(token!==generation.current)return;setSnapshot(result);setDetail(original);
   }catch(reason){if(token===generation.current)setError(reason instanceof Error?reason.message:'日记暂时无法读取，请重试。');}

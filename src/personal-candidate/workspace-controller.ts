@@ -5,11 +5,13 @@ import{editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./edit
 import type{PersonalType}from'./config.ts';
 import{workspaceData,type WorkspaceData,type WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
+import{validateId}from'../platform/domain.ts';
 export type WorkspaceState={status:'unknown'|'loading';message?:string}|{status:'error'|'forbidden';message:string}|{status:'ready';data:WorkspaceData};
 export type WorkspaceAccess={authenticated:boolean|null;writable:boolean|null;loginAllowed:boolean|null;allowedTypes?:readonly PersonalType[];displayName?:string|null;message?:string|null};
-export type ControllerSnapshot={state:WorkspaceState;access:WorkspaceAccess;pendingTaskIds:readonly string[];mutationError:string|null;uncertain:boolean;saving:boolean;undoDeadline:number|null};
+export type ControllerSnapshot={singleTask?:{entry:PublicEntry;spaceId:string};state:WorkspaceState;access:WorkspaceAccess;pendingTaskIds:readonly string[];mutationError:string|null;uncertain:boolean;saving:boolean;undoDeadline:number|null};
 const canonical=(v:unknown):string=>JSON.stringify(v,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
+const errorCode=(v:unknown)=>obj(v)&&obj(v.error)?v.error.code:null;
 export class PersonalWorkspaceController{
  private value:ControllerSnapshot={state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null};
  private listeners=new Set<()=>void>();private generation=0;private binding:PersonalBinding|null=null;private entries:PublicEntry[]=[];private session:PersonalMutationSession|null=null;private unsubscribe?:()=>void;
@@ -20,7 +22,7 @@ export class PersonalWorkspaceController{
  constructor(options:PersonalWorkspaceController['options']){this.options=options;}
  getSnapshot=()=>this.value;subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
  private emit(patch:Partial<ControllerSnapshot>){this.value={...this.value,...patch};this.listeners.forEach(f=>f());}
- private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
+ private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({singleTask:undefined,pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  suspend(){++this.generation;this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  private async json(path:string,signal?:AbortSignal){
   const read=async()=>{
@@ -33,10 +35,10 @@ export class PersonalWorkspaceController{
   let onAbort!:()=>void;const cancelled=new Promise<never>((_,reject)=>{onAbort=()=>reject(signal.reason);signal.addEventListener('abort',onAbort,{once:true});});
   try{return await Promise.race([read(),cancelled]);}finally{signal.removeEventListener('abort',onAbort);}
  }
- async refresh(){
+ async refresh(linkedTaskId?:string){
   if(this.value.saving)return;
   this.clearUndo();this.pending=null;const token=++this.generation;this.entries=[];
-  this.emit({state:{status:'loading'},access:{authenticated:null,writable:null,loginAllowed:null}});
+  this.emit({singleTask:undefined,state:{status:'loading'},access:{authenticated:null,writable:null,loginAllowed:null}});
   const availability=this.json('/api/platform/personal/availability').then(({response,body})=>
    response.ok&&obj(body)&&body.configured===true&&body.loginAllowed===true&&
    (body.https===true&&this.options.origin.startsWith('https://')||
@@ -55,9 +57,10 @@ export class PersonalWorkspaceController{
    const {response,body:status}=await this.json('/api/platform/personal/status');
    if(token!==this.generation)return;
    if(!response.ok){
-    const code=obj(status)&&obj(status.error)?status.error.code:null;
+    const code=errorCode(status);
     unavailable(response.status===401?'请登录本人账号。':response.status===403?'当前账号没有访问本人空间的权限。':
-     code==='AUTH_UNAVAILABLE'?'身份服务暂不可用，请重试。':failure,response.status);
+     code==='AUTH_UNAVAILABLE'?'身份服务暂不可用，请重试。':
+     code==='PLATFORM_UNAVAILABLE'?'本人空间服务暂不可用，请稍后重试。':failure,response.status);
     return;
    }
    if(!obj(status)||status.scope!=='personal-manual-candidate'||typeof status.ownerId!=='string'||typeof status.spaceId!=='string'){
@@ -81,12 +84,42 @@ export class PersonalWorkspaceController{
    const today=this.options.today(),v=await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today));
    if(token!==this.generation)return;
    if(!v.response.ok){
+    const code=errorCode(v.body);
+    if((v.response.status===503&&code==='PERSONAL_SNAPSHOT_UNAVAILABLE')||(v.response.status===409&&code==='DATA_READER_INCOMPATIBLE')){
+     const message=code==='DATA_READER_INCOMPATIBLE'?'当前版本无法读取部分记录。请更新页面后重试。':'暂时无法读取完整待办列表，请重试。';
+     unavailable(message);
+     if(linkedTaskId)await this.readLinkedTask(linkedTaskId,next.spaceId,today,token,message);
+     return;
+    }
     unavailable(v.response.status===401?'登录已失效，请重新登录。':v.response.status===403?'当前账号没有读取待办的权限。':failure,v.response.status);return;
    }
    failure='待办快照未能核验，请重新读取。';
    const checked=workspaceData(v.body,next.spaceId,today);
    this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
   }catch{if(token===this.generation)unavailable(failure);}
+ }
+ /** A single explicit link can be read independently of a failed list. It grants no write binding. */
+ private async readLinkedTask(linkedTaskId:string,spaceId:string,today:string,token:number,listMessage:string){
+  try{
+   const id=validateId(linkedTaskId);
+   const {response,body}=await this.json('/api/platform/personal/todo/'+id);
+   if(token!==this.generation)return;
+   if(response.status===401||response.status===403){
+    this.emit({state:{status:'forbidden',message:response.status===401?'登录已失效，请重新登录。':'当前账号无法读取这条待办。'},
+     access:{...this.value.access,authenticated:false}});
+    return;
+   }
+   if(response.status===404){
+    this.emit({state:{status:'error',message:'这条待办不存在或当前无法访问。'}});
+    return;
+   }
+   if(!response.ok||!obj(body)||!obj(body.entry)||body.entry.id!==id)throw Error();
+   const checked=workspaceData({scope:'full-current-snapshot',truncated:false,total:1,items:[body.entry],today,observedAt:body.entry.updatedAt},spaceId,today);
+   if(checked.data.tasks.length!==1)throw Error();
+   this.emit({singleTask:{entry:checked.entries[0],spaceId}});
+  }catch{
+   if(token===this.generation)this.emit({state:{status:'error',message:listMessage+' 这条待办也未能读取。'}});
+  }
  }
  private readMutation(){const state=this.session?.getSnapshot();this.emit({pendingTaskIds:state?.pending?.id?[state.pending.id]:[],mutationError:state?.error||null,uncertain:state?.phase==='uncertain',saving:this.busy||state?.phase==='saving'});}
  private clearUndo(){this.undo=null;this.emit({undoDeadline:null});}

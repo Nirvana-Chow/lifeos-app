@@ -15,9 +15,10 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-journal-handwrite-'));
  await mkdir(join(root,'app/personal/journal'),{recursive:true});
+ await mkdir(join(root,'app/personal/[...section]'),{recursive:true});
  await mkdir(join(root,'app/login'),{recursive:true});
  await Promise.all([
-  ...['layout.tsx','globals.css','theme.css','personal/layout.tsx','personal/journal/page.tsx'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
+  ...['layout.tsx','globals.css','theme.css','personal/layout.tsx','personal/journal/page.tsx','personal/[...section]/page.tsx'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
   cp(join(source,'src'),join(root,'src'),{recursive:true}),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
  ]);
@@ -190,5 +191,18 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await routineOriginal.getByText('查看当前原文',{exact:true}).click();
  assert.equal(await routineOriginal.getByText('查看当前原文',{exact:true}).locator('..').locator('p').textContent(),routine);
  assert.equal(commands.length,5);assert.equal(repo.rows.size,2);
+
+ await page.goto(origin+'/personal/records',{waitUntil:'networkidle',timeout:90000});
+ await expect(page).toHaveURL(url);
+ await expect(journal.getByRole('link',{name:title,exact:true})).toBeVisible();
+ const staleRecord='11111111-1111-4111-8111-111111111111';
+ const beforeStaleRead=detailReadCount;
+ await page.goto(url+'?record='+staleRecord,{waitUntil:'networkidle',timeout:90000});
+ await expect(journal.getByRole('alert')).toContainText('日记已不在当前快照中');
+ await expect(journal.getByRole('link',{name:title,exact:true})).toBeVisible();
+ await expect(journal.getByRole('article',{name:'日记原文'})).toHaveCount(0);
+ assert.equal(detailReadCount,beforeStaleRead);
+ await journal.getByRole('link',{name:title,exact:true}).click();
+ await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Legacy unmarked section');
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
 });

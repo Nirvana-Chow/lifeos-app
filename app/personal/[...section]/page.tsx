@@ -21,6 +21,7 @@ export default async function Page({params,searchParams}:{params:Promise<{sectio
  if(!principal)redirect('/login');
  const module=resolvePrivateModule((await params).section);
  if(!module)notFound();
+ if(module.id==='records')redirect('/personal/journal');
  if(module.id==='search'){const q=await searchParams;return <PrivacyBoundary><PersonalSearchPage query={q.q} type={q.type} id={q.id} from={q.from} to={q.to}/></PrivacyBoundary>;}
  if(module.id==='schedule')return <PrivacyBoundary><PersonalCalendarPage/></PrivacyBoundary>;
  if(module.id==='people')return <PrivacyBoundary><PersonalRecordPage type="person" linkedPersonId={personRecordId((await searchParams).record)??undefined}/></PrivacyBoundary>;
@@ -32,7 +33,7 @@ export default async function Page({params,searchParams}:{params:Promise<{sectio
  }
  let content;
  if(module.id==='ai-settings')content=<div style={{padding:'var(--lo-content-padding)'}}><h1>AI 服务设置</h1><DraftEditor kind="ai"/></div>;
- else if(module.id==='records'||module.id==='growth'||module.id==='articles'||module.id==='knowledge')content=<BasicWorkspace module={module.id} homeHref={privateHrefs.overview} dataHref={privateHrefs.database} recordsHref={privateHrefs.records}/>;
+ else if(module.id==='growth'||module.id==='articles'||module.id==='knowledge')content=<BasicWorkspace module={module.id} homeHref={privateHrefs.overview} dataHref={privateHrefs.database} recordsHref={privateHrefs.records}/>;
  else content=<DomainPage module={module} settingsHref={privateHrefs.settings} surface="personal"/>;
  return <WorkbenchShell surface="personal">{content}</WorkbenchShell>;
 }
