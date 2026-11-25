@@ -106,3 +106,23 @@ test('filtering the ledger cannot replace the authorized snapshot powering the c
   assert.equal(chart.props.difference,7099n);
  }finally{h.dispose();}
 });
+
+test('recorded cash flow keeps the full proportional nodes inside the viewport', () => {
+ const module={exports:{} as {RecordedFlowDiagram:(input:{income:bigint;netExpense:bigint;difference:bigint})=>Node}};
+ const jsx=(type:unknown,props:Node['props'])=>({type,props});
+ const code=ts.transpileModule(readFileSync(new URL('../src/personal-finance/recorded-flow.tsx',import.meta.url),'utf8'),{
+  compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022},
+ }).outputText;
+ const imports:Record<string,unknown>={'react':{useId:()=>':flow:'},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'./domain':domain};
+ new Function('require','module','exports',code)((key:string)=>imports[key],module,module.exports);
+ for(const netExpense of [0n,1n,5000n,9000n,10000n,10001n,20000n]){
+  const income=10000n;
+  const diagram=module.exports.RecordedFlowDiagram({income,netExpense,difference:income-netExpense});
+  const height=Number(diagram.props.viewBox.split(' ')[3]);
+  for(const label of ['income','net-expense','recorded-surplus','recorded-deficit']){
+   const node=find(diagram,n=>n.props['data-flow-node']===label||n.props['data-flow-gap']===label);
+   if(node)assert.ok(node.props.y>=0&&node.props.y+node.props.height<=height,
+    `${label} must fit for net expense ${netExpense}: ${node.props.y} + ${node.props.height} within ${height}`);
+  }
+ }
+});

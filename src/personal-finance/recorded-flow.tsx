@@ -3,6 +3,8 @@ import {formatFinanceAmount} from './domain';
 
 const money = (minor: bigint) => `¥ ${formatFinanceAmount(minor.toString())}`;
 
+const chartHeight = 260;
+const edgeMargin = 10;
 const chartCenter = 126;
 const sourceX = 150;
 const targetX = 465;
@@ -43,14 +45,14 @@ export function RecordedFlowDiagram({income, netExpense, difference}: {
   const coveredWidth = deficit ? incomeWidth : expenseWidth;
   const remainderWidth = Math.abs(Number(difference)) * scale;
   const start = chartCenter - incomeWidth / 2;
-  const expenseStart = (deficit ? chartCenter : 62) - expenseWidth / 2;
-  const surplusStart = 187 - remainderWidth / 2;
+  const expenseStart = deficit ? chartCenter - expenseWidth / 2 : Math.max(edgeMargin, 62 - expenseWidth / 2);
+  const surplusStart = Math.min(187 - remainderWidth / 2, chartHeight - edgeMargin - remainderWidth);
   const gapStart = expenseStart + coveredWidth;
   const labelX = targetX + 34;
 
   return (
     <svg role="img" aria-labelledby={titleId} aria-describedby={descriptionId}
-      viewBox="0 0 640 260"
+      viewBox={`0 0 640 ${chartHeight}`}
       style={{display: 'block', width: '100%', height: 'auto', margin: '1rem auto 0.25rem', background: '#f7faf8', borderRadius: '0.65rem'}}>
       <title id={titleId}>记录收支流向图</title>
       <desc id={descriptionId}>
