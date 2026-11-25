@@ -6,13 +6,27 @@ import {readJournalHistory,readJournalOriginal,type JournalOriginal} from './his
 import {JournalCoveragePanel} from './coverage-panel';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import {activityDate} from '../personal-daily/activity-review/activity.mjs';
+import {personRecordHref,personRecordId,readLinkedPerson} from '../personal-people/journal-links';
 import s from './history.module.css';
 
 export function JournalHistoryPanel({onBeforeOpen}:{onBeforeOpen?:()=>boolean}){
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
  const [snapshot,setSnapshot]=useState<Awaited<ReturnType<typeof readJournalHistory>>|null>(null),[detail,setDetail]=useState<JournalOriginal|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState('');
+ const [returnPerson,setReturnPerson]=useState<{detail:JournalOriginal;id:string}|null>(null);
  const generation=useRef(0),guard=useRef(onBeforeOpen),originalHeading=useRef<HTMLHeadingElement>(null);guard.current=onBeforeOpen;
  useEffect(()=>{if(detail)originalHeading.current?.focus();},[detail]);
+ useEffect(()=>{
+  const personal=detail?.current.personal;
+  if(!detail||!snapshot||personal?.type!=='journal')return;
+  const id=personRecordId(new URLSearchParams(window.location.search).get('person'));
+  const pin=personal.links.people.find(link=>link.id===id);
+  if(!pin)return;
+  let active=true;
+  void readLinkedPerson(pin,snapshot.binding).then(verified=>{
+   if(active&&verified)setReturnPerson({detail,id:pin.id});
+  });
+  return()=>{active=false;};
+ },[detail,snapshot]);
  const load=useCallback(async()=>{
   const token=++generation.current;setBusy(true);setError('');setSnapshot(null);setDetail(null);
   try{
@@ -25,7 +39,7 @@ export function JournalHistoryPanel({onBeforeOpen}:{onBeforeOpen?:()=>boolean}){
   }catch(reason){if(token===generation.current)setError(reason instanceof Error?reason.message:'日记暂时无法读取，请重试。');}
   finally{if(token===generation.current)setBusy(false);}
  },[]);
- const hide=useCallback(()=>{generation.current++;setSnapshot(null);setDetail(null);setError('');setBusy(false);},[]);
+ const hide=useCallback(()=>{generation.current++;setSnapshot(null);setDetail(null);setReturnPerson(null);setError('');setBusy(false);},[]);
  useEffect(()=>{
   const visibility=()=>{if(document.visibilityState==='hidden')hide();else if(!hasPrivacyBoundary)void load();};
   document.addEventListener('visibilitychange',visibility);window.addEventListener('pagehide',hide);
@@ -53,6 +67,7 @@ export function JournalHistoryPanel({onBeforeOpen}:{onBeforeOpen?:()=>boolean}){
    <p className={s.meta}>结果只覆盖已接入当前库的记录，不能据此推断那天没有发生事情。</p>
    {detail&&<article className={s.original} aria-label="日记原文"><h3 ref={originalHeading} tabIndex={-1}>日记原文</h3><p><strong>{detail.current.title}</strong> · {detail.current.occurredOn??'记录日期未知'} · 当前版本 {detail.entry.revision}</p>
     {activityDay&&<Link href={'/personal/activity?date='+activityDay} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>查看当天活动</Link>}
+    {returnPerson?.detail===detail&&<Link href={personRecordHref(returnPerson.id)} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>返回关联人物</Link>}
     <details open><summary>最初保存的原文</summary><p className={s.body}>{detail.original.text}</p></details><details open><summary>当前正文</summary><p className={s.body}>{detail.current.text}</p></details><details><summary>稳定记录标识与已读取版本</summary><p className={s.identifier}>记录 ID：{detail.entry.id}<br/>来源 ID：{detail.entry.source.id}</p><p>已读取 {detail.history.length} 个版本。{detail.historyTruncated?'版本历史有读取上限，不代表完整历史。':'本次版本历史未截断。'}</p></details></article>}
    <details className={s.method}><summary>相似日的实现状态</summary><p>相似日尚未启用 embedding 与 rerank；当前没有语义相似结果，也没有关键词分数代替的相似结果。需先确认提供方、私密日记处理范围与费用。</p></details>
   </>}

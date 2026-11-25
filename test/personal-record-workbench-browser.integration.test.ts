@@ -27,6 +27,13 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  await writeFile(join(peopleRoute,'page.tsx'),routeSource.replace(principalImport,
   "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
  ));
+ const journalRoute=join(root,'app/personal/journal');
+ await mkdir(journalRoute,{recursive:true});
+ const journalSource=await readFile(join(source,'app/personal/journal/page.tsx'),'utf8');
+ assert.ok(journalSource.includes(principalImport));
+ await writeFile(join(journalRoute,'page.tsx'),journalSource.replace(principalImport,
+  "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
+ ));
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture failed to start')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{log+=String(chunk);const match=log.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
@@ -115,6 +122,33 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('button',{name:'人物列表',exact:true}).click();
    await expect(overview).toHaveCount(0);
    await expect(page.getByRole('button',{name:namesake,exact:true})).toHaveCount(2);
+   const journalTitle='Synthetic confirmed shared journal';
+   const journalBody='Synthetic linked journal body only at its original record';
+   const journal=(await service.mutate(config.ownerId,'journal',null,{
+    spaceId:config.spaceId,confirmed:true,fields:{title:journalTitle,text:journalBody,occurredOn:'2024-06-09',
+     personal:{type:'journal',links:{project:null,domain:null,topics:[],
+      people:people.map(({entry})=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision}))}}}},
+    'person-overview-linked-journal')).entry;
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await page.getByRole('button',{name:'人物概览',exact:true}).click();
+   for(const summary of ['合成关系甲','合成关系乙']){
+    const card=overview.getByRole('listitem').filter({hasText:summary});
+    const toggle=card.getByText('关联日记（1）',{exact:true});
+    await toggle.click();
+    await expect(card.getByRole('link',{name:journalTitle})).toHaveAttribute('href',new RegExp('^/personal/journal\\?record='+journal.id+'&person='));
+    await expect(card.getByText('2024-06-09',{exact:true})).toBeVisible();
+   }
+   await expect(overview).not.toContainText(journalBody);
+   await overview.getByRole('listitem').filter({hasText:'合成关系乙'}).getByRole('link',{name:journalTitle}).click();
+   const original=page.getByRole('article',{name:'日记原文'});
+   await expect(original.getByText(journalTitle,{exact:true})).toBeVisible();
+   const back=original.getByRole('link',{name:'返回关联人物'});
+   await expect(back).toHaveAttribute('href','/personal/people?record='+people[1].entry.id);
+   await back.click();
+   await expect(page.getByRole('region',{name:'人物概览'}).getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
+   await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
+   assert.deepEqual(writes,['POST','PATCH']);
+
    await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
    const logout=page.locator('header.lo-header').getByRole('button',{name:'退出登录',exact:true});
    await expect(logout).toBeInViewport({ratio:1});
