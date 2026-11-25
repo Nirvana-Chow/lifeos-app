@@ -26,7 +26,7 @@ PINS = {
         compat.CI: 'da08f412b20a21a1d36642cf137acadcae917fe054803bca6bf63e9021bbd724',
         compat.LEGACY_QUALIFICATION: '384e14c8680899a8e170d05dfa10ceb50e6eb33a2ca299dd843859b3d5c666d4',
     },
-    UNIFIED: {compat.CI: '4d2371cb10485e12d32407adc4aa897672ad4d91dfd91a0ed64a792706078612'},
+    UNIFIED: {compat.CI: '07743ae75da95cadd61936d84b09cb3858f755e6a33f749b545300fb62d8d351'},
 }
 KEY = b'fixture-only-webhook-key'
 TARGET = 'fixture-platform'
@@ -311,7 +311,7 @@ class RehearsalTest(unittest.TestCase):
         image = 'sha256:' + 'b' * 64
         self.select_unified()
         self.receiver.actions[UNIFIED] = fixture(
-            'unified', profile='routine', visual=True, source=UNIFIED, workflow_ids=WORKFLOWS, release_run_id=4201)
+            'unified', profile='routine', source=UNIFIED, workflow_ids=WORKFLOWS, release_run_id=4201)
         eligible = self.emit()
         binding = (UNIFIED, 4201, 1, overlay)
         self.assertEqual(self.receiver.actions[UNIFIED]['release'].artifacts['artifacts'], [])

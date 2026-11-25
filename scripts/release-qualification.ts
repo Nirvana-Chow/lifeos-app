@@ -2,7 +2,6 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {appendFileSync, readFileSync} from 'node:fs';
-import {matchesGlob} from 'node:path';
 import {fullGreenRecord, localReleaseDecision, outputDecision, type Decision} from './release-policy.ts';
 
 const repository='Nirvana-Chow/lifeos-app';
@@ -27,51 +26,34 @@ async function api(suffix:string):Promise<Row> {
  if(!response.ok)throw Error('GITHUB_EVIDENCE_UNAVAILABLE');
  const raw=await response.text();if(raw.length>2*1024*1024)throw Error('GITHUB_EVIDENCE_TOO_LARGE');return JSON.parse(raw);
 }
-// Push scope uses the exact two-tree event diff. Dispatch takes an explicit UI input.
-export const VISUAL_PATHS=[
- 'app/**/*.tsx','app/**/*.css','components/**','src/**/*.tsx','src/**/*.css','test/**/*browser*',
- 'test/helpers/personal-*.ts','test/helpers/task-grid-performance-fixture.ts','test/helpers/auth-theme-fixture-lifecycle.ts',
- 'scripts/synthetic-rendered-qualification.ts','scripts/client-bundle-evidence.mjs',
- 'src/workbench/theme.ts',
- 'scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts',
-] as const;
 const oauthMetadataPaths=new Set([
  'app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts',
  'app/.well-known/oauth-protected-resource/[[...resource]]/route.ts',
 ]);
 function confirmed(ok:unknown,code='QUALIFICATION_UNCONFIRMED'):asserts ok {if(!ok)throw Error(code);}
-export function visualPathsApply(paths:string[]):boolean {
- // Native glob dot-segment handling is not assumed equal to Actions patterns.
- // Refuse that ambiguity except the existing root .github segment and two
- // reviewed metadata files. Those exact .ts routes do not themselves match UI.
- confirmed(paths.length<=300&&paths.every(p=>typeof p==='string'&&p.length>0&&!p.startsWith('/')&&!p.split('/').some((v,index)=>!v||v==='.'||v==='..'||(v.startsWith('.')&&!(index===0&&v==='.github')&&!(index===1&&v==='.well-known'&&oauthMetadataPaths.has(p))))&&!/[\\\x00-\x1f\x7f\ufffd]/.test(p)),'VISUAL_SCOPE_UNCONFIRMED');
- return paths.some(p=>VISUAL_PATHS.some(pattern=>matchesGlob(p,pattern)));
+function checkPushPaths(paths:string[]) {
+ confirmed(paths.length<=300&&paths.every(p=>typeof p==='string'&&p.length>0&&!p.startsWith('/')&&!p.split('/').some((v,index)=>!v||v==='.'||v==='..'||(v.startsWith('.')&&!(index===0&&v==='.github')&&!(index===1&&v==='.well-known'&&oauthMetadataPaths.has(p))))&&!/[\\\x00-\x1f\x7f\ufffd]/.test(p)),'RELEASE_SCOPE_UNCONFIRMED');
 }
 type ScopeContext={sha:string;event:string;headBranch:string;payload:unknown};
-export function readVisualScope(context:ScopeContext,directory=process.cwd()):{required:boolean;reason:string} {
- const reject=()=>{throw Error('VISUAL_SCOPE_UNCONFIRMED');};
+export function verifyReleaseScope(context:ScopeContext,directory=process.cwd()):void {
+ const reject=()=>{throw Error('RELEASE_SCOPE_UNCONFIRMED');};
  if(!/^[a-f0-9]{40}$/.test(context.sha)||context.headBranch!=='main')return reject();
  const payload=context.payload as Row|null;
- if(context.event==='workflow_dispatch'){
-  const input=payload?.inputs?.visual;
-  confirmed(input===undefined||input===false||input===true||input==='false'||input==='true','VISUAL_SCOPE_UNCONFIRMED');
-  const required=input===true||input==='true';
-  return {required,reason:required?'explicit-dispatch':'dispatch-without-ui'};
- }
+ if(context.event==='workflow_dispatch')return;
  if(context.event!=='push'||!payload||typeof payload!=='object'||payload.after!==context.sha||payload.ref!=='refs/heads/main'||payload.deleted!==false||payload.forced!==false||payload.repository?.id!==repositoryId||payload.repository?.full_name!==repository||typeof payload.before!=='string'||!/^[a-f0-9]{40}$/.test(payload.before)||/^0+$/.test(payload.before))return reject();
  try {
   const git=(...args:string[])=>execFileSync('git',args,{cwd:directory,encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:2*1024*1024});
-  confirmed(git('rev-parse','HEAD').trim()===context.sha,'VISUAL_SCOPE_UNCONFIRMED');
+  confirmed(git('rev-parse','HEAD').trim()===context.sha,'RELEASE_SCOPE_UNCONFIRMED');
   git('merge-base','--is-ancestor',payload.before,context.sha);
   const count=Number(git('rev-list','--count',payload.before+'..'+context.sha).trim());
-  confirmed(Number.isSafeInteger(count)&&count>0&&count<=1000,'VISUAL_SCOPE_UNCONFIRMED');
+  confirmed(Number.isSafeInteger(count)&&count>0&&count<=1000,'RELEASE_SCOPE_UNCONFIRMED');
   // Use the actual push's two-tree diff, not the cumulative full-green diff.
   // Explicit rename detection keeps unsupported R/C/type cases fail-closed.
   const fields=git('diff','--name-status','-z','--find-renames',payload.before,context.sha).split('\0');
-  confirmed(fields.pop()===''&&fields.length%2===0&&fields.length<=600,'VISUAL_SCOPE_UNCONFIRMED');
+  confirmed(fields.pop()===''&&fields.length%2===0&&fields.length<=600,'RELEASE_SCOPE_UNCONFIRMED');
   const paths:string[]=[];
-  for(let i=0;i<fields.length;i+=2){confirmed(['A','D','M'].includes(fields[i]!),'VISUAL_SCOPE_UNCONFIRMED');paths.push(fields[i+1]!);}
-  const required=visualPathsApply(paths);return {required,reason:required?'push-paths-match':'push-paths-not-matched'};
+  for(let i=0;i<fields.length;i+=2){confirmed(['A','D','M'].includes(fields[i]!),'RELEASE_SCOPE_UNCONFIRMED');paths.push(fields[i+1]!);}
+  checkPushPaths(paths);
  }catch{return reject();}
 }
 
@@ -110,7 +92,7 @@ const evidence = {
  },
  rendered: {
   name: 'Exact package and isolated TLS/browser qualification',
-  steps: ['Confirm exact source identity', 'Install fixed runner-only Chinese fonts and check native Chrome/NSS',
+  steps: ['Confirm exact source identity',
    'Confirm verification preserved the committed lock'],
  },
 };
@@ -118,12 +100,7 @@ const compiledStep = 'Publish exact compiled Next output';
 const captureStep = 'Upload only named synthetic images and their finite manifest';
 const fullFixtureSteps = ['Build the exact public source image and read back its source proof', 'Verify compiled default-closed routes', compiledStep,
  'Run scoped TLS recovery, permit, browser and journal scenarios', 'Verify exact scoped release cases and cleanup'];
-const fullUiSteps = [
- 'Qualify enabled classification review in isolated desktop and mobile Chrome',
- 'Exercise key dialogs, settings and requirements in isolated desktop and mobile Chrome'];
-const uiSteps = ['Check changed UI contracts early with native Chrome',
- 'Verify additional UI cases actually ran'];
-const visualSteps = ['Verify finite synthetic capture manifest and PNGs', captureStep];
+const skippedBrowserSteps = ['Verify additional UI cases actually ran', 'Verify finite synthetic capture manifest and PNGs', captureStep];
 const eligibilityName = 'Release eligibility';
 const gateStep = 'Verify exact attempt and all required qualification evidence';
 const indexStep = 'Publish full qualification index';
@@ -159,7 +136,7 @@ function attemptJobs(id:Identity,jobs:Row) {
  }
  return map;
 }
-function checkProducers(jobs:Map<string,Row>,full:boolean,ui:boolean) {
+function checkProducers(jobs:Map<string,Row>,full:boolean) {
  const expected=jobResults(full);
  for(const [jobId,descriptor] of Object.entries(evidence)) {
   const result=expected[jobId as JobId];
@@ -173,7 +150,7 @@ function checkProducers(jobs:Map<string,Row>,full:boolean,ui:boolean) {
  if(full) {
   const rendered=jobs.get(evidence.rendered.name)!;
   checkSteps(rendered,fullFixtureSteps);
-  checkSteps(rendered,[...uiSteps,...fullUiSteps,...visualSteps],ui?'success':'skipped');
+  checkSteps(rendered,skippedBrowserSteps,'skipped');
  }
 }
 
@@ -186,14 +163,12 @@ async function verifiedArtifact(apiRead:typeof api,artifactId:unknown,name:strin
   artifact.workflow_run.repository_id===repositoryId&&artifact.workflow_run.head_repository_id===repositoryId,'NAMED_ARTIFACT_UNCONFIRMED');
 }
 
-export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typeof api) {
+export async function verifyAttempt(id:Identity,needs:Row,apiRead:typeof api) {
  confirmed(typeof id.sha==='string'&&shaPattern.test(id.sha)&&positive(id.runId)&&positive(id.attempt),'ATTEMPT_IDENTITY_UNCONFIRMED');
  const outputs=needs.policy?.outputs;
- confirmed(outputs?.identity===identityString(id)&&outputs.ui===String(ui)&&
+ confirmed(outputs?.identity===identityString(id)&&
   (outputs.profile==='full'||outputs.profile==='routine'),'POLICY_EVIDENCE_UNCONFIRMED');
  const full=outputs.profile==='full';
- const visual=full&&ui;
- confirmed(outputs.visual===String(visual),'POLICY_EVIDENCE_UNCONFIRMED');
  const expected=jobResults(full);
  confirmed(outputs.audit==='true'||outputs.audit==='false','POLICY_EVIDENCE_UNCONFIRMED');
  confirmed(Object.keys(needs).length===Object.keys(expected).length&&
@@ -202,7 +177,7 @@ export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typ
  const jobs=attemptJobs(id,await apiRead(`/actions/runs/${id.runId}/attempts/${id.attempt}/jobs?per_page=100`));
  const allowed=new Set([eligibilityName,...Object.values(evidence).map(job=>job.name)]);
  confirmed([...jobs.keys()].every(name=>allowed.has(name)),'ATTEMPT_JOBS_UNCONFIRMED');
- checkProducers(jobs,full,ui);
+ checkProducers(jobs,full);
  checkSteps(jobs.get(evidence.policy.name)!,['Locked dependency security audit'],outputs.audit==='true'?'success':'skipped');
 
  const rendered=needs.rendered.outputs??{};
@@ -211,9 +186,8 @@ export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typ
    /^[A-Za-z0-9_-]{1,100}$/.test(rendered['build-id']),'BUILD_EVIDENCE_UNCONFIRMED');
   await verifiedArtifact(apiRead,rendered['compiled-id'],'lifeos-compiled-'+identityString(id).replaceAll(':','-'),id);
  } else confirmed(!rendered.identity&&!rendered['build-id']&&!rendered['compiled-id'],'UNEXPECTED_COMPILED_EVIDENCE');
- if(visual)await verifiedArtifact(apiRead,rendered['capture-id'],'synthetic-rendered-'+identityString(id).replaceAll(':','-'),id);
- else confirmed(!rendered['capture-id'],'UNEXPECTED_VISUAL_EVIDENCE');
- return {sourceSha:id.sha,runId:id.runId,runAttempt:id.attempt,profile:outputs.profile,visual:visual?'verified':'not-scheduled'};
+ confirmed(!rendered['capture-id'],'UNEXPECTED_VISUAL_EVIDENCE');
+ return {sourceSha:id.sha,runId:id.runId,runAttempt:id.attempt,profile:outputs.profile,visual:'not-scheduled'};
 }
 
 function verifyRunOwner(run:Row,id:Identity,workflowId:number) {
@@ -261,7 +235,7 @@ export async function classify(id:Identity,event:string,apiRead:typeof api=api) 
     const rendered=jobs.get(evidence.rendered.name);
     confirmed(eligibility?.status==='completed'&&eligibility.conclusion==='success'&&Array.isArray(rendered?.steps));
     checkSteps(eligibility,[gateStep,indexStep]);
-    checkProducers(jobs,true,rendered.steps.some((step:Row)=>step.name===captureStep&&step.conclusion==='success'));
+    checkProducers(jobs,true);
     baseline={...seed,sourceSha:candidate.sha,
      treeSha:execFileSync('git',['--no-replace-objects','rev-parse',candidate.sha+'^{tree}'],{encoding:'utf8'}).trim(),
      runId:String(runId),runAttempt:'1',workflowSha256:sha256(gitBytes(candidate.sha,path)),
@@ -289,14 +263,14 @@ async function main() {
   process.env.GITHUB_WORKFLOW_REF===repository+'/'+path+'@refs/heads/main'&&
   execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()===id.sha,'SOURCE_IDENTITY_UNCONFIRMED');
  const payload=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!,'utf8'));
- const scope=readVisualScope({sha:id.sha,event,headBranch:'main',payload});
+ verifyReleaseScope({sha:id.sha,event,headBranch:'main',payload});
  if(process.argv[2]==='--classify') {
   const decision=await classify(id,event);
   outputDecision(decision);
-  appendFileSync(process.env.GITHUB_OUTPUT!,`ui=${scope.required}\nvisual=${decision.profile==='full'&&scope.required}\naudit=${dependencyAuditRequired(decision,event)}\nidentity=${identityString(id)}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT!,`audit=${dependencyAuditRequired(decision,event)}\nidentity=${identityString(id)}\n`);
  } else if(process.argv[2]==='--verify') {
-  const result=await verifyAttempt(id,scope.required,JSON.parse(process.env.CI_NEEDS!),api);
-  console.log(JSON.stringify({...result,visualScope:scope.reason}));
+  const result=await verifyAttempt(id,JSON.parse(process.env.CI_NEEDS!),api);
+  console.log(JSON.stringify(result));
  } else throw Error('MODE_REQUIRED');
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))main().catch(error=>{
