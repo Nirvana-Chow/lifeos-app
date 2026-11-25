@@ -108,7 +108,6 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
         </div>
         {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
       </li>)}</ul> : <p className="lo-empty-compact">暂无日记</p> : <p className="lo-empty-compact" role="status">{journal.state === 'loading'?'正在读取日记…':'日记暂不可用'}</p>}
-      <p className={s.note}>Memos 尚未接入</p>
     </OverviewPanel>
     {scope && <RequirementProgressCard scope={scope} onOpen={onRequirements}/>}
   </div>;
