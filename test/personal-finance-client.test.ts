@@ -48,6 +48,18 @@ test('client rejects a partial or forged summary instead of displaying plausible
  const snapshot=await readPersonalFinanceSnapshot(fetcher,binding);assert.equal(snapshot.summary.netExpenseMinor,'2901');
  const partial=(async(input:RequestInfo|URL,init?:RequestInit)=>{const response=await fetcher(input,init);if(String(input).endsWith('/snapshot')){const data=await response.json();data.total=2;return Response.json(data);}return response;}) as typeof fetch;
  await assert.rejects(readPersonalFinanceSnapshot(partial,binding));
+ for(const field of ['summary','entry'] as const){
+  const mixedCurrency=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const response=await fetcher(input,init);
+   if(!String(input).endsWith('/snapshot'))return response;
+   const data=await response.json();
+   if(field==='summary')data.summary.currency='USD';
+   else data.entries[0].fields.currency='USD';
+   return Response.json(data);
+  }) as typeof fetch;
+  await assert.rejects(readPersonalFinanceSnapshot(mixedCurrency,binding));
+ }
+
 });
 test('an uncertain finance write stays uncertain after later definite conflicts, including browser recovery',async()=>{
  const {fetcher,store}=setup(),command=freezePersonalFinanceCommand(binding,fields,null,'finance-uncertain-chain');
