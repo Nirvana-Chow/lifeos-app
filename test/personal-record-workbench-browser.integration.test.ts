@@ -11,6 +11,7 @@ import {emptyMediaPersonal} from '../src/personal-media/domain.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
 import {emptyPersonPersonal} from '../src/personal-people/model.ts';
 import {makePersonalCommand} from '../src/personal-candidate/client.ts';
+import type {RecordModule} from '../src/personal-candidate/record-model.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
 import {handlePersonalRequest} from '../src/personal-candidate/http.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
@@ -45,14 +46,13 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   assert.equal(anonymous.headers.get('location'),'/login');
  }
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());const evidence=join(tmpdir(),'lifeos-record-browser-evidence-20261105');await mkdir(evidence,{recursive:true});
- const recordModules = {
-  business: ['media','career','portfolio'],
-  health: ['health'],
-  media: ['media'],
-  person: ['person'],
- } as const;
- const requestedModule = process.env.RECORD_BROWSER_MODULE as keyof typeof recordModules;
- const modules = recordModules[requestedModule] ?? ['journal','person','health','media','career','portfolio'] as const;
+ const recordModules = new Map<string, readonly RecordModule[]>([
+  ['business',['media','career','portfolio']],
+  ['health',['health']],
+  ['media',['media']],
+  ['person',['person']],
+ ]);
+ const modules = recordModules.get(process.env.RECORD_BROWSER_MODULE ?? '') ?? ['journal','person','health','media','career','portfolio'] as const;
  for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
