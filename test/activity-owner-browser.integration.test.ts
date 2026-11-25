@@ -85,6 +85,9 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
     const request = route.request();
     if (request.method() !== 'GET') writes.push(request.method());
     const path = new URL(request.url()).pathname;
+    if (['manifest.webmanifest', 'icon.svg', 'apple-icon.png'].some(asset => path === '/api/platform/install/' + asset)) {
+      return route.fulfill({ status: 404, body: '' });
+    }
     if (!authorized) return route.fulfill({ status: 401, json: {} });
     if (path.endsWith('/auth/get-session')) return route.fulfill({ json: { session: {
       mfaVerified: true, sessionDurationMode: 'fixed', sessionDurationSeconds: 1800,
@@ -101,7 +104,7 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
     if (path.endsWith('/topic/snapshot')) return route.fulfill({ json: {
       scope: 'full-current-snapshot', truncated: false, total: 1, items: [topic],
     } });
-    assert.ok(path.endsWith('/status'));
+    assert.ok(path.endsWith('/status'), path);
     return route.fulfill({ json: { ...journalStatus, allowedTypes: ['journal', 'topic'] } });
   });
 
