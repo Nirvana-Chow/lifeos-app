@@ -62,6 +62,14 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
   if(type==='media'){
+   const topic=(await service.mutate(config.ownerId,'topic',null,{spaceId:config.spaceId,confirmed:true,fields:{
+    title:'网文',text:'Synthetic topic',occurredOn:null,personal:{type:'topic'},
+   }},'catalog-novel-topic')).entry;
+   const novel=emptyMediaPersonal('book');
+   novel.links.topics=[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}];
+   await service.mutate(config.ownerId,'media',null,{spaceId:config.spaceId,confirmed:true,fields:{
+    title:'Synthetic catalog novel',text:'',occurredOn:null,personal:novel,
+   }},'catalog-fixture-novel');
    for(const kind of ['book','film','series'] as const){
     await service.mutate(config.ownerId,'media',null,{spaceId:config.spaceId,confirmed:true,fields:{
      title:'Synthetic catalog '+kind,text:'',occurredOn:null,personal:emptyMediaPersonal(kind),
@@ -100,6 +108,18 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    const board=page.getByRole('region',{name:'阅读与观影书架'});
    const card=(kind:string)=>board.getByRole('button',{name:'打开作品：Synthetic catalog '+kind,exact:true});
    await expect(card('book')).toBeVisible();
+   await filter.selectOption('reading');
+   await expect(card('book')).toBeVisible();
+   await expect(card('novel')).toBeVisible();
+   await filter.selectOption('novel');
+   await expect(card('novel')).toBeVisible();
+   await expect(card('book')).toHaveCount(0);
+   await filter.selectOption('music');
+   await expect(page.getByText('暂无音乐记录，音乐来源未接入。')).toBeVisible();
+   await expect(page.getByRole('button',{name:'新增书影音',exact:true})).toBeDisabled();
+   await filter.selectOption('photography');
+   await expect(page.getByText('暂无摄影作品，日记照片关联尚未开放。')).toBeVisible();
+   await expect(board).toHaveCount(0);
    await filter.selectOption('screen');
    await expect(card('book')).toHaveCount(0);
    await expect(card('film')).toBeVisible();

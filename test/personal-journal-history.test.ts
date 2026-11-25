@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {beijingJournalDate,projectJournalHistory,journalRecordHref,readJournalHistory,readJournalOriginal} from '../src/personal-journal/history.ts';
-import {journalFixture,journalStatus} from './helpers/journal-history.ts';
+import {journalFixture,journalStatus,journalWithTopic,topicFixture} from './helpers/journal-history.ts';
 
 test('history today uses the server instant in Beijing across midnight, independent of client timezone',()=>{
  assert.equal(beijingJournalDate('2026-11-12T15:59:59.000Z'),'2026-11-12');
@@ -60,4 +60,25 @@ test('an original GET must reject a reference superseded since the full snapshot
  for(const changed of [{...reference,revision:2},{...reference,sourceId:journalFixture(2,null).source.id},{...reference,id:journalFixture(2,null).id}]){
   await assert.rejects(readJournalOriginal(fetcher(routes),entry.id,journalStatus,changed),/版本已变化/);
  }
+});
+
+test('only an exact, current owner topic pin classifies a record as a memo',async()=>{
+ const memoTopic=topicFixture(101,'随手记'),thinking=topicFixture(102,'思考'),ordinary=topicFixture(103,'阅读思考整理');
+ const memo=journalWithTopic(journalFixture(1,'2025-11-13','Existing memo source text'),memoTopic);
+ const thought=journalWithTopic(journalFixture(2,'2026-11-13'),thinking);
+ const diary=journalWithTopic(journalFixture(3,'2026-11-13','正文提到随手记和思考'),ordinary);
+ const stale=journalWithTopic(journalFixture(4,'2026-11-13'),{...memoTopic,revision:2});
+ const items=[memo,thought,diary,stale],topics=[memoTopic,thinking,ordinary];
+ const snapshot=(items:unknown[])=>({scope:'full-current-snapshot',items,total:items.length,truncated:false,observedAt:'2026-11-12T16:00:00.000Z'});
+ const routes={[root+'status']:{...journalStatus,allowedTypes:['journal','topic']},[root+'journal/snapshot']:snapshot(items),[root+'topic/snapshot']:snapshot(topics)};
+ const result=await readJournalHistory(fetcher(routes));
+ assert.deepEqual(result.sources.memos.rows.map(row=>row.id).sort(),[memo.id,thought.id]);
+ assert.deepEqual(result.sources.diary.rows.map(row=>row.id),[diary.id]);
+ assert.deepEqual(result.sources.unclassified.map(row=>row.id),[stale.id]);
+ assert.equal(result.sources.memos.matches[0].text,'Existing memo source text');
+ assert.equal(result.history.rows.length,4);
+ const unchecked=await readJournalHistory(fetcher({...routes,[root+'topic/snapshot']:{...snapshot(topics),truncated:true}}));
+ assert.equal(unchecked.sources.memos.rows.length,0);
+ assert.equal(unchecked.sources.diary.rows.length,0);
+ assert.equal(unchecked.sources.unclassified.length,4);
 });

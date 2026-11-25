@@ -23,24 +23,70 @@ export class PersonalWorkspaceController{
  private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  suspend(){++this.generation;this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  private async json(path:string,signal?:AbortSignal){
-  const read=async()=>{const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});const body:unknown=await response.json();return{response,body};};
+  const read=async()=>{
+   const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});
+   const body:unknown=await response.json().catch(error=>{if(response.ok)throw error;return null;});
+   return{response,body};
+  };
   if(!signal)return read();signal.throwIfAborted();
   // Settle the caller even if a transport/body ignores abort; generation still fences late results.
   let onAbort!:()=>void;const cancelled=new Promise<never>((_,reject)=>{onAbort=()=>reject(signal.reason);signal.addEventListener('abort',onAbort,{once:true});});
   try{return await Promise.race([read(),cancelled]);}finally{signal.removeEventListener('abort',onAbort);}
  }
  async refresh(){
-  if(this.value.saving)return;this.clearUndo();this.pending=null;const token=++this.generation;this.entries=[];this.emit({state:{status:'loading'},access:{...this.value.access,writable:null}});
+  if(this.value.saving)return;
+  this.clearUndo();this.pending=null;const token=++this.generation;this.entries=[];
+  this.emit({state:{status:'loading'},access:{authenticated:null,writable:null,loginAllowed:null}});
+  const availability=this.json('/api/platform/personal/availability').then(({response,body})=>
+   response.ok&&obj(body)&&body.configured===true&&body.loginAllowed===true&&
+   (body.https===true&&this.options.origin.startsWith('https://')||
+    body.transport==='ssh-loopback'&&this.options.origin===body.origin&&new URL(this.options.origin).hostname==='127.0.0.1'),
+  ).catch(()=>false);
+  void availability.then(loginAllowed=>{
+   if(token===this.generation)this.emit({access:{...this.value.access,loginAllowed}});
+  });
+  const unavailable=(message:string,status?:number)=>{
+   this.clear();
+   this.emit({state:{status:status===401||status===403?'forbidden':'error',message},
+    access:{authenticated:status===401||status===403?false:null,writable:false,loginAllowed:this.value.access.loginAllowed}});
+  };
+  let failure='未能读取本人空间状态，请重试。';
   try{
-   const[c,s]=await Promise.all([this.json('/api/platform/personal/availability'),this.json('/api/platform/personal/status')]);if(token!==this.generation)return;
-   const capability=c.body,loginAllowed=c.response.ok&&obj(capability)&&capability.configured===true&&capability.loginAllowed===true&&(capability.https===true&&this.options.origin.startsWith('https://')||capability.transport==='ssh-loopback'&&this.options.origin===capability.origin&&new URL(this.options.origin).hostname==='127.0.0.1');
-   if(!s.response.ok){this.clear();this.emit({state:{status:s.response.status===401||s.response.status===403?'forbidden':'error',message:s.response.status===401?'请登录本人账号。':'本人空间当前不可用。'},access:{authenticated:s.response.status===401?false:null,writable:false,loginAllowed}});return;}
-   const status=s.body;if(!obj(status)||status.scope!=='personal-manual-candidate'||status.storageVerified!==true||typeof status.ownerId!=='string'||typeof status.spaceId!=='string'||!Array.isArray(status.allowedTypes)||!status.allowedTypes.every(type=>typeof type==='string'&&personalTypes.includes(type as PersonalType))||!status.allowedTypes.includes('todo'))throw Error('本人身份无法核实。');
-   const next={ownerId:status.ownerId,spaceId:status.spaceId};if(this.binding&&(this.binding.ownerId!==next.ownerId||this.binding.spaceId!==next.spaceId)){this.clear();throw Error('本人身份或空间发生变化，请重新读取。');}
-   this.binding=next;if(!this.session){const session=new PersonalMutationSession({binding:next,fetcher:this.options.fetcher,storage:this.options.storage,onAuthorizationLost:()=>this.suspend(),assertBinding:()=>this.binding?.ownerId===next.ownerId&&this.binding?.spaceId===next.spaceId});this.session=session;this.unsubscribe=session.subscribe(()=>this.readMutation());}
-   this.emit({access:{authenticated:true,writable:status.writable===true,loginAllowed,allowedTypes:[...status.allowedTypes] as PersonalType[],displayName:'本人空间'}});this.readMutation();
-   const today=this.options.today(),v=await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today));if(token!==this.generation)return;if(!v.response.ok){if(v.response.status===401||v.response.status===403)this.clear();throw Error('待办读取失败。');}const checked=workspaceData(v.body,next.spaceId,today);this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
-  }catch(error){if(token===this.generation){this.clear();this.emit({state:{status:'error',message:error instanceof Error?error.message:'读取失败，请重试。'},access:{authenticated:null,writable:false,loginAllowed:this.value.access.loginAllowed}});}}
+   const {response,body:status}=await this.json('/api/platform/personal/status');
+   if(token!==this.generation)return;
+   if(!response.ok){
+    const code=obj(status)&&obj(status.error)?status.error.code:null;
+    unavailable(response.status===401?'请登录本人账号。':response.status===403?'当前账号没有访问本人空间的权限。':
+     code==='AUTH_UNAVAILABLE'?'身份服务暂不可用，请重试。':failure,response.status);
+    return;
+   }
+   if(!obj(status)||status.scope!=='personal-manual-candidate'||typeof status.ownerId!=='string'||typeof status.spaceId!=='string'){
+    unavailable('本人身份无法核实，请重试。');return;
+   }
+   if(status.storageVerified!==true){unavailable('本人空间存储尚未核验，暂无法读取待办。');return;}
+   if(!Array.isArray(status.allowedTypes)||!status.allowedTypes.every(type=>typeof type==='string'&&personalTypes.includes(type as PersonalType))||!status.allowedTypes.includes('todo')){
+    unavailable('当前访问范围未确认包含待办。');return;
+   }
+   const next={ownerId:status.ownerId,spaceId:status.spaceId};
+   if(this.binding&&(this.binding.ownerId!==next.ownerId||this.binding.spaceId!==next.spaceId)){
+    unavailable('本人身份或空间发生变化，请重新读取。');return;
+   }
+   this.binding=next;
+   if(!this.session){
+    const session=new PersonalMutationSession({binding:next,fetcher:this.options.fetcher,storage:this.options.storage,onAuthorizationLost:()=>this.suspend(),assertBinding:()=>this.binding?.ownerId===next.ownerId&&this.binding?.spaceId===next.spaceId});
+    this.session=session;this.unsubscribe=session.subscribe(()=>this.readMutation());
+   }
+   this.emit({access:{authenticated:true,writable:status.writable===true,loginAllowed:this.value.access.loginAllowed,allowedTypes:[...status.allowedTypes] as PersonalType[],displayName:'本人空间'}});this.readMutation();
+   failure='待办数据未能读取，请重试。';
+   const today=this.options.today(),v=await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today));
+   if(token!==this.generation)return;
+   if(!v.response.ok){
+    unavailable(v.response.status===401?'登录已失效，请重新登录。':v.response.status===403?'当前账号没有读取待办的权限。':failure,v.response.status);return;
+   }
+   failure='待办快照未能核验，请重新读取。';
+   const checked=workspaceData(v.body,next.spaceId,today);
+   this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
+  }catch{if(token===this.generation)unavailable(failure);}
  }
  private readMutation(){const state=this.session?.getSnapshot();this.emit({pendingTaskIds:state?.pending?.id?[state.pending.id]:[],mutationError:state?.error||null,uncertain:state?.phase==='uncertain',saving:this.busy||state?.phase==='saving'});}
  private clearUndo(){this.undo=null;this.emit({undoDeadline:null});}

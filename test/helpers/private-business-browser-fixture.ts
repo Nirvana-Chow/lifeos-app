@@ -276,7 +276,7 @@ export async function assertPrivateFixtureNavigation(page:Page){
  const searchInHeader=await headerSearch.count()>0;
  if(searchInHeader)await expect(headerSearch).toHaveAttribute('href','/personal/search');
  const modules=[
-  ['日常',[['总览'],['待办'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
+  ['日常',[['总览'],['待办'],['个人项目'],['领域'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
   ['兴趣学习',[['做饭','/personal/cooking']]],
  ] as const;
  for(const [module,items] of modules){

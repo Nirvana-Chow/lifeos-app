@@ -2,7 +2,7 @@ import type {AreaRow,ProjectRow} from './contract.ts';
 import type {OwnerModuleLink} from './owner-modules.ts';
 
 const workspaceModules = [
- {id:'daily',label:'日常',pages:['overview','tasks'],links:['calendar','journal','search']},
+ {id:'daily',label:'日常',pages:['overview','tasks','projects','areas'],links:['calendar','journal','search']},
  {id:'health',label:'身体基础',pages:[],links:['health']},
  {id:'learning',label:'兴趣学习',pages:[],links:['media','cooking']},
  {id:'relationships',label:'生活与关系',pages:[],links:['people']},

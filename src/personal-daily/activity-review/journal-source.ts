@@ -7,18 +7,19 @@ type JournalActivityEntry = {
   revision: number;
   title: string;
   href: string;
+  source: 'memos' | 'diary';
   when: { date: string };
 };
 
 export type JournalActivityInput =
-  | { state: 'ready'; asOf: string; entries: JournalActivityEntry[] }
+  | { state: 'ready'; asOf: string; entries: JournalActivityEntry[]; classificationPending: boolean }
   | { state: 'unauthorized' | 'unknown' };
 
 /** The caller supplies the existing authenticated, same-origin journal reader. */
 export async function readJournalActivity(fetcher: NonNullable<JournalSourceFetcher>): Promise<JournalActivityInput> {
   let denied = false;
   try {
-    const { history } = await readJournalHistory(async (input, init) => {
+    const { history, sources } = await readJournalHistory(async (input, init) => {
       const response = await fetcher(input, init);
       if (response.status === 401 || response.status === 403) denied = true;
       if (response.ok && input === '/api/platform/personal/status') {
@@ -29,13 +30,13 @@ export async function readJournalActivity(fetcher: NonNullable<JournalSourceFetc
       }
       return response;
     });
-    const entries = history.rows.flatMap(({ id, sourceId, revision, title, href, occurredOn }) =>
+    const entries = (['memos','diary'] as const).flatMap(source => sources[source].rows.flatMap(({ id, sourceId, revision, title, href, occurredOn }) =>
       occurredOn !== null && occurredOn <= history.today
-        ? [{ id, sourceId, revision, title, href, when: { date: occurredOn } }]
+        ? [{ id, sourceId, revision, title, href, source, when: { date: occurredOn } }]
         : [],
-    );
+    ));
     // A full current snapshot still does not certify historical coverage.
-    return { state: 'ready', asOf: history.today, entries };
+    return { state: 'ready', asOf: history.today, entries, classificationPending: sources.unclassified.length > 0 };
   } catch {
     return { state: denied ? 'unauthorized' : 'unknown' };
   }

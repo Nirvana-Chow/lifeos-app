@@ -88,13 +88,15 @@ test('task toolbar opens a private, read-only classification preview', {
       return route.abort();
     });
     await page.goto(origin + '/personal?page=tasks');
-    await page.getByRole('link', {name: '分类预览'}).click();
-    await expect(page).toHaveURL(origin + preview);
-    await expect(page.getByRole('heading', {name: '待办分类预览'})).toBeVisible();
+    const trigger = page.getByRole('button', {name: '分类预览'});
+    await trigger.click();
+    await expect(page).toHaveURL(origin + '/personal?page=tasks');
+    const dialog = page.getByRole('dialog', {name: '待办分类预览'});
+    await expect(dialog.getByRole('heading', {name: '待办分类预览'})).toBeVisible();
     await expect(page.getByText('完整字段与建议分类相同，建议人工核对重复。')).toHaveCount(1);
-    const independent = page.getByRole('article').filter({hasText: '独立校验'});
+    const independent = dialog.getByRole('article').filter({hasText: '独立校验'});
     for (const [title, reason] of [['合成旧记录', '保留已结束的待办'], ['合成过期引用', '原分类关联已经变化或无法核对']]) {
-      const row = page.getByRole('article').filter({hasText: title});
+      const row = dialog.getByRole('article').filter({hasText: title});
       await expect(row.getByText('受保护 · ' + reason)).toBeVisible();
       await expect(row.getByRole('checkbox')).toHaveCount(0);
       await expect(row.getByText('调整建议')).toHaveCount(0);
@@ -112,7 +114,7 @@ test('task toolbar opens a private, read-only classification preview', {
       document.dispatchEvent(new Event('visibilitychange'));
     }, state);
     await visibility('hidden');
-    await expect(page.getByRole('article')).toHaveCount(0);
+    await expect(dialog.getByRole('article')).toHaveCount(0);
     await visibility('visible');
     await expect(independent.getByText('建议项目 合成整理 · 建议标签 合成标签')).toBeVisible();
     await expect(independent.getByText('已排除')).toBeVisible();
@@ -145,7 +147,7 @@ test('task toolbar opens a private, read-only classification preview', {
     assert.equal(downloads, 1);
     revised = false;
     await visibility('hidden');
-    await expect(page.getByRole('article')).toHaveCount(0);
+    await expect(dialog.getByRole('article')).toHaveCount(0);
     await visibility('visible');
     await expect(page.getByText('已重新核对范围，旧预览建议已清除。')).toBeVisible();
     await expect(independent.getByText('已排除')).toHaveCount(0);
@@ -153,7 +155,14 @@ test('task toolbar opens a private, read-only classification preview', {
     incomplete = true;
     await page.getByRole('button', {name: '重新读取'}).click();
     await expect(page.getByText('无法核对完整待办快照。')).toBeVisible();
-    await expect(page.getByRole('article')).toHaveCount(0);
+    await expect(dialog.getByRole('article')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(origin + '/personal?page=tasks');
+    incomplete = false;
+    await page.goto(origin + preview);
+    await expect(page.getByRole('heading', {name: '待办分类预览'})).toBeVisible();
+    await expect(page.getByRole('link', {name: '返回待办'})).toHaveAttribute('href', '/personal?page=tasks');
     assert.equal(writes, 0);
     await page.close();
   }

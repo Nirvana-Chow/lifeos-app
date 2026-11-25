@@ -10,7 +10,7 @@ import type {JournalPeriod} from './journal-period';
 import {personRecordHref,personRecordId,readLinkedPerson} from '../personal-people/journal-links';
 import s from './history.module.css';
 
-export function JournalHistoryPanel({onBeforeOpen,children}:{onBeforeOpen?:()=>boolean;children?:ReactNode}){
+export function JournalHistoryPanel({onBeforeOpen,children,activityLink}:{onBeforeOpen?:()=>boolean;children?:ReactNode;activityLink?:ReactNode}){
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
  const [snapshot,setSnapshot]=useState<Awaited<ReturnType<typeof readJournalHistory>>|null>(null),[detail,setDetail]=useState<JournalOriginal|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState('');
  const [period,setPeriod]=useState<JournalPeriod|null>(null);
@@ -57,13 +57,36 @@ export function JournalHistoryPanel({onBeforeOpen,children}:{onBeforeOpen?:()=>b
   catch(reason){if(token===generation.current){setSnapshot(null);setError(reason instanceof Error?reason.message:'原文暂时无法读取，请重试。');}}
   finally{if(token===generation.current)setBusy(false);}
  }
- const history=snapshot?.history;
+ const history=snapshot?.sources.diary,memos=snapshot?.sources.memos;
  const today=history?.rows.filter(row=>row.occurredOn===history.today)??[];
+ const recentMemos=memos?.rows.filter(row=>row.occurredOn===null||row.occurredOn<=memos.today)
+  .toSorted((a,b)=>(b.occurredOn??'').localeCompare(a.occurredOn??''))??[];
  const activityDay=activityDate(detail?.current.occurredOn);
  const todayList=(rows:typeof today)=><ul className={s.titles}>{rows.map(row=>
   <li key={row.id}><a href={row.href} onClick={event=>void open(event,row.id)}>{row.title}</a></li>
  )}</ul>;
+ const datedList=(rows:typeof today)=><ul className={s.matches}>{rows.map(row=><li key={row.id}>
+  <span className={s.date}>{row.occurredOn??'日期未知'}</span><a href={row.href} onClick={event=>void open(event,row.id)}>{row.title}</a>
+ </li>)}</ul>;
+ const memoDetail=!!detail&&!!memos?.rows.some(row=>row.id===detail.entry.id);
+ const detailLabel=memoDetail?'随手记原文':snapshot?.sources.unclassified.some(row=>row.id===detail?.entry.id)?'记录原文':'日记原文';
+ const original=detail&&<article className={s.original} aria-label={detailLabel}>
+  <h3 ref={originalHeading} tabIndex={-1}>{detailLabel}</h3>
+  <p><strong>{detail.current.title}</strong> · {detail.current.occurredOn??'记录日期未知'} · 当前版本 {detail.entry.revision}</p>
+  {memoDetail&&<p className={s.meta}>来源：LifeOS 本人记录 · 已核对关联主题</p>}
+  {activityDay&&<Link href={'/personal/activity?date='+activityDay} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>查看当天活动</Link>}
+  {returnPerson?.detail===detail&&<Link href={personRecordHref(returnPerson.id)} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>返回关联人物</Link>}
+  <p className={s.body}>{detail.current.text}</p>
+  {detail.original.text!==detail.current.text&&<details><summary>最初保存的原文</summary><p className={s.body}>{detail.original.text}</p></details>}
+  <details><summary>来源与已读取版本</summary><p className={s.identifier}>记录 ID：{detail.entry.id}<br/>来源 ID：{detail.entry.source.id}</p><p>已读取 {detail.history.length} 个版本。{detail.historyTruncated?'版本历史有读取上限，不代表完整历史。':'本次版本历史未截断。'}</p></details>
+ </article>;
  return <>
+  <section className={s.panel} aria-labelledby="records-memos">
+   <div className={s.heading}><h2 id="records-memos">Memos</h2>{activityLink}</div>
+   {recentMemos.length>0?datedList(recentMemos.slice(0,3)):<p className={s.meta} role="status">{busy?'正在读取随手记…':!memos?'随手记暂时无法核对。':snapshot?.sources.unclassified.length?'部分记录分类待核对。':'当前库内暂无已核对的随手记或思考。'}</p>}
+   {recentMemos.length>3&&<details className={s.disclosure}><summary>更多随手记</summary>{datedList(recentMemos.slice(3))}</details>}
+   {memoDetail&&original}
+  </section>
   <section className={s.panel} aria-labelledby="records-journal">
    <div className={s.heading}>
     <div><h2 id="records-journal">日记</h2>{history&&<p className={s.meta}>北京时间 {history.today}</p>}</div>
@@ -76,29 +99,22 @@ export function JournalHistoryPanel({onBeforeOpen,children}:{onBeforeOpen?:()=>b
       {today.length>3&&<details className={s.disclosure} open={moreToday} onToggle={event=>setMoreToday(event.currentTarget.open)}><summary>其余 {today.length-3} 条当天日记</summary>{moreToday&&todayList(today.slice(3))}</details>}
      </section>
     : <p className={s.meta}>当前库内没有当天日记。</p>)}
-   {detail&&<article className={s.original} aria-label="日记原文">
-    <h3 ref={originalHeading} tabIndex={-1}>日记原文</h3>
-    <p><strong>{detail.current.title}</strong> · {detail.current.occurredOn??'记录日期未知'} · 当前版本 {detail.entry.revision}</p>
-    {activityDay&&<Link href={'/personal/activity?date='+activityDay} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>查看当天活动</Link>}
-    {returnPerson?.detail===detail&&<Link href={personRecordHref(returnPerson.id)} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>返回关联人物</Link>}
-    <p className={s.body}>{detail.current.text}</p>
-    {detail.original.text!==detail.current.text&&<details><summary>最初保存的原文</summary><p className={s.body}>{detail.original.text}</p></details>}
-    <details><summary>来源与已读取版本</summary><p className={s.identifier}>记录 ID：{detail.entry.id}<br/>来源 ID：{detail.entry.source.id}</p><p>已读取 {detail.history.length} 个版本。{detail.historyTruncated?'版本历史有读取上限，不代表完整历史。':'本次版本历史未截断。'}</p></details>
-   </article>}
+   {!memoDetail&&original}
    {children}
    <details className={s.disclosure}><summary>历史上的今天</summary><section aria-label="历史上的今天">
+    {!!memos?.matches.length&&<><h3>Memos</h3>{datedList(memos.matches)}</>}
     {history&&(history.matches.length
-     ? <ul className={s.matches}>{history.matches.map(row=><li key={row.id}><span className={s.date}>{row.occurredOn}</span><a href={row.href} onClick={event=>void open(event,row.id)}>{row.title}</a></li>)}</ul>
+     ? <><h3>日记</h3>{datedList(history.matches)}</>
      : <p>当前记录库没有过去年份同月同日的日记。</p>)}
    </section></details>
   </section>
   <section className={s.panel} aria-labelledby="records-periods">
-   <div className={s.heading}><h2 id="records-periods">周期回顾</h2><div className={s.actions}>
-    <Button type="button" variant="outline" aria-pressed={period==='week'} disabled={!history} onClick={()=>setPeriod(period==='week'?null:'week')}>周记</Button>
-    <Button type="button" variant="outline" aria-pressed={period==='year'} disabled={!history} onClick={()=>setPeriod(period==='year'?null:'year')}>年记</Button>
-    <Button type="button" variant="outline" aria-pressed={period==='month'} disabled={!history} onClick={()=>setPeriod(period==='month'?null:'month')}>日记日历</Button>
+   <div className={s.heading}><h2 id="records-periods">周期回顾</h2><div className={s.actions} role="group" aria-label="时间维度">
+    {(['day','week','month','quarter','year'] as const).map((grain,index)=><Button key={grain} type="button" variant="outline"
+     aria-pressed={period===grain} disabled={!history} onClick={()=>setPeriod(period===grain?null:grain)}>{['日','周','月','季度','年'][index]}</Button>)}
    </div></div>
-   {period&&history&&<JournalCoveragePanel period={period} onPeriodChange={setPeriod} history={history} onOpen={(event,id)=>void open(event,id)}/>}
+   {period&&history&&memos&&<JournalCoveragePanel period={period} onPeriodChange={setPeriod} history={history} memos={memos} onOpen={(event,id)=>void open(event,id)}/>}
+   {!!snapshot?.sources.unclassified.length&&<details className={s.disclosure}><summary>分类待核对（{snapshot.sources.unclassified.length}）</summary>{datedList(snapshot.sources.unclassified)}</details>}
   </section>
  </>;
 }

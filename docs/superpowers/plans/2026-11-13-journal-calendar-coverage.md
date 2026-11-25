@@ -85,3 +85,10 @@
 ## Owner review path after release
 
 Open 日记 on the actual deployed site. The month calendar marks saved dates with their record count; selecting a date shows its records, and 资料周期 changes the selected reference date to a natural day/week/month/quarter/year range. 日期未知的日记 remains visible separately. Each title opens an independently read original/current version; 来源引用 exposes its stable record/source IDs and read revision. Use 重新读取历史 to replace the snapshot after a save or source change. The panel provides source material and coverage; gallery, quotes, AI summaries and full-history acceptance remain outside this delivered slice.
+
+### 随手记、周期资料及后续验收
+
+- 站内随手记与思考沿用已确认的日记记录和已有主题。读取本人日记快照，只在存在主题关联且已具主题权限时读取主题快照。用记录、来源及修订三个字段核对关联，再识别确切的「随手记」「思考」「Memos」主题名称。主题变动、权限缺失或读回不全时归为待核对，仍可走原记录入口。应以本人实际主题和覆盖验证此规则，历史数据不回填。
+- 日、周、月、季度、年以北京时间自然边界聚合，周一开周。已知纯日期沿用原值，未知日期单列。「历史上的今天」展示往年同月同日已读记录，闰日只匹配闰日。空结果只说明当前读取范围。
+- 相似性推荐尚待验收。先冻结一个获本人确认、各源带稳定 ID 和修订的评测集，明确相关与不相关样例。验证同日索引和相似度分开、漏读时无虚构推荐、结果可回原文。候选只评估经批准的本地或隔离方案。含私人正文的外发须另行核对接口、提供方、留存与费用。
+- AI SDK 摘要另行验收。先明确人工选择的输入范围、输出槽位与引用追溯。拟定无来源、撤权、修订变化、超时及重复提交的失败行为和回退。合成用例可测试契约与渲染。上线调用前另行核对本人授权、服务边界、计费与留存。当前页面只汇集已有资料。
