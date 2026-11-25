@@ -339,7 +339,7 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   await categories.getByRole('button',{name:'安全与密码',exact:true}).click();await expect(settings.getByRole('textbox',{name:'本人账号'})).toBeVisible();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
   await expect(categories.getByRole('button',{name:'安全与密码',exact:true})).toHaveAttribute('aria-current','page');
-  await page.screenshot({path:join(source,`.review-results/settings-security-${width}.png`),animations:'disabled'});
+  if(width===1365)await page.screenshot({path:join(source,`.review-results/settings-security-${width}.png`),animations:'disabled'});
   await settings.getByLabel('原密码',{exact:true}).fill('synthetic-refused-draft');const refuse=(d:import('@playwright/test').Dialog)=>void d.dismiss();page.on('dialog',refuse);
   await page.getByRole('button',{name:'后退',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(settings.getByLabel('原密码',{exact:true})).toHaveValue('synthetic-refused-draft');
   await categories.getByRole('button',{name:'通用',exact:true}).click();
@@ -357,8 +357,10 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await input.fill('未保存合成草稿');
   await confirmDiscard(page,false,nav);await expect(settingsPage).toHaveCount(0);
   await expect(input).toHaveValue('未保存合成草稿');assert.equal(writes,0,'refused settings departure never blur-submits or discards the draft');
-  await page.screenshot({path:join(source,`.review-results/settings-background-${width}.png`)});
+  if(width===1365)await page.screenshot({path:join(source,`.review-results/settings-background-${width}.png`)});
   await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();});
+  await expect(page).toHaveURL(origin+'/personal');
+  await expect(page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true})).toBeVisible();
   await page.goto(origin+'/personal?page=settings');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
   await page.goto(origin+'/personal?page=projects&modal=settings&panel=security');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await page.reload();
   if(width===390){
@@ -395,7 +397,6 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
      await expect(trigger).toBeAttached();await trigger.scrollIntoViewIfNeeded();await expectAboveFooter(page,trigger);
      await trigger.click();const detail=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(detail.getByLabel('标题',{exact:true})).toHaveValue(title);await page.keyboard.press('Escape');await expect(detail).toHaveCount(0);
     }
-    await page.screenshot({path:join(source,`.review-results/matters-short-${height}-${view}.png`)});
     assert.equal(writes(),0,'short-view browsing never writes records');
    }finally{await page.close();}
   });
