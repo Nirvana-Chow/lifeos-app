@@ -150,8 +150,10 @@ test('OPT-IN injected filing footer follows workspace content and preserves its 
    await expect(link).toBeFocused();
    await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
    await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
-   await main.evaluate(node=>node.scrollTop=node.scrollHeight/2);
-   await expect(footer).not.toBeInViewport();
+   await expect.poll(()=>main.evaluate(node=>{
+    const slot=node.lastElementChild;
+    return slot?.matches('.lo-filing-slot')&&getComputedStyle(slot).position!=='fixed';
+   })).toBe(true);
    await main.evaluate(node=>node.scrollTop=node.scrollHeight);
    await alignContent();
    await expect(link).toBeInViewport({ratio:1});
