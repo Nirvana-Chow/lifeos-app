@@ -123,13 +123,13 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     await page.goto(origin+'/login',{waitUntil:'networkidle'});await expect(page).toHaveURL(origin+'/personal');await expect(page.getByRole('heading',{name:'合成本人空间'})).toBeVisible();assert.equal(refreshPosts,1);page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'撤销这次登录'}).click();await expect(page.getByText('已撤销该设备登录。')).toBeVisible();assert.deepEqual(revokeBody,{id:'fixture-other-session'});
    }finally{await context.close();}
   });
-  await t.test('legacy journal retries offline or reauthenticates in place; explicit logout remains in the shared account menu',async()=>{
+  await t.test('legacy journal preserves drafts through in-place and separate-page login, with explicit logout in the account menu',async()=>{
    const context=await browser!.newContext(),page=await context.newPage(),journal=origin+'/personal/journal';
    let failure:503|401|'offline'|null=null,unverifiedJournalReads=0;
    const commands:string[]=[],record=journalFixture(1,'2026-11-13');
    await context.addCookies([{name:'fixture-ready',value:'1',url:origin},{name:'fixture-legacy',value:'1',url:origin}]);
    try{
-    await page.route(origin+'/api/platform/**',route=>{
+    await context.route(origin+'/api/platform/**',route=>{
      const request=route.request();
      const path=new URL(request.url()).pathname;
      if(request.method()!=='GET')commands.push(request.method()+' '+path);
@@ -139,7 +139,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      if(path.endsWith('/sign-in/email'))return route.fulfill({json:{twoFactorRedirect:true}});
      if(path.endsWith('/two-factor/verify-totp')){
       failure=null;
-      return route.fulfill({json:{user:{id:'fixture-owner'}}});
+      return route.fulfill({headers:{'set-cookie':'fixture-ready=1; Path=/; HttpOnly; SameSite=Lax'},json:{user:{id:'fixture-owner'}}});
      }
      if(path==='/api/platform/status'&&failure!==null){
       return failure==='offline'?route.abort('internetdisconnected'):route.fulfill({status:failure,json:{}});
@@ -199,13 +199,39 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     await expect(draft).toBeVisible();
     await expect(draft).toHaveValue('Synthetic journal draft');
     await expect(page).toHaveURL(journal);
+
+    // A separate login page shares the browser context, while the editor stays mounted.
+    await context.clearCookies({name:'fixture-ready'});
+    failure=401;
+    await restore();
+    await expect(draft).toBeHidden();
+    const continueEditing=page.getByRole('button',{name:'已完成登录，继续编辑',exact:true});
+    await expect(continueEditing).toBeVisible();
+    const login=await context.newPage();
+    await login.goto(origin+'/login?return_to='+encodeURIComponent('/personal/journal'));
+    await login.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');
+    await login.getByLabel('验证器动态码',{exact:true}).fill('123456');
+    await login.getByRole('button',{name:'登录',exact:true}).click();
+    await expect(login).toHaveURL(journal);
+    await expect(draft).toBeHidden();
+    await continueEditing.click();
+    await expect(draft).toBeVisible();
+    await expect(draft).toHaveValue('Synthetic journal draft');
+    await expect(page.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('Synthetic unsaved title');
+    await expect(page).toHaveURL(journal);
+    await login.close();
+
     page.once('dialog',dialog=>dialog.accept());
     await page.getByRole('button',{name:'取消',exact:true}).click();
     await expect(page.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
     await page.getByRole('button',{name:'账号与更多操作',exact:true}).click();
     await page.getByRole('dialog',{name:'账号操作'}).getByRole('button',{name:'退出登录',exact:true}).click();
     await expect(page).toHaveURL(origin+'/login');
-    assert.deepEqual(commands,['POST /api/platform/auth/sign-in/email','POST /api/platform/auth/two-factor/verify-totp','POST /api/platform/auth/sign-out']);
+    assert.deepEqual(commands,[
+     'POST /api/platform/auth/sign-in/email','POST /api/platform/auth/two-factor/verify-totp',
+     'POST /api/platform/auth/sign-in/email','POST /api/platform/auth/two-factor/verify-totp',
+     'POST /api/platform/auth/sign-out',
+    ]);
     assert.ok(!(await context.cookies(origin)).some(cookie=>cookie.name==='fixture-ready'));
     await page.goto(journal+'?record=synthetic-record');
     const loginUrl=new URL(page.url());
