@@ -1,11 +1,56 @@
 'use client';
-import {useEffect,useState,type ReactNode} from 'react';
+import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
+import {checkOwnerPageAccess} from '../session-duration/client';
 import {flushSync} from 'react-dom';
+const OwnerPageVerification=createContext<boolean|null>(null);
+export function useOwnerPageVerification(){return useContext(OwnerPageVerification);}
+
 /** Conceal cached children before background/back navigation; reveal only after
  * a fresh server owner check. No client supplied identity is trusted. */
-export function PrivacyBoundary({children}:{children:ReactNode}){const[visible,setVisible]=useState(true);
- useEffect(()=>{let alive=true,generation=0;const hide=()=>{generation++;setVisible(false);document.documentElement.style.visibility='hidden';};const check=async()=>{const token=++generation;try{const r=await fetch('/api/platform/status',{cache:'no-store',credentials:'same-origin'});if(!alive||token!==generation)return;if(!r.ok){window.location.replace('/login');return;}setVisible(true);document.documentElement.style.visibility='';}catch{if(alive&&token===generation)window.location.replace('/login');}};const visibility=()=>{if(document.visibilityState==='hidden')hide();else void check();};const pageShow=()=>void check();window.addEventListener('pagehide',hide);window.addEventListener('pageshow',pageShow);document.addEventListener('visibilitychange',visibility);return()=>{alive=false;generation++;window.removeEventListener('pagehide',hide);window.removeEventListener('pageshow',pageShow);document.removeEventListener('visibilitychange',visibility);document.documentElement.style.visibility='';};},[]);
- return <><div hidden={!visible}>{children}</div>{!visible&&<p role="status">正在重新核对私人空间…</p>}</>;
+export function PrivacyBoundary({children}:{children:ReactNode}){
+ const[phase,setPhase]=useState<'active'|'checking'|'unavailable'>('active');
+ const retry=useRef<(()=>void)|null>(null);
+ useEffect(()=>{
+  let alive=true,generation=0;
+  const hide=()=>{
+   generation++;
+   setPhase('checking');
+   document.documentElement.style.visibility='hidden';
+  };
+  const check=async()=>{
+   if(document.visibilityState==='hidden')return;
+   const token=++generation;
+   setPhase('checking');
+   const result=await checkOwnerPageAccess(fetch);
+   if(!alive||token!==generation)return;
+   if(result==='locked'){window.location.replace('/login');return;}
+   if(result==='unavailable'){setPhase('unavailable');return;}
+   document.documentElement.style.visibility='';
+   setPhase('active');
+  };
+  const pageShow=()=>void check();
+  const visibility=()=>{if(document.visibilityState==='hidden')hide();else pageShow();};
+  retry.current=pageShow;
+  window.addEventListener('pagehide',hide);
+  window.addEventListener('pageshow',pageShow);
+  document.addEventListener('visibilitychange',visibility);
+  return()=>{
+   alive=false;
+   retry.current=null;
+   window.removeEventListener('pagehide',hide);
+   window.removeEventListener('pageshow',pageShow);
+   document.removeEventListener('visibilitychange',visibility);
+   document.documentElement.style.visibility='';
+  };
+ },[]);
+ return <><div hidden={phase!=='active'} inert={phase!=='active'}>
+   <OwnerPageVerification.Provider value={phase==='active'}>{children}</OwnerPageVerification.Provider>
+  </div>
+  {phase!=='active'&&<section style={{visibility:'visible'}}>
+   <p role="status">{phase==='checking'?'正在重新核对私人空间…':'暂时无法核对登录状态。私人页面已隐藏。'}</p>
+   {phase==='unavailable'&&<button type="button" onClick={()=>retry.current?.()}>重新核对</button>}
+  </section>}
+ </>;
 }
 export function LogoutButton({beforeLogout,onConfirmed,className,icon}:{beforeLogout?:()=>boolean;onConfirmed?:()=>void;className?:string;icon?:ReactNode}={}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
