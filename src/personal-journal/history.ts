@@ -21,7 +21,11 @@ export function beijingJournalDate(observedAt:string):string {
 }
 export function journalRecordHref(id:string):string{return '/personal/journal?record='+validateId(id);}
 export function projectJournalHistory(entries:PublicEntry[],observedAt:string){
- const today=beijingJournalDate(observedAt),rows:JournalHistoryRow[]=entries.toSorted((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id)).map(entry=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision,...recordFields(entry,'journal'),href:journalRecordHref(entry.id)}));
+ const rows:JournalHistoryRow[]=entries.toSorted((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id)).map(entry=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision,...recordFields(entry,'journal'),href:journalRecordHref(entry.id)}));
+ return historyOf(rows,observedAt);
+}
+function historyOf(rows:JournalHistoryRow[],observedAt:string){
+ const today=beijingJournalDate(observedAt);
  const dates=rows.map(row=>row.occurredOn).filter((date):date is string=>date!==null).sort();
  return {today,observedAt,rows,matches:rows.filter(row=>row.occurredOn!==null&&row.occurredOn.slice(0,4)<today.slice(0,4)&&row.occurredOn.slice(5)===today.slice(5)).sort((a,b)=>b.occurredOn!.localeCompare(a.occurredOn!)||b.id.localeCompare(a.id)),coverage:{count:rows.length,dated:dates.length,undated:rows.length-dates.length,from:dates[0]??null,to:dates.at(-1)??null,historicalCompleteness:'unknown' as const}};
 }
@@ -30,19 +34,47 @@ async function read(fetcher:Fetcher,path:string):Promise<Record<string,unknown>>
  if(!response.ok)throw Error(response.status===401?'请登录后重新读取日记。':'日记暂时无法读取，请稍后重试。');
  const value:unknown=await response.json();if(!record(value))return invalid();return value;
 }
-async function status(fetcher:Fetcher):Promise<JournalBinding>{
+async function journalAccess(fetcher:Fetcher){
  const value=await read(fetcher,'status');
  if(typeof value.ownerId!=='string'||!value.ownerId||typeof value.spaceId!=='string'||!value.spaceId||value.storageVerified!==true||!Array.isArray(value.allowedTypes)||!value.allowedTypes.includes('journal'))throw Error('本人日记空间尚未开放。');
- return {ownerId:value.ownerId,spaceId:value.spaceId};
+ return {binding:{ownerId:value.ownerId,spaceId:value.spaceId},canReadTopics:value.allowedTypes.includes('topic')};
 }
-export async function readJournalHistory(fetcher:Fetcher=fetch):Promise<{binding:JournalBinding;history:JournalHistory}>{
- const before=await status(fetcher),snapshot=await read(fetcher,'journal/snapshot');
+async function status(fetcher:Fetcher):Promise<JournalBinding>{return (await journalAccess(fetcher)).binding;}
+const pins=(row:JournalHistoryRow)=>row.personal?.type==='journal'?row.personal.links.topics:[];
+const memoTopicNames=new Set(['随手记','思考','Memos']);
+function recordSources(history:JournalHistory,topics:PublicEntry[]){
+ const byId=new Map(topics.map(topic=>[topic.id,topic]));
+ const diary:JournalHistoryRow[]=[],memos:JournalHistoryRow[]=[],unclassified:JournalHistoryRow[]=[];
+ for(const row of history.rows){
+  let memo=false,unknown=false;
+  for(const pin of pins(row)){
+   const topic=byId.get(pin.id);
+   if(!topic||topic.source.id!==pin.sourceId||topic.revision!==pin.revision){unknown=true;continue;}
+   if(memoTopicNames.has(recordFields(topic,'topic').title))memo=true;
+  }
+  (memo?memos:unknown?unclassified:diary).push(row);
+ }
+ return {diary:historyOf(diary,history.observedAt),memos:historyOf(memos,history.observedAt),unclassified};
+}
+export async function readJournalHistory(fetcher:Fetcher=fetch){
+ const {binding:before,canReadTopics}=await journalAccess(fetcher),snapshot=await read(fetcher,'journal/snapshot');
  if(snapshot.scope!=='full-current-snapshot'||snapshot.truncated!==false||!Array.isArray(snapshot.items)||snapshot.total!==snapshot.items.length||snapshot.items.length>10000||typeof snapshot.observedAt!=='string')return invalid();
  const entries=snapshot.items.map(entry=>ownerRecord(entry,'journal',before.spaceId));
  if(new Set(entries.map(entry=>entry.id)).size!==entries.length)return invalid();
- const history=projectJournalHistory(entries,snapshot.observedAt),after=await status(fetcher);
+ const history=projectJournalHistory(entries,snapshot.observedAt);
+ let topics:PublicEntry[]=[];
+ if(canReadTopics&&history.rows.some(row=>pins(row).length)){
+  try{
+   const value=await read(fetcher,'topic/snapshot');
+   if(value.scope==='full-current-snapshot'&&value.truncated===false&&Array.isArray(value.items)&&value.items.length<=10000&&value.total===value.items.length){
+    const checked=value.items.map(entry=>ownerRecord(entry,'topic',before.spaceId));
+    if(new Set(checked.map(entry=>entry.id)).size===checked.length)topics=checked;
+   }
+  }catch{/* Records with unchecked topic pins retain an unknown category. */}
+ }
+ const {binding:after,canReadTopics:topicsStillAllowed}=await journalAccess(fetcher);
  if(bindingKey(before)!==bindingKey(after))throw Error('本人空间已变化，请重新读取。');
- return {binding:after,history};
+ return {binding:after,history,sources:recordSources(history,topicsStillAllowed?topics:[])};
 }
 export type JournalOriginal={entry:PublicEntry;current:RecordFields;original:RecordFields;history:PublicEntry[];historyTruncated:boolean};
 export async function readJournalOriginal(fetcher:Fetcher,id:string,expected:JournalBinding,reference?:JournalReference):Promise<JournalOriginal>{

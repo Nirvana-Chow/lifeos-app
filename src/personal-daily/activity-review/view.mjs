@@ -13,15 +13,17 @@ export function mountActivity(root, mapping, { fixtures, isolated = false, serve
   const mapped = mapping !== null;
   const asOf = mapped ? mapping.asOf ?? serverDay : fixtureDay;
   const journalEntries = mapping?.entries ?? [];
+  function recordedSource(source) {
+    const entries = journalEntries.filter(entry => entry.source === source);
+    return { coverage: new Map(entries.map(entry => [entry.when.date, 'observed'])), entries,
+      defaultState: mapping?.state === 'unauthorized' ? 'unauthorized' : 'unknown' };
+  }
   const developmentEntries = mergeReceipts.map(({ label, href, at }) => ({
     id: href, title: label, when: { at }, stage: 'merged', verified: true, evidence: '查看合并记录', href,
   }));
   const sources = mapped ? {
-    memos: { coverage: new Map(), entries: [] },
-    diary: {
-      coverage: new Map(journalEntries.map(entry => [entry.when.date, 'observed'])), entries: journalEntries,
-      defaultState: mapping.state === 'unauthorized' ? 'unauthorized' : 'unknown',
-    },
+    memos: recordedSource('memos'),
+    diary: recordedSource('diary'),
     development: { coverage: new Map(developmentEntries.map(entry => [localDay(entry.when), 'observed'])), entries: developmentEntries },
   } : fixtures;
   let period = selection?.period ?? 'quarter';
@@ -193,7 +195,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false, serve
     if (day.sourceStates) {
       const labels = Object.entries(day.sourceStates)
         .filter(([, state]) => state !== 'complete')
-        .map(([source, state]) => recordSources[source] + ' ' + (mapped && source === 'memos' ? '未接入' : stateLabels[state]));
+        .map(([source, state]) => recordSources[source] + ' ' + stateLabels[state]);
       detail.append(element('p', labels.join(' · '), 'empty'));
     }
     if (day.entries.length === 0) {
@@ -224,8 +226,8 @@ export function mountActivity(root, mapping, { fixtures, isolated = false, serve
       } else {
         entry.prepend(element('span', recordSources[record.source], 'badge source-badge'));
         if (!mapped) entry.append(element('p', record.text, 'record-body'));
-        if (mapped && record.source === 'diary') {
-          const original = element('a', '打开日记原记录', 'original-record');
+        if (mapped) {
+          const original = element('a', record.source === 'memos' ? '打开随手记原记录' : '打开日记原记录', 'original-record');
           original.href = record.href;
           entry.append(original);
         }
@@ -278,7 +280,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false, serve
     guideDescription.textContent = isDevelopment ? (mapped
       ? '仅纳入需求进度已引用的合并证据，按实际合并时刻归日。开发全量来源尚未接入。'
       : '按当天有证据的成果去重计数，同项多阶段只计一次。')
-      : mapped ? '按上海日历日展示已核对的日记。原文在已有日记入口查看。'
+      : mapped ? '按上海日历日展示已核对的随手记、思考和日记，保留原记录链接。'
       : '随手记与日记按上海日历日一起查看。详情保留各自来源、标题与原文。';
     guideStages.replaceChildren();
     if (isDevelopment) {
@@ -341,7 +343,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false, serve
     const status = root.querySelector('#mapping-state');
     status.hidden = false;
     status.textContent = mapping.state === 'ready'
-      ? '日记来自已核对的日记快照。Memos 未接入。'
+      ? mapping.classificationPending ? '部分记录分类待核对，历史覆盖仍有未知。' : '按站内记录和已核对主题归类，历史覆盖仍有未知。'
       : mapping.state === 'unauthorized' ? '当前未获授权读取日记。' : '日记来源暂时无法核对。';
   }
   setPeriod(period, selected);
