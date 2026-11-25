@@ -58,6 +58,14 @@ test('OPT-IN requirement delivery filters, refresh and results render without re
   for(const destination of ['roadmap','feedback','updates']){
    await expect(page.locator('a[href="/personal/requirements/'+destination+'"]')).toHaveCount(0);
   }
+  const savedFollowUp=page.locator('time[datetime="2026-11-13T09:00:00+08:00"]');
+  await expect(savedFollowUp).toHaveText('2026/11/13 09:00');
+  await expect(savedFollowUp.locator('..')).toContainText('跟进');
+  const people=page.getByRole('row').filter({has:page.getByRole('button',{name:/查看需求 LO-PEOPLE-001/})});
+  await expect(people.locator('time')).toHaveAttribute('datetime','2026-11-25T00:29:27Z');
+  await expect(people.locator('time').locator('..')).toContainText('部分合并');
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(savedFollowUp).toHaveText('2026/11/13 09:00');
   await expect(page.getByRole('link',{name:'人物只读总览（合并记录）',exact:true})).toHaveAttribute('href','https://github.com/Nirvana-Chow/lifeos-app/pull/93');
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
   const first='[data-requirement-id="'+snapshot.items[0].id+'"]';

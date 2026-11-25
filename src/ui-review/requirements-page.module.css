@@ -150,6 +150,8 @@
  .page .semanticBadge { font-size:12px; }
 }
 
+.deliveryTime{display:flex;flex-wrap:wrap;gap:0 6px;color:var(--muted-foreground);font-size:var(--lo-font-meta);font-variant-numeric:tabular-nums}
+.deliveryTime time{color:var(--foreground);white-space:nowrap}
 .resultLink{color:var(--lo-link);text-decoration:underline;text-underline-offset:3px}
 .boardNext{font-size:14px;line-height:1.6;margin-top:8px!important;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(min-width:1024px) and (pointer:fine){.requirementTitle:has(.workflowSummary){position:relative;padding-bottom:0}.requirementTitle .workflowSummary{position:absolute;inset-inline-end:0;bottom:2px;max-width:calc(100% - 98px);font-size:12px}.requirementTitle .workflowSummary>span:last-child:not(:global([data-slot="badge"])){display:none}.requirementTitle .workflowSummary>:global([data-slot="badge"]){padding-block:0}}

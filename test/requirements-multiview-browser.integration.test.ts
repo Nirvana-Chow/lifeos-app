@@ -43,7 +43,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
     })),
    }));
    t.diagnostic(JSON.stringify({beforeHydration:geometry}));
-   const metadata=[['按交付状态排序',150],['按结果排序',185],['按优先级排序',100],['按下一步排序',240]] as const;
+   const metadata=[['按交付状态排序',150],['按时间排序',200],['按结果排序',185]] as const;
    assert.deepEqual(geometry.headers.map(header=>header.label),['按需求排序',...metadata.map(([label])=>label),null]);
    for(const [label,width] of metadata){
     const actual=geometry.headers.find(header=>header.label===label)!.width;
