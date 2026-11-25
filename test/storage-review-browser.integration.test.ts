@@ -85,7 +85,7 @@ test('OPT-IN storage desktop ledger preserves conflict input and same-origin ser
  const children=[{...directory,id:'DIR.01',title:'Synthetic media batch',kind:'media' as const,body:'Upload verified backup complete: synthetic text is not structured evidence'}, {...directory,id:'DIR.02',title:'Synthetic child file',kind:'file' as const}];
  await service.saveChecklist(owner,{expectedRevision:latest.revision,checklist:{...checklist,revision:'synthetic-tree-v3',items:[...checklist.items,directory,...children]}},'synthetic-tree-children');
  await page.reload();const parentRow=page.locator('[data-id="DIR"]');await expect(parentRow.locator('.choices')).toHaveCount(0);await expect(parentRow).toContainText('历史选择：删除候选（不代表已执行）');
- await expect(page.getByRole('link',{name:'← LifeOS 主站',exact:true})).toHaveAttribute('href','/personal');await expect(page.getByRole('link',{name:'设置与工具',exact:true})).toHaveAttribute('href','/personal?page=settings&panel=general');
+ await expect(page.getByRole('link',{name:'← LifeOS 主站',exact:true})).toHaveAttribute('href','/personal');await expect(page.getByRole('link',{name:'设置与工具',exact:true})).toHaveAttribute('href','/personal?page=settings');
  const branch=page.locator('details[data-parent-id="DIR"]');const toggle=branch.locator(':scope > summary');const treeBefore=patches.length;
  await toggle.focus();await page.keyboard.press('Enter');await expect(branch).not.toHaveAttribute('open','');await page.keyboard.press('Enter');await expect(branch).toHaveAttribute('open','');assert.equal(patches.length,treeBefore);
  const media=page.locator('[data-id="DIR.01"]');await expect(media.locator('.evidence')).toHaveText('上传完成：未核实 · 独立恢复核验：未核实');

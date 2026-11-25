@@ -2,6 +2,17 @@
 
 .contentView{min-width:0;max-height:min(70vh,840px);overflow:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent}.contentView::-webkit-scrollbar{width:5px;height:5px}.contentView::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}.contentView :is(button,input,select){font-size:13px}.contentView [role="tablist"]{flex-wrap:wrap}@media(max-width:640px){.contentView{max-height:70dvh}.views{overflow:auto;max-width:100%}}
 
+.personActions > summary {
+  align-content: center;
+  min-height: 2.75rem;
+  padding-inline: 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.personActions > summary:hover { color: var(--foreground); }
+.personActions > summary:focus-visible { outline: 2px solid var(--ring); }
+
 @media(max-width:640px) {
  .dialog {
   top:calc(var(--lo-keyboard-top,0px) + var(--lo-keyboard-height,100dvh) / 2);

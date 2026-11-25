@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dayLabel, initialDay, localDay, periodRange, projectActivity, projectDay, projectRecords, summarizePeriod, yearGrid } from './activity.mjs';
+import { activityDate, dayLabel, initialDay, localDay, periodRange, projectActivity, projectDay, projectRecords, summarizePeriod, yearGrid } from './activity.mjs';
 import { sources } from './fixtures.mjs';
 
 test('calendar uses Monday columns and retains every civil date, including leap day', () => {
@@ -20,6 +20,13 @@ test('explicit instants cross the Shanghai midnight without moving source civil 
   assert.equal(localDay({ date: '2026-11-23' }), '2026-11-23');
   assert.throws(() => localDay({ at: '2026-11-24T00:00:00' }));
   assert.throws(() => localDay({ date: '2026-02-30' }));
+});
+
+test('a deep link accepts one bounded civil date without normalizing invalid or repeated values', () => {
+  assert.equal(activityDate('2024-02-29'), '2024-02-29');
+  for (const value of ['2025-02-29', '2026-1-02', '0001-12-31', '9999-01-01', '2026-11-24T00:00:00Z', ['2026-11-24']]) {
+    assert.equal(activityDate(value), undefined);
+  }
 });
 
 test('only complete coverage can produce zero or expose records', () => {
@@ -62,6 +69,18 @@ test('coverage and evidence dates both govern points shown on a day', () => {
   };
   assert.equal(projectDay(source, 'development', '2026-11-23').count, 0);
   assert.equal(projectDay(source, 'development', '2026-11-24').count, 1);
+});
+
+test('a verified merge establishes one observed outcome, with no inference of complete coverage or other phases', () => {
+  const coverage = new Map([[initialDay, 'observed'], ['2026-11-23', 'observed']]);
+  const when = { at: '2026-11-23T16:00:00Z' };
+  const entries = [{ id: 'synthetic-result', when, stage: 'merged', verified: true, evidence: '合成合并证据' }];
+  const days = ['2026-11-23', initialDay].map(date => projectDay({ coverage, entries }, 'development', date));
+  assert.deepEqual(days[0], { count: null, entries: [], level: 'unknown', state: 'unknown' });
+  assert.equal(dayLabel(days[1], 'development'), '已核对 1 项可核成果 · 部分覆盖');
+  const totals = summarizePeriod(days, 'development');
+  assert.equal(totals.coverage.complete, 0);
+  assert.deepEqual(totals.stageCounts, { candidate: 0, merged: 1, released: 0, accepted: 0 });
 });
 
 test('quarter bounds preserve leap February and exclude adjacent dates', () => {

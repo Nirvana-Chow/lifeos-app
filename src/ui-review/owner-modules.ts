@@ -1,4 +1,4 @@
-export type OwnerModuleLink={id:'search'|'calendar'|'journal'|'health'|'people'|'finance'|'roadmap'|'feedback'|'updates'|'media'|'career'|'portfolio'|'cooking'|'storage-review'|'file-handoffs';label:string;href:string};
+export type OwnerModuleLink={id:'search'|'calendar'|'journal'|'health'|'people'|'finance'|'roadmap'|'feedback'|'updates'|'media'|'career'|'portfolio'|'cooking'|'storage-review'|'file-handoffs'|'development-projects';label:string;href:string};
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 export function verifiedModuleScope(value:unknown):string|null{return object(value)&&value.scope==='personal-manual-candidate'&&value.storageVerified===true&&typeof value.ownerId==='string'&&value.ownerId.length>0&&typeof value.spaceId==='string'&&value.spaceId.length>0?JSON.stringify([value.ownerId,value.spaceId]):null;}
 export function ownerModules(value:unknown,scope:string|null):OwnerModuleLink[]{
@@ -16,6 +16,7 @@ export function ownerModules(value:unknown,scope:string|null):OwnerModuleLink[]{
  if(v.storageReviewEnabled===true)links.push({id:'storage-review',label:'存储审核',href:'/personal/storage-review'});
  if(v.fileHandoffEnabled===true)links.push({id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'});
  if(v.calendarEnabled===true)links.push({id:'calendar',label:'日程',href:'/personal/schedule'});
+ if(v.requirementsEnabled===true)links.push({id:'development-projects',label:'开发项目',href:'/personal/development-projects'});
  if(v.requirementsEnabled===true&&v.requirementSupportEnabled===true)links.push({id:'roadmap',label:'阶段路线图',href:'/personal/requirements/roadmap'},{id:'feedback',label:'反馈 Inbox',href:'/personal/requirements/feedback'},{id:'updates',label:'更新记录',href:'/personal/requirements/updates'});
  return links;
 }

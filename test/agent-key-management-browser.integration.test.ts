@@ -228,6 +228,21 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await expect(page.getByRole('link',{name:'修改密码',exact:true})).toHaveCount(0);
     await page.reload({waitUntil:'domcontentloaded'});
     await expect(page.getByText('还没有签发密钥。')).toBeVisible();
+    const skill=page.getByRole('region',{name:'LifeOS Skill',exact:true});
+    const copySkill=skill.getByRole('button',{name:'复制安装说明',exact:true});
+    await expect(skill.getByRole('link',{name:'下载 Skill'})).toHaveAttribute('href','/api/platform/agent-skill');
+    await expect(page.getByText('完整密钥只在创建成功时显示一次。',{exact:false})).toBeVisible();
+    await copySkill.click();
+    await expect(skill.getByRole('status')).toHaveText('已复制安装说明。');
+    const instructions=await page.evaluate(()=>(window as unknown as {copied:string}).copied);
+    assert.ok(instructions.includes(origin+'/api/platform/agent-skill'));
+    assert.ok(instructions.includes('references/credential-runtime.md'));
+    assert.ok(!instructions.includes(syntheticKey));
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('blocked');}}}));
+    await copySkill.click();
+    await expect(skill.getByRole('status')).toHaveText('无法访问剪贴板，请手动复制安装说明。');
+    await expect(skill.getByRole('textbox',{name:'Skill 安装说明'})).toHaveValue(instructions);
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(value:string)=>{(window as unknown as {copied:string}).copied=value;}}}));
     const beforeAccountRead=personalReads;
     await expect(page.getByText('还没有签发密钥。')).toBeVisible();
     await expect(page.locator('[name="name"]')).toHaveCount(0);
@@ -503,6 +518,9 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     failReadback=false;
     await page.getByRole('button',{name:'重新读取',exact:true}).click();
     await expect(page.getByText('Synthetic read fallback',{exact:true})).toBeVisible();
+    await copySkill.click();
+    await expect(skill.getByRole('status')).toHaveText('已复制安装说明。');
+    assert.equal(await page.evaluate(()=>(window as unknown as {copied:string}).copied),instructions,'installed instructions are independent of the issued key and grant metadata');
 
     failReadback=true;
     rejectCreate=true;

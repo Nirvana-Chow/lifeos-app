@@ -27,15 +27,15 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   const taskId='11111111-1111-4111-8111-111111111111',projectId='33333333-3333-4333-8333-333333333333',newId='55555555-5555-4555-8555-555555555555',spaceId='synthetic-planning-space',ownerId='synthetic-planning-owner';
   const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
   // Only this private test's Node memory is written. No remote service, real record or database.
-  let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open'}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
-  let writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:null,topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
+  let writable=true,writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const headers={'cache-control':'private, no-store',vary:'Cookie','x-content-type-options':'nosniff'};
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),method=request.method();if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return ['GET','HEAD'].includes(method)?route.continue():route.abort();
    let value:any;
    if(method==='GET'){
     if(url.pathname==='/api/platform/personal/availability')value={configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:true};
-    else if(url.pathname==='/api/platform/personal/status')value={scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable:true};
+    else if(url.pathname==='/api/platform/personal/status')value={scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable};
     else if(url.pathname==='/api/platform/personal/overview')value={scope:'full-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
     else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;}else projectReads++;value={entry};}}
    }else if(method==='PATCH'||method==='POST'){
@@ -46,14 +46,56 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    return route.fulfill({json:value,headers});
   });
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle',timeout:60000});const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();
+  const grouping=grid.getByRole('combobox',{name:'待办表格分组'});
+  await expect(grouping).toHaveValue('none');
+  await expect(grouping.getByRole('option',{name:'按领域'})).toHaveCount(0);
+  await expect(grid.getByRole('columnheader',{name:/项目/})).toBeVisible();
+  await expect(grid.getByRole('columnheader',{name:/领域/})).toHaveCount(0);
+  await grouping.selectOption('project');
+  await expect(grid.locator('[data-task-group="project"]').first()).toBeVisible();
+  await grouping.selectOption('none');
   await page.getByRole('button',{name:'甘特',exact:true}).click();let gantt=page.getByRole('region',{name:'待办甘特',exact:true});await expect(gantt.getByRole('heading',{name:'尚无完整排期',exact:true})).toBeVisible();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();await gantt.getByRole('button',{name:'查看待办表格',exact:true}).click();
-  await grid.getByRole('button',{name:'打开任务：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
+  await expect(grid.getByRole('link',{name:'查看项目：合成排期项目',exact:true})).toBeVisible();
+  await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
   await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-05 至 2030-11-10',exact:true})).toBeVisible();
   await page.reload({waitUntil:'networkidle'});await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true}).click();dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(dialog.getByLabel('计划开始',{exact:true})).toHaveValue('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'新建待办',exact:true}).click();dialog=page.getByRole('dialog',{name:'新建待办',exact:true});await dialog.getByLabel('标题',{exact:true}).fill('合成新建排期');await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-12');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-14');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);
-  await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await gantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await page.getByRole('link',{name:'编辑项目：合成排期项目',exact:true}).click();
+  await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});
+  await page.getByRole('button',{name:'看板',exact:true}).click();
+  const board=page.locator('[data-task-board="reui"]');
+  const card=board.locator('[data-kanban-task="'+taskId+'"]');
+  await expect(card.getByRole('link',{name:'合成排期项目',exact:true})).toBeVisible();
+  await expect(card.getByText('领域',{exact:true})).toHaveCount(0);
+  const drag=card.getByRole('button',{name:'拖动：合成排期待办',exact:true});
+  const destination=board.locator('[data-kanban-status="in_progress"] .lo-board-cards');
+  await expect(drag).toBeEnabled();
+  await drag.scrollIntoViewIfNeeded();
+  const start=await drag.boundingBox(),end=await destination.boundingBox();
+  assert.ok(start&&end);
+  await page.mouse.move(start.x+start.width/2,start.y+start.height/2);
+  await page.mouse.down();
+  await page.mouse.move(start.x+start.width/2+14,start.y+start.height/2,{steps:3});
+  await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+  await page.mouse.move(end.x+end.width/2,end.y+Math.min(45,end.height/2),{steps:16});
+  await expect(destination.locator('[data-kanban-task="'+taskId+'"]')).toBeVisible();
+  assert.equal(writes,3,'drag preview must not write');
+  await page.mouse.up();
+  await expect.poll(()=>writes).toBe(4);
+  await expect(board.locator('[data-kanban-status="in_progress"]').locator('[data-kanban-task="'+taskId+'"]')).toBeVisible();
+  assert.equal(entries.find(entry=>entry.id===taskId).draft.status,'in_progress');
+  await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await gantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await page.getByRole('link',{name:'编辑项目：合成排期项目',exact:true}).click({noWaitAfter:true});
   await expect(page.getByLabel('计划开始',{exact:true})).toBeVisible();await page.getByLabel('计划开始',{exact:true}).fill('2030-11-01');await page.getByLabel('计划结束',{exact:true}).fill('2030-11-20');await page.getByRole('checkbox',{name:'我已核对这一条内容，确认保存到本人空间。',exact:true}).check();const projectReadsBeforeSave=projectReads;await page.getByRole('button',{name:'确认保存',exact:true}).click();await expect.poll(()=>projectReads).toBeGreaterThan(projectReadsBeforeSave);await expect(page.getByLabel('计划结束',{exact:true})).toHaveValue('2030-11-20');
-  await page.goto(origin+'/personal?page=projects',{waitUntil:'networkidle'});await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-01 至 2030-11-20',exact:true})).toBeVisible();await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  assert.equal(writes,4);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,mobileOverflow:false}));
+  await page.goto(origin+'/personal?page=projects',{waitUntil:'networkidle'});await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();await expect(page.getByRole('columnheader',{name:/领域/})).toHaveCount(0);await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-01 至 2030-11-20',exact:true})).toBeVisible();await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  writable=false;
+  await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'networkidle'});
+  await expect(grid).toBeVisible();
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();
+  const projectLink=page.getByRole('dialog',{name:'待办详情',exact:true}).getByRole('link',{name:'合成排期项目（版本已变化）',exact:true});
+  await projectLink.click();
+  await expect(page).toHaveURL(origin+'/personal/edit?type=project&id='+projectId);
+  await expect(page.getByLabel('标题',{exact:true})).toHaveValue('合成排期项目');
+  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,mobileOverflow:false}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });

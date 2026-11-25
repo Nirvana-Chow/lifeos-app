@@ -85,3 +85,14 @@
 .policyFields { display:grid; grid-column:1 / -1; min-width:0; gap:6px; }
 .policyFields select { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:6px 10px; border:1px solid var(--input); border-radius:var(--lo-radius-control); background:var(--card); color:var(--foreground); font:inherit; }
 .policyFields small { line-height:1.55; color:var(--muted-foreground); }
+
+.skillInstructions {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-control);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  resize: vertical;
+}

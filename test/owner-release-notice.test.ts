@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
+import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import {ownerModules,verifiedModuleScope} from '../src/ui-review/owner-modules.ts';
 import * as selectors from '../src/ui-review/selectors.ts';
 import * as privateNavigation from '../src/workbench/private-navigation.ts';
@@ -24,12 +25,12 @@ test('an ordinary or rejected reminder renders no automatic announcement',()=>{
  assert.equal(render('idle').tree,null);assert.equal(render('rejected').tree,null);
 });
 
-test('workspace settings navigation hides support routes until owner scope and both capabilities are verified',()=>{
+test('workspace settings navigation keeps the three legacy routes outside the default menu',()=>{
  const source=readFileSync(new URL('../src/ui-review/workspace.tsx',import.meta.url),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const scope=JSON.stringify(['owner','space']);
  const status={scope:'personal-manual-candidate',storageVerified:true,ownerId:'owner',spaceId:'space',requirementsEnabled:true,requirementSupportEnabled:true};
- const jsxOnly=new Set(['lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page','./requirement-progress-card']);
+ const jsxOnly=new Set(['lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page','./daily-overview']);
  const components=new Proxy({},{get:(_target,name)=>String(name)});
  function settings(value:unknown,preferenceScope=scope){
   const navigated:string[]=[],module={exports:{} as any};
@@ -37,6 +38,7 @@ test('workspace settings navigation hides support routes until owner scope and b
    '../workbench/workspace-layout-control':{},'radix-ui':{Popover:{}},
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
+   '../personal-candidate/project-detail-href':{projectDetailHref},
    './selectors':selectors,'./workspace-hierarchy':workspaceHierarchy,'../workbench/private-navigation':privateNavigation,
    './owner-module-navigation':{useOwnerModules:(enabled:boolean,currentScope:string|null)=>({links:enabled?ownerModules(value,currentScope):[],scope:verifiedModuleScope(value),path:'/personal/requirements/updates'}),OwnerModuleLinks:'owner-links'},
   };
@@ -56,5 +58,5 @@ test('workspace settings navigation hides support routes until owner scope and b
  }
  for(const closed of [null,{}, {...status,storageVerified:false},{...status,requirementsEnabled:false},{...status,requirementSupportEnabled:false}])assert.deepEqual(settings(closed),[]);
  assert.deepEqual(settings(status,JSON.stringify(['foreign-owner','space'])),[]);
- assert.deepEqual(settings(status),['/personal/requirements/roadmap','/personal/requirements/feedback','/personal/requirements/updates']);
+ assert.deepEqual(settings(status),[]);
 });

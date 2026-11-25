@@ -104,7 +104,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(page.getByRole('heading',{level:1,name:'待办',exact:true})).toBeVisible();
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办甲',{exact:true})).toBeVisible();
   if(width<850)await expect(page.getByRole('button',{name:'打开导航',exact:true})).toBeHidden();
-  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','事项']);
+  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','待办']);
   const sections=page.getByRole('navigation',{name:'待办分类视图'});
   await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
   await sections.getByRole('button',{name:'项目分类视图',exact:true}).click();
@@ -118,15 +118,15 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(projects.getByText('合成项目甲',{exact:true})).toHaveCount(0);
   await expect(projects.getByText('合成项目乙',{exact:true})).toBeVisible();
   await page.getByLabel('搜索项目',{exact:true}).fill('');
-  await page.getByRole('combobox',{name:/^领域/}).selectOption(ids[0]);
-  await expect(projects.getByText('合成项目乙',{exact:true})).toHaveCount(0);
-  await page.getByRole('combobox',{name:/^领域/}).selectOption('');
+  await expect(page.getByRole('combobox',{name:/^领域/})).toHaveCount(0);
+  await expect(projects.getByText('合成项目乙',{exact:true})).toBeVisible();
   await page.screenshot({path:join(source,`.review-results/workspace-projects-${width}-${theme}.png`)});
   await projects.getByRole('button',{name:'查看待办：合成项目甲'}).click();
   await expect(page).toHaveURL(origin+'/personal?page=tasks');
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办甲',{exact:true})).toBeVisible();
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办乙',{exact:true})).toHaveCount(0);
-  await sections.getByRole('button',{name:'领域分类视图',exact:true}).click();
+  await expect(sections.getByRole('button',{name:'领域分类视图',exact:true})).toHaveCount(0);
+  await page.goto(origin+'/personal?page=areas',{waitUntil:'networkidle'});
   await expect(page.locator('[data-category-grid="reui"]').getByText('合成领域甲',{exact:true})).toBeVisible();
   await readyHeading(page,'领域');
   await categoryHeaderPresentation(page);

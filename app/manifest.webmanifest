@@ -1,0 +1,21 @@
+{
+  "id": "/personal",
+  "name": "LifeOS",
+  "short_name": "LifeOS",
+  "lang": "zh-CN",
+  "start_url": "/personal",
+  "scope": "/",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/apple-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

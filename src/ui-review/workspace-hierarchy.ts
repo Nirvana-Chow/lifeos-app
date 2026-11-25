@@ -4,11 +4,11 @@ import type {OwnerModuleLink} from './owner-modules.ts';
 const workspaceModules = [
  {id:'daily',label:'日常',pages:['overview','tasks'],links:['calendar','journal','search']},
  {id:'health',label:'身体基础',pages:[],links:['health']},
- {id:'learning',label:'兴趣学习',pages:[],links:['media']},
- {id:'relationships',label:'生活与关系',pages:[],links:['cooking','people']},
+ {id:'learning',label:'兴趣学习',pages:[],links:['media','cooking']},
+ {id:'relationships',label:'生活与关系',pages:[],links:['people']},
  {id:'finance',label:'财务',pages:[],links:['finance','portfolio']},
  {id:'career',label:'职业成长',pages:[],links:['career']},
- {id:'projects',label:'项目',pages:['projects','areas'],links:[]},
+ {id:'projects',label:'项目',pages:['projects','areas'],links:['development-projects']},
 ] as const;
 
 /** Present existing destinations in module order. Settings retains its own tools. */

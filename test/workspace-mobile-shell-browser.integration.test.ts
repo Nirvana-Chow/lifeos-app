@@ -110,7 +110,9 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
   await page.keyboard.press('Escape');
   await expect(account).toBeHidden();
   await toMobile.click();
+  await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','mobile');
   await page.reload({waitUntil:'networkidle'});
+  await expect(toDesktop).toBeInViewport();
   await more.click();
   await expect(layout).toHaveValue('mobile');
   await layout.selectOption('auto');

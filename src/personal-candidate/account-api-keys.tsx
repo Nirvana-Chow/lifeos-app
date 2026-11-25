@@ -14,6 +14,17 @@ import {estimateApiKeyExpiry, resolveApiKeyExpiry} from './account-api-key-expir
 import styles from './account-api-keys.module.css';
 
 const endpoint = '/api/platform/account/api-keys';
+const skillPath = '/api/platform/agent-skill';
+
+function skillInstructions() {
+  return [
+    'LifeOS Skill 安装说明',
+    '1. 从 ' + new URL(skillPath, window.location.origin).href + ' 下载并解压 lifeos-agent.tar.gz。',
+    '2. 将 lifeos-agent 目录连同 references 放入客户端支持的 Skill 目录。',
+    '3. 按 references/credential-runtime.md 配置受审查的凭据运行时。密钥单独保存在系统凭据库或客户端的安全配置中。',
+    '4. 首次使用先发现当前权限与可用操作，再执行已授权的操作。',
+  ].join('\n');
+}
 const statuses = {active: '有效', expired: '已到期', revoked: '已撤销'};
 type Grant = {
   fileHandoff?:FilePermission;
@@ -95,6 +106,7 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean; closeGuard?:{current:(()=>boolean)|null}}) {
   const [list, setList] = useState<List>({kind: 'loading'});
   const [loadVersion, setLoadVersion] = useState(0);
+  const [skillCopy, setSkillCopy] = useState<{kind:'copied'} | {kind:'manual'; instructions:string} | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState(false);
@@ -432,6 +444,16 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     }
   }
 
+  async function copySkillInstructions() {
+    const instructions = skillInstructions();
+    try {
+      await navigator.clipboard.writeText(instructions);
+      setSkillCopy({kind:'copied'});
+    } catch {
+      setSkillCopy({kind:'manual', instructions});
+    }
+  }
+
   const Surface=embedded?'section':'main';
   return <Surface data-lifeos-surface={embedded?undefined:'auth'} aria-label={embedded?'API 密钥':undefined}>
    <div className={`${styles.page}${embedded?' '+styles.embedded:''}`}>
@@ -439,7 +461,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
       <a href="/personal?page=settings">返回设置</a>
     </nav>}
     {!embedded&&<h1>API 密钥</h1>}
-    <p>为 LifeOS Skill 授予所需模块的权限。每把密钥都有到期时间，也可以单独撤销。</p>
+    <p>完整密钥只在创建成功时显示一次。列表显示名称、权限、状态和到期时间。</p>
     {message && !dialogOpen && <p role="status">{message}</p>}
     <section className={styles.section} aria-labelledby="key-list-title" aria-busy={list.kind === 'loading' || refreshing}>
       <div className={styles.sectionHeading}><h2 id="key-list-title">已签发的密钥</h2>
@@ -478,6 +500,21 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         {list.nextCursor && <Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>
           {loadingMore ? '正在读取…' : '加载更多密钥'}
         </Button>}
+      </>}
+    </section>
+    <section className={styles.section} aria-labelledby="skill-install-title">
+      <div className={styles.sectionHeading}>
+        <h2 id="skill-install-title">LifeOS Skill</h2>
+        <div className={styles.actions}>
+          <Button asChild variant="outline"><a href={skillPath} download>下载 Skill</a></Button>
+          <Button type="button" variant="outline" onClick={copySkillInstructions}>复制安装说明</Button>
+        </div>
+      </div>
+      {skillCopy?.kind === 'copied' && <p role="status">已复制安装说明。</p>}
+      {skillCopy?.kind === 'manual' && <>
+        <p role="status">无法访问剪贴板，请手动复制安装说明。</p>
+        <textarea aria-label="Skill 安装说明" className={styles.skillInstructions} readOnly rows={6}
+          value={skillCopy.instructions} onFocus={event=>event.currentTarget.select()}/>
       </>}
     </section>
     <Dialog open={dialogOpen} onOpenChange={open=>{if (!open) closeDialog();}}>

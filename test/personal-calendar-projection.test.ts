@@ -6,6 +6,13 @@ test('calendar window is explicit, bounded to92 days, and malformed dates or sou
  assert.equal(query({from:'2028-02-01',to:'2028-03-01',timeZone:'Asia/Shanghai'}).limit,100);
  for(const value of [{from:'2026-01-01',to:'2026-05-01',timeZone:'UTC'},{from:'2026-02-29',to:'2026-03-01',timeZone:'UTC'},{from:'2026-01-01',to:'2026-01-02',timeZone:'UTC',limit:101},{from:'2026-01-01',to:'2026-01-02',timeZone:'UTC',ownerId:'other'}])assert.throws(()=>query(value));
 });
+test('week edges are civil Mondays across month and year boundaries',()=>{
+ assert.equal(m.calendarWeekStart('2030-11-01'),'2030-10-28');
+ const from=m.calendarWeekStart('2027-01-01');
+ assert.equal(from,'2026-12-28');
+ assert.equal(m.shiftCalendarDate(from,7),'2027-01-04');
+ assert.equal(m.calendarWeekStart('2027-01-04'),'2027-01-04');
+});
 test('all-day end and timed midnight remain exclusive in a timezone-aware calendar',()=>{
  const q=query({from:'2026-10-22',to:'2026-10-25',timeZone:'Asia/Shanghai'});
  const p=m!.projectCalendarRecords([record('a',{calendarKind:'event',schedule:{kind:'all-day',startDate:'2026-10-22',endDate:'2026-10-23'}}),record('b',{calendarKind:'event',schedule:{kind:'timed',startAt:'2026-10-22T15:00:00.000Z',endAt:'2026-10-22T16:00:00.000Z',timeZone:'UTC'}})],q,'2026-10-22T12:00:00Z');
