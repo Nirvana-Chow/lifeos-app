@@ -86,7 +86,7 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
    }),'full amounts must fit in the SVG without hiding digits');
    denySnapshot=true;
    await page.getByRole('button',{name:'刷新',exact:true}).click();
-   await expect(page.getByRole('alert')).toContainText('合成验收：快照授权已撤回');
+   await expect(page.getByRole('region',{name:'财务记录'}).getByRole('alert')).toContainText('合成验收：快照授权已撤回');
    await expect(chart).toHaveCount(0);
    await expect(page.getByRole('region',{name:'账户间转账'})).toHaveCount(0);
    await expect(page.getByRole('region',{name:'资产快照'})).toHaveCount(0);
