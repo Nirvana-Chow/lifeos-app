@@ -22,7 +22,7 @@
 .summary dl>div{display:flex;align-items:baseline;gap:8px}
 .summary dt{color:var(--muted-foreground)}
 .summary dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
-.trend{display:grid;gap:16px;min-width:0;color:var(--foreground)}
+.trend{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0;color:var(--foreground)}
 .trend h3{font-size:var(--lo-font-section);font-weight:600;margin:0}
 .chart{width:100%;height:260px;min-width:0}
 .trendTable{max-width:100%;overflow:auto}

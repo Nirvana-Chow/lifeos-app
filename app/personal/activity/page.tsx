@@ -1,9 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Viewport } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { PrivacyBoundary } from '../../../src/personal-candidate/privacy';
+import { PersonalPage } from '../../../src/personal-candidate/personal-page';
 import { JournalActivityPage } from '../../../src/personal-daily/activity-review/journal-activity-page';
 import { activityDate } from '../../../src/personal-daily/activity-review/activity.mjs';
 import { beijingJournalDate } from '../../../src/personal-journal/history';
@@ -12,7 +11,6 @@ import { readPlatformPagePrincipal } from '../../../src/platform/runtime';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'LifeOS · 每日活动', robots: { index: false, follow: false } };
-export const viewport: Viewport = { width: 1024 };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ date?: string | string[] }> }) {
   if (!await readPlatformPagePrincipal(await headers()).catch(() => null)) redirect('/login');
@@ -26,5 +24,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ d
   const initialDate = activityDate(params.date);
   const serverDay = beijingJournalDate(new Date().toISOString());
   const mergeReceipts = Array.from(mergedSlices.values());
-  return <PrivacyBoundary><JournalActivityPage markup={markup} styles={styles} initialDate={initialDate} serverDay={serverDay} mergeReceipts={mergeReceipts} /></PrivacyBoundary>;
+  return <PersonalPage title="每日活动" initialPage="overview" wide>
+    <JournalActivityPage markup={markup} styles={styles} initialDate={initialDate} serverDay={serverDay} mergeReceipts={mergeReceipts} />
+  </PersonalPage>;
 }

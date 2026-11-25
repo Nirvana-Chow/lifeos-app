@@ -31,9 +31,10 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
     cp(join(source, 'src'), join(root, 'src'), { recursive: true }),
     cp(join(source, 'app/personal/activity/page.tsx'), join(root, 'app/personal/activity/page.tsx')),
     cp(join(source, 'app/personal/layout.tsx'), join(root, 'app/personal/layout.tsx')),
-    symlink(join(source, 'node_modules'), join(root, 'node_modules')),
+    ...['layout.tsx', 'globals.css', 'theme.css'].map(name => cp(join(source, 'app', name), join(root, 'app', name))),
+    cp(join(source, 'postcss.config.mjs'), join(root, 'postcss.config.mjs')),
+    ...['node_modules', 'components'].map(name => symlink(join(source, name), join(root, name))),
   ]);
-  await writeFile(join(root, 'app/layout.tsx'), 'export default function Layout({children}){return <html><body>{children}</body></html>}');
   await writeFile(join(root, 'app/login/page.tsx'), 'export default function Page(){return <h1>Fixture login</h1>}');
   await writeFile(join(root, 'src/platform/runtime.ts'),
     'export async function readPlatformLoginCapability(){return {sessionDuration:true}}\n' +
@@ -61,7 +62,7 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
 
   const browser = await chromium.launch({ executablePath: process.env.LIFEOS_TEST_CHROMIUM_PATH });
   closeBrowser = () => browser.close();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
   const page = await context.newPage();
   await page.goto(origin + '/personal/activity', {waitUntil:'domcontentloaded',timeout:90000});
   await expect(page.getByRole('heading', { name: 'Fixture login' })).toBeVisible();
@@ -111,6 +112,10 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   await page.goto(origin + '/personal/activity', {waitUntil:'domcontentloaded',timeout:90000});
   const title = page.getByText('Synthetic diary 1', { exact: true });
   await expect(title).toBeVisible({ timeout: 30000 });
+  await expect(page.locator('header.lo-header')).toBeVisible();
+  await expect(page.locator('header.lo-header')).toHaveCount(1);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 1365);
+  await expect(page.getByRole('link', { name: '返回日记', exact: true })).toHaveAttribute('href', '/personal/journal');
   await expect(page.getByText('2026-11-24 · 记录 · 已核对 1 条记录 · 部分覆盖')).toBeVisible();
   await expect(page.getByRole('link', { name: '打开日记原记录' })).toHaveAttribute('href', '/personal/journal?record=' + fixture.id);
   await expect(page.getByText('Memos 覆盖未知 · 日记 覆盖未知')).toBeVisible();

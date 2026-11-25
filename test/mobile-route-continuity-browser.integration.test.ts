@@ -38,7 +38,8 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
   child.once('exit',()=>{clearTimeout(timer);fail(Error(log||'Fixture exited'));});
   child.stdout.on('data',chunk=>{const found=String(chunk).match(/http:\/\/127\.0\.0\.1:\d+/);if(found){clearTimeout(timer);done(found[0]);}});
  });
- const config={ownerId:'mobile-owner',ownerEmail:'fixture@example.test',spaceId:'mobile-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,calendarEnabled:true,healthEnabled:true,mediaEnabled:true,careerEnabled:true} as const;
+ const followup=process.env.LIFEOS_MOBILE_TEST_SCOPE==='followup';
+ const config={ownerId:'mobile-owner',ownerEmail:'fixture@example.test',spaceId:'mobile-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,calendarEnabled:true,healthEnabled:true,mediaEnabled:true,careerEnabled:true,...(followup?{peopleEnabled:true,financeEnabled:true,portfolioEnabled:true} as const:{})} as const;
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  let writable=true,writes=0;
@@ -69,7 +70,7 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
    const response=await handler(new Request(url,{headers:{host:url.host}}));
    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
   });
-  const page=await context.newPage();page.setDefaultTimeout(60000);
+  const page=await context.newPage();page.setDefaultTimeout(followup?15000:60000);
   const header=page.locator('header.lo-header'),main=page.locator('main#personal-main'),shell=page.locator('.lo-shell');
   const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -91,6 +92,7 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
   };
   const run=async(name:string,fn:()=>Promise<void>)=>{
    const scope=process.env.LIFEOS_MOBILE_TEST_SCOPE;
+   if((scope==='followup')!==name.startsWith('followup '))return;
    if(scope==='legacy'&&!name.startsWith('legacy'))return;
    if(scope==='changed'&&!name.startsWith('legacy')&&name!=='todo detail and close')return;
    try{await fn();}catch(error){
@@ -99,6 +101,78 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
     t.diagnostic(failures.at(-1)!);
    }
   };
+  await run('followup daily task organization',async()=>{
+   await readyHome();await openDrawer();
+   await drawer.getByRole('button',{name:'个人项目',exact:true}).click();
+   await checkBox('/personal?page=projects','个人项目');
+   await expect(main.getByText('合成移动项目',{exact:true})).toBeVisible();
+   await openDrawer();await drawer.getByRole('button',{name:'领域',exact:true}).click();
+   await checkBox('/personal?page=areas','领域');
+   await page.goBack({waitUntil:'domcontentloaded'});
+   await checkBox('/personal?page=projects','个人项目');
+  });
+  await run('followup people from relationship drawer',async()=>{
+   await readyHome();await openDrawer();
+   await drawer.getByRole('button',{name:'生活与关系',exact:true}).click();
+   await drawer.getByRole('link',{name:'人物',exact:true}).click();
+   await checkBox('/personal/people','人物');
+   await expect(main.getByRole('region',{name:'人物概览'}).getByText('暂无已确认人物。')).toBeVisible();
+   await header.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+   await checkBox('/personal','总览');
+  });
+  await run('followup finance and portfolio',async()=>{
+   await readyHome();await openDrawer();
+   await drawer.getByRole('link',{name:'财务',exact:true}).click();
+   await checkBox('/personal/finance','财务');
+   await main.getByRole('link',{name:'账户与投资',exact:true}).click();
+   await checkBox('/personal/portfolio','账户资产投资');
+   await page.goBack({waitUntil:'domcontentloaded'});
+   await checkBox('/personal/finance','财务');
+  });
+  await run('followup requirements from settings drawer',async()=>{
+   await readyHome();
+   await header.getByRole('button',{name:'打开设置'}).click();
+   await checkBox('/personal?page=settings','设置');
+   await openDrawer();await drawer.getByRole('button',{name:'需求池',exact:true}).click();
+   await checkBox('/personal?page=requirements','需求池');
+  });
+  await run('followup journal to day activity and back',async()=>{
+   await readyHome();await openDrawer();
+   await drawer.getByRole('link',{name:'记录',exact:true}).click();
+   await checkBox('/personal/journal','记录');
+   await main.getByRole('link',{name:'合成移动日记',exact:true}).click();
+   const article=main.getByRole('article',{name:'日记原文'});
+   const expected='/personal/activity?date='+today;
+   const link=article.getByRole('link',{name:'查看当天活动',exact:true});
+   await expect(link).toHaveAttribute('href',expected);
+   await link.click();
+   await expect(page).toHaveURL(origin+expected,{timeout:30000});
+   await expect(page.getByRole('heading',{name:'每日活动',exact:true})).toBeVisible({timeout:30000});
+   await expect(page.getByLabel('跳到日期')).toHaveValue(today);
+   const periodWidths:Record<string,number>={};
+   for(const period of ['周','月','季度','年','日']){
+    await page.getByRole('button',{name:period,exact:true}).click();
+    await expect(page.getByRole('button',{name:period,exact:true})).toHaveAttribute('aria-pressed','true');
+    await expect(page.getByLabel('跳到日期')).toHaveValue(today);
+    periodWidths[period]=await page.evaluate(()=>document.documentElement.scrollWidth);
+   }
+   t.diagnostic(JSON.stringify({width,case:'activity period widths',periodWidths}));
+   const reverse=page.getByRole('link',{name:'打开日记原记录'});
+   const returnPath='/personal/journal?record='+diary.id;
+   await expect(reverse).toHaveAttribute('href',returnPath);
+   const layout=await page.evaluate(()=>({page:document.documentElement.scrollWidth,innerWidth,screenWidth:screen.width,sharedHeaders:document.querySelectorAll('header.lo-header').length,viewport:document.querySelector('meta[name=viewport]')?.getAttribute('content')}));
+   t.diagnostic(JSON.stringify({width,case:'activity measurement',...layout}));
+   await header.getByRole('button',{name:'切换到桌面版'}).click();
+   await checkBox(expected,'每日活动','desktop');
+   await header.getByRole('button',{name:'切换到手机版'}).click();
+   await checkBox(expected,'每日活动');
+   await reverse.click();
+   await checkBox(returnPath,'记录');
+   await expect(article).toContainText('合成日记原文');
+   await expect(article.getByRole('heading',{name:'日记原文',exact:true})).toBeFocused();
+   assert.ok(layout.page<=width+1&&layout.sharedHeaders===1,'Activity should fit the phone and retain one shared header, observed '+JSON.stringify(layout));
+   assert.ok(Object.values(periodWidths).every(periodWidth=>periodWidth<=width+1));
+  });
   await run('layout switch',async()=>{
    await readyHome();
    await header.getByRole('button',{name:'切换到桌面版'}).click();
