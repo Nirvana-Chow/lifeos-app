@@ -9,6 +9,7 @@ import {chromium,expect} from '@playwright/test';
 import {requirements} from '../src/platform/requirements.ts';
 import {readLifeOSDevelopmentProgress} from '../src/ui-review/development-project-progress.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
+import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 
 test('OPT-IN development projects respects owner binding and preserves the career and legacy project entries',{
  skip:process.env.RUN_DEVELOPMENT_PROJECTS_BROWSER!=='1'&&'Requires isolated Next and Chromium',timeout:180000,
@@ -65,7 +66,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const resumeFields={...fields,title:'Synthetic resume version',personal:{...emptyCareerPersonal('resume'),facts:[{id,sourceId,revision:1}]}};
  const resumeEntry={...entry,id:resumeId,draft:{...resumeFields,disposition:'reference'},source:{...entry.source,id:resumeSourceId,externalId:resumeId,
   original:{...entry.source.original,input:{spaceId,confirmed:true,fields:resumeFields}}}};
- let denied=false;
+ let denied=false,writable=false;
  let summaries=0,snapshots=0,careerReads=0,revisionReads=0;
  const requests:string[]=[];
  const snapshot={scope:'full-current-requirements-snapshot',truncated:false,items,total:items.length,observedAt:time};
@@ -92,9 +93,9 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   if(path.endsWith('/personal/career/'+id)){careerReads++;return route.fulfill({json:{entry}});}
   if(path.endsWith('/personal/career/'+id+'/history')){revisionReads++;return route.fulfill({json:{items:[entry]}});}
   if(path.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,
-   spaceId,storageVerified:true,writable:false,
+   spaceId,storageVerified:true,writable,
    requirementsEnabled:true,careerEnabled:true,allowedTypes:['todo','career','project','domain']}});
-  if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:false}});
+  if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable}});
   if(path.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
   return route.fulfill({json:{scope:'isolated-synthetic-review'}});
  });
@@ -201,5 +202,12 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await expect(page.getByRole('group',{name:/项目视图/})).toBeVisible({timeout:30000});
  await expect(page).toHaveURL(origin+'/personal?page=projects');
+ await expect(page.getByRole('link',{name:'新建项目',exact:true})).toHaveCount(0);
+ writable=true;
+ await page.reload({waitUntil:'networkidle'});
+ await readyHeading(page,'个人项目');
+ await page.locator('aside').getByRole('navigation',{name:'主导航'}).getByRole('button',{name:'领域',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=areas');
+ await readyHeading(page,'领域');
  assert.deepEqual(errors,[]);assert.deepEqual(writes,[]);assert.deepEqual(external,[]);
 });

@@ -229,9 +229,10 @@ export async function readyHeading(page:Page,heading:string){
   }
  }
  else if(heading==='个人项目'||heading==='领域'){
-  const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:'新建'+heading,exact:true});
+  const project=heading==='个人项目';
+  const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:project?'新建项目':'新建领域',exact:true});
   await expect(create).toBeVisible();
-  await expect(create).toHaveAttribute('href','/personal/edit?type='+(heading==='个人项目'?'project':'domain'));
+  await expect(create).toHaveAttribute('href','/personal/edit?type='+(project?'project':'domain'));
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
  }
  else if(heading==='总览')await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
