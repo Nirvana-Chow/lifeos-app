@@ -67,10 +67,10 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
   await desktop.screenshot({path:join(folder,'cooking-desktop.png'),fullPage:true});
   await desktop.close();
  }
- await page.getByRole('button',{name:'打开导航'}).click();
- const menu=page.getByRole('dialog').getByRole('navigation',{name:'主导航'});
+ await expect(page.getByRole('button',{name:'打开导航'})).toBeHidden();
+ const menu=page.locator('aside').getByRole('navigation',{name:'主导航'});
  await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
- await page.keyboard.press('Escape');
+ await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('aria-current','page');
  const picks=page.getByRole('region',{name:'今天做什么'});
  await expect(picks.getByRole('link')).toHaveCount(3);
  const first=await picks.getByRole('link').allTextContents();
@@ -96,6 +96,9 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
  const path=await target.getAttribute('href');
  assert.ok(path?.startsWith('/personal/cooking/'));
+ const warm = await page.request.get(origin+path,{timeout:30000,maxRedirects:0});
+ assert.equal(warm.status(),200,'the isolated recipe route is ready before timing its browser transition');
+ await warm.dispose();
  await target.click();
  await expect(page).toHaveURL(origin+path);
  await expect(page.getByRole('heading',{name:'西红柿炒鸡蛋',exact:true})).toBeVisible();

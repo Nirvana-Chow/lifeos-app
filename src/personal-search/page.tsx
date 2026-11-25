@@ -14,5 +14,5 @@ export function PersonalSearchPage({query='',type,id}:{query?:string;type?:strin
   const pageShow=()=>void load();void load();window.addEventListener('pagehide',hide);window.addEventListener('pageshow',pageShow);document.addEventListener('visibilitychange',visibility);
   return()=>{alive=false;generation++;controller?.abort();window.removeEventListener('pagehide',hide);window.removeEventListener('pageshow',pageShow);document.removeEventListener('visibilitychange',visibility);};
  },[query,type,id,retry,invalid]);
- return <LifeOSWorkspace state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} contentPage={{wide:true,title:'搜索本人记录',content:<PersonalSearchView key={query} query={query} selection={selection} state={state} onRetry={()=>setRetry(value=>value+1)}/>}}/>;
+ return <LifeOSWorkspace desktopNavigation state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} contentPage={{wide:true,title:'搜索本人记录',content:<PersonalSearchView key={query} query={query} selection={selection} state={state} onRetry={()=>setRetry(value=>value+1)}/>}}/>;
 }

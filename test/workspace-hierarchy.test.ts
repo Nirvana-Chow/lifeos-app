@@ -35,3 +35,9 @@ test('storage review is discoverable in tools without dropping other authorized 
  const link={id:'storage-review',label:'存储审核',href:'/personal/storage-review'} as OwnerModuleLink;
  assert.deepEqual(hierarchy.groupWorkspaceModules([link]).filter(group=>group.links.length).map(group=>[group.label,group.links]),[['资料与工具',[link]]]);
 });
+
+test('tools include the supplied file handoff destination only when advertised',()=>{
+ const link:OwnerModuleLink={id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'};
+ assert.deepEqual(hierarchy.groupWorkspaceModules([link]).at(-1)?.links,[link]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules([]).at(-1)?.links,[]);
+});

@@ -183,7 +183,7 @@ export async function readyHeading(page:Page,heading:string){
   const general=settings.locator('[data-settings-panel="general"]');
   await expect(settings).toBeVisible();
   await expect(general).toBeVisible();
-  const mobile=await page.evaluate(()=>matchMedia('(max-width: 850px)').matches);
+  const mobile=await page.getByRole('button',{name:'打开导航',exact:true}).isVisible();
   const categories=(container:Locator)=>container.getByRole('navigation',{name:'设置分类',exact:true});
   if(mobile){
    const url=page.url(),menu=page.getByRole('button',{name:'打开导航',exact:true});
@@ -311,7 +311,7 @@ export async function verifyPrivateRouteBoundaries(f:PrivateFixture){
  try{
   for(const width of [1365,390]){await page.setViewportSize({width,height:width===1365?900:844});await page.goto(privateOrigin+'/personal',{waitUntil:'domcontentloaded'});
    await readyHeading(page,'总览');
-   if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+   if(await page.getByRole('button',{name:'打开导航',exact:true}).isVisible())await page.getByRole('button',{name:'打开导航',exact:true}).click();
    const navigation=await assertPrivateFixtureNavigation(page);
    await navigation.getByRole('button',{name:'事项',exact:true}).click();await readyHeading(page,'待办');
    for(const [id,path,heading] of [...privateDestinations.filter(r=>r[0]!=='journal'),privateDestinations.find(r=>r[0]==='journal')!]){await navigateDestination(page,id,path,heading);routes++;}
@@ -573,6 +573,18 @@ export async function privateLocalInteractions(page:Page,key:string){
  if(key==='private-finance'||key==='private-health'){
   const notice=key==='private-finance'?page.getByRole('heading',{level:3,name:'财务记录尚未开放',exact:true}):page.locator('[data-personal-record-module="health"]').getByRole('alert');
   await expect(notice).toBeVisible();
+  await notice.evaluate(element=>{
+   const shell=element.closest('.lo-shell');
+   if(!shell||shell.scrollWidth<=shell.clientWidth)return;
+   const range=document.createRange();range.selectNodeContents(element);
+   const lines=Array.from(range.getClientRects());
+   if(!lines.length)return;
+   const left=Math.min(...lines.map(line=>line.left));
+   const right=Math.max(...lines.map(line=>line.right));
+   const viewport=document.documentElement.clientWidth;
+   if(right>viewport)shell.scrollLeft+=right-viewport+3;
+   else if(left<0)shell.scrollLeft+=left-3;
+  });
   const fits=await notice.evaluate(element=>{
    const range=document.createRange();
    range.selectNodeContents(element);
@@ -591,9 +603,16 @@ export async function privateLocalInteractions(page:Page,key:string){
  }
 }
 export async function privateMobileNavigation(page:Page){
- const menu=page.getByRole('button',{name:'打开导航',exact:true});await menu.click();
- const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});await expect(drawer).toBeVisible();
- await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();
+ const menu=page.getByRole('button',{name:'打开导航',exact:true});
+ if(await menu.isVisible()){
+  await menu.click();
+  const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});await expect(drawer).toBeVisible();
+  await drawer.getByRole('button',{name:'关闭导航',exact:true}).click();await expect(menu).toBeFocused();
+  return;
+ }
+ await expect(page.locator('header').getByRole('navigation',{name:'切换模块'})).toBeVisible();
+ await expect(page.locator('aside').getByRole('navigation',{name:'主导航'})).toBeVisible();
+ assert.ok(await page.locator('.lo-shell').evaluate(el=>el.scrollWidth>el.clientWidth));
 }
 // Bind the visible timestamp to the exact snapshot that this navigation fetched.
 async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture['entries']):Promise<string>{
@@ -656,8 +675,14 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
     await page.getByRole('button',{name:'展开侧栏',exact:true}).click();
     for(const height of [300,240]){await page.setViewportSize({width,height});const short=await geometry();assert.equal(short.document,height);assert.ok(short.bottom.bottom<=height,'short viewport retains settings and collapse');}
    }else{
-    await page.getByRole('button',{name:'打开导航',exact:true}).click();const drawer=page.locator('.lo-mobile-sidebar');await expect(drawer).toBeVisible();await expect(drawer).toHaveCSS('pointer-events','auto');
-    const settings=drawer.getByRole('button',{name:'设置',exact:true});
+    const menu=page.getByRole('button',{name:'打开导航',exact:true});
+    const usesDrawer=await menu.isVisible();
+    const navigation=usesDrawer?page.locator('.lo-mobile-sidebar'):page.locator('aside.lo-sidebar');
+    if(usesDrawer)await menu.click();
+    await expect(navigation).toBeVisible();
+    await expect(navigation).toHaveCSS('pointer-events','auto');
+    const settings=navigation.getByRole('button',{name:'设置',exact:true});
+    await settings.scrollIntoViewIfNeeded();
     const settingsAboveFooter=await settings.evaluate(button=>{
      const footer=document.querySelector<HTMLElement>('.lifeos-filing-footer')!;
      const previous=footer.style.pointerEvents;

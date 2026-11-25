@@ -179,7 +179,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     </nav>
   );
   const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
-  const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review');
+  const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review'||link.id==='file-handoffs');
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
@@ -195,6 +195,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     menuButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
+  const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
+  const [retainedPrivateScope, setRetainedPrivateScope] = useState<string | null>(null);
+  if (access.authenticated === false && retainedPrivateScope !== null) setRetainedPrivateScope(null);
+  if (verifiedPrivateScope && verifiedPrivateScope !== retainedPrivateScope) setRetainedPrivateScope(verifiedPrivateScope);
+  const showPrivateRequirements = access.authenticated === true && (props.viewPreferenceScope === undefined || !!verifiedPrivateScope);
+  const retainPrivateRequirements = access.authenticated !== false && (showPrivateRequirements || retainedPrivateScope !== null);
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
@@ -647,7 +653,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   return (
     <div
       data-lifeos-surface="personal"
-      className={`lo-shell ${workspaceStyles.shell} ${collapsed ? "lo-is-collapsed" : ""}`}
+      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigation ? workspaceStyles.desktopNavigation : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
       onMouseDownCapture={event => {
         const target = event.target as Element;
         if (target.closest?.("[data-workspace-nav], a[href]") && document.activeElement?.matches("input, textarea, select")) event.preventDefault();
@@ -693,7 +699,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
           )}
-
+          {access.authenticated === true && props.onLogout && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lo-icon-button lo-logout"
+              aria-label="退出登录"
+              title="退出登录"
+              data-workspace-nav
+              onClick={() => {
+                if (props.saving || props.uncertain) return;
+                if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return;
+                if (classificationPlanId && props.classificationCloseGuard?.current?.() === false) return;
+                if (settingsOpen && props.settingsCloseGuard?.current?.() === false) return;
+                props.onLogout?.();
+              }}
+            >
+              <LogOut size={17} aria-hidden="true" />
+            </Button>
+          )}
         </div>
       </header>
       <div className="lo-body">
@@ -702,13 +726,15 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <div data-matters-filters-expanded={filtersOpen&&(page==="tasks"||page==="inbox")?"":undefined} className={contentPage ? contentPage.wide?"lo-content lo-content-wide":"lo-content lo-content-account" : page === "settings" ? `lo-content lo-content-wide ${workspaceStyles.settingsContent}` :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <nav aria-label="浏览位置" className={workspaceStyles.breadcrumbs}>
+            <div className={workspaceStyles.breadcrumbTrail}>
+              <Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>LifeOS</Button><ChevronRight aria-hidden="true" size={14}/>
+              {settingsSection&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight aria-hidden="true" size={14}/></>}
+              <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
+            </div>
             <div className={workspaceStyles.historyButtons}>
               <Button variant="ghost" data-workspace-nav aria-label="后退" disabled={!historyControls.back} onClick={()=>traverseHistory('back')}><ArrowLeft size={16}/></Button>
               <Button variant="ghost" data-workspace-nav aria-label="前进" disabled={!historyControls.forward} onClick={()=>traverseHistory('forward')}><ArrowRight size={16}/></Button>
             </div>
-            <Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>LifeOS</Button><ChevronRight size={14}/>
-            {settingsSection&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight size={14}/></>}
-            <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
           </nav>
           <div className="lo-page-heading">
             <div className="lo-heading-title">
@@ -785,6 +811,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             </nav>}
           {page === "overview" && (
             <>
+              <section className="lo-metrics" aria-label="任务指标">
+                {([
+                  {label:"待办",value:metrics.pending,metric:"pending"},
+                  {label:"今日到期",value:metrics.dueToday,metric:"today"},
+                  {label:"已逾期",value:metrics.overdue,metric:"overdue"},
+                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
+                ] as const).map(({label,value,metric}) => (
+                  <button type="button" key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
+                    <span>{label}</span><strong>{value === null ? "—" : value}</strong>
+                  </button>
+                ))}
+              </section>
               {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
                 <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
                 {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
@@ -794,18 +832,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 </section>)}</div>
                 {domains.length===0&&<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无领域或推进中项目':'暂无领域或推进中项目，可在事项中整理领域与项目。'}</p>}
               </section>}
-              <section className="lo-metrics" aria-label="任务指标">
-                {([
-                  {label:"待办",value:metrics.pending,metric:"pending"},
-                  {label:"今日到期",value:metrics.dueToday,metric:"today"},
-                  {label:"已逾期",value:metrics.overdue,metric:"overdue"},
-                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
-                ] as const).map(({label,value,metric}) => (
-                  <button key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
-                    <span>{label}</span><strong>{value === null ? "—" : value}</strong>
-                  </button>
-                ))}
-              </section>
               <div className="lo-overview-grid">
                 <section className="lo-panel" hidden={state.status !== "ready"}>
                   <div className="lo-panel-heading">
@@ -861,6 +887,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {(page === "tasks" || page === "inbox") && (
             <>
               <div className="lo-task-toolbar">
+                {page === "tasks" && props.viewPreferenceScope && data?.coverage === "complete" &&
+                  <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>}
                 <label className="lo-search">
                   <Search size={17} />
                   <Input
@@ -1027,12 +1055,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                     前往登录
                   </Button>
                 )}
-              {access.authenticated === true && props.onLogout && (
-                <Button variant="ghost" className="lo-logout" onClick={props.onLogout}>
-                  <LogOut size={17} />
-                  退出登录
-                </Button>
-              )}
             </div>
           )}
               {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="标签">
@@ -1053,13 +1075,21 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
             </div>
           </section>}
-          {page === "requirements" && <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>}
+          {page === "requirements" && <>
+            {retainPrivateRequirements && <RequirementsPage
+              key={verifiedPrivateScope ?? retainedPrivateScope}
+              concealed={!showPrivateRequirements}
+              container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null}
+              navigationGuard={requirementNavigationGuard}
+            />}
+            {!showPrivateRequirements && <DataState state={state} onRefresh={onRefresh}/>}
+          </>}
           </>}
           </div>
           <div className="lo-filing-slot" ref={filingSlot}/>
         </main>
       </div>
-      {classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
+      {access.authenticated !== false && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
         if (props.classificationCloseGuard?.current?.()===false) return;
         const href=workspaceHref(page); window.history.replaceState(window.history.state,'',href); currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(null);
       }, id => {
