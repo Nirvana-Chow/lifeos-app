@@ -62,7 +62,7 @@ export type WorkspacePage =
   | "projects"
   | "settings"
   | "requirements";
-export type SettingsPanel = "topics" | "security" | "api-keys";
+export type SettingsPanel = "index" | "topics" | "security" | "api-keys";
 export type WorkspaceLocation =
   | {page:"settings";panel?:SettingsPanel;modal?:undefined;planId?:never}
   | ({page:Exclude<WorkspacePage,"settings">} & ({modal?:undefined;panel?:never;planId?:never}|{modal:"classification";planId:string;panel?:never}));

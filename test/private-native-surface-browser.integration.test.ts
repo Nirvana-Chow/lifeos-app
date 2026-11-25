@@ -40,7 +40,7 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
   await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:60000});await readyHeading(page,'总览');
   // This synthetic overview is server-rendered ready, unlike the connected
   // recovery page. Wait for its status-driven module before opening navigation.
-  await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^生活记录$/})).toHaveCount(1);
+  await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^生活与关系$/})).toHaveCount(1);
   if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
   await assertPrivateFixtureNavigation(page);
   for(const [path,heading] of [['health','健康'],['people','人物'],['finance','财务'],['schedule','日程']] as const){

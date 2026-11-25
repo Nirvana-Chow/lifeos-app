@@ -5,16 +5,16 @@ import * as nav from '../src/workbench/private-navigation.ts';
 test('settings has a finite standalone page and normalizes legacy overlay links',()=>{
  const read=(nav as any).readWorkspaceLocation,href=(nav as any).workspaceLocationHref;
  assert.equal(typeof read,'function','finite workspace location parser is required');
- assert.deepEqual(read({page:'settings'}),{page:'settings',panel:'security'});
+ assert.deepEqual(read({page:'settings'}),{page:'settings',panel:'index'});
  for(const query of [{page:'settings',panel:'general'},{page:'tasks',modal:'settings',panel:'general'}]) {
-  assert.equal(href(read(query)),'/personal?page=settings&panel=security');
+  assert.equal(href(read(query)),'/personal?page=settings');
  }
  assert.deepEqual(read({page:'tasks',modal:'settings',panel:'api-keys'}),{page:'settings',panel:'api-keys'});
- assert.deepEqual(read({page:'projects',modal:'settings',panel:'/account/password',returnTo:'https://untrusted.invalid'}),{page:'settings',panel:'security'});
+ assert.deepEqual(read({page:'projects',modal:'settings',panel:'/account/password',returnTo:'https://untrusted.invalid'}),{page:'settings',panel:'index'});
  assert.deepEqual(read({page:'constructor',modal:'constructor',panel:'api-keys'}),{page:'overview'});
  assert.equal(href(read({page:'tasks',modal:'settings',panel:'security'})),'/personal?page=settings&panel=security');
- assert.equal(href(read({page:'settings'})),'/personal?page=settings&panel=security');
- assert.equal(nav.workspaceHref('settings'),'/personal?page=settings&panel=security');
+ assert.equal(href(read({page:'settings'})),'/personal?page=settings');
+ assert.equal(nav.workspaceHref('settings'),'/personal?page=settings');
 });
 
 test('all personal sidebar adapters use the matters label while canonical todo IDs stay stable',()=>{

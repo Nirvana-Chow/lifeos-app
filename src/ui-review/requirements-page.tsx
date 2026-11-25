@@ -63,8 +63,9 @@ export function RequirementsPage({container,navigationGuard,concealed=false}:{co
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current||currentPhase.current==='saving'||currentPhase.current==='uncertain'){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
  useEffect(()=>{if(mutation.phase!=='saved'||!mutation.observed)return;const entry=mutation.observed;dirty.current=false;setCreating(false);setEditorItem(entry);setSelected(entry.requirement);setPool(previous=>previous?{...previous,items:previous.items.some(item=>item.id===entry.id)?previous.items.map(item=>item.id===entry.id?entry:item):[...previous.items,entry],total:previous.total+(previous.items.some(item=>item.id===entry.id)?0:1)}:previous);},[mutation.phase,mutation.observed]);
  const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:denied?[]:pool?pool.items.map(item=>item.requirement):baseline.requirements}),[displayed,pool,denied]);
+ const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
  const workflow=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields.workflow])??[]),[pool]);
- const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id))])),[visible,workflow]);
+ const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id),planning.get(item.id)?.body)])),[visible,workflow,planning]);
  const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>progressFilter==='all'||delivery.get(item.id)?.state===progressFilter),[visible,filters,progressFilter,delivery]);
  const open=useCallback((item:Requirement,trigger:HTMLButtonElement)=>{
   if(!mayDepart())return;dirty.current=false;opener.current=trigger;setExpanded(false);setSelected(item);setCreating(false);setEditorItem(null);
@@ -80,7 +81,7 @@ export function RequirementsPage({container,navigationGuard,concealed=false}:{co
  const newRequirement=(trigger:HTMLButtonElement)=>{if(!mayDepart())return;detailGeneration.current++;setDetailLoading(false);dirty.current=false;opener.current=trigger;setExpanded(false);setCreating(true);setEditorItem(null);setSelected(createPreview(emptyFields()));};
  const recover=()=>{const pending=mutation.pending;if(!pending)return;dirty.current=false;setCreating(pending.id===null);setEditorItem(pool?.items.find(item=>item.id===pending.id)??null);setSelected(pool?.items.find(item=>item.id===pending.id)?.requirement??createPreview(pending.body.fields));setExpanded(false);};
  const save=async(fields:RequirementFields)=>{if(concealed||!binding||!session||!writable||!creating&&!editorItem)return;try{await session.submit(makeRequirementCommand(binding,creating?null:editorItem!.id,fields,crypto.randomUUID(),editorItem?.revision,editorItem?.baselineBinding));}catch{setAvailability('请核对需求完整字段与计划日期。');}};
- const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
+
  const setFilter=(name:keyof RequirementFilters,value:string)=>setFilters(previous=>({...previous,[name]:value}));
  return <>{!concealed&&<section className={styles.page} aria-label="需求池" data-requirements-page>
   <div className={styles.frame}>

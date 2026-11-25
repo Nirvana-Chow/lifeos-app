@@ -63,7 +63,7 @@ test('requirements has a canonical owner-gated destination and does not enable c
 test('legacy and explicit settings queries resolve to the standalone finite settings page',async()=>{
  const route=page('app/personal/page.tsx');
  for(const query of [{page:'settings'},{page:'overview',modal:'settings',panel:'arbitrary'}]){
-  const html=renderToStaticMarkup(await route({searchParams:Promise.resolve(query)}));assert.match(html,/data-page="settings"/);assert.doesNotMatch(html,/data-modal="settings"/);assert.match(html,/data-panel="security"/);
+  const html=renderToStaticMarkup(await route({searchParams:Promise.resolve(query)}));assert.match(html,/data-page="settings"/);assert.doesNotMatch(html,/data-modal="settings"/);assert.match(html,/data-panel="index"/);
  }
  const html=renderToStaticMarkup(await route({searchParams:Promise.resolve({page:'projects',modal:'settings',panel:'api-keys'})}));assert.match(html,/data-page="settings"/);assert.match(html,/data-panel="api-keys"/);
 });
