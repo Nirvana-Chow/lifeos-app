@@ -119,6 +119,10 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await expect(dialog).toHaveCount(0);
   await expect(create).toBeFocused();
   await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);
+  const scheduledRow=gantt.locator('[data-gantt-record="'+newId+'"]');
+  await expect(scheduledRow).toBeVisible();
+  assert.ok((await scheduledRow.boundingBox())!.height<=49,'desktop task Gantt row is compact');
+  await expect(gantt.locator('[data-gantt-scale] time[datetime="2030-12-31"]')).toHaveCount(1);
   assert.equal(createRequests,2);
   assert.equal(writes,3);
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
@@ -128,6 +132,11 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   const card=board.locator('[data-kanban-task="'+taskId+'"]');
   await expect(card.getByRole('link',{name:'合成排期项目',exact:true})).toBeVisible();
   await expect(card.getByText('领域',{exact:true})).toHaveCount(0);
+  await card.getByRole('button',{name:'查看待办：合成排期待办',exact:true}).click();
+  await expect(existingDetail).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(existingDetail).toHaveCount(0);
+  await expect(card.getByRole('button',{name:'查看待办：合成排期待办',exact:true})).toBeFocused();
   const drag=card.getByRole('button',{name:'拖动：合成排期待办',exact:true});
   const destination=board.locator('[data-kanban-status="in_progress"] .lo-board-cards');
   await expect(drag).toBeEnabled();

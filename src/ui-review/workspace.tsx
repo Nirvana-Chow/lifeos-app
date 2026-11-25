@@ -599,7 +599,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           draftMemory={props.taskCellDraftMemory}
           className="lo-task-title"
           onOpen={openTask}
-          openDetailsOnClick={!board}
+          openDetailsOnClick
         />
         <span className="lo-task-date">{task.dueOn ?? "—"}</span>
         {!board && (
