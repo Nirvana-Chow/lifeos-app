@@ -1,0 +1,90 @@
+{
+  "e2a148eb6cf115e2": {
+    "source": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E5%B0%8F%E9%BE%99%E8%99%BE/%E6%88%90%E5%93%81.jpg",
+    "original": "https://media.githubusercontent.com/media/Anduin2017/HowToCook/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E5%B0%8F%E9%BE%99%E8%99%BE/%E6%88%90%E5%93%81.jpg",
+    "credit": "HowToCook 贡献者",
+    "license": "Unlicense",
+    "licenseUrl": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/LICENSE",
+    "originalSha256": "f925932ded89df54e77c3148c70e772e8902a498a3bb0208a7404d7fcdc4a4a1",
+    "thumb": {
+      "width": 192,
+      "height": 159,
+      "bytes": 6902,
+      "sha256": "97244e55e240a257f993eaaffaf76c211d90188ecbc8778ee9595d9768625e7f",
+      "file": "src/cooking/recipe-assets/e2a148eb6cf115e2-thumb.webp"
+    },
+    "detail": {
+      "width": 720,
+      "height": 597,
+      "bytes": 52540,
+      "sha256": "62c5131e153b12a479bdc71974fea2f998fafb3d8a0d8bf53b2bc87a71b0f75e",
+      "file": "src/cooking/recipe-assets/e2a148eb6cf115e2-detail.webp"
+    }
+  },
+  "4dbabae176214aaa": {
+    "source": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E6%B2%B9%E7%84%96%E5%A4%A7%E8%99%BE/%E6%B2%B9%E7%84%96%E5%A4%A7%E8%99%BE.jpg",
+    "original": "https://media.githubusercontent.com/media/Anduin2017/HowToCook/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E6%B2%B9%E7%84%96%E5%A4%A7%E8%99%BE/%E6%B2%B9%E7%84%96%E5%A4%A7%E8%99%BE.jpg",
+    "credit": "HowToCook 贡献者",
+    "license": "Unlicense",
+    "licenseUrl": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/LICENSE",
+    "originalSha256": "fcab1b3841f8e0c7ef5940c613d5dc32fb63d8ebfb33ba8c341789e587cae7a0",
+    "thumb": {
+      "width": 192,
+      "height": 144,
+      "bytes": 5330,
+      "sha256": "b52ff63ee82a2344c26ea2ebe57bd2e42e967d432e11b99bad773f2a3b88c1df",
+      "file": "src/cooking/recipe-assets/4dbabae176214aaa-thumb.webp"
+    },
+    "detail": {
+      "width": 720,
+      "height": 540,
+      "bytes": 33914,
+      "sha256": "10e24d07e744af976529ef24bc2771252ae65f5cb61ec31f495fe8b39ce3ebce",
+      "file": "src/cooking/recipe-assets/4dbabae176214aaa-detail.webp"
+    }
+  },
+  "547705f2774cf0ed": {
+    "source": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E6%B8%85%E8%92%B8%E9%B2%88%E9%B1%BC/%E6%B8%85%E8%92%B8%E9%B2%88%E9%B1%BC.jpg",
+    "original": "https://media.githubusercontent.com/media/Anduin2017/HowToCook/a0b14bd388ee996943173679c3a7c9db7da04a6c/dishes/aquatic/%E6%B8%85%E8%92%B8%E9%B2%88%E9%B1%BC/%E6%B8%85%E8%92%B8%E9%B2%88%E9%B1%BC.jpg",
+    "credit": "HowToCook 贡献者",
+    "license": "Unlicense",
+    "licenseUrl": "https://github.com/Anduin2017/HowToCook/blob/a0b14bd388ee996943173679c3a7c9db7da04a6c/LICENSE",
+    "originalSha256": "aed686cdab101e7d3178b885b0187f8bb72c1c093ca638034c40ba68fc98ecc7",
+    "thumb": {
+      "width": 144,
+      "height": 192,
+      "bytes": 6156,
+      "sha256": "bfc0bfbba2d21ef530eebe147c2ee53918062cf3f8a3551f346f4ec8be52072d",
+      "file": "src/cooking/recipe-assets/547705f2774cf0ed-thumb.webp"
+    },
+    "detail": {
+      "width": 540,
+      "height": 720,
+      "bytes": 52270,
+      "sha256": "5612fb7608188ab4fe3cd84a291db674354d9cec211b4b61a7ba6760c73e4fa5",
+      "file": "src/cooking/recipe-assets/547705f2774cf0ed-detail.webp"
+    }
+  },
+  "2130948c0fd24404": {
+    "source": "https://commons.wikimedia.org/w/index.php?title=File:Tomato_and_eggs.JPG&oldid=1186740600",
+    "original": "https://upload.wikimedia.org/wikipedia/commons/5/53/Tomato_and_eggs.JPG",
+    "credit": "Godofnanjing / Wikimedia Commons",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "originalSha256": "d8a3039d074d1bcdec841e05452da51b329e4363b4b2eff959eafca37825d642",
+    "thumb": {
+      "width": 144,
+      "height": 192,
+      "bytes": 4312,
+      "sha256": "33037f0e2ea8d923c6c8c8136c3b13e387ae323356e0f93d094bdbfd3db21308",
+      "file": "src/cooking/recipe-assets/2130948c0fd24404-thumb.webp"
+    },
+    "detail": {
+      "width": 540,
+      "height": 720,
+      "bytes": 27772,
+      "sha256": "34f107cf55d59f1d35af5dc184c61d852407ce0f982972dc2435a17eda6b7fda",
+      "file": "src/cooking/recipe-assets/2130948c0fd24404-detail.webp"
+    }
+  }
+}

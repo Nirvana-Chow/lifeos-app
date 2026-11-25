@@ -2,6 +2,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { Recipe } from './catalog';
 import { CookingRecordAction } from './log-action';
+import { RecipePhoto } from './recipe-photo';
 import styles from './workspace.module.css';
 
 const sectionNames = {
@@ -65,6 +66,7 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
         {recipe.attribution && <p className={styles.meta}>{recipe.attribution.changes}</p>}
         {recipe.referenceOnly && <p className={styles.meta}>参考菜谱，暂不支持关联做饭记录。</p>}
       </header>
+      <RecipePhoto id={recipe.id} name={recipe.name} detail />
 
       {sections.map(section => (
         <section className={styles.recipeSection} key={section.id} aria-labelledby={section.id}>

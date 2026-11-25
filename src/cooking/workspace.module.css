@@ -20,6 +20,36 @@
   line-height: 1.4;
 }
 
+.entries {
+  --cooking-accent: light-dark(#8b4829, #f0a984);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.entry {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--card);
+}
+
+.entry h2, .entryActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entry h2 svg { color: var(--cooking-accent); }
+.entry p { color: var(--muted-foreground); }
+.entryActions { flex-wrap: wrap; margin-top: 4px; }
+.entryActions :is(a, button) { min-height: 44px; }
+.browser:not([hidden]) { display: grid; gap: inherit; }
+
 .pickPanel,
 .catalog {
   display: grid;
@@ -223,6 +253,7 @@
   display: grid;
   min-width: 0;
   gap: 2px;
+  flex: 1;
 }
 
 .pickCopy strong {
@@ -242,11 +273,33 @@
 }
 
 .catalogLink {
-  flex-wrap: wrap;
-  align-content: center;
   gap: 2px 8px;
   padding: 8px 10px;
 }
+
+.thumbnail, .thumbnailPlaceholder {
+  width: 64px;
+  height: 56px;
+  flex: 0 0 auto;
+  border-radius: var(--lo-radius-control);
+}
+
+.thumbnail { object-fit: cover; }
+
+.thumbnailPlaceholder, .detailPlaceholder {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  text-align: center;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  font-size: var(--lo-font-meta);
+}
+
+.detailPlaceholder { min-height: 44px; }
+.photoFigure { margin: 0; display: grid; gap: 8px; justify-items: start; }
+.photoFigure a { color: var(--lo-link); }
+.detailPicture { max-width: 100%; max-height: 360px; width: auto; height: auto; border-radius: var(--lo-radius-surface); }
 
 .catalogLink strong {
   font-weight: 600;

@@ -1,12 +1,13 @@
 'use client';
 
-import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Shuffle, Utensils } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, NotebookPen, RefreshCw, Shuffle, Utensils } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../ui-review/ui/button';
 import type { RecipeSummary } from './catalog';
 import { ingredientTerms, rankRecipes, suggestionGroup } from './filter';
 import { CookingRecordAction } from './log-action';
+import { RecipePhoto } from './recipe-photo';
 import styles from './workspace.module.css';
 
 const pageSize = 9;
@@ -21,7 +22,10 @@ export function CookingWorkspace({ recipes, categories }: {
   const [group, setGroup] = useState(0);
   const [page, setPage] = useState(0);
   const [randomPick, setRandomPick] = useState<RecipeSummary | null>(null);
+  const [browse, setBrowse] = useState(false);
   const catalogHeading = useRef<HTMLHeadingElement>(null);
+  const picksHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(()=>{if(browse)picksHeading.current?.focus();},[browse]);
   const ingredients = useMemo(() => ingredientTerms(ingredientInput), [ingredientInput]);
   const matches = useMemo(() => rankRecipes(recipes, { category, ingredients }), [recipes, category, ingredients]);
   const catalog = useMemo(() => {
@@ -45,11 +49,27 @@ export function CookingWorkspace({ recipes, categories }: {
 
   return (
     <div className={styles.workspace}>
+      <div className={styles.entries}>
+        <section className={styles.entry} aria-labelledby="cooking-log-entry">
+          <h2 id="cooking-log-entry"><NotebookPen size={19} aria-hidden="true" />记一餐</h2>
+          <p>记下做过的菜和做饭日期。可以直接打字，也可用设备键盘的语音输入。</p>
+          <div className={styles.entryActions}><CookingRecordAction entry /></div>
+        </section>
+        <section className={styles.entry} aria-labelledby="cooking-browse-entry">
+          <h2 id="cooking-browse-entry"><Utensils size={19} aria-hidden="true" />今天吃啥</h2>
+          <p>按手头食材找菜谱，或者随机挑一道。</p>
+          <div className={styles.entryActions}>
+            <Button variant="outline" type="button" aria-expanded={browse} aria-controls="cooking-recipe-browser"
+              onClick={()=>setBrowse(previous=>!previous)}>{browse ? '收起菜谱' : '去选菜'} <ArrowRight aria-hidden="true" /></Button>
+          </div>
+        </section>
+      </div>
+      <div id="cooking-recipe-browser" className={styles.browser} hidden={!browse}>
+      {browse && <>
       <section className={styles.pickPanel} aria-labelledby="cooking-suggestion-heading">
         <div className={styles.sectionHead}>
           <div className={styles.sectionIntro}>
-            <h2 id="cooking-suggestion-heading"><Utensils aria-hidden="true" size={19} />今天做什么</h2>
-            <p>第一次做，先挑一道 1–2 星的菜。读完步骤，切好食材、备齐调料再开火。</p>
+            <h2 id="cooking-suggestion-heading" ref={picksHeading} tabIndex={-1}>菜谱建议</h2>
           </div>
           <div className={styles.actions}>
             <Button type="button" variant="outline" className={styles.control} disabled={!catalog.length}
@@ -105,6 +125,7 @@ export function CookingWorkspace({ recipes, categories }: {
             {suggestions.map(({ recipe, matchedIngredients }) => (
               <li key={recipe.id}>
                 <Link className={styles.pick} href={`/personal/cooking/${recipe.id}`} prefetch={false}>
+                  <RecipePhoto id={recipe.id} name={recipe.name} />
                   <span className={styles.pickCopy}>
                     <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
                     <strong>{recipe.name}</strong>
@@ -148,9 +169,12 @@ export function CookingWorkspace({ recipes, categories }: {
             {visible.map(({ recipe }) => (
               <li key={recipe.id}>
                 <Link className={styles.catalogLink} href={`/personal/cooking/${recipe.id}`} prefetch={false}>
-                  <strong>{recipe.name}</strong>
-                  <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
-                  {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
+                  <RecipePhoto id={recipe.id} name={recipe.name} />
+                  <span className={styles.pickCopy}>
+                    <strong>{recipe.name}</strong>
+                    <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
+                    {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
+                  </span>
                 </Link>
               </li>
             ))}
@@ -178,8 +202,9 @@ export function CookingWorkspace({ recipes, categories }: {
         <a href="https://github.com/Anduin2017/HowToCook/tree/1.6.0/tips" target="_blank" rel="noreferrer">
           下厨基础：备料、厨具与技巧
         </a>
-        <CookingRecordAction />
       </footer>
+      </>}
+      </div>
     </div>
   );
 }
