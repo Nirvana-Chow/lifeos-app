@@ -139,8 +139,8 @@ test('personal navigation hides unfinished business and record management',()=>{
  for(const initialPage of ['overview','tasks','settings'] as const){
   const html=workspace({initialPage});
   assert.doesNotMatch(html,/href="\/personal\/(?:schedule|settings\/data|edit\?type=journal)"|更多业务|href="\/review\/admin/);
-  if(initialPage==='settings'){assert.match(html,/aria-label="设置分类"/);assert.doesNotMatch(html,/aria-label="事项"/);}
-  else assert.match(html,/aria-label="事项"/);
+  if(initialPage==='settings'){assert.match(html,/aria-label="设置分类"/);assert.doesNotMatch(html,/aria-label="待办"/);}
+  else assert.match(html,/aria-label="待办"/);
   assert.doesNotMatch(html,/aria-label="帮助"/);
  }
 });
@@ -175,7 +175,7 @@ test('settings renders a dedicated page and its opener uses the departure guard'
  assert.ok(elements(tree,n=>n.props['data-settings-page']!==undefined).length);
  const trigger=elements(tree,n=>n.props['aria-label']==='设置')[0];trigger.props.onClick({currentTarget:null});
  assert.equal(captured,0);assert.equal(left,1,'settings is an ordinary guarded page departure');
- assert.equal(elements(tree,n=>n.props['aria-label']==='事项').length,0);
+ assert.equal(elements(tree,n=>n.props['aria-label']==='待办').length,0);
  assert.equal(elements(tree,n=>n.type==='aside'&&elements(n,child=>child.props?.['aria-label']==='设置分类').length>0).length,1);
 });
 
