@@ -7,6 +7,7 @@ import {JournalCoveragePanel} from './coverage-panel';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import {activityDate} from '../personal-daily/activity-review/activity.mjs';
 import type {JournalPeriod} from './journal-period';
+import {readJournalRoutine} from './routine';
 import {personRecordHref,personRecordId,readLinkedPerson} from '../personal-people/journal-links';
 import s from './history.module.css';
 
@@ -15,6 +16,7 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
  const [snapshot,setSnapshot]=useState<Awaited<ReturnType<typeof readJournalHistory>>|null>(null),[detail,setDetail]=useState<JournalOriginal|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState('');
  const [period,setPeriod]=useState<JournalPeriod|null>(null);
  const [moreToday,setMoreToday]=useState(false);
+ const [showHappened,setShowHappened]=useState(false);
  const [returnPerson,setReturnPerson]=useState<{detail:JournalOriginal;id:string}|null>(null);
  const generation=useRef(0),guard=useRef(onBeforeOpen),originalHeading=useRef<HTMLHeadingElement>(null);guard.current=onBeforeOpen;
  useEffect(()=>{if(detail)originalHeading.current?.focus();},[detail]);
@@ -59,6 +61,10 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
  }
  const history=snapshot?.sources.diary,memos=snapshot?.sources.memos;
  const today=history?.rows.filter(row=>row.occurredOn===history.today)??[];
+ const todayHappened=showHappened?today.flatMap(row=>{
+  const happened=readJournalRoutine(row.text)?.happened;
+  return happened?[{row,happened}]:[];
+ }):[];
  const recentMemos=memos?.rows.filter(row=>row.occurredOn===null||row.occurredOn<=memos.today)
   .toSorted((a,b)=>(b.occurredOn??'').localeCompare(a.occurredOn??''))??[];
  const activityDay=activityDate(detail?.current.occurredOn);
@@ -70,13 +76,21 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
  </li>)}</ul>;
  const memoDetail=!!detail&&!!memos?.rows.some(row=>row.id===detail.entry.id);
  const detailLabel=memoDetail?'随手记原文':snapshot?.sources.unclassified.some(row=>row.id===detail?.entry.id)?'记录原文':'日记原文';
+ const routine=detail&&detailLabel==='日记原文'?readJournalRoutine(detail.current.text):null;
  const original=detail&&<article className={s.original} aria-label={detailLabel}>
   <h3 ref={originalHeading} tabIndex={-1}>{detailLabel}</h3>
   <p><strong>{detail.current.title}</strong> · {detail.current.occurredOn??'记录日期未知'} · 当前版本 {detail.entry.revision}</p>
   {memoDetail&&<p className={s.meta}>来源：LifeOS 本人记录 · 已核对关联主题</p>}
   {activityDay&&<Link href={'/personal/activity?date='+activityDay} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>查看当天活动</Link>}
   {returnPerson?.detail===detail&&<Link href={personRecordHref(returnPerson.id)} prefetch={false} onNavigate={event=>{if(guard.current?.()===false)event.preventDefault();}}>返回关联人物</Link>}
-  <p className={s.body}>{detail.current.text}</p>
+  {routine?<>
+   <dl className={s.routine} aria-label="日记回顾">
+    <div><dt>计划</dt><dd>{routine.plan||'这篇日记没有填写计划。'}</dd></div>
+    <div><dt>发生</dt><dd>{routine.happened||'这篇日记没有填写发生事项。'}</dd></div>
+    <div><dt>总结</dt><dd>{routine.summary||'这篇日记没有手写总结。'}</dd></div>
+   </dl>
+   <details><summary>查看当前原文</summary><p className={s.body}>{detail.current.text}</p></details>
+  </>:<p className={s.body}>{detail.current.text}</p>}
   {detail.original.text!==detail.current.text&&<details><summary>最初保存的原文</summary><p className={s.body}>{detail.original.text}</p></details>}
   <details><summary>来源与已读取版本</summary><p className={s.identifier}>记录 ID：{detail.entry.id}<br/>来源 ID：{detail.entry.source.id}</p><p>已读取 {detail.history.length} 个版本。{detail.historyTruncated?'版本历史有读取上限，不代表完整历史。':'本次版本历史未截断。'}</p></details>
  </article>;
@@ -95,6 +109,14 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
    {busy&&<p role="status">正在核对日记与服务器日期…</p>}
    {error&&<p role="alert" className={s.error}>{error}</p>}
    {renderEditor?.(()=>void load(),history?.today)}
+   <details className={s.disclosure} open={showHappened} onToggle={event=>setShowHappened(event.currentTarget.open)}><summary>查看当天发生的记录</summary>
+    {showHappened&&<>
+    <p className={s.meta}>仅显示本人写在当天日记「发生」段落里的内容。</p>
+    {!history?<p className={s.meta}>当天日记暂未核对。</p>:todayHappened.length>0?<ul className={s.titles}>{todayHappened.map(({row,happened})=><li key={row.id}>
+     <a href={row.href} onClick={event=>void open(event,row.id)}>{row.title}</a><p className={s.body}>{happened}</p>
+    </li>)}</ul>:<p className={s.meta}>当天日记中暂无已填写的「发生」段落。</p>}
+    </>}
+   </details>
    {history&&(today.length>0
     ? <section aria-label="今天的日记">{todayList(today.slice(0,3))}
       {today.length>3&&<details className={s.disclosure} open={moreToday} onToggle={event=>setMoreToday(event.currentTarget.open)}><summary>其余 {today.length-3} 条当天日记</summary>{moreToday&&todayList(today.slice(3))}</details>}

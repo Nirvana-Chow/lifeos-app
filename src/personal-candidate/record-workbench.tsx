@@ -43,6 +43,7 @@ import {portfolioSummary,portfolioKindLabels} from '../personal-portfolio/projec
 import {recordModuleLabels as labels,recordModuleDescriptions,emptyRecordFields,recordModuleEnabled,recordStageFields,initialRecordView,type CareerSection,type RecordView} from './record-modules';
 import s from './record-workbench.module.css';
 import type {PersonalType} from './config';
+import {journalRoutineTemplate,readJournalRoutine} from '../personal-journal/routine';
 const recordLabels={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业记录',portfolio:'账户资产投资',cooking:'做饭'};
 const zone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch{return'UTC';}};
 const emptyLinks=()=>({project:null,domain:null,topics:[],people:[]});
@@ -63,7 +64,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [mediaKind,setMediaKind]=useState<MediaBrowseFilter>('all');
  const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
- const root=useRef<HTMLDivElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
+ const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
  const currentDraft=()=>editorRef.current??(type==='journal'?draftCache.current?.editor:null);
  const activeDraft=currentDraft();
  const dirty=!!activeDraft&&JSON.stringify(activeDraft.fields)!==activeDraft.initial,blocked=busy||mutation?.phase==='saving'||mutation?.phase==='uncertain';
@@ -148,6 +149,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   setError('');setNotice('');
   try{
    const fields=normalizePersonalFields(type,editor.fields);
+   const routine=type==='journal'&&!editor.entry?readJournalRoutine(editor.fields.text):null;
+   if(routine&&!Object.values(routine).some(Boolean))throw Error('请至少填写一段日记内容。');
    const command=makePersonalCommand({ownerId:status.ownerId,spaceId:status.spaceId},type,editor.entry?.id??null,fields,'record-'+crypto.randomUUID(),true,editor.entry?.revision);
    await active.submit(command,type==='journal');
    if(active!==session.current||token!==generation.current)return;
@@ -274,7 +277,13 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    {status?.writable===true&&verified!==false&&<Button type="button" disabled={blocked||awaitingJournalDay} onClick={()=>create()}>写日记</Button>}
    {!status&&error&&<Button type="button" variant="outline" disabled={busy} onClick={()=>void refresh()}>重新读取日记编辑器</Button>}
   </div>{feedback}<details className={s.personActions}><summary>管理日记</summary>{toolbar}{records}</details></>:<>{toolbar}{feedback}{records}</>}
-  <Dialog open={!!editor&&verified!==false} onOpenChange={open=>{if(!open&&leave())setEditor(null);}}><DialogContent container={root.current} className={s.dialog} showCloseButton={!blocked}><DialogTitle>{editor?.entry?'编辑':'新增'}{title}</DialogTitle><DialogDescription className={s.description}>{careerSection==='resume'?'引用已保存的职业经历与项目成果，整理和预览简历版本。':recordModuleDescriptions[type]}</DialogDescription>{fields&&<form onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={blocked||!status?.writable} className={s.form}><label>{type==='person'?'姓名':'标题'}<Input required maxLength={240} value={fields.title} onChange={event=>setFields({...fields,title:event.target.value})}/></label><label>{type==='journal'?'正文':'备注'}<textarea aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
+  <Dialog open={!!editor&&verified!==false} onOpenChange={open=>{if(!open&&leave())setEditor(null);}}><DialogContent container={root.current} className={s.dialog} showCloseButton={!blocked}><DialogTitle>{editor?.entry?'编辑':'新增'}{title}</DialogTitle><DialogDescription className={s.description}>{careerSection==='resume'?'引用已保存的职业经历与项目成果，整理和预览简历版本。':recordModuleDescriptions[type]}</DialogDescription>{fields&&<form onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={blocked||!status?.writable} className={s.form}><label>{type==='person'?'姓名':'标题'}<Input required maxLength={240} value={fields.title} onChange={event=>setFields({...fields,title:event.target.value})}/></label>{writeJournal&&type==='journal'&&<Button type="button" variant="outline" size="sm" disabled={fields.text.length>0}
+   onClick={()=>{
+    if(fields.text.length>0)return;
+    setFields({...fields,text:journalRoutineTemplate});
+    requestAnimationFrame(()=>{const body=journalBody.current;if(body){body.focus();const firstLine=journalRoutineTemplate.indexOf('\n')+1;body.setSelectionRange(firstLine,firstLine);}});
+   }}>使用「计划／发生／总结」提纲</Button>}
+  <label>{type==='journal'?'正文':'备注'}<textarea ref={type==='journal'?journalBody:undefined} aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
   {type==='person'&&<PersonFields value={fields.personal as PersonPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='health'&&<><label>记录类型<select value={(fields.personal as HealthPersonal).healthKind} disabled={!!editor?.entry} onChange={event=>{const next=emptyHealthFields(event.target.value as HealthPersonal['healthKind'],zone());setFields({...fields,personal:next.personal});}}>{Object.entries(healthKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthFields value={fields.personal as HealthPersonal} lockKind={!!editor?.entry} onChange={personal=>setFields({...fields,personal})}/></>}
   {type==='media'&&<MediaFields value={fields.personal as MediaPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
