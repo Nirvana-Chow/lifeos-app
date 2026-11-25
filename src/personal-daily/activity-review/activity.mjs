@@ -5,6 +5,8 @@ export const initialDay = '2026-11-24';
 const isoDay = /^\d{4}-\d{2}-\d{2}$/;
 const explicitInstant = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const dayFormat = new Intl.DateTimeFormat('sv-SE', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+export const minActivityDay = '0002-01-01';
+export const maxActivityDay = '9998-12-31';
 
 function civilDate(date) {
   const value = new Date(date + 'T00:00:00Z');
@@ -12,6 +14,12 @@ function civilDate(date) {
     throw new RangeError('需要有效的日历日期');
   }
   return value;
+}
+
+export function activityDate(value) {
+  if (typeof value !== 'string' || value < minActivityDay || value > maxActivityDay || !isoDay.test(value)) return;
+  const date = new Date(value + 'T00:00:00Z');
+  if (Number.isFinite(+date) && date.toISOString().slice(0, 10) === value) return value;
 }
 
 export function localDay({ date, at }) {
@@ -104,9 +112,9 @@ const isVerifiedMilestone = item => item.verified === true && !!item.evidence?.t
   stages.some(stage => stage.key === item.stage);
 
 export function projectDay(source, category, date) {
-  const state = source.coverage.get(date) ?? 'unknown';
-  const observedDiary = category === 'diary' && state === 'observed';
-  if (state !== 'complete' && !observedDiary) return { state, count: null, level: state, entries: [] };
+  const state = source.coverage.get(date) ?? source.defaultState ?? 'unknown';
+  const observed = (category === 'diary' || category === 'development') && state === 'observed';
+  if (state !== 'complete' && !observed) return { state, count: null, level: state, entries: [] };
 
   if (category === 'development') {
     const entries = new Map();
@@ -119,6 +127,9 @@ export function projectDay(source, category, date) {
       }
       delivery.milestones.push(event);
     }
+    if (observed) return entries.size
+      ? { state: 'partial', count: entries.size, level: 'partial', entries: [...entries.values()] }
+      : { state: 'unknown', count: null, level: 'unknown', entries: [] };
     return result([...entries.values()]);
   }
 
@@ -127,7 +138,7 @@ export function projectDay(source, category, date) {
     if (localDay(record.when) === date) byId.set(record.id, record);
   }
   const entries = [...byId.values()];
-  if (observedDiary) return { state: 'unknown', count: entries.length || null, level: 'partial', entries };
+  if (observed) return { state: 'unknown', count: entries.length || null, level: 'partial', entries };
   return result(entries);
 }
 
@@ -176,6 +187,6 @@ export function summarizePeriod(days, category) {
 }
 
 export function dayLabel(day, category) {
-  if (day.state === 'partial') return day.count === null ? stateLabels.partial : '已核对 ' + day.count + ' 条记录 · 部分覆盖';
+  if (day.state === 'partial') return day.count === null ? stateLabels.partial : '已核对 ' + day.count + ' ' + categories[category].unit + ' · 部分覆盖';
   return day.count === null ? stateLabels[day.state] : day.count + ' ' + categories[category].unit;
 }
