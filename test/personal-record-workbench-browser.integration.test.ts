@@ -38,6 +38,14 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
   ));
  }
+ const topicEditor=join(root,'app/personal/edit');
+ await mkdir(topicEditor,{recursive:true});
+ const editorSource=await readFile(join(source,'app/personal/edit/page.tsx'),'utf8');
+ const editorImport="import {readPlatformPagePrincipal,readPlatformPasswordCapability} from '../../../src/platform/runtime';";
+ assert.ok(editorSource.includes(editorImport));
+ await writeFile(join(topicEditor,'page.tsx'),editorSource.replace(editorImport,
+  "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null; const readPlatformPasswordCapability=async()=>false;"
+ ));
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture failed to start')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{log+=String(chunk);const match=log.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
@@ -274,7 +282,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
      const topics=await Promise.all(topicTitles.map(async(title,index)=>
       (await service.mutate(config.ownerId,'topic',null,{spaceId:config.spaceId,confirmed:true,fields:{title,text:'Synthetic topic',occurredOn:null,personal:{type:'topic'}}},'novel-topic-'+index)).entry,
      ));
-     const posts:{key:string|null;body:string}[]=[];
+     const posts:{key:string|null;body:string}[]=[],writes:string[]=[];
      let loseResponse=topics.length===2;
      await page.route('**/api/platform/**',async route=>{
       const request=route.request(),url=new URL(request.url());
@@ -282,6 +290,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
       if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
       const headers=new Headers(request.headers());headers.set('host',url.host);
       const body=request.postData();
+      if(request.method()!=='GET')writes.push(request.method());
       const mediaWrite=request.method()==='POST'&&url.pathname==='/api/platform/personal/media';
       if(mediaWrite)posts.push({key:headers.get('idempotency-key'),body:body??''});
       const response=await handlePersonalRequest(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});
@@ -304,6 +313,8 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
      const save=dialog.getByRole('button',{name:'保存',exact:true});
      if(topics.length===0){
       await expect(dialog.getByRole('status')).toContainText('当前没有可用的网文／小说主题');
+      const manageTopics=dialog.getByRole('link',{name:'打开主题录入',exact:true});
+      await expect(manageTopics).toHaveAttribute('href','/personal/edit?type=topic');
       await expect(save).toBeDisabled();
       const pendingKey='lifeos.personal.pending.v1:'+config.ownerId+':'+config.spaceId;
       const pending=await dialog.locator('form').evaluate((form,key)=>{
@@ -313,21 +324,23 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
       assert.equal(pending,null);
       expect(posts).toHaveLength(0);
       assert.deepEqual(await savedRows(),[]);
+      page.once('dialog',dialog=>dialog.accept());
+      await manageTopics.click();
+      await expect(page.getByRole('heading',{name:'新建主题',exact:true})).toBeVisible();
+      assert.deepEqual(writes,[]);
       return;
      }
-     await dialog.getByText('作品来源与关联',{exact:true}).click();
-     const relation=dialog.getByRole('combobox',{name:'关联主题',exact:true});
      const selected=topics.at(-1)!;
      const pin={id:selected.id,sourceId:selected.source.id,revision:selected.revision};
-     if(topics.length===1){
-      await expect(relation).toHaveValue(JSON.stringify(pin));
-      await expect(save).toBeEnabled();
-      await relation.selectOption('');
-     }else await expect(relation).toHaveValue('');
-     await expect(dialog.getByRole('status')).toContainText('选择一个网文／小说主题后保存');
-     await expect(save).toBeDisabled();
-     expect(posts).toHaveLength(0);
-     await relation.selectOption(JSON.stringify(pin));
+     if(topics.length===2){
+      await dialog.getByText('作品来源与关联',{exact:true}).click();
+      const relation=dialog.getByRole('combobox',{name:'关联主题',exact:true});
+      await expect(relation).toHaveValue('');
+      await expect(dialog.getByRole('status')).toContainText('选择一个网文／小说主题后保存');
+      await expect(save).toBeDisabled();
+      expect(posts).toHaveLength(0);
+      await relation.selectOption(JSON.stringify(pin));
+     }
      await expect(save).toBeEnabled();
      await save.click();
      if(topics.length===2){

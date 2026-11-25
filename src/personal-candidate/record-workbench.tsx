@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {useTable,type ColumnDef} from '@tanstack/react-table';
 import {DataGrid,DataGridContainer,dataGridFeatures} from '../ui-review/reui/data-grid';
@@ -291,7 +292,10 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   {type==='health'&&<><label>记录类型<select value={(fields.personal as HealthPersonal).healthKind} disabled={!!editor?.entry} onChange={event=>{const next=emptyHealthFields(event.target.value as HealthPersonal['healthKind'],zone());setFields({...fields,personal:next.personal});}}>{Object.entries(healthKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthFields value={fields.personal as HealthPersonal} lockKind={!!editor?.entry} onChange={personal=>setFields({...fields,personal})}/></>}
   {novelTopicRequired&&<p role="status" className={s.description}>{options.topic.some(isNovelTopic)
    ?'请将作品类型设为书籍，并在「作品来源与关联」选择一个网文／小说主题后保存。'
-   :'当前没有可用的网文／小说主题。有明确的关联主题后才能从这个书架保存。'}</p>}
+   :<>当前没有可用的网文／小说主题。{status?.allowedTypes.includes('topic')
+    ?<>请先<Link className="underline underline-offset-2" href="/personal/edit?type=topic" prefetch={false}
+      onNavigate={navigationGuard?undefined:event=>{if(!leave())event.preventDefault();}}>打开主题录入</Link>核对或登记已确认的主题，再返回书架新增。</>
+    :'标签可用后，请刷新书架再新增。'}</>}</p>}
   {type==='media'&&<MediaFields value={fields.personal as MediaPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='career'&&<CareerFields value={fields.personal as CareerPersonal} options={options} kinds={careerSection==='career'?careerKinds.filter(kind=>kind!=='resume'):undefined} lockKind={!!editor?.entry||careerSection==='resume'} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='portfolio'&&<><label>持有类别<select aria-label="持有类别" disabled={!!editor?.entry} value={(fields.personal as PersonalPortfolio).portfolioKind} onChange={event=>setFields({...fields,personal:emptyPortfolioPersonal(event.target.value as PortfolioKind)})}>{portfolioKinds.map(kind=><option key={kind} value={kind}>{portfolioKindLabels[kind]}</option>)}</select></label><PortfolioFields value={fields.personal as PersonalPortfolio} options={options} onChange={personal=>setFields({...fields,personal})}/></>}
