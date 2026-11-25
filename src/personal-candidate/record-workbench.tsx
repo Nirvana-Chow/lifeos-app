@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {useTable,type ColumnDef} from '@tanstack/react-table';
 import {DataGrid,DataGridContainer,dataGridFeatures} from '../ui-review/reui/data-grid';
 import {DataGridTableVirtual} from '../ui-review/reui/data-grid-table-virtual';
@@ -52,6 +52,7 @@ const fresh=(type:RecordModule,kind?:PortfolioKind)=>emptyRecordFields(type,zone
 const emptyOptions=():Record<string,PublicEntry[]>=>({project:[],domain:[],topic:[],person:[],career:[],portfolio:[]});
 type Status=PersonalBinding&{writable:boolean;storageVerified:true;allowedTypes:string[];healthEnabled:boolean;peopleEnabled:boolean;mediaEnabled:boolean;careerEnabled:boolean;portfolioEnabled:boolean};
 const keyOf=(v:PersonalBinding)=>JSON.stringify([v.ownerId,v.spaceId]);
+const journalAutosaveDelayMs=1200;
 async function json(path:string){const response=await fetch('/api/platform/personal/'+path,{credentials:'same-origin',cache:'no-store'}),value=await response.json();if(!response.ok)throw Error(value?.error?.message||'读取未完成，请重试。');return value;}
 function readStatus(v:unknown):Status{const value=v as Status;if(!value||typeof value.ownerId!=='string'||typeof value.spaceId!=='string'||value.storageVerified!==true||!Array.isArray(value.allowedTypes))throw Error('本人空间尚未就绪。');return {...value,writable:value.writable===true};}
 export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,careerSection,writeJournal,journalDay,onJournalSaved}:{type:RecordModule;linkedPersonId?:string;careerSection?:CareerSection;writeJournal?:boolean;journalDay?:string;onJournalSaved?:()=>void;navigationGuard?:{current:(()=>boolean)|null}}){
@@ -66,10 +67,36 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string;fromNovelShelf?:boolean}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
+ const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
+ const autosaveTimer=useRef<number|undefined>(undefined),verifiedRef=useRef(verified);
+ const journalSelection=useRef<{field:HTMLTextAreaElement;entryId:string;start:number;end:number;direction:'forward'|'backward'|'none'}|null>(null);
+ verifiedRef.current=verified;
+ const journalRevisionChanged=type==='journal'&&!!editor?.entry&&
+  entries.some(row=>row.id===editor.entry?.id&&row.revision>(editor.entry?.revision??0));
+ function cancelAutosaveTimer(){window.clearTimeout(autosaveTimer.current);autosaveTimer.current=undefined;}
+ function resetJournalAutosave(){cancelAutosaveTimer();journalSelection.current=null;setJournalAutosave(false);setJournalComposing(false);setJournalSaveNotice('');}
  const currentDraft=()=>editorRef.current??(type==='journal'?draftCache.current?.editor:null);
  const activeDraft=currentDraft();
  const dirty=!!activeDraft&&JSON.stringify(activeDraft.fields)!==activeDraft.initial,blocked=busy||mutation?.phase==='saving'||mutation?.phase==='uncertain';
- function leave(){const draft=currentDraft();return !busyRef.current&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));}
+ useLayoutEffect(()=>{
+  const selection=journalSelection.current;
+  if(!selection||blocked)return;
+  journalSelection.current=null;
+  const {field,entryId,start,end,direction}=selection;
+  const focused=document.activeElement;
+  // Radix can park focus on the dialog while its fieldset is disabled.
+  const focusParked=focused===document.body||focused===field.closest('[role="dialog"]');
+  if(verified!==true||document.visibilityState!=='visible'||editor?.entry?.id!==entryId||
+   journalBody.current!==field||field.matches(':disabled')||(!focusParked&&focused!==field))return;
+  field.focus({preventScroll:true});
+  field.setSelectionRange(start,end,direction);
+ },[blocked,editor,verified]);
+ function leave(){
+  const draft=currentDraft();
+  const allowed=!busyRef.current&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));
+  if(allowed&&type==='journal')resetJournalAutosave();
+  return allowed;
+ }
  useEffect(()=>{if(navigationGuard)navigationGuard.current=leave;return()=>{if(navigationGuard)navigationGuard.current=null;};});
  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dirty||blocked){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty,blocked]);
  async function refresh(){
@@ -92,6 +119,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    }
    if(type==='journal'&&draftCache.current?.scope!==scope)draftCache.current=null;
    if(current.current&&keyOf(current.current)!==scope){
+    if(type==='journal')resetJournalAutosave();
     setEditor(null);setHistory([]);setResumeId('');session.current?.invalidateBinding();session.current=null;
    }
    current.current=after;setStatus(after);setEntries(rows);
@@ -130,8 +158,12 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   setError('本人身份或写入权限须重新核对。');
   window.dispatchEvent(new Event('focus'));
  }
- function discardJournalDraft(){draftCache.current=null;editorRef.current=null;setEditor(null);}
+ function discardJournalDraft(){
+  if(type==='journal')resetJournalAutosave();
+  draftCache.current=null;editorRef.current=null;setEditor(null);
+ }
  function hide(){
+  if(type==='journal')resetJournalAutosave();
   if(current.current&&editorRef.current)draftCache.current={scope:keyOf(current.current),editor:editorRef.current,history:[]};
   generation.current++;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
  }
@@ -143,26 +175,71 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   return()=>{hide();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('pagehide',hide);};
  },[type,hasPrivacyBoundary,linkedPersonId,careerSection]);
  useEffect(()=>{if(verified===false)hide();else void refresh();},[type,verified,linkedPersonId]);
- async function open(entry:PublicEntry){if(!leave()||!current.current)return;const binding=keyOf(current.current),token=generation.current;setBusy(true);setError('');try{const data=await json(type+'/'+entry.id),row=ownerRecord(data.entry,type,current.current.spaceId),versions=await json(type+'/'+entry.id+'/history');const after=readStatus(await json('status'));if(token!==generation.current||!current.current||binding!==keyOf(after)||binding!==keyOf(current.current))return;const fields=recordFields(row,type);setEditor({entry:row,fields,initial:JSON.stringify(fields)});setHistory((versions.items??[]).map((item:unknown)=>ownerRecord(item,type,after.spaceId)));}catch(e){if(token===generation.current)setError(e instanceof Error?e.message:'读取未完成。');}finally{if(token===generation.current)setBusy(false);}}
- async function save(){
+ async function open(entry:PublicEntry){if(!leave()||!current.current)return;const binding=keyOf(current.current),token=generation.current;setBusy(true);setError('');try{const data=await json(type+'/'+entry.id),row=ownerRecord(data.entry,type,current.current.spaceId),versions=await json(type+'/'+entry.id+'/history');const after=readStatus(await json('status'));if(token!==generation.current||!current.current||binding!==keyOf(after)||binding!==keyOf(current.current))return;const fields=recordFields(row,type);if(type==='journal'&&session.current?.getSnapshot().phase==='rejected')session.current.cancel();setEditor({entry:row,fields,initial:JSON.stringify(fields)});setHistory((versions.items??[]).map((item:unknown)=>ownerRecord(item,type,after.spaceId)));}catch(e){if(token===generation.current)setError(e instanceof Error?e.message:'读取未完成。');}finally{if(token===generation.current)setBusy(false);}}
+ async function save(mode:'manual'|'autosave'='manual'){
+  cancelAutosaveTimer();
   const active=session.current,token=generation.current;
   if(!editor||status?.writable!==true||!active||blocked||verified===false||novelTopicRequired)return;
-  setError('');setNotice('');
+  const autosave=mode==='autosave';
+  if(autosave&&(!editor.entry||verifiedRef.current!==true||!current.current?.writable||
+   editorRef.current!==editor||document.visibilityState!=='visible'||busyRef.current||
+   ['saving','uncertain','rejected'].includes(active.getSnapshot().phase)))return;
+  const body=journalBody.current;
+  const selection=autosave&&editor.entry&&body&&document.activeElement===body
+   ?{field:body,entryId:editor.entry.id,start:body.selectionStart,end:body.selectionEnd,direction:body.selectionDirection}
+   :null;
+  setError('');setNotice('');setJournalSaveNotice('');
   try{
    const fields=normalizePersonalFields(type,editor.fields);
    const routine=type==='journal'?readJournalRoutine(editor.fields.text):null;
    if(routine&&!Object.values(routine).some(Boolean))throw Error('请至少填写一段日记内容。');
    const command=makePersonalCommand({ownerId:status.ownerId,spaceId:status.spaceId},type,editor.entry?.id??null,fields,'record-'+crypto.randomUUID(),true,editor.entry?.revision);
    await active.submit(command,type==='journal');
-   if(active!==session.current||token!==generation.current)return;
+   if(active!==session.current||(!autosave&&token!==generation.current))return;
    const result=active.getSnapshot();
-   if(result.phase!=='saved')return;
+   if(result.phase!=='saved'||!result.saved){
+    if(autosave)resetJournalAutosave();
+    return;
+   }
+   const newer=result.observed&&result.observed.revision>result.saved.revision;
+   if(autosave){
+    const saved=result.saved,observed=result.observed??saved;
+    if(newer)resetJournalAutosave();
+    else journalSelection.current=selection;
+    setJournalSaveNotice(newer?'本次自动保存已确认。另有较新版本，请重新打开核对。':'正文已自动保存');
+    const savedFields=recordFields(saved,'journal');
+    setEditor(latest=>latest?.entry?.id===saved.id?{
+     entry:saved,fields:latest.fields===editor.fields?savedFields:latest.fields,initial:JSON.stringify(savedFields),
+    }:latest);
+    // Keep the same 50-entry window as the history endpoint.
+    setHistory(versions=>[saved,...versions.filter(version=>version.revision!==saved.revision)].slice(0,50));
+    setEntries(rows=>rows.map(row=>row.id===observed.id?observed:row));
+    onJournalSaved?.();
+    return;
+   }
    discardJournalDraft();
-   setNotice(result.observed&&result.saved&&result.observed.revision>result.saved.revision?'本次保存已确认；记录随后有更新，列表显示最新版本。':'已保存');
+   setNotice(newer?'本次保存已确认；记录随后有更新，列表显示最新版本。':'已保存');
    if(type==='journal')onJournalSaved?.();
    await refresh();
-  }catch(e){setError(e instanceof Error?e.message:'请核对输入。');}
+  }catch(e){
+   if(autosave)resetJournalAutosave();
+   setError(e instanceof Error?e.message:'请核对输入。');
+  }
  }
+ useEffect(()=>{
+  if(!writeJournal||type!=='journal'||!journalAutosave||journalComposing||!editor?.entry||
+   verified!==true||!status?.writable||blocked||journalRevisionChanged||mutation?.phase==='rejected')return;
+  const saved=recordFields(editor.entry,'journal'),body=editor.fields.text;
+  if(!body.trim()||body===saved.text||JSON.stringify({...editor.fields,text:saved.text})!==editor.initial)return;
+  const routine=readJournalRoutine(editor.fields.text);
+  if(routine&&!Object.values(routine).some(Boolean))return;
+  const token=generation.current;
+  autosaveTimer.current=window.setTimeout(()=>{
+   autosaveTimer.current=undefined;
+   if(token===generation.current)void save('autosave');
+  },journalAutosaveDelayMs);
+  return cancelAutosaveTimer;
+ },[writeJournal,type,journalAutosave,journalComposing,editor,verified,status,blocked,journalRevisionChanged,mutation?.phase]);
  function create(kind?:PortfolioKind){
   if(blocked||awaitingJournalDay||!status?.writable||!leave())return;
   const fields=careerSection==='resume'?emptyRecordFields('career',zone(),'resume'):fresh(type,kind);
@@ -246,7 +323,10 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const media=fields?.personal;
  const novelTopicRequired=editor?.fromNovelShelf===true&&
   (media?.type!=='media'||!matchesMediaBrowse(media,'novel',options.topic));
- const setFields=(fields:RecordFields)=>setEditor(old=>old?{...old,fields}:old);
+ const setFields=(fields:RecordFields)=>{
+  if(type==='journal'){cancelAutosaveTimer();setJournalSaveNotice('');}
+  setEditor(old=>old?{...old,fields}:old);
+ };
  function peoplePins(values:PersonalReference[]){return <label>关联人物<select multiple value={values.map(value=>JSON.stringify(value))} onChange={event=>setFields({...fields!,personal:{type:'journal',links:{...links,people:[...event.target.selectedOptions].map(option=>JSON.parse(option.value))}}})}>{values.filter(value=>!options.person.some(entry=>entry.id===value.id&&entry.source.id===value.sourceId&&entry.revision===value.revision)).map(value=><option key={value.id} value={JSON.stringify(value)}>保留原人物引用（版本 {value.revision}）</option>)}{options.person.map(entry=><option key={entry.id} value={JSON.stringify({id:entry.id,sourceId:entry.source.id,revision:entry.revision})}>{recordFields(entry,'person').title}</option>)}</select></label>;}
  const toolbar=<div className={s.toolbar}><Input aria-label={'搜索'+title} placeholder={'搜索'+title} value={search} onChange={e=>{setLinkedProfile(undefined);setSearch(e.target.value);}}/><span className={s.count}>{status?(type==='media'?tableRows.length:sectionEntries.length)+' 条':'正在读取'}</span>
    {type==='media'&&<label className={s.metric}>筛选作品<select value={mediaKind} disabled={!status} onChange={event=>setMediaKind(event.target.value as MediaBrowseFilter)}>
@@ -287,7 +367,15 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
     setFields({...fields,text:journalRoutineTemplate});
     requestAnimationFrame(()=>{const body=journalBody.current;if(body){body.focus();const firstLine=journalRoutineTemplate.indexOf('\n\n')+1;body.setSelectionRange(firstLine,firstLine);}});
    }}>使用「计划／发生／总结」提纲</Button>}
-  <label>{type==='journal'?'正文':'备注'}<textarea ref={type==='journal'?journalBody:undefined} aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
+  {writeJournal&&type==='journal'&&editor?.entry&&<div>
+   <Button type="button" variant="outline" aria-pressed={journalAutosave} disabled={journalRevisionChanged||mutation?.phase==='rejected'}
+    onClick={()=>{cancelAutosaveTimer();setJournalAutosave(!journalAutosave);setJournalSaveNotice('');}}>本篇正文自动保存</Button>
+   <p>{journalRevisionChanged?'记录已有较新版本，请重新打开核对。':'仅在本次编辑开启。标题、日期和关联请手动保存。'}</p>
+  </div>}
+  <label>{type==='journal'?'正文':'备注'}<textarea ref={type==='journal'?journalBody:undefined} aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text}
+   onCompositionStart={type==='journal'?()=>{cancelAutosaveTimer();setJournalComposing(true);}:undefined}
+   onCompositionEnd={type==='journal'?()=>setJournalComposing(false):undefined}
+   onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
   {type==='person'&&<PersonFields value={fields.personal as PersonPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='health'&&<><label>记录类型<select value={(fields.personal as HealthPersonal).healthKind} disabled={!!editor?.entry} onChange={event=>{const next=emptyHealthFields(event.target.value as HealthPersonal['healthKind'],zone());setFields({...fields,personal:next.personal});}}>{Object.entries(healthKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthFields value={fields.personal as HealthPersonal} lockKind={!!editor?.entry} onChange={personal=>setFields({...fields,personal})}/></>}
   {novelTopicRequired&&<p role="status" className={s.description}>{options.topic.some(isNovelTopic)
@@ -302,6 +390,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   {type==='journal'&&<div className={s.relations}><RelationFields value={links} options={options} onChange={next=>setFields({...fields,personal:{type:'journal',links:{...next,people:links.people}} as JournalPersonal})}/>{peoplePins(links.people)}</div>}
   <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit" disabled={novelTopicRequired}>保存</Button></div></fieldset></form>}
   {type==='journal'&&<>
+   {journalSaveNotice&&<p role="status">{journalSaveNotice}</p>}
    {error&&<p role="alert" className={s.error}>{error}</p>}
    {mutation?.error&&<p role="alert">{mutation.error}</p>}
    {mutation?.phase==='saving'&&<div className={s.recovery}><p role="status">正在等候保存回执。</p><Button type="button" variant="outline" onClick={()=>session.current?.cancel()}>停止等待并保留原请求</Button></div>}
