@@ -5,7 +5,7 @@ type AppleCalendarRef = {
   accountId: string;
   calendarId: string;
 };
-type AppleCalendarSource = AppleCalendarRef & {identityEpoch: string};
+export type AppleCalendarSource = AppleCalendarRef & {identityEpoch: string};
 
 type SourceRole = 'allowed' | 'overlay';
 type OriginalOccurrence =
@@ -30,7 +30,7 @@ type PreviewEvent = {
   schedule: CalendarSchedule;
 };
 
-type PreviewState = {
+export type AppleCalendarPreviewState = {
   scopeKey: string;
   events: readonly PreviewEvent[];
 };
@@ -56,7 +56,7 @@ type BlockCode =
 type PreviewResult =
   | {status: 'blocked'; code: BlockCode}
   | {
-    status: 'ready'; state: PreviewState; importChanges: ImportChange[];
+    status: 'ready'; state: AppleCalendarPreviewState; importChanges: ImportChange[];
     overlayEvents: PreviewEvent[]; overlayStatus: 'observed' | 'excluded-unread';
   };
 
@@ -100,6 +100,7 @@ function parseScope(input: unknown) {
     const coverageId = identifier(fields.coverageId);
     if (Object.hasOwn(fields, 'overlayRead') && fields.overlayRead !== 'exclude') return reject('scope-invalid');
     if (fields.overlayRead === 'exclude') {
+      if (fields.overlay === null) return {coverageId, allowed, overlay: null, overlayRead: 'exclude' as const};
       const excluded = object(fields.overlay, ['accountId', 'calendarId']);
       const overlay = {accountId: identifier(excluded.accountId), calendarId: identifier(excluded.calendarId)};
       if (calendarKey(allowed) === calendarKey(overlay)) return reject('scope-invalid');
@@ -170,11 +171,11 @@ function collectEvents(
 ): Map<string, PreviewEvent> {
   if (!Array.isArray(input)) return reject('coverage-unverified');
 
-  const overlayKey = calendarKey(scope.overlay);
+  const overlayKey = scope.overlay && calendarKey(scope.overlay);
   const sources = new Map<string, {role: SourceRole; source: AppleCalendarSource}>([
     [calendarKey(scope.allowed), {role: 'allowed', source: scope.allowed}],
   ]);
-  if (scope.overlayRead !== 'exclude') sources.set(overlayKey, {role: 'overlay', source: scope.overlay});
+  if (scope.overlayRead !== 'exclude') sources.set(calendarKey(scope.overlay), {role: 'overlay', source: scope.overlay});
   const seen = new Set<string>();
   const events = new Map<string, PreviewEvent>();
   const itemSeries = new Map<string, string>();
@@ -216,8 +217,8 @@ function collectEvents(
   return events;
 }
 
-/** Pure preview for synthetic snapshots. Previous state comes from a ready preview under this exact scope. */
-export function previewAppleCalendarImport(scopeInput: unknown, snapshots: unknown, previous?: PreviewState): PreviewResult {
+/** Pure preview. The caller supplies verified snapshots and a trusted prior state for the exact scope. */
+export function previewAppleCalendarImport(scopeInput: unknown, snapshots: unknown, previous?: AppleCalendarPreviewState): PreviewResult {
   try {
     const scope = parseScope(scopeInput);
     const scopeKey = JSON.stringify(scope);

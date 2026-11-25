@@ -227,7 +227,7 @@ test('independent destination literals cover the actual frozen map and source pa
 test('authorized workspace hierarchy labels pass the finite capture guard without admitting private text',()=>{
  const status={scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,allowedTypes:['journal'],calendarEnabled:true,financeEnabled:true};
  const groups=groupWorkspaceModules(ownerModules(status,null));
- assert.deepEqual(groups.filter(group=>group.links.length).map(group=>group.label),['日常','生活与关系','财务']);
+ assert.deepEqual(groups.filter(group=>group.links.length).map(group=>group.label),['日常','兴趣学习','财务']);
  const domains=overviewDomains([],[{id:'synthetic-project',title:'private project sentinel',revision:1,stage:'active',nextStep:null,area:null}]);
  assert.equal(domains[0].title,'未关联领域');
  const facts={forbidden:0,values:[],texts:[...groups.map(group=>group.label),domains[0].title],editable:[],recordIds:[]};

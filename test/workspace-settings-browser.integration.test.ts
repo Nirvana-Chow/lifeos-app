@@ -52,6 +52,112 @@ async function addSyntheticFooter(page:Page){
  await page.evaluate(()=>{const footer=document.createElement('footer');footer.className='lifeos-filing-footer';footer.innerHTML='<a href="#">合成备案占位</a>';document.body.appendChild(footer);window.dispatchEvent(new Event('resize'));});
  await expect.poll(()=>page.locator('.lifeos-filing-footer').evaluate(e=>e.getBoundingClientRect().height)).toBe(60);
 }
+
+test('OPT-IN injected filing footer follows workspace content and preserves its original link',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires Chromium and the disposable synthetic workspace',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-filing-flow-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=tasks');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
+ t.after(()=>browser.close());
+ for(const width of [1365,390]){
+  const page=await browser.newPage({viewport:{width,height:900}});
+  try{
+   await installSyntheticReads(page,origin);
+   let task=items[5];
+   const statuses:string[]=[];
+   await page.route('**/api/platform/personal/todo/'+task.id,async route=>{
+    const request=route.request();
+    if(request.method()==='GET')return route.fulfill({json:{entry:task}});
+    if(request.method()!=='PATCH')return route.fulfill({status:405});
+    const {expectedRevision,fields}=request.postDataJSON();
+    assert.equal(expectedRevision,task.revision);
+    statuses.push(fields.status);
+    task={...task,revision:task.revision+1,draft:{...task.draft,...fields}};
+    return route.fulfill({json:{entry:task,duplicate:false}});
+   });
+   await page.goto(origin+'/personal?page=tasks');
+   await readyHeading(page,'待办');
+   const original=await page.evaluateHandle(()=>{
+    const footer=document.createElement('footer');
+    footer.className='lifeos-filing-footer';
+    footer.dataset.syntheticFilingProbe='';
+    const link=document.createElement('a');
+    link.href='#synthetic-filing';
+    link.target='_blank';
+    link.rel='noopener noreferrer';
+    link.textContent='合成备案页脚';
+    footer.append(link);
+    document.body.append(footer);
+    return {footer,link};
+   });
+   const main=page.locator('#personal-main');
+   const shell=page.locator('.lo-shell');
+   const menu=page.getByRole('button',{name:'打开导航',exact:true});
+   const alignContent=async()=>{
+    if(width===390&&!await menu.isVisible())await shell.evaluate(node=>node.scrollLeft=node.scrollWidth);
+   };
+   const footer=main.locator('.lifeos-filing-footer');
+   const link=footer.getByRole('link',{name:'合成备案页脚'});
+   await expect(footer).toBeAttached();
+   await expect(page.locator('.lifeos-filing-footer')).toHaveCount(1);
+   await expect(footer.getByRole('link')).toHaveCount(1);
+   await expect(link).toHaveAttribute('href','#synthetic-filing');
+   await expect(link).toHaveAttribute('target','_blank');
+   await expect(link).toHaveAttribute('rel','noopener noreferrer');
+   assert.ok(await original.evaluate(({footer,link})=>footer===document.querySelector('.lo-filing-slot > footer')&&link===footer.firstElementChild));
+   await expect(footer).not.toBeInViewport();
+   const grid=page.locator('[data-task-grid] [data-slot="data-grid-table-viewport"]');
+   await grid.evaluate(node=>node.scrollTop=node.scrollHeight);
+   const last=grid.getByRole('button',{name:'打开任务：合成长待办74',exact:true});
+   await last.scrollIntoViewIfNeeded();
+   await expect(last).toBeInViewport();
+   await expect(footer).not.toBeInViewport();
+   await page.getByRole('heading',{name:'待办',exact:true,level:1}).hover();
+   await page.mouse.wheel(0,250);
+   await alignContent();
+   await expect(link).toBeInViewport({ratio:1});
+   await main.evaluate(node=>node.scrollTop=0);
+   await page.getByRole('button',{name:'列表',exact:true}).click();
+   await page.getByRole('button',{name:'完成：合成待办乙',exact:true}).click();
+   const undo=page.getByRole('button',{name:'撤销',exact:true});
+   await expect(undo).toBeVisible();
+   await main.evaluate(node=>node.scrollTop=node.scrollHeight);
+   await alignContent();
+   await expect(link).toBeInViewport({ratio:1});
+   await expectAboveFooter(page,undo);
+   await undo.press('Enter');
+   await expect.poll(()=>statuses).toEqual(['done','open']);
+   if(await menu.isVisible()){
+    await menu.press('Enter');
+    const drawer=page.locator('.lo-mobile-sidebar');
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(menu).toBeFocused();
+    await menu.click();
+   }
+   await page.getByRole('button',{name:'设置',exact:true}).click();
+   const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
+   await expect(logout).toBeVisible();
+   await alignContent();
+   await expect(link).toBeInViewport({ratio:1});
+   await main.getByRole('button',{name:'返回总览',exact:true}).focus();
+   for(let step=0;step<16&&!await link.evaluate(node=>document.activeElement===node);step++){
+    await page.keyboard.press('Tab');
+   }
+   await expect(link).toBeFocused();
+   await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+   await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
+   await main.evaluate(node=>node.scrollTop=node.scrollHeight/2);
+   await expect(footer).not.toBeInViewport();
+   await main.evaluate(node=>node.scrollTop=node.scrollHeight);
+   await alignContent();
+   await expect(link).toBeInViewport({ratio:1});
+  }finally{await page.close();}
+ }
+});
 async function expectAboveFooter(page:Page,control:import('@playwright/test').Locator){
  await expect(control).toBeInViewport({ratio:0.75});
  await expect.poll(async()=>{
@@ -73,7 +179,7 @@ async function fixture(root:string,managedCallback=false,moduleNavigation=false)
   symlink(join(source,'components'),join(root,'components')),
  ]);
  await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformMfaState=async()=>({kind:"ready"}); export const readPlatformPagePrincipal=async()=>({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true;\n');
- if(moduleNavigation)await Promise.all(['journal','schedule'].map(name=>
+ if(moduleNavigation)await Promise.all(['journal','schedule','media','cooking'].map(name=>
   cp(join(source,'app/personal',name),join(root,'app/personal',name),{recursive:true})));
  if(managedCallback){
   await cp(join(source,'app/account/mcp'),join(root,'app/account/mcp'),{recursive:true});
@@ -161,8 +267,8 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const expected=[
   ['日常',[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]],
   ['身体基础',[['健康','/personal/health']]],
-  ['兴趣学习',[['书影音','/personal/media']]],
-  ['生活与关系',[['做饭','/personal/cooking'],['人物','/personal/people']]],
+  ['兴趣学习',[['书影音','/personal/media'],['做饭','/personal/cooking']]],
+  ['生活与关系',[['人物','/personal/people']]],
   ['财务',[['财务','/personal/finance'],['账户资产投资','/personal/portfolio']]],
   ['职业成长',[['职业与简历','/personal/career']]],
   ['项目',[['项目'],['领域']]],
@@ -177,6 +283,20 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
   await expect(mainNav).toHaveText(items.map(([label])=>label));
   for(const [label,href] of items)if(href)await expect(nav.getByRole('link',{name:label,exact:true})).toHaveAttribute('href',href);
  }
+ const learning=modules.getByRole('button',{name:'兴趣学习',exact:true});
+ for(const [label,path] of [['书影音','/personal/media'],['做饭','/personal/cooking']] as const){
+  await learning.click();
+  const response=await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(45_000)});
+  assert.equal(response.status,200);await response.text();
+  await nav.getByRole('link',{name:label,exact:true}).click();
+  await expect(page).toHaveURL(origin+path);
+  await expect(page.getByRole('heading',{name:label,exact:true,level:1})).toBeVisible();
+  await expect(learning).toHaveAttribute('aria-pressed','true');
+  await expect(nav.getByRole('link',{name:label,exact:true})).toHaveAttribute('aria-current','page');
+ }
+ await header.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal');
+ await modules.getByRole('button',{name:'项目',exact:true}).click();
  await nav.getByRole('button',{name:'项目',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=projects');
  await expect(modules.getByRole('button',{name:'项目',exact:true})).toHaveAttribute('aria-pressed','true');
@@ -297,6 +417,7 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
    assert.equal(writes(),0,'rejected logout never calls the API');
    const footerLink=page.getByRole('link',{name:'合成备案占位',exact:true});
+   await footerLink.scrollIntoViewIfNeeded();
    await expect(footerLink).toBeInViewport({ratio:0.75});
    await footerLink.click({trial:true});
    await footerLink.focus();await expect(footerLink).toBeFocused();
@@ -664,7 +785,7 @@ test('OPT-IN settings category returns to the requested panel after requirement 
  await categories.getByRole('button',{name:'需求池',exact:true}).click();await expect(page.getByLabel('搜索需求',{exact:true})).toBeVisible();
  await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(page.getByLabel('原密码',{exact:true})).toBeVisible();
- const living=page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'生活与关系',exact:true});
+ const living=page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'兴趣学习',exact:true});
  await living.click();
  await expect(living).toHaveAttribute('aria-pressed','true');
  await expect(page.getByRole('navigation',{name:'主导航'}).getByRole('link',{name:'做饭'})).toBeVisible();

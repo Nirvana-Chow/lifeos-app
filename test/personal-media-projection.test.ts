@@ -11,6 +11,16 @@ test('media projection only accepts exact confirmed current manual records from 
 test('media board filtering does not count metadata as personal completion or mutate source rows',()=>{
  const records=[{id,revision:2,fields},{id:sourceId,revision:1,fields:{...fields,title:'内部合成电影',personal:{...emptyMediaPersonal('film'),state:'completed' as const}}}];const before=structuredClone(records);const all=projectMediaBoard(records);assert.equal(all.total,2);assert.equal(all.completed,1);assert.deepEqual(all.columns.map(c=>[c.state,c.records.length]),[['wish',0],['in_progress',1],['completed',1],['paused',0]]);assert.equal(projectMediaBoard(records,{kind:'book',search:'作者'}).total,1);assert.deepEqual(records,before);
 });
+test('screen groups films and series while reading keeps the existing book records',()=>{
+ const records=(['book','film','series'] as const).map(kind=>({
+  id:kind,revision:1,fields:{...fields,title:[kind,'合成记录'].join(' '),personal:emptyMediaPersonal(kind)},
+ }));
+ assert.deepEqual(projectMediaBoard(records,{kind:'screen'}).columns[0].records.map(record=>record.id),['film','series']);
+ assert.deepEqual(projectMediaBoard(records,{kind:'book'}).columns[0].records.map(record=>record.id),['book']);
+ assert.deepEqual(projectMediaBoard(records,{kind:'screen',search:'series'}).columns[0].records.map(record=>record.id),['series']);
+ assert.equal(projectMediaBoard(records,{kind:'film'}).total,1);
+ assert.equal(projectMediaBoard(records).total,3);
+});
 test('media progress display preserves zero and only draws known in-progress amounts',()=>{
  assert.equal(mediaProgressPercent(fields.personal),5);assert.equal(mediaProgressPercent({...fields.personal,progress:{current:0,total:200,unit:'page'}}),0);assert.equal(mediaProgressPercent({...fields.personal,state:'completed'}),null);assert.equal(mediaProgressPercent({...fields.personal,progress:{current:1,total:null,unit:'page'}}),null);assert.ok(mediaSummary({...fields.personal,rating:0}).includes('个人评分 0 / 10'));
 });

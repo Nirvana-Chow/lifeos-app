@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {cp, mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
@@ -62,12 +62,19 @@ test('task toolbar opens a private, read-only classification preview', {
     record(4, 'todo', {...task, title: '合成备份'}),
     record(5, 'project', {title: '合成整理', text: '', occurredOn: null, disposition: 'reference',
       personal: {type: 'project', stage: 'active', purpose: null, nextStep: '', domain: null, topics: []}}),
-    record(6, 'topic', {title: '合成标签', text: '', occurredOn: null, disposition: 'reference', personal: {type: 'topic'}})];
+    record(6, 'topic', {title: '合成标签', text: '', occurredOn: null, disposition: 'reference', personal: {type: 'topic'}}),
+    record(7, 'todo', {...task, title: '合成旧记录', status: 'done'}),
+    record(8, 'todo', {...task, title: '合成过期引用', personal: {
+      project: {id: id(5), sourceId: id(105), revision: 2}, domain: null, topics: [],
+    }}),
+    record(9, 'todo', {...task, title: '合成显式空分类', personal: {project: null, domain: null, topics: []}})];
   for (const width of [390, 1365]) {
     const page = await browser.newPage({viewport: {width, height: 900}});
     await page.context().addCookies([{url: origin, name: 'fixture-owner', value: '1'}]);
     let incomplete = false;
     let revised = false;
+    let downloads = 0;
+    page.on('download', () => {downloads++;});
     let writes = 0;
     await page.route('**/api/platform/personal/**', async route => {
       const request = route.request(), url = new URL(request.url());
@@ -86,6 +93,12 @@ test('task toolbar opens a private, read-only classification preview', {
     await expect(page.getByRole('heading', {name: '待办分类预览'})).toBeVisible();
     await expect(page.getByText('完整字段与建议分类相同，建议人工核对重复。')).toHaveCount(1);
     const independent = page.getByRole('article').filter({hasText: '独立校验'});
+    for (const [title, reason] of [['合成旧记录', '保留已结束的待办'], ['合成过期引用', '原分类关联已经变化或无法核对']]) {
+      const row = page.getByRole('article').filter({hasText: title});
+      await expect(row.getByText('受保护 · ' + reason)).toBeVisible();
+      await expect(row.getByRole('checkbox')).toHaveCount(0);
+      await expect(row.getByText('调整建议')).toHaveCount(0);
+    }
     await expect(independent.getByText('单独保留。')).toBeVisible();
     await independent.getByText('调整建议').click();
     await independent.getByLabel('建议项目').selectOption(id(5));
@@ -103,7 +116,34 @@ test('task toolbar opens a private, read-only classification preview', {
     await visibility('visible');
     await expect(independent.getByText('建议项目 合成整理 · 建议标签 合成标签')).toBeVisible();
     await expect(independent.getByText('已排除')).toBeVisible();
+    const requested = page.waitForEvent('download');
+    await page.getByRole('button', {name: '保存预览副本'}).click();
+    const file = await requested;
+    assert.equal(file.suggestedFilename(), 'lifeos-todo-classification-preview.json');
+    const saved = JSON.parse(await readFile((await file.path())!, 'utf8'));
+    assert.equal(saved.format, 'lifeos.todo-classification.review-copy.v1');
+    const indexed = Object.fromEntries(saved.records.map((row: {original: {id: string}}) => [row.original.id, row]));
+    assert.equal(indexed[id(2)].duplicateOf, id(1));
+    assert.equal(indexed[id(3)].disposition, 'excluded');
+    assert.equal(indexed[id(3)].suggestion, null);
+    assert.equal(indexed[id(7)].disposition, 'protected');
+    assert.equal(indexed[id(7)].original.fields.status, 'done');
+    assert.equal(indexed[id(8)].suggestion, null);
+    assert.equal(indexed[id(8)].original.fields.personal.project.revision, 2);
+    assert.equal(Object.hasOwn(indexed[id(1)].original.fields, 'personal'), false);
+    assert.deepEqual(indexed[id(9)].original.fields.personal, {project: null, domain: null, topics: []});
+    await expect(page.getByText('已生成预览副本，请查看浏览器下载记录。待办记录未修改。')).toBeVisible();
+    await page.getByRole('button', {name: '取消本次调整'}).click();
+    await expect(page.getByText('已取消本次调整。待办记录未修改。')).toBeVisible();
+    await expect(independent.getByText('建议项目 未归组 · 建议标签 无')).toBeVisible();
+    await independent.getByRole('checkbox', {name: '纳入预览'}).uncheck();
     revised = true;
+    await page.getByRole('button', {name: '保存预览副本'}).click();
+    await expect(page.getByText('已重新核对范围，旧预览建议已清除。')).toBeVisible();
+    await expect(page.getByText('未保存预览。请重新核对完整快照后再试。')).toBeVisible();
+    await expect(independent.getByRole('checkbox', {name: '纳入预览'})).toBeChecked();
+    assert.equal(downloads, 1);
+    revised = false;
     await visibility('hidden');
     await expect(page.getByRole('article')).toHaveCount(0);
     await visibility('visible');

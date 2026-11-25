@@ -125,6 +125,8 @@ Current-release summary clarification (2026-11-05; LO-VERSION-001 / LO-REQ-001, 
 
 ## Training analysis (LO-HEALTH-001, Issue #15)
 
+2026-11-25 · LO-HEALTH-001 / LO-TIME-001 · #15 · existing 1.2/3.1/3.2. From the Body Basics module in #115, filter the existing owner-only health records by sleep, fitness training or frisbee and filter training and frisbee by their recorded status. Frisbee uses the existing Other activity and an explicit record title. Dietary records and automatic sources are unavailable. Preserve the health editor and its readback, trends, exercise calendar, previous URLs and unknown historical coverage. Verify via the canonical desktop entry with synthetic records and existing permission boundaries. Deployment and owner acceptance remain open.
+
 The owner approved implementation and ordinary main deployment on 2026-11-09. Continue within the existing health workspace and task 3.1. Use a versioned, read-only analytics snapshot projected from owner-authorized Xunji full exports. The first delivery opens the file locally in the browser and uses the existing authenticated health workspace. It does not create a business record, upload the file or store it in the browser. Scheduled source retrieval, deployed storage and optional AI summaries are separate scopes. Existing summary and source-intake acceptance stays open.
 
 - [x] Project verified completed groups and explicit date coverage from the full source export, preserving unknown and partial data.

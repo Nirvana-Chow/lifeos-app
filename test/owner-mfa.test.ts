@@ -6,6 +6,7 @@ import {APIError} from 'better-auth/api';
 import * as authentication from '../src/platform/auth.ts';
 import {enrollSyntheticOwnerMfa,syntheticOwnerTotp,mergeSyntheticAuthCookies as cookies} from './helpers/owner-mfa-fixture.ts';
 import {readPlatformConfig} from '../src/platform/config.ts';
+import {personRecordId} from '../src/personal-people/journal-links.ts';
 
 const password='Synthetic-only-MFA-password-0001';
 async function fixture(){
@@ -207,6 +208,7 @@ test('every private business alias uses the native owner MFA principal gate befo
  const imports:Record<string,unknown>={
   '../../../src/personal-candidate/record-page':{PersonalRecordPage:'record-page'},'../../../src/calendar-candidate/personal-page':{PersonalCalendarPage:'calendar-page'},'../../../src/personal-finance/page':{PersonalFinancePage:'finance-page'},
   '../../../src/personal-journal/page':{JournalRecordPage:'journal-page'},
+  '../../../src/personal-people/journal-links':{personRecordId},
   '../../../src/personal-search/page':{PersonalSearchPage:'search-page'},
   'react/jsx-runtime':{jsx,jsxs:jsx},'next/headers':{headers:async()=>new Headers(cookie?{cookie}:{})},
   'next/navigation':{redirect:(url:string)=>{throw Error('REDIRECT '+url);},notFound:()=>{throw Error('NOT_FOUND');}},
