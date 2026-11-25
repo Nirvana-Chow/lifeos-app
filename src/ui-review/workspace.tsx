@@ -71,6 +71,7 @@ import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
+import {RequirementProgressCard} from './requirement-progress-card';
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
 import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
@@ -278,21 +279,41 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     !!filter.areaId ||
     !!filter.projectId ||
     filter.status !== "pending" || !!filter.inboxOnly || (!!filter.due && filter.due !== "all");
-  useEffect(() => {
+  const filingSlot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
     if (!portalContainer) return;
-    const update = () => {
-      const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
-      if (footer) portalContainer.style.setProperty("--lo-filing-footer-space", `${footer.getBoundingClientRect().height}px`);
-      else portalContainer.style.removeProperty("--lo-filing-footer-space");
+    const slot = filingSlot.current;
+    if (!slot) return;
+    const body = document.body;
+    let footer: HTMLElement | null = null;
+    let nextSibling: ChildNode | null = null;
+    const measure = () => {
+      if (footer?.parentNode === slot) {
+        portalContainer.style.setProperty("--lo-filing-footer-space", `${footer.getBoundingClientRect().height}px`);
+      } else {
+        portalContainer.style.removeProperty("--lo-filing-footer-space");
+      }
     };
-    update();
-    const footer = document.querySelector<HTMLElement>(".lifeos-filing-footer");
-    const observer = new ResizeObserver(update);
-    if (footer) observer.observe(footer);
-    window.addEventListener("resize", update);
+    const sizeObserver = new ResizeObserver(measure);
+    const adoptFooter = () => {
+      if (footer?.parentNode === slot) return;
+      sizeObserver.disconnect();
+      footer = body.querySelector<HTMLElement>(":scope > .lifeos-filing-footer");
+      if (footer) {
+        nextSibling = footer.nextSibling;
+        slot.append(footer);
+        sizeObserver.observe(footer);
+      }
+      measure();
+    };
+    // The deployment can append its existing footer before or after hydration.
+    const bodyObserver = new MutationObserver(adoptFooter);
+    bodyObserver.observe(body, {childList: true});
+    adoptFooter();
     return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", update);
+      bodyObserver.disconnect();
+      sizeObserver.disconnect();
+      if (footer?.parentNode === slot) body.insertBefore(footer, nextSibling?.parentNode === body ? nextSibling : null);
       portalContainer.style.removeProperty("--lo-filing-footer-space");
     };
   }, [portalContainer]);
@@ -822,6 +843,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   </button>
                 ))}
               </section>
+              {verifiedPrivateScope && <RequirementProgressCard key={verifiedPrivateScope} scope={verifiedPrivateScope} onOpen={()=>navigate('requirements')}/>}
               {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
                 <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
                 {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
@@ -1085,6 +1107,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           </>}
           </>}
           </div>
+          <div className="lo-filing-slot" ref={filingSlot}/>
         </main>
       </div>
       {access.authenticated !== false && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
