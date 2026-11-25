@@ -10,7 +10,7 @@ import type {JournalPeriod} from './journal-period';
 import {personRecordHref,personRecordId,readLinkedPerson} from '../personal-people/journal-links';
 import s from './history.module.css';
 
-export function JournalHistoryPanel({onBeforeOpen,children,activityLink}:{onBeforeOpen?:()=>boolean;children?:ReactNode;activityLink?:ReactNode}){
+export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{onBeforeOpen?:()=>boolean;renderEditor?:(onSaved:()=>void,journalDay?:string)=>ReactNode;activityLink?:ReactNode}){
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
  const [snapshot,setSnapshot]=useState<Awaited<ReturnType<typeof readJournalHistory>>|null>(null),[detail,setDetail]=useState<JournalOriginal|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState('');
  const [period,setPeriod]=useState<JournalPeriod|null>(null);
@@ -94,13 +94,13 @@ export function JournalHistoryPanel({onBeforeOpen,children,activityLink}:{onBefo
    </div>
    {busy&&<p role="status">正在核对日记与服务器日期…</p>}
    {error&&<p role="alert" className={s.error}>{error}</p>}
+   {renderEditor?.(()=>void load(),history?.today)}
    {history&&(today.length>0
     ? <section aria-label="今天的日记">{todayList(today.slice(0,3))}
       {today.length>3&&<details className={s.disclosure} open={moreToday} onToggle={event=>setMoreToday(event.currentTarget.open)}><summary>其余 {today.length-3} 条当天日记</summary>{moreToday&&todayList(today.slice(3))}</details>}
      </section>
     : <p className={s.meta}>当前库内没有当天日记。</p>)}
    {!memoDetail&&original}
-   {children}
    <details className={s.disclosure}><summary>历史上的今天</summary><section aria-label="历史上的今天">
     {!!memos?.matches.length&&<><h3>Memos</h3>{datedList(memos.matches)}</>}
     {history&&(history.matches.length
