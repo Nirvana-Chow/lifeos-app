@@ -702,7 +702,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           data-workspace-nav
           onClick={() => navigate("overview")}
         >
-          <svg aria-hidden="true" viewBox="0 0 28 28" width="21" height="21" fill="currentColor"><path d="M3 18V6c0-2.6 1.4-4 3.3-4 2 0 3.3 1.4 3.3 4v10.8c0 2.9 1.3 4.1 4 4.1 2.7 0 6.4-1.1 9.5-2.3 1.8-.7 3.1.2 3.3 1.6.2 1.3-.6 2.3-2.3 3C20 24.8 15.6 26 11.4 26 5.4 26 3 23.2 3 18Z"/></svg>
+          <svg aria-hidden="true" viewBox="-15 -13 226 226" width="21" height="21" fill="currentColor"><path d="M1 35C1 15.7 16.5 0 36 0S71 15.5 71 35v96c0 17 4 23 13 26 14 5 52-4 89-18 11-4 19-1 22 7 4 10-1 17-9 23-28 18-72 30-118 31C30 200 1 172 1 135Z"/></svg>
           LifeOS
         </Button>
         {moduleSwitch()}

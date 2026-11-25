@@ -9,6 +9,7 @@ import {dateInCalendarZone,shiftCalendarDate,calendarDayNumber,validateCalendarW
 import {normalizeCalendarPersonalFields,type CalendarPersonalFields,type CalendarPersonal,type CalendarReference} from './personal-domain';
 import {readPersonalCalendarReferences,readPersonalCalendarStatus,readPersonalCalendarSnapshot,readPersonalCalendarRecord,readPersonalCalendarCommand,freezePersonalCalendarCommand,keepPersonalCalendarCommand,clearPersonalCalendarCommand,sendPersonalCalendarCommand,PersonalCalendarClientError,type PersonalCalendarStatus,type CalendarSnapshot,type PersonalCalendarCommand,type CalendarBinding} from './personal-client';
 import s from './personal-workbench.module.css';
+import {AppleCalendarPreview} from './apple-preview-panel';
 type View='table'|'calendar'|'life-stages';type Kind=CalendarPersonal['calendarKind'];
 type Editor={scope:string;record:CalendarRecord|null;fields:CalendarPersonalFields;initial:string};
 export type CalendarReferenceOptions={projects:{title:string;pin:CalendarReference}[];domains:{title:string;pin:CalendarReference}[];people:{title:string;pin:CalendarReference}[]};
@@ -60,6 +61,7 @@ export function PersonalCalendarWorkbench({navigationGuard,referenceOptions:prov
  return <section className={s.page} aria-label="个人日程">
   <div className={s.toolbar}><label>月历月份<input type="month" value={month} disabled={blocked} onChange={event=>event.target.value&&setMonth(event.target.value)}/></label><label>查看时区<input aria-label="查看时区" value={zone} disabled={blocked} onChange={event=>setZone(event.target.value)}/></label><label className={s.search}>搜索<input type="search" value={search} disabled={blocked} onChange={event=>setSearch(event.target.value)} placeholder="名称或正文"/></label><label>类别<select aria-label="日程类别筛选" value={kind} disabled={blocked} onChange={event=>setKind(event.target.value)}><option value="all">全部类别</option>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><Button variant="outline" disabled={busy} onClick={()=>void refresh()}>重新读取</Button><Button disabled={!writable||blocked} onClick={()=>void open(null)}>新建日程</Button></div>
   {error&&<p role="alert" className={s.error}>{error}</p>}{message&&<p role="status">{message}</p>}
+  <AppleCalendarPreview key={JSON.stringify([month,zone,scope])} month={month} timeZone={zone}/>
   {!status?<p role="status">正在核对日程模块…</p>:!status.configured?<div className={s.unavailable}><h2>个人日程尚未开放</h2><p>{status.reason??'共享存储与权限尚未就绪，当前没有读取或保存日程。'}</p></div>:<>
    <div className={s.sourceLine} aria-label="日程来源">{status.sources.map(source=><span key={source.id}>{source.label}：{source.connected?source.readOnly?'只读':'可读写':'未连接'}</span>)}</div>
    <div className={s.views}><div role="group" aria-label="日程视图">{([['table','表格'],['calendar','日历'],['life-stages','人生阶段']] as const).map(([value,label])=><Button variant="ghost" key={value} aria-pressed={view===value} onClick={()=>setView(value)}>{label}</Button>)}</div><span role="status">{shown?`${shown.total} 条 · 已完整读取`:'尚未完整读到记录'}</span></div>
