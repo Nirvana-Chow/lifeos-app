@@ -4,8 +4,8 @@ import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
-test('both qualification workflows run the new storage SQL scope gate against a dedicated pinned policy service',()=>{
- for(const file of ['qualification.yml','visual-qualification.yml']){
+test('the unified qualification workflow runs the new storage SQL scope gate against a dedicated pinned policy service',()=>{
+ for(const file of ['ci.yml']){
   const workflow=readFileSync('.github/workflows/'+file,'utf8');
   const service=workflow.match(/^      policy-postgres:\n([\s\S]*?)(?=^    steps:|^      [a-z][a-z-]+:)/m)?.[1];
   assert.ok(service,file+' lacks a dedicated policy cluster');
@@ -24,7 +24,7 @@ test('the actual policy JUnit gate refuses missing storage coverage, duplicates,
  const names=['migration changes no existing key and keeps exact legacy digest; policy starts closed','wrong owner/space, revocation and expiry independently deny and direct roles cannot mutate policy or registry','storage review registration stays disabled until explicit activation and uses the actual scoped SQL fence','event registration preserves legacy grants and remains closed until exact scoped SQL activation',...Array.from({length:31},(_,i)=>'Synthetic additional leaf '+i)];
  const root=mkdtempSync(join(tmpdir(),'lifeos-policy-junit-'));
  try{
-  for(const file of ['qualification.yml','visual-qualification.yml']){
+  for(const file of ['ci.yml']){
    const match=readFileSync('.github/workflows/'+file,'utf8').match(/python3 - <<'PY_BUSINESS_POLICY_PG'\n([\s\S]*?)\n          PY_BUSINESS_POLICY_PG/);assert.ok(match);
    const code=match[1]!.split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
    for(const mutation of ['none','missing-storage','duplicate','count','skipped','failure','error']){

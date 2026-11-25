@@ -73,8 +73,8 @@ test('the real overall deadline terminates a stalled download without installati
  const started=Date.now(),r=f.run();assert.equal(r.status,124,r.stderr);assert.ok(Date.now()-started<9000);
  const log=readFileSync(f.log,'utf8');assert.match(log,/timeout --kill-after=5s 180s/);assert.match(log,/^stalled-curl-start$/m);assert.doesNotMatch(log,/sudo/);
 }finally{rmSync(f.root,{recursive:true,force:true});}});
-test('both CJK font workflow steps retain bounded Chinese, copyright and Chrome/NSS checks',()=>{
- for(const file of ['qualification.yml','visual-qualification.yml']){
+test('the unified CJK font workflow step retain bounded Chinese, copyright and Chrome/NSS checks',()=>{
+ for(const file of ['ci.yml']){
   const workflow=readFileSync('.github/workflows/'+file,'utf8');
   const step=workflow.match(/      - name: Install fixed runner-only Chinese fonts and check native Chrome\/NSS\n([\s\S]*?)(?=      - name:)/)?.[1];
   assert.ok(step);assert.match(step,/timeout-minutes: 4/);assert.match(step,/bash scripts\/ci\/prepare-runner-cjk-fonts.sh/);
