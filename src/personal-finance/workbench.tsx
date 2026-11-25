@@ -104,13 +104,26 @@ export function PersonalFinanceWorkbench({navigationGuard}:{navigationGuard?:{cu
    <section aria-label="已记录资金流向">
     <h3>资金流向</h3>
     {shown.total > 0 ? <>
-     <p className={s.muted}>全部已读取流水 · {shown.coverage.firstOccurredOn} 至 {shown.coverage.lastOccurredOn} · 手工记录</p>
+     <p className={s.muted}>全部已读取流水 · {shown.coverage.firstOccurredOn} 至 {shown.coverage.lastOccurredOn} · 手工记录 · CNY</p>
      <RecordedFlowDiagram income={BigInt(shown.summary.byKind.income.totalMinor)}
       netExpense={BigInt(shown.summary.netExpenseMinor)} difference={BigInt(shown.summary.netRecordedIncomeMinor)}/>
     </> : <p className={s.muted}>暂无已记录流水可绘制。</p>}
    </section>
+   <section aria-label="账户间转账">
+    <h3>账户间转账</h3>
+    {shown.summary.byKind.transfer.count > 0
+     ? <p>已记录 {shown.summary.byKind.transfer.count} 笔 · 转出与转入各 CNY {formatFinanceAmount(shown.summary.byKind.transfer.totalMinor)} · 不计入收入或支出</p>
+     : <p className={s.muted}>已读取流水中暂无账户间转账。</p>}
+   </section>
    <section aria-label="资产快照">
-    <h3>资产快照</h3><p className={s.muted}>暂无已核准的资产及负债快照来源。余额和净资产未知。</p>
+    <h3>资产快照</h3>
+    <p className={s.muted}>暂无已核准的资产及负债快照来源。余额和净资产未知。</p>
+    <dl className={s.snapshotStatus}>
+     <div><dt>快照日期</dt><dd>未取得</dd></div>
+     <div><dt>资产合计</dt><dd>未知</dd></div>
+     <div><dt>负债合计</dt><dd>未知</dd></div>
+     <div><dt>净资产</dt><dd>未知</dd></div>
+    </dl>
    </section>
    <div className={s.summary} aria-label="已读取流水汇总">{(['expense','income','refund'] as const).map(type=><article key={type}><span>已记录{financeKindLabels[type]}</span><strong>¥ {formatFinanceAmount(summary.byKind[type].totalMinor)}</strong><small>{summary.byKind[type].count} 笔</small></article>)}</div>
    <div className={s.coverage}><p>当前筛选净支出 <strong>¥ {formatFinanceAmount(summary.netExpenseMinor)}</strong> · 转账与还款不计入收支</p><p>个人录入 · 已读取 {shown.total} 条{shown.coverage.firstOccurredOn?` · ${shown.coverage.firstOccurredOn} 至 ${shown.coverage.lastOccurredOn}`:''} · 外部账本未连接 · 余额未知</p></div>
