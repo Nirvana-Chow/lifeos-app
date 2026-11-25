@@ -291,6 +291,13 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  ] as const;
  await page.goto(origin+'/personal',{waitUntil:'load'});
  await expect.poll(()=>overviewReads).toBeGreaterThan(0);
+ await expect(page.getByRole('region',{name:'未完待办'}).getByText('合成待办甲',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'查看全部未完待办',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=tasks');
+ await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();
+ await header.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal');
  const initialReads=overviewReads;
  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
  await expect.poll(()=>overviewReads).toBeGreaterThan(initialReads);

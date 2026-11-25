@@ -234,6 +234,7 @@ export async function readyHeading(page:Page,heading:string){
   await expect(create).toHaveAttribute('href','/personal/edit?type='+(heading==='项目'?'project':'domain'));
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
  }
+ else if(heading==='总览')await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
  else if(await page.locator('.lo-shell').count())await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();
 }
 async function navigateDestination(page:Page,id:string,path:string,heading:string){

@@ -1,8 +1,7 @@
-.breadcrumbs { display:flex; align-items:center; gap:8px; min-width:0; margin:0 0 6px; color:var(--muted-foreground); font-size:13px; }
+.breadcrumbs { display:flex; align-items:center; gap:8px; min-width:0; margin:0 0 4px; color:var(--muted-foreground); font-size:14px; line-height:20px; }
 .breadcrumbTrail { display:flex; align-items:center; gap:4px; min-width:0; }
-.breadcrumbTrail > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); }
+.shell .breadcrumbCurrent { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0; color:var(--foreground); font:inherit; }
 .breadcrumbTrail > svg { flex:none; }
-.breadcrumbTrail > span:first-child { line-height:32px; }
 .shell .breadcrumbs button { flex:none; min-height:32px; padding:4px 6px; font-size:inherit; color:var(--muted-foreground); }
 .shell .breadcrumbTrail > button:first-child { justify-content:flex-start; padding-inline-start:0; border-inline-start-width:0; }
 .historyButtons { display:flex; flex:none; gap:2px; margin-inline-start:auto; padding-inline-start:8px; border-inline-start:1px solid var(--border); }
@@ -20,7 +19,6 @@
 }
 .shell :global(.lo-nav) :global(.is-current),.shell :global(.lo-sidebar-bottom) :global(.is-current) { color:var(--foreground); background:var(--muted); }
 @media(max-width:850px) {
- .breadcrumbs { font-size:14px; }
  .breadcrumbTrail { gap:2px; }
  .shell .breadcrumbs button { min-height:44px; min-width:44px; }
  .historyButtons { padding-inline-start:4px; }
@@ -216,6 +214,5 @@
 .accountMenu .accountAction:hover:enabled,
 .accountMenu .accountAction[aria-pressed="true"] { background:var(--accent); }
 .accountMenu [role="alert"] { padding:4px 8px; font-size:14px; color:var(--danger); }
-.shell.adaptiveLayout > :global(.lo-body) > :global(.lo-main) { padding-block-start:6px; }
-.adaptiveLayout .breadcrumbs { min-height:32px; margin-block-end:4px; }
-.adaptiveLayout .breadcrumbs,.shell.adaptiveLayout .breadcrumbs button { font-size:14px; }
+.shell.adaptiveLayout > :global(.lo-body) > :global(.lo-main) { padding-block-start:2px; }
+.adaptiveLayout .breadcrumbs { min-height:32px; }

@@ -50,11 +50,11 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
   scope:'personal-manual-candidate',ownerId:'overview-owner',spaceId:'overview-space',requirementsEnabled:true,
   writable:false,storageVerified:true,allowedTypes:['todo','journal'],calendarEnabled:true,
  }}));
- const card=page.getByRole('region',{name:'需求进度',exact:true});
+ const card=page.getByRole('region',{name:'未完待办',exact:true});
  await page.goto(origin+'/personal',{waitUntil:'load',timeout:70000});
  await expect(header.getByRole('link',{name:'搜索本人记录'})).toHaveAttribute('href','/personal/search',{timeout:25000});
  await expect(page.locator('.lo-sidebar')).toBeVisible();
- await expect(card.getByRole('button',{name:'查看全部需求'})).toBeInViewport();
+ await expect(card.getByRole('button',{name:'查看全部未完待办'})).toBeInViewport();
  const desktopHeight=(await header.boundingBox())!.height;
  await page.getByRole('button',{name:'打开设置'}).click();
  await expect(page).toHaveURL(/page=settings$/);
@@ -75,7 +75,7 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
   const homeHeaderHeight=(await header.boundingBox())!.height;
   await expect(toDesktop).toBeVisible();
   await expect(menu).toBeVisible();
-  await expect(card.getByRole('button',{name:'查看全部需求'})).toBeInViewport();
+  await expect(card.getByRole('button',{name:'查看全部未完待办'})).toBeInViewport();
   assert.equal(await shell.evaluate(node=>node.scrollWidth),width);
   if(screenshotDir)await page.screenshot({path:join(screenshotDir,`overview-${width}-mobile.png`)});
   await menu.click();
