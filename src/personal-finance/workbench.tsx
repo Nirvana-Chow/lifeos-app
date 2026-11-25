@@ -7,6 +7,7 @@ import {Button} from '../ui-review/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '../ui-review/ui/dialog';
 import type {FinanceDraft} from '../platform/domain';
 import type {FinanceBinding,FinanceSnapshot,PersonalFinanceEntry,PersonalFinanceStatus} from './contracts';
+import {RecordedFlowDiagram} from './recorded-flow';
 import {financeAmountMinor,financeKindLabels,formatFinanceAmount,summarizeFinance} from './domain';
 import {clearPersonalFinanceCommand,freezePersonalFinanceCommand,isRejectedPersonalFinanceCommand,keepPersonalFinanceCommand,PersonalFinanceClientError,readPersonalFinanceCommand,readPersonalFinanceHistory,readPersonalFinanceRecord,readPersonalFinanceSnapshot,readPersonalFinanceStatus,sendPersonalFinanceCommand,type PersonalFinanceCommand} from './client';
 import s from './workbench.module.css';
@@ -100,6 +101,17 @@ export function PersonalFinanceWorkbench({navigationGuard}:{navigationGuard?:{cu
   {verified&&status&&!status.configured&&<div className={s.empty}><h3>财务记录尚未开放</h3><p>{status.reason}</p></div>}
   {shownPending&&<div className={s.pending} role="status"><div><strong>{shownRejected?'这笔流水未保存':'有一笔保存等待确认'}</strong><p>{shownRejected?'保存已被明确拒绝，可保留输入继续修改，或放弃本次请求。':'原请求已保留，重试会使用同一个请求标识。'}</p></div>{rejectedActions}<Button variant="outline" disabled={busy||!writable} onClick={()=>{restore(shownPending);void send(shownPending);}}>重试原请求</Button></div>}
   {shown&&<>
+   <section aria-label="已记录资金流向">
+    <h3>资金流向</h3>
+    {shown.total > 0 ? <>
+     <p className={s.muted}>全部已读取流水 · {shown.coverage.firstOccurredOn} 至 {shown.coverage.lastOccurredOn} · 手工记录</p>
+     <RecordedFlowDiagram income={BigInt(shown.summary.byKind.income.totalMinor)}
+      netExpense={BigInt(shown.summary.netExpenseMinor)} difference={BigInt(shown.summary.netRecordedIncomeMinor)}/>
+    </> : <p className={s.muted}>暂无已记录流水可绘制。</p>}
+   </section>
+   <section aria-label="资产快照">
+    <h3>资产快照</h3><p className={s.muted}>暂无已核准的资产及负债快照来源。余额和净资产未知。</p>
+   </section>
    <div className={s.summary} aria-label="已读取流水汇总">{(['expense','income','refund'] as const).map(type=><article key={type}><span>已记录{financeKindLabels[type]}</span><strong>¥ {formatFinanceAmount(summary.byKind[type].totalMinor)}</strong><small>{summary.byKind[type].count} 笔</small></article>)}</div>
    <div className={s.coverage}><p>当前筛选净支出 <strong>¥ {formatFinanceAmount(summary.netExpenseMinor)}</strong> · 转账与还款不计入收支</p><p>个人录入 · 已读取 {shown.total} 条{shown.coverage.firstOccurredOn?` · ${shown.coverage.firstOccurredOn} 至 ${shown.coverage.lastOccurredOn}`:''} · 外部账本未连接 · 余额未知</p></div>
    <div className={s.toolbar}><div className={s.tabs} aria-label="财务视图"><Button variant="ghost" aria-pressed={view==='transactions'} onClick={()=>setView('transactions')}>流水</Button><Button variant="ghost" aria-pressed={view==='accounts'} onClick={()=>setView('accounts')}>账户与分类</Button></div>{view==='transactions'&&<div className={s.filters}><label className={s.search}>搜索<input value={search} placeholder="摘要、分类或账户" onChange={event=>setSearch(event.target.value)}/></label><label>流水类型<select value={kind} onChange={event=>setKind(event.target.value)}><option value="all">全部类型</option>{Object.entries(financeKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>}</div>
