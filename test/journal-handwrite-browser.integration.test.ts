@@ -5,13 +5,14 @@ import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
+import {setTimeout as delay} from 'node:timers/promises';
 import {chromium,expect} from '@playwright/test';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {MemoryPort} from './helpers/platform.ts';
 import {journalRoutineTemplate} from '../src/personal-journal/routine.ts';
 
 test('OPT-IN actual records entry keeps journal drafts and verifies manual saves and edits',{
- skip:process.env.RUN_JOURNAL_HANDWRITE_BROWSER!=='1'&&'Requires isolated Next and Chromium',timeout:180000,
+ skip:process.env.RUN_JOURNAL_HANDWRITE_BROWSER!=='1'&&'Requires isolated Next and Chromium',timeout:240000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-journal-handwrite-'));
  await mkdir(join(root,'app/personal/journal'),{recursive:true});
@@ -52,8 +53,13 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  let writable=false,mfa=true,failSnapshot=false,failDetail=false,detailReadCount=0;
  let holdHistory:Promise<void>|undefined;
+ let supersedeNextPatch=false;
  const handler=createPersonalPlatformHandler({config,repository:repo,storageVerified:true,
   sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{if(!writable)throw Error('Fixture is read only');}});
+ const compete=(url:string,command:{fields:{text:string};expectedRevision:number},key:string)=>handler(new Request(url,{
+  method:'PATCH',headers:{'content-type':'application/json','idempotency-key':key,'host':new URL(origin).host,origin},
+  body:JSON.stringify(command),
+ }));
  const commands:{method:string;key:string;body:string}[]=[];
  const external:string[]=[],errors:string[]=[];
  page.on('pageerror',error=>errors.push(error.message));
@@ -78,6 +84,14 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
    commands.push({method:request.method(),key:request.headers()['idempotency-key'],body:body??''});
   }
   const response=await handler(new Request(target,{method:request.method(),headers:{...request.headers(),host:target.host},...(body?{body}:{})}));
+  if(supersedeNextPatch&&request.method()==='PATCH'&&response.ok){
+   supersedeNextPatch=false;
+   const command=JSON.parse(body!);
+   command.expectedRevision++;
+   command.fields.text='Synthetic newer text before receipt readback';
+   const competing=await compete(target.href,command,'synthetic-newer-readback');
+   assert.equal(competing.status,200);
+  }
   return route.fulfill({status:response.status,json:await response.json()});
  });
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:90000});
@@ -104,6 +118,7 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  }finally{holdHistory=undefined;releaseHistory();}
  await write.click({timeout:15000});
  const editor=page.getByRole('dialog',{name:'新增日记',exact:true});
+ await expect(editor.getByRole('button',{name:'本篇正文自动保存'})).toHaveCount(0);
  const title='Synthetic hand-written journal',original='Synthetic original body\nSecond line stays intact.';
  await expect(editor.getByLabel('记录日期')).not.toHaveValue('');
  await expect(editor.getByLabel('正文',{exact:true})).toHaveValue('');
@@ -208,5 +223,120 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  assert.equal(detailReadCount,beforeStaleRead);
  await journal.getByRole('link',{name:title,exact:true}).click();
  await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Legacy unmarked section');
+ await page.setViewportSize({width:390,height:844});
+ await journal.getByText('管理日记',{exact:true}).click();
+ const openExisting=()=>journal.getByRole('button',{name:title,exact:true}).click();
+ const body=edit.getByLabel('正文',{exact:true});
+ const autosave=edit.getByRole('button',{name:'本篇正文自动保存',exact:true});
+ const pause=()=>delay(1450);
+ await openExisting();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ const draft='Synthetic change before consent';
+ await body.fill(draft);
+ await pause();
+ assert.equal(commands.length,5);
+ await autosave.press('Space');
+ await expect(autosave).toHaveAttribute('aria-pressed','true');
+ await body.dispatchEvent('compositionstart');
+ await body.fill('Synthetic composing');
+ await pause();
+ assert.equal(commands.length,5);
+ await body.fill('Synthetic committed composition');
+ await body.dispatchEvent('compositionend');
+ await expect(edit.getByRole('status',{name:''}).filter({hasText:'正文已自动保存'})).toBeVisible();
+ assert.equal(commands.length,6);
+ const bodyWrite=commands[5];
+ assert.equal(bodyWrite.method,'PATCH');
+ assert.equal(JSON.parse(bodyWrite.body).expectedRevision,2);
+ assert.equal(JSON.parse(bodyWrite.body).fields.text,'Synthetic committed composition');
+ await pause();
+ assert.equal(commands.length,6);
+ await expect(edit.getByText('历史版本（3）',{exact:true})).toBeVisible();
+
+ const editorTitle=edit.getByLabel('标题',{exact:true});
+ await editorTitle.fill('Synthetic unsaved title');
+ await body.fill('Synthetic disabled draft');
+ await pause();
+ assert.equal(commands.length,6,'unsaved metadata stays manual');
+ await editorTitle.fill(title);
+ await autosave.click();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await pause();
+ assert.equal(commands.length,6,'explicitly disabling cancels the queued write');
+ await visibility('hidden');await expect(edit).toBeHidden();
+ await visibility('visible');
+ await expect(body).toHaveValue('Synthetic disabled draft');
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await pause();
+ assert.equal(commands.length,6,'returning to the editor does not restore write consent');
+
+ const savedRow=[...repo.rows.values()].find(row=>row.revision===3)!;
+ assert.ok(savedRow);
+ const competingCommand=JSON.parse(bodyWrite.body);
+ competingCommand.fields.text='Synthetic text from a competing tab';
+ competingCommand.expectedRevision=3;
+ const concurrent=await compete(origin+'/api/platform/personal/journal/'+savedRow.id,competingCommand,'synthetic-competing-tab');
+ assert.equal(concurrent.status,200);
+ await autosave.click();
+ await expect(edit.getByRole('alert')).toContainText('版本冲突');
+ await expect(body).toHaveValue('Synthetic disabled draft');
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await expect(autosave).toBeDisabled();
+ await pause();
+ assert.equal(commands.length,7);
+ assert.equal(JSON.parse(commands[6].body).expectedRevision,3);
+ assert.equal(repo.rows.get(savedRow.id)?.revision,4);
+ page.once('dialog',dialog=>dialog.accept());
+ await edit.getByRole('button',{name:'取消',exact:true}).click();
+ await openExisting();
+ await expect(body).toHaveValue('Synthetic text from a competing tab');
+ await expect(autosave).toBeEnabled();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+
+ await page.setViewportSize({width:1365,height:900});
+ await autosave.click();
+ await body.fill('Synthetic uncertain receipt');
+ failDetail=true;
+ await expect(edit.getByRole('alert')).toContainText('保存结果尚未确认');
+ assert.equal(commands.length,8);
+ assert.equal(JSON.parse(commands[7].body).expectedRevision,4);
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await expect(body).toBeDisabled();
+ failDetail=false;
+ page.once('dialog',dialog=>dialog.accept());
+ await page.reload({waitUntil:'domcontentloaded',timeout:90000});
+ await journal.getByRole('button',{name:'继续上次保存（日记）'}).click({timeout:30000});
+ await expect(journal.getByText('上次的日记已保存',{exact:true})).toBeVisible();
+ assert.equal(commands.length,9);
+ assert.deepEqual(commands[8],commands[7]);
+ assert.equal(repo.rows.get(savedRow.id)?.revision,5);
+ await journal.getByRole('link',{name:title,exact:true}).click();
+ await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Synthetic uncertain receipt');
+ await journal.getByText('管理日记',{exact:true}).click();
+ await openExisting();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await autosave.click();
+ await body.fill('Synthetic explicit save cancels the timer');
+ await edit.getByRole('button',{name:'保存',exact:true}).click();
+ await expect(edit).toBeHidden();
+ await pause();
+ assert.equal(commands.length,10);
+ assert.equal(JSON.parse(commands[9].body).expectedRevision,5);
+ await openExisting();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await autosave.click();
+ supersedeNextPatch=true;
+ await body.fill('Synthetic auto receipt superseded by a newer version');
+ await expect(edit.getByText('本次自动保存已确认。另有较新版本，请重新打开核对。',{exact:true})).toBeVisible();
+ assert.equal(commands.length,11);
+ assert.equal(JSON.parse(commands[10].body).expectedRevision,6);
+ assert.equal(repo.rows.get(savedRow.id)?.revision,8);
+ await expect(autosave).toBeDisabled();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await edit.getByRole('button',{name:'取消',exact:true}).click();
+ await openExisting();
+ await expect(autosave).toBeEnabled();
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await expect(body).toHaveValue('Synthetic newer text before receipt readback');
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
 });
