@@ -45,9 +45,14 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
    clearTimeout(timer);
    const controller=new AbortController();
    request=controller;
-   const status=native
+   let status=native
     ?await checkDeviceSession(fetch,controller.signal)
     :{kind:await checkOwnerPageAccess(fetch,controller.signal)};
+   // A valid device cookie is not sufficient if the owner or MFA has been revoked.
+   if(native&&status.kind==='active'&&!controller.signal.aborted){
+    const owner=await checkOwnerPageAccess(fetch,controller.signal);
+    if(owner!=='active')status={kind:owner};
+   }
    if(!mounted||request!==controller||controller.signal.aborted)return;
    request=undefined;
    document.documentElement.style.visibility=status.kind==='active'?'':'hidden';

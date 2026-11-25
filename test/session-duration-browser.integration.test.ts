@@ -23,7 +23,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
   });
   await t.test('actual login page carries day selection through both native requests and supports mobile keyboard/custom validity',async()=>{
    const context=await browser!.newContext({viewport:{width:390,height:844}}),page=await context.newPage();const bodies:Record<string,unknown>[]=[];
-   try{await page.route('**/api/platform/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/get-session'))return route.fulfill({json:active()});if(route.request().method()==='GET')return route.fulfill({status:404});assert.ok(['/api/platform/auth/sign-in/email','/api/platform/auth/two-factor/verify-totp'].includes(path));bodies.push(JSON.parse(route.request().postData()??'{}'));return route.fulfill({json:path.endsWith('/sign-in/email')?{twoFactorRedirect:true}:{user:{id:'fixture-owner'}}});});
+   try{await page.route('**/api/platform/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/get-session'))return route.fulfill({json:active()});if(path==='/api/platform/status')return route.fulfill({json:{}});if(route.request().method()==='GET')return route.fulfill({status:404});assert.ok(['/api/platform/auth/sign-in/email','/api/platform/auth/two-factor/verify-totp'].includes(path));bodies.push(JSON.parse(route.request().postData()??'{}'));return route.fulfill({json:path.endsWith('/sign-in/email')?{twoFactorRedirect:true}:{user:{id:'fixture-owner'}}});});
     await page.goto(origin+'/login',{waitUntil:'networkidle'});const select=page.getByLabel('这台设备保持登录');await expect(select).toHaveValue('month');await expect(select).toBeEnabled();await select.focus();await expect(select).toBeFocused();await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'登录',exact:true})).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(select).toBeFocused();await select.selectOption('day');await expect(select).toHaveValue('day');
     await page.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');await page.getByLabel('验证器动态码',{exact:true}).fill('123456');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');assert.deepEqual(bodies.map(body=>body.sessionDuration),[{mode:'fixed',seconds:86400},{mode:'fixed',seconds:86400}]);assert.equal(bodies[0].rememberMe,true);assert.equal(bodies[1].trustDevice,false);
     await page.goto(origin+'/login?reauthenticate=1',{waitUntil:'networkidle'});await select.selectOption('custom');await page.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');await page.getByLabel('登录时长',{exact:true}).fill('0');await page.getByRole('button',{name:'登录',exact:true}).click();assert.equal(bodies.length,2);await expect(page.getByLabel('登录时长',{exact:true})).toBeFocused();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
@@ -32,13 +32,14 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
   await t.test('device checks recover from a failed read and an in-place MFA login preserves the draft and exact URL',async()=>{
    const context=await browser!.newContext(),page=await context.newPage();
    const destination=origin+'/personal?page=tasks&create=todo';
-   let expires=Date.now()+60000,unavailable=false;
+   let expires=Date.now()+60000,unavailable=false,ownerReady=true;
    const posts:string[]=[];
    try{
     await page.route('**/api/platform/**',route=>{
      const req=route.request(),path=new URL(req.url()).pathname;
      if(req.method()==='POST')posts.push(path);
      if(path.endsWith('/get-session'))return route.fulfill(unavailable?{status:503}:{json:active('fixed',expires)});
+     if(path==='/api/platform/status')return route.fulfill(ownerReady?{json:{}}:{status:401});
      if(path.endsWith('/sign-in/email'))return route.fulfill({json:{twoFactorRedirect:true}});
      if(path.endsWith('/two-factor/verify-totp')){
       expires=Date.now()+180000;
@@ -60,6 +61,15 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     await expect(draft).toHaveValue('Synthetic unsent draft');
     assert.deepEqual(posts,[]);
 
+    ownerReady=false;
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await expect(page.getByRole('button',{name:'重新登录',exact:true})).toBeVisible();
+    await expect(draft).toBeHidden();
+    ownerReady=true;
+    await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();
+    await expect(draft).toBeVisible();
+    assert.deepEqual(posts,[]);
+
     await page.clock.fastForward(61000);
     await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});
     await expect(draft).toBeHidden();
@@ -75,7 +85,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
   });
   await t.test('existing device reopens directly; rolling renewal uses one explicitPOST and device revocation uses opaque ID',async()=>{
    const context=await browser!.newContext(),page=await context.newPage();await context.addCookies([{name:'fixture-ready',value:'1',url:origin}]);let refreshed=false,refreshPosts=0,revokeBody:unknown;
-   try{await page.route('**/api/platform/**',async route=>{const request=route.request(),path=new URL(request.url()).pathname;if(path.endsWith('/get-session')){if(request.method()==='POST'){refreshPosts++;assert.equal(request.postData(),'{}');refreshed=true;}return route.fulfill({json:active('rolling',Date.now()+60000,!refreshed)});}if(request.method()==='POST'){revokeBody=JSON.parse(request.postData()??'{}');return route.fulfill({json:{revoked:true,signedOut:false}});}return route.fulfill({json:{sessions:[{id:'fixture-other-session',current:false,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+86400000).toISOString(),userAgent:'Synthetic browser',duration:{mode:'fixed',seconds:86400}}],truncated:false}});});
+   try{await page.route('**/api/platform/**',async route=>{const request=route.request(),path=new URL(request.url()).pathname;if(path.endsWith('/get-session')){if(request.method()==='POST'){refreshPosts++;assert.equal(request.postData(),'{}');refreshed=true;}return route.fulfill({json:active('rolling',Date.now()+60000,!refreshed)});}if(path==='/api/platform/status')return route.fulfill({json:{}});if(request.method()==='POST'){revokeBody=JSON.parse(request.postData()??'{}');return route.fulfill({json:{revoked:true,signedOut:false}});}return route.fulfill({json:{sessions:[{id:'fixture-other-session',current:false,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+86400000).toISOString(),userAgent:'Synthetic browser',duration:{mode:'fixed',seconds:86400}}],truncated:false}});});
     await page.goto(origin+'/login',{waitUntil:'networkidle'});await expect(page).toHaveURL(origin+'/personal');await expect(page.getByRole('heading',{name:'合成本人空间'})).toBeVisible();assert.equal(refreshPosts,1);page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'撤销这次登录'}).click();await expect(page.getByText('已撤销该设备登录。')).toBeVisible();assert.deepEqual(revokeBody,{id:'fixture-other-session'});
    }finally{await context.close();}
   });
