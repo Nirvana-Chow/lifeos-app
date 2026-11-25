@@ -29,7 +29,7 @@ test('event platform migration never reads or writes the Auth private registry a
 test('actual requirements/event JUnit gate rejects missing event coverage, skips, duplicates and errors',()=>{
  const names=['concurrent first overlays lock one deterministic identity and second different key sees CAS conflict','create restart readback update history and lost committed response recover exact command','new issuer mode has independently verified native scopes and fence rejects revoked requirements grants','OPT-IN requirement transaction outbox rollback, receipt dedupe and lease fence on restricted PostgreSQL'];
  const directory=mkdtempSync(join(tmpdir(),'lifeos-event-junit-'));
- try{for(const path of ['qualification.yml','visual-qualification.yml']){
+ try{for(const path of ['ci.yml']){
   const workflow=readFileSync('.github/workflows/'+path,'utf8'),match=workflow.match(/python3 - <<'PY_REQUIREMENTS_PG'\n([\s\S]*?)\n          PY_REQUIREMENTS_PG/);assert.ok(match);
   const code=match[1].split('\n').map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
   for(const mutation of ['none','missing-event','duplicate','skipped','failure','error']){

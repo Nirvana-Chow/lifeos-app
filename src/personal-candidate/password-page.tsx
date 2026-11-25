@@ -71,7 +71,7 @@ export function PasswordPage({enabled=false,changeOnly=false,embedded=false,clos
     </fieldset>
    </form>
    {message&&<p role="status">{message}</p>}
-   {!embedded&&<p><Link href={changeOnly?'/personal?modal=settings&panel=general':'/login'}>{changeOnly?'取消':'返回登录'}</Link></p>}
+   {!embedded&&<p><Link href={changeOnly?'/personal?page=settings&panel=security':'/login'}>{changeOnly?'取消':'返回登录'}</Link></p>}
   </section>
  </Surface>;
 }

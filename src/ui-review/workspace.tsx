@@ -73,7 +73,7 @@ import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
 import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
 
-import {readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
+import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
 
 const navItems = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -162,11 +162,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   );
   const settingsOpen=page==='settings';
   const [classificationPlanId,setClassificationPlanId]=useState<string|null>(props.initialModal==='classification'?props.initialClassificationPlanId??null:null);
-  const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??'general');
+  const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??defaultSettingsPanel);
   const locationState=useRef({page,settingsOpen,settingsPanel,classificationPlanId});
   locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const settingsSection=page==='settings'||page==='requirements';
+  const settingsLabels:Record<SettingsPanel,string>={topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
   const settingsSubpage=settingsOpen&&(settingsPanel==='security'||settingsPanel==='api-keys');
   const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
   const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
@@ -352,7 +353,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       setPage(isTaskLink ? "tasks" : historyPage);
       setChosenModule(historyModule(event.state));
       setClassificationPlanId(nextLocation.modal==='classification'?nextLocation.planId:null);
-      setSettingsPanel(nextLocation.panel??'general');
+      setSettingsPanel(nextLocation.panel??defaultSettingsPanel);
       if(!overlayChange)setFilter(defaultFilter);
       setMobileOpen(false);
       if(!overlayChange){setFiltersOpen(false);setDetailId(null);}
@@ -384,7 +385,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     if(props.syncUrl){
       const active=currentHistory.current??{scope:crypto.randomUUID(),index:0},entry={scope:active.scope,index:active.index+1};
       const href=workspaceLocationHref({page:'settings',panel});
-      window.history.pushState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
+      window.history.pushState({[workspaceHistoryKey]:entry,[moduleHistoryKey]:historyModule(window.history.state)},'',href);
       currentHistory.current=entry;historyLimit.current=entry.index;currentHistoryState.current=window.history.state;currentHref.current=href;currentBrowserIndex.current=browserHistoryIndex();updateHistoryControls();
     }
     setSettingsPanel(panel);
@@ -394,11 +395,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     next: WorkspacePage,
     areaId: string | null = null,
     projectId: string | null = null,
-    nextSettingsPanel:SettingsPanel='general',
+    nextSettingsPanel:SettingsPanel=defaultSettingsPanel,
   ) {
     if (restoringHistory.current || page==='requirements'&&next!==page&&requirementNavigationGuard.current?.()===false || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     const destination=next==='settings'?workspaceLocationHref({page:'settings',panel:nextSettingsPanel}):workspaceHref(next);
-    if((unavailablePage||contentPage)&&next==='settings'&&nextSettingsPanel!=='general'){
+    if((unavailablePage||contentPage)&&next==='settings'&&nextSettingsPanel!==defaultSettingsPanel){
       window.location.assign(destination);return true;
     }
     if (props.onNavigatePage) {
@@ -414,7 +415,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       if (window.location.pathname + window.location.search !== href) {
         const active = currentHistory.current;
         const entry = {scope: active?.scope ?? crypto.randomUUID(), index: (active?.index ?? 0) + 1};
-        window.history.pushState({...window.history.state, [workspaceHistoryKey]: entry, [moduleHistoryKey]:null}, '', href);
+        window.history.pushState({[workspaceHistoryKey]: entry, [moduleHistoryKey]:null}, '', href);
         currentHistory.current = entry;
         historyLimit.current=entry.index;
         updateHistoryControls();
@@ -454,11 +455,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       <div role="group" aria-label="偏好与账号" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>偏好与账号</span>
         {([
-          {id:'general',label:'通用',icon:Settings},
           {id:'security',label:'安全与密码',icon:ShieldCheck},
           {id:'api-keys',label:'API 密钥',icon:KeyRound},
           {id:'topics',label:'标签',icon:Tags},
-        ] as const).filter(item=>item.id==='general'||item.id==='topics'&&access.allowedTypes?.includes('topic')||props.availableSettingsPanels?.includes(item.id)).map(({id,label,icon:Icon})=>{
+        ] as const).filter(item=>item.id==='topics'?access.allowedTypes?.includes('topic'):props.availableSettingsPanels?.includes(item.id)).map(({id,label,icon:Icon})=>{
           const current=settingsOpen&&settingsPanel===id;
           return <Button variant="ghost" data-workspace-nav key={id} aria-label={label} title={collapsed?label:undefined}
             className={current?'is-current':undefined} aria-current={current?'page':undefined}
@@ -474,7 +474,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>
           <ClipboardList size={19} aria-hidden="true"/><span>需求池</span>
         </Button>
-        <OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>
+        {(page!=='requirements'||contentPage)&&<OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>}
       </div>
       {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>
@@ -663,7 +663,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }}
       ref={setPortalContainer}
     >
-      {ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
+      {page!=='requirements'&&ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
       <header className="lo-header">
         <Button
@@ -1036,19 +1036,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             )}
           {settingsOpen&&<section data-settings-page className={workspaceStyles.settingsPage}>
             <div className={`lo-settings-panel ${workspaceStyles.settingsPanel}`} data-settings-panel={settingsPanel}>
-          {settingsPanel === "general" && (
-            <div className={`lo-settings ${workspaceStyles.generalSettings}`}>
-              {access.authenticated === true && props.settingsContent&&<section className={workspaceStyles.settingSection} aria-label="账号与连接"><h2>账号与连接</h2>{props.settingsContent}</section>}
-              {access.authenticated === false &&
-                access.loginAllowed === true &&
-                props.onLogin && (
-                  <Button variant="outline" onClick={props.onLogin}>
-                    <LogIn size={17} />
-                    前往登录
-                  </Button>
-                )}
-            </div>
-          )}
+              {access.authenticated === false && access.loginAllowed === true && props.onLogin && (
+                <Button variant="outline" onClick={props.onLogin}>
+                  <LogIn size={17} />
+                  前往登录
+                </Button>
+              )}
               {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="标签">
                 <h2>标签</h2>
                 <p>同一标签可关联不同项目和待办，方便按主题归类。</p>

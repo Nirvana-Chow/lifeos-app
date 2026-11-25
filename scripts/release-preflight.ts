@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 /** Manual source-only advisory; never a publication or deployment gate. */
 export const WORKFLOW_PATHS=['.github/workflows/ci.yml','.github/workflows/qualification.yml','.github/workflows/visual-qualification.yml'] as const;
 export const OVERLAY_PATHS=['app/layout.tsx','scripts/owner-recovery-host.py','scripts/owner-recovery-operator.ts','src/personal-candidate/config.ts','src/personal-candidate/owner-recovery-access.ts','src/personal-candidate/owner-recovery-capability.ts','src/personal-candidate/owner-recovery-finish-panel.tsx','src/personal-candidate/password-page.tsx','src/platform/auth.ts','src/platform/page-access.ts','src/platform/private-config.ts','src/platform/runtime.ts','test/login-onboarding.test.ts','test/owner-account-access.test.ts','test/owner-email-reset.test.ts'] as const;
-export type Candidate={sha:string;treeSha:string;workflowPins:Record<string,string>;publicBases:Record<string,string|null>};
+export type Candidate={sha:string;treeSha:string;workflowPins:HashMap;publicBases:HashMap};
 type HashMap=Record<string,string|null>;
 type Rebase={treeSha:string;publicBases:HashMap;overlays:Record<string,string>;allowDescendants?:boolean};
 type Metadata={version:1;repository:string;source:{kind:string;ref:string;observedAt:string;receiptSha256:string;matcherVersion:string};controls:{workerSha256:string;configurationSha256:string};workflowPins:Record<string,string>;publicBases:HashMap;overlays:Record<string,string>;rebases:Record<string,Rebase>;profile:{sourceSha:string;runId:string;runAttempt:string;overlays:Record<string,string>};approvedOverlays?:Record<string,Record<string,string>>};
@@ -48,7 +48,7 @@ export function checkReleasePreflight(input:Input):Result{
  const m=metadata,observed=Date.parse(m.source.observedAt);
  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(m.source.observedAt)||!Number.isFinite(observed)||new Date(observed).toISOString().replace('.000Z','Z')!==m.source.observedAt.replace('.000Z','Z')||!Number.isFinite(input.now)||observed>input.now||input.now-observed>300000)return result('unknown','METADATA_STALE');
  const c=input.candidate;
- if(!fields(c,['sha','treeSha','workflowPins','publicBases'])||!candidateSha||!isSHA(c.treeSha)||!hashMap(c.workflowPins,WORKFLOW_PATHS)||!hashMap(c.publicBases,OVERLAY_PATHS,true))return result('unknown','GIT_SOURCE_UNCONFIRMED');
+ if(!fields(c,['sha','treeSha','workflowPins','publicBases'])||!candidateSha||!isSHA(c.treeSha)||!hashMap(c.workflowPins,WORKFLOW_PATHS,true)||!isHASH(c.workflowPins[WORKFLOW_PATHS[0]])||!hashMap(c.publicBases,OVERLAY_PATHS,true))return result('unknown','GIT_SOURCE_UNCONFIRMED');
  const drift=differences(m.workflowPins,c.workflowPins,WORKFLOW_PATHS);if(drift.length)return result('review-required','WORKFLOW_PIN_REVIEW_REQUIRED',drift);
  // Match the existing worker's order and its two different descendant rules.
  let record=m.rebases[c.sha],origin=c.sha,match=record?'exact-rebase':'default';
@@ -91,8 +91,11 @@ export function readGitCandidate(directory:string,sha:string):Candidate{
   if(!/^(100644|100755) blob [a-f0-9]{40}\t[^\0]+\0$/.test(entry))throw Error('GIT_SOURCE_UNCONFIRMED');
   return digest(git(directory,['show',sha+':'+path]));
  };
- const workflowPins:Record<string,string>={},publicBases:HashMap={};
- for(const path of WORKFLOW_PATHS){const hash=blob(path);if(!hash)throw Error('GIT_SOURCE_UNCONFIRMED');workflowPins[path]=hash;}
+ const workflowPins:HashMap={},publicBases:HashMap={};
+ // Legacy captures still require all three hashes. Report a retired file as
+ // drift in the candidate so the old snapshot cannot approve the new layout.
+ for(const path of WORKFLOW_PATHS)workflowPins[path]=blob(path);
+ if(!workflowPins[WORKFLOW_PATHS[0]])throw Error('GIT_SOURCE_UNCONFIRMED');
  for(const path of OVERLAY_PATHS)publicBases[path]=blob(path);
  return {sha,treeSha:tree,workflowPins,publicBases};
 }

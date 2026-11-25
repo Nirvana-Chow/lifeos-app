@@ -1,7 +1,10 @@
 'use client';
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {checkOwnerPageAccess} from '../session-duration/client';
 import {flushSync} from 'react-dom';
+const OwnerPageVerification=createContext<boolean|null>(null);
+export function useOwnerPageVerification(){return useContext(OwnerPageVerification);}
+
 /** Conceal cached children before background/back navigation; reveal only after
  * a fresh server owner check. No client supplied identity is trusted. */
 export function PrivacyBoundary({children}:{children:ReactNode}){
@@ -40,7 +43,9 @@ export function PrivacyBoundary({children}:{children:ReactNode}){
    document.documentElement.style.visibility='';
   };
  },[]);
- return <><div hidden={phase!=='active'} inert={phase!=='active'}>{children}</div>
+ return <><div hidden={phase!=='active'} inert={phase!=='active'}>
+   <OwnerPageVerification.Provider value={phase==='active'}>{children}</OwnerPageVerification.Provider>
+  </div>
   {phase!=='active'&&<section style={{visibility:'visible'}}>
    <p role="status">{phase==='checking'?'正在重新核对私人空间…':'暂时无法核对登录状态。私人页面已隐藏。'}</p>
    {phase==='unavailable'&&<button type="button" onClick={()=>retry.current?.()}>重新核对</button>}

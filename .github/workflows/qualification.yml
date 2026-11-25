@@ -3,9 +3,8 @@
 # Fixture passwords below are synthetic and apply only to disposable loopback services.
 name: LifeOS required release qualification
 
+# Retained during release cutover. Main pushes use ci.yml.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
