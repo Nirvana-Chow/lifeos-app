@@ -12,6 +12,6 @@ export default async function Layout({children}: {children: ReactNode}) {
   return <>
     <script dangerouslySetInnerHTML={{__html: workspaceLayoutInitializationScript}}/>
     <WorkspaceViewport/>
-    {capability.sessionDuration ? <DeviceSessionGuard>{children}</DeviceSessionGuard> : children}
+    <DeviceSessionGuard capability={capability}>{children}</DeviceSessionGuard>
   </>;
 }

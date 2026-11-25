@@ -37,7 +37,7 @@ async function buildRuntime(config:PlatformConfig):Promise<Runtime>{
    const classification=modules.classification?{authority:ownerAuthority,service:new ClassificationService(new PostgresPlatformRepository(pool as SqlPool,true,true,modules),personal,{authority:ownerAuthority,assertReady:async()=>{if(!['todo','project','domain','topic'].every(type=>personal.allowedTypes.includes(type as typeof personal.allowedTypes[number])))throw Error('Classification types unavailable');await verifyAgentBusinessReadiness(pool);await verifyClassificationPool(pool as SqlPool);},assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''),policyRevision:()=>classificationPolicyRevision(personal)})}:undefined;
    let fileHandoff:FileHandoffRuntime|undefined;
    if(modules.fileHandoff)try{const files=readFileHandoffConfig(process.env);if(files)fileHandoff=await createFileHandoffRuntime(pool as SqlPool,personal,files,modules.businessDataPolicy,async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??''));}catch{/* Keep the optional input closed without closing unrelated native records. */}
-   const records=createPersonalPlatformHandler({repository,classification,...(fileHandoff?{fileHandoff:{runtime:fileHandoff,authority:ownerAuthority}}:{}),config:personal,storageVerified:true,sessions:{read:headers=>readOwnerPrincipal(readAuth,config,headers)},assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??'')});
+   const records=createPersonalPlatformHandler({repository,classification,...(fileHandoff?{fileHandoff:{runtime:fileHandoff,authority:ownerAuthority}}:{}),config:personal,storageVerified:true,sessions:{read:headers=>readPersonalOwnerPrincipal(readAuth,config,headers)},assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??'')});
    return{...(businessOAuth?{businessOAuth}:{}),pool:pool as SqlPool,...(ownerReadPool?{ownerReadPool:ownerReadPool as SqlPool}:{}),config,personal,auth,readAuth,ownerAuthority,passwordChangeAllowed,recovery,handler:request=>new URL(request.url).pathname==='/api/platform/personal/password'?account(request):records(request)};}
   try{const ai=readAISettingsRuntimeConfig(process.env,config.baseURL);if(ai){await verifyAISettingsPool(pool as SqlPool);aiSettings=new AISettingsService(new PostgresAISettingsRepository(pool as SqlPool),ai.masterKeyFile?loadAISecretVault(ai.masterKeyFile):null,{baseURL:config.baseURL,...ai});}}catch{aiSettingsUnavailableReason='AI 配置存储初始化未通过，其他记录服务不受此项影响。';}
   let calendar:CalendarService|undefined;try{if(readCalendarCandidateFlag(process.env)){await verifyCalendarPool(pool as SqlPool);calendar=new CalendarService(new PostgresCalendarRepository(pool as SqlPool));}}catch{/* The optional calendar remains unavailable; core records keep their verified adapter. */}
@@ -47,7 +47,19 @@ async function buildRuntime(config:PlatformConfig):Promise<Runtime>{
 }
 async function runtime():Promise<Runtime|null>{const config=readPlatformConfig(process.env);if(!config)return null;if(!pending)pending=buildRuntime(config).catch(error=>{pending=undefined;throw error;});return pending;}
 export async function getPlatformOwnerAuthority(){try{return (await runtime())?.ownerAuthority??null;}catch{return null;}}
-export async function readPlatformPagePrincipal(headers:Headers){const value=await runtime();return value?readOwnerPrincipal(value.readAuth??value.auth,value.config,headers):null;}
+async function readPersonalOwnerPrincipal(auth:ReturnType<typeof createPlatformAuth>,config:PlatformConfig,headers:Headers){
+ const state=await readOwnerMfaState(auth,config,headers);
+ if(state.kind==='unavailable')throw new Error('OWNER_AUTH_UNAVAILABLE');
+ return state.kind==='ready'?state.principal:null;
+}
+export async function readPlatformPagePrincipal(headers:Headers,{distinguishUnavailable=false}={}){
+ const value=await runtime();
+ if(!value)return null;
+ const auth=value.readAuth??value.auth;
+ return value.personal&&distinguishUnavailable
+  ?readPersonalOwnerPrincipal(auth,value.config,headers)
+  :readOwnerPrincipal(auth,value.config,headers);
+}
 const unavailable=()=>Response.json({error:{code:'PLATFORM_UNAVAILABLE',message:'此隔离候选尚未配置可用的身份与 PostgreSQL 服务。'}},{status:503,headers:{'Cache-Control':'private, no-store','Vary':'Cookie'}});
 export async function handlePlatformRequest(request:Request):Promise<Response>{const recoveryPath=new URL(request.url).pathname==='/api/platform/personal/recover-password';try{const value=await runtime();if(recoveryPath)return value?.recovery?value.recovery.handle(request):ownerRecoveryUnavailable();return value?value.handler(request):unavailable();}catch{return recoveryPath?ownerRecoveryUnavailable():unavailable();}}
 export async function readPlatformRecoveryCapability(){try{const value=await runtime();return value?.recovery?await value.recovery.capability():{enabled:false};}catch{return{enabled:false};}}

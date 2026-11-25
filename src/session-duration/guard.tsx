@@ -1,25 +1,100 @@
 'use client';
-import {useEffect,useState,type ReactNode} from 'react';
-import {checkDeviceSession,safeSessionReturn} from './client';
+
+import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
+import {LoginPage} from '../personal-candidate/login';
+import {OwnerPageVerification,OwnerSessionRecheck} from '../personal-candidate/privacy';
+import type {LoginCapability} from '../platform/page-access';
+import {checkDeviceSession,checkOwnerPageAccess,safeSessionReturn} from './client';
 import s from './session.module.css';
-/** Keep children mounted while locked: unsent drafts stay in their original owner-bound state. */
-export function DeviceSessionGuard({children}:{children:ReactNode}){
- const [phase,setPhase]=useState<'checking'|'active'|'locked'|'unavailable'>('checking'),[loginHref,setLoginHref]=useState('/login?reauthenticate=1');
+
+type Phase='checking'|'active'|'locked'|'unavailable';
+
+export function OwnerPageReadUnavailable(){
+ return <main data-lifeos-surface="auth" className={s.lock}><section>
+  <h1>私人页面暂时无法打开</h1>
+  <button type="button" onClick={()=>location.reload()}>重新加载页面</button>
+ </section></main>;
+}
+
+/** Keep the owner-bound page mounted and concealed until the server confirms access. */
+export function DeviceSessionGuard({children,capability}:{children:ReactNode;capability:LoginCapability}){
+ const [phase,setPhase]=useState<Phase>('checking');
+ const [authenticating,setAuthenticating]=useState(false);
+ const [returnTo,setReturnTo]=useState('/personal');
+ const recheck=useRef<(afterLogin?:boolean)=>void>(()=>{});
+ const requestVerification=useCallback(()=>recheck.current(),[]);
+ const native=capability.sessionDuration===true;
+
  useEffect(()=>{
-  const controller=new AbortController();
-  let live=true,inFlight=false,timer:ReturnType<typeof setTimeout>|undefined,deadline:ReturnType<typeof setTimeout>|undefined;
-  setLoginHref('/login?reauthenticate=1&return_to='+encodeURIComponent(safeSessionReturn(location.pathname+location.search)));
-  async function check(){if(!live||inFlight||document.visibilityState==='hidden')return;inFlight=true;clearTimeout(timer);clearTimeout(deadline);
-   try{const status=await checkDeviceSession(fetch,controller.signal);if(!live)return;setPhase(status.kind);if(status.kind==='active')deadline=setTimeout(()=>{if(live){setPhase('locked');void check();}},Math.max(0,Math.min(status.expiresAt-Date.now(),2147483647)));}
-   finally{inFlight=false;if(live)timer=setTimeout(()=>void check(),60000);}
+  let mounted=true,request:AbortController|undefined,timer:ReturnType<typeof setTimeout>|undefined;
+  let recoveryPending=false;
+  const conceal=()=>{
+   request?.abort();
+   request=undefined;
+   clearTimeout(timer);
+   document.documentElement.style.visibility='hidden';
+   setPhase('checking');
+  };
+  async function check(afterLogin=false){
+   if(!mounted||document.visibilityState==='hidden'||request&&!afterLogin)return;
+   if(afterLogin){
+    request?.abort();
+    recoveryPending=true;
+    setPhase('checking');
+   }
+   clearTimeout(timer);
+   const controller=new AbortController();
+   request=controller;
+   const status=native
+    ?await checkDeviceSession(fetch,controller.signal)
+    :{kind:await checkOwnerPageAccess(fetch,controller.signal)};
+   if(!mounted||request!==controller||controller.signal.aborted)return;
+   request=undefined;
+   document.documentElement.style.visibility=status.kind==='active'?'':'hidden';
+   setPhase(status.kind);
+   if(status.kind==='active'){
+    setAuthenticating(false);
+    if(recoveryPending){recoveryPending=false;window.dispatchEvent(new Event('lifeos-owner-session-restored'));}
+   }
+   const delay=status.kind==='active'&&'expiresAt' in status&&typeof status.expiresAt==='number'
+    ?Math.max(0,Math.min(60000,status.expiresAt-Date.now())):60000;
+   timer=setTimeout(()=>void check(),delay);
   }
-  const focus=()=>{if(document.visibilityState!=='hidden')void check();};void check();window.addEventListener('focus',focus);document.addEventListener('visibilitychange',focus);
-  return()=>{live=false;controller.abort();clearTimeout(timer);clearTimeout(deadline);window.removeEventListener('focus',focus);document.removeEventListener('visibilitychange',focus);};
- },[]);
- function retry(){window.dispatchEvent(new Event('focus'));}
- return <><div hidden={phase!=='active'} inert={phase!=='active'}>{children}</div>{phase!=='active'&&<main data-lifeos-surface="auth" className={s.lock} aria-live="polite"><section>
-  {phase==='checking'&&<h1>正在核对登录状态…</h1>}
-  {phase==='unavailable'&&<><h1>暂时无法核对登录状态</h1><p>私人页面已隐藏，未发送的草稿仍保留在本页。</p><button type="button" onClick={retry}>重新核对</button></>}
-  {phase==='locked'&&<><h1>登录已到期或需要重新验证</h1><p>当前页面已锁定，未发送的草稿仍保留在本页。请在新标签页完成登录，再回到这里继续。</p><a href={loginHref} target="_blank" rel="noopener">重新登录</a><button type="button" onClick={retry}>已完成登录，继续编辑</button></>}
- </section></main>}</>;
+
+  recheck.current=afterLogin=>void check(afterLogin);
+  const foreground=()=>void check();
+  const visibility=()=>{if(document.visibilityState==='hidden')conceal();else foreground();};
+  foreground();
+  for(const event of ['focus','pageshow','online'])window.addEventListener(event,foreground);
+  window.addEventListener('pagehide',conceal);
+  document.addEventListener('visibilitychange',visibility);
+  return()=>{
+   mounted=false;
+   request?.abort();
+   clearTimeout(timer);
+   recheck.current=()=>{};
+   for(const event of ['focus','pageshow','online'])window.removeEventListener(event,foreground);
+   window.removeEventListener('pagehide',conceal);
+   document.removeEventListener('visibilitychange',visibility);
+   document.documentElement.style.visibility='';
+  };
+ },[native]);
+
+ return <>
+  <div hidden={phase!=='active'} inert={phase!=='active'}>
+   <OwnerSessionRecheck.Provider value={requestVerification}>
+    <OwnerPageVerification.Provider value={phase==='active'}>{children}</OwnerPageVerification.Provider>
+   </OwnerSessionRecheck.Provider>
+  </div>
+  {phase==='locked'&&authenticating?<div style={{visibility:'visible'}}>
+   <LoginPage capability={capability} returnTo={returnTo} onResume={()=>{setAuthenticating(false);recheck.current(true);}}/>
+  </div>:phase!=='active'&&<main data-lifeos-surface="auth" className={s.lock} aria-live="polite" style={{visibility:'visible'}}><section>
+   {phase==='checking'&&<h1>正在核对登录状态…</h1>}
+   {phase==='unavailable'&&<><h1>暂时无法核对登录状态</h1><p>私人页面已隐藏，未发送的草稿仍保留在本页。</p><button type="button" onClick={()=>recheck.current()}>重新核对</button></>}
+   {phase==='locked'&&<><h1>登录已到期或需要重新验证</h1><p>重新登录后可继续编辑，未发送的草稿仍保留在本页。</p>
+    <button type="button" onClick={()=>{setReturnTo(safeSessionReturn(location.pathname+location.search));setAuthenticating(true);}}>重新登录</button>
+    <button type="button" onClick={()=>recheck.current()}>已完成登录，继续编辑</button>
+   </>}
+  </section></main>}
+ </>;
 }
