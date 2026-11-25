@@ -4,6 +4,7 @@ import {handleFileHandoffRequest} from '../file-handoff/http.ts';
 import {handlePersonalFinance} from '../personal-finance/http.ts';
 import {PersonalCalendarService} from '../calendar-candidate/personal-service.ts';
 import {handlePersonalCalendar} from '../calendar-candidate/personal-http.ts';
+import {applePreviewPath,handleAppleCalendarPreview,type AppleCalendarPreviewReader} from '../calendar-candidate/apple-preview-http.ts';
 import {handleRequirementsRequest} from '../requirements-candidate/http.ts';
 import {handleRequirementSupportRequest} from '../requirement-support-candidate/http.ts';
 import {handleStorageReviewRequest} from '../storage-review/http.ts';
@@ -37,7 +38,7 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -82,6 +83,11 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    }
    if(url.pathname==='/api/platform/personal/calendar'||url.pathname.startsWith('/api/platform/personal/calendar/')){
     if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','日程网页入口仅限当前本人 MFA 会话。');
+    if(url.pathname===applePreviewPath){
+     const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
+     if(origin!==null&&origin!==new URL(options.config.baseURL).origin||site==='cross-site'||site==='same-site')throw new PlatformError(403,'ORIGIN_DENIED','Apple 日历预演需要相同来源。');
+     return await handleAppleCalendarPreview(request,{ownerId:options.config.ownerId,spaceId:options.config.spaceId},assertOwner,options.config.calendarEnabled&&options.storageVerified?options.appleCalendarPreview:undefined);
+    }
     let writable=false;try{await options.assertWritable();writable=true;}catch{}
     const calendar=options.config.calendarEnabled&&options.storageVerified?new PersonalCalendarService(service,{ownerId:options.config.ownerId,spaceId:options.config.spaceId,enabled:true,writable}):undefined;
     const response=await handlePersonalCalendar(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:calendar,guard:async()=>{if(request.signal.aborted)throw new PlatformError(409,'REQUEST_CANCELLED','请求已取消，保存结果未确认。');await assertOwner();await options.assertWritable();}});

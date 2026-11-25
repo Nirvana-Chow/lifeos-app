@@ -7,6 +7,9 @@ import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
 import {readyHeading,assertPrivateFixtureNavigation} from './helpers/private-business-browser-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
+import {applePreviewPath} from '../src/calendar-candidate/apple-preview-http.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {MemoryPort} from './helpers/platform.ts';
 
 test('OPT-IN private route oracle accepts native closed surfaces and only the advertised owner links',{
  skip:process.env.RUN_PRIVATE_NATIVE_SURFACE_BROWSER_TESTS!=='1'&&'Requires disposable read-only Next/Chrome fixture',timeout:120000,
@@ -49,6 +52,49 @@ export default function Page(){const path=usePathname();if(path.endsWith('/healt
   }
   assert.deepEqual(errors,[]);assert.ok(requests.length>0);assert.ok(requests.every(value=>value.startsWith('GET ')));
   assert.ok(requests.every(value=>value.endsWith('/status')),'closed surfaces must not request business snapshots');
+  const ownerId='personal-review-user',spaceId='personal-review-space',ownerEmail='synthetic@example.test';
+  const sourcePin={accountId:'synthetic-account',calendarId:'ordinary',identityEpoch:'one'};
+  const repository=new MemoryPort();
+  let connected=false,reads=0,writes=0;
+  const handler=createPersonalPlatformHandler({repository,storageVerified:true,
+   config:{ownerId,spaceId,ownerEmail,databaseName:'synthetic',baseURL:origin,allowedTypes:['todo'],approval:'personal-manual-v1',calendarEnabled:true},
+   sessions:{read:async()=>({userId:ownerId,email:ownerEmail})},assertWritable:async()=>{writes++;throw Error('read-only fixture');},
+   appleCalendarPreview:{catalog:async()=>connected?{status:'ready',calendars:[
+    {id:'ordinary',label:'合成许可日历',source:sourcePin,kind:'calendar',authorized:true,readable:true},
+    {id:'overlay',label:'合成叠加日历',source:{...sourcePin,calendarId:'overlay'},kind:'automatic-overlay',authorized:true,readable:true},
+   ]}:{status:'not-connected'},read:async(_binding,source,window)=>{reads++;return {snapshots:[{
+    source,coverageId:window.coverageId,complete:true,events:[{seriesId:'test',sourceItemId:'one',title:'合成春季日程',
+     original:{kind:'single'},schedule:{kind:'all-day',startDate:'2030-11-05',endDate:'2030-11-06'}}],
+   }]};}},
+  });
+  await page.route('**'+applePreviewPath+'*', async route=>{
+   const request=route.request();
+   assert.equal(request.method(),'GET');
+   const result=await handler(new Request(request.url(),{headers:{host:new URL(origin).host,'sec-fetch-site':'same-origin'}}));
+   await route.fulfill({status:result.status,headers:Object.fromEntries(result.headers),body:await result.text()});
+  });
+  const toggle=page.getByText('Apple 日历预演',{exact:true});
+  await toggle.click();
+  await expect(page.getByText('未连接 Apple 日历。当前没有可用的只读连接。')).toBeVisible();
+  await expect(page.getByRole('button',{name:'查重预览'})).toHaveCount(0);
+  connected=true;
+  const ready=page.waitForResponse(response=>new URL(response.url()).pathname===applePreviewPath);
+  await page.getByRole('button',{name:'重新核对连接'}).click();
+  assert.deepEqual(await (await ready).json(),{status:'ready',calendars:[{id:'ordinary',label:'合成许可日历'}]});
+  await page.getByLabel('Apple 日历',{exact:true}).selectOption('ordinary');
+  await expect(page.getByRole('option',{name:'合成叠加日历'})).toHaveCount(0);
+  await page.getByLabel('开始日期',{exact:true}).fill('2030-11-05');
+  await page.getByLabel('结束日期（不含）',{exact:true}).fill('2030-11-07');
+  await page.getByLabel('预演时区',{exact:true}).fill('Asia/Tokyo');
+  await page.getByRole('button',{name:'查重预览'}).click();
+  await expect(page.getByRole('region',{name:'Apple 日历预演结果'})).toContainText('合成春季日程');
+  await expect(page.getByRole('region',{name:'Apple 日历预演结果'})).toContainText('缺少可核实的已有记录基线');
+  connected=false;
+  await page.getByRole('button',{name:'查重预览'}).click();
+  await expect(page.getByText('当前会话或读取授权无法核对，请重新读取连接状态。')).toBeVisible();
+  await expect(page.getByRole('region',{name:'Apple 日历预演结果'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'新建日程'})).toBeDisabled();
+  assert.deepEqual(errors,[]);assert.equal(reads,1);assert.equal(writes,0);assert.equal(repository.rows.size,0);
   console.log('PRIVATE_NATIVE_SURFACES '+JSON.stringify({width,theme,surfaces:4,readOnly:true}));await page.close();
  }
 });

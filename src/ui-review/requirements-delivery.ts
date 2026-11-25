@@ -18,7 +18,7 @@ const productionRoute = /^https:\/\/lifeos\.nirvanachow\.com\/(?:personal(?:\/[a
 
 // These PRs cover the named result only. A merged slice can establish progress
 // even when the broader public baseline still carries an older status.
-const mergedSlices = new Map<string, {label:string; href:string; at:string}>([
+export const mergedSlices: ReadonlyMap<string, {label:string; href:string; at:string}> = new Map([
  ['LO-REQ-001', {label:'需求池精简与交付状态', href:repo+'pull/103', at:'2026-11-25T01:35:18Z'}],
  ['LO-PEOPLE-001', {label:'人物只读总览', href:repo+'pull/93', at:'2026-11-25T00:29:27Z'}],
  ['LO-FIN-001', {label:'已记录资金流向', href:repo+'pull/97', at:'2026-11-25T00:38:15Z'}],
