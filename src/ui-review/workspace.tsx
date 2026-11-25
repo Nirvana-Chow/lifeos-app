@@ -1043,6 +1043,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {page === "requirements" && <>
             {retainPrivateRequirements && <RequirementsPage
               key={verifiedPrivateScope ?? retainedPrivateScope}
+              scope={verifiedPrivateScope??undefined}
               concealed={!showPrivateRequirements}
               container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null}
               navigationGuard={requirementNavigationGuard}

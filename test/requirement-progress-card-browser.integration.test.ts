@@ -68,7 +68,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
- let writable=true, mode:'ok'|'truncated'|'wrong-space'|'denied'|'empty'='ok', reads=0;
+ const transaction=repo.transaction.bind(repo);
+ repo.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{}}));
+ let writable=true, mode:'ok'|'truncated'|'wrong-space'|'disabled'|'denied'|'empty'='ok', reads=0;
+ let holdSnapshot=false;
+ const snapshotGate=Promise.withResolvers<void>();
  const handler=createPersonalPlatformHandler({config,repository:repo,storageVerified:true,
   sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{if(!writable)throw Error('read only');}});
  async function seed(path:string,fields:unknown,key:string){
@@ -92,20 +96,32 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:shiftCalendarDate(day,-1),endDate:day}}},'overview-past');
  writable=false;
  const beforeRows=structuredClone(repo.rows);
- let readsDisabled=false, emptySources=false;
+ let readsDisabled=false, emptySources=false, exerciseCreate=false;
  await page.route('**/api/platform/**',async route=>{
-  assert.equal(route.request().method(),'GET');
-  const url=new URL(route.request().url()),path=url.pathname;
+  const request=route.request(),url=new URL(request.url()),path=url.pathname;
+  assert.ok(request.method()==='GET'||(exerciseCreate&&request.method()==='POST'&&path.endsWith('/personal/requirements')));
+  const apiRequest=()=>new Request(url,{method:request.method(),headers:{...request.headers(),host:url.host},body:request.postData()??undefined});
   if(path.endsWith('/requirements/snapshot')){
    reads++;
+   if(holdSnapshot)await snapshotGate.promise;
    if(mode==='denied')return route.fulfill({status:403,json:{}});
-   return route.fulfill({json:{scope:'full-current-requirements-snapshot',items:mode==='empty'?[]:items,total:mode==='empty'?0:items.length,
+   let current=mode==='empty'?[]:[...items];
+   if(exerciseCreate){
+    const real=await handler(apiRequest());
+    assert.equal(real.status,200);
+    const snapshot=await real.json();
+    current=[...current,...snapshot.items.filter((item:{id:string})=>!item.id.startsWith('LO-'))];
+   }
+   return route.fulfill({json:{scope:'full-current-requirements-snapshot',items:current,total:current.length,
     truncated:mode==='truncated',observedAt:'2026-11-25T00:00:00Z',baseline}});
   }
+  const fixtureItem=items.find(item=>path.endsWith('/requirements/'+item.id));
+  if(fixtureItem)return route.fulfill({json:{entry:fixtureItem}});
   if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/snapshot')))return route.fulfill({status:503,json:{}});
-  const response=await handler(new Request(url,{headers:{host:url.host}}));
+  const response=await handler(apiRequest());
   const result=await response.json();
   if(mode==='wrong-space'&&path.endsWith('/personal/status'))result.spaceId='another-space';
+  if(mode==='disabled'&&path.endsWith('/personal/status'))result.requirementsEnabled=false;
   if(emptySources&&path.endsWith('/journal/snapshot')){result.items=[];result.total=0;}
   if(emptySources&&path.endsWith('/personal/calendar')){result.entries=[];result.total=0;}
   return route.fulfill({status:response.status,json:result});
@@ -167,7 +183,18 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  }
  await page.setViewportSize({width:1440,height:900});
  if(process.env.LIFEOS_PROGRESS_CARD_SCREENSHOT)await card.screenshot({path:process.env.LIFEOS_PROGRESS_CARD_SCREENSHOT});
- for(const invalid of ['truncated','wrong-space','denied'] as const){
+ holdSnapshot=true;
+ const refreshing=page.waitForRequest(request=>request.url().endsWith('/requirements/snapshot'));
+ try{
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await refreshing;
+  await expect(card.getByText('待处理 6 / 7 项', {exact:false})).toBeVisible();
+  await expect(card.getByText('正在读取需求进度…',{exact:true})).toHaveCount(0);
+ }finally{holdSnapshot=false;snapshotGate.resolve();}
+ for(const invalid of ['truncated','wrong-space','disabled','denied'] as const){
+  mode='ok';
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(count('已上线且本人验收')).toHaveText('1');
   const before=reads;mode=invalid;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(card.getByText('需求进度暂不可用')).toBeVisible();
@@ -185,7 +212,25 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  mode='ok';
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
- await expect(page.locator('[data-requirements-page]')).toBeVisible();
+ const pool=page.getByRole('region',{name:'需求池',exact:true});
+ const range=pool.getByLabel('显示范围',{exact:true});
+ const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});
+ await expect(range).toHaveValue('pending');
+ await expect(pool.getByText('6 / 7 项',{exact:true})).toBeVisible();
+ for(const index of [0,3,4,5])await expect(row(index)).toBeVisible();
+ await expect(row(6)).toHaveCount(0);
+ await range.selectOption('completed');
+ await expect(pool.getByText('1 / 7 项',{exact:true})).toBeVisible();
+ await expect(row(6)).toBeVisible();
+ await expect(row(3)).toHaveCount(0);
+ await row(6).click();
+ const detail=page.getByRole('dialog');
+ await expect(detail.getByRole('link',{name:'打开正式站结果'})).toHaveAttribute('href',production.resultHref);
+ await expect(detail.getByRole('link',{name:'查看正式站验证记录'})).toHaveAttribute('href',production.verificationHref);
+ await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await page.goto(origin+'/personal?page=requirements&requirement='+items[6].id,{waitUntil:'domcontentloaded'});
+ await expect(detail.getByRole('heading',{name:items[6].requirement.title,exact:true})).toBeVisible();
+ await expect(detail.getByRole('link',{name:'打开正式站结果'})).toHaveAttribute('href',production.resultHref);
  await page.goto(origin+'/personal?empty=1',{waitUntil:'domcontentloaded',timeout:70000});
  emptySources=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -206,6 +251,20 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await product.getByRole('button',{name:'需求池',exact:true}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  await expect(page.locator('[data-requirements-page]')).toBeVisible();
+
+ exerciseCreate=true;
+ writable=true;
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await pool.getByRole('button',{name:'新增需求',exact:true}).click();
+ await detail.getByLabel('需求标题',{exact:true}).fill('Synthetic newly saved requirement');
+ await detail.getByLabel('需求描述',{exact:true}).fill('Check the same owner snapshot in the pool and overview.');
+ await detail.getByRole('button',{name:'保存需求',exact:true}).click();
+ await expect(detail.getByRole('heading',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
+ await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await expect(pool.getByText('7 / 8 项',{exact:true})).toBeVisible();
+ await expect(pool.getByRole('button',{name:/查看需求 .* Synthetic newly saved requirement$/})).toBeVisible();
+ await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
+ await expect(card.getByText('待处理 7 / 8 项',{exact:false})).toBeVisible();
 
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});

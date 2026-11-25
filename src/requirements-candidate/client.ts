@@ -1,6 +1,6 @@
 import {object,validateId,validateIdempotencyKey,validateRevision} from '../platform/domain.ts';
 import {requirementId,validateBaselineBinding,validateRequirementFields,type RequirementFields,type BaselineBinding} from './domain.ts';
-import type {RequirementItem} from './service.ts';
+import type {RequirementItem,RequirementsSnapshot} from './service.ts';
 export type RequirementBinding={ownerId:string;spaceId:string};
 export type RequirementCommand={ownerId:string;spaceId:string;id:string|null;key:string;method:'POST'|'PATCH';body:{spaceId:string;confirmed:true;fields:RequirementFields;expectedRevision?:number;baselineBinding?:BaselineBinding|null}};
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>;
@@ -25,6 +25,13 @@ export function readRequirementItem(value:unknown):RequirementItem{
  const binding=validateBaselineBinding(v.baselineBinding);validateRequirementFields(v.fields);
  if(typeof v.baselineConflict!=='boolean'||v.revision===0&&v.sourceId!==null||v.revision!==0&&v.sourceId===null||String(v.id).startsWith('LO-')!==!!binding||!v.requirement||typeof v.requirement!=='object')throw Error('需求读取响应无效。');
  return structuredClone(v) as RequirementItem;
+}
+
+export function readRequirementsSnapshot(snapshot:RequirementsSnapshot):RequirementsSnapshot{
+ if(snapshot?.scope!=='full-current-requirements-snapshot'||snapshot.truncated!==false||!Array.isArray(snapshot.items)||snapshot.total!==snapshot.items.length||!Array.isArray(snapshot.baseline?.requirements))throw Error('需求快照不完整。');
+ const items=snapshot.items.map(readRequirementItem);
+ if(items.some(item=>item.id!==item.requirement.id)||new Set(items.map(item=>item.id)).size!==items.length)throw Error('需求快照身份无效。');
+ return {...snapshot,items};
 }
 // Legacy PATCH replaces six required fields, leaving newly introduced optional workflow intact.
 const receiptMatches=(receipt:RequirementFields,command:RequirementCommand)=>{const compared={...receipt};if(command.method==='PATCH'&&!Object.hasOwn(command.body.fields,'workflow'))delete compared.workflow;return canonical(compared)===canonical(command.body.fields);};

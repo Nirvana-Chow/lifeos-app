@@ -3,9 +3,9 @@
 import {ArrowUpRight} from 'lucide-react';
 import {useEffect, useState} from 'react';
 import {Button} from './ui/button';
-import {readRequirementItem} from '../requirements-candidate/client.ts';
+import {readRequirementsSnapshot} from '../requirements-candidate/client.ts';
 import type {RequirementItem} from '../requirements-candidate/service.ts';
-import {formatDeliveryTime, requirementDelivery} from './requirements-delivery.ts';
+import {formatDeliveryTime, requirementDelivery, requirementIsComplete} from './requirements-delivery.ts';
 import styles from './requirement-progress-card.module.css';
 
 const workflowLabels = {
@@ -20,18 +20,18 @@ function summarize(items: RequirementItem[], observedAt: string) {
   const delivery = {unconfirmed:0,merged:0,awaitingAcceptance:0,completed:0};
   for (const {requirement, fields} of items) {
     workflow[fields.workflow?.state ?? 'unrecorded']++;
-    const {state} = requirementDelivery(requirement);
-    if (state === 'merged') delivery.merged++;
-    else if (state === 'live') {
-      delivery[requirement.status === 'accepted' ? 'completed' : 'awaitingAcceptance']++;
+    const evidence = requirementDelivery(requirement);
+    if (evidence.state === 'merged') delivery.merged++;
+    else if (evidence.state === 'live') {
+      delivery[requirementIsComplete(requirement, evidence) ? 'completed' : 'awaitingAcceptance']++;
     } else delivery.unconfirmed++;
   }
   return {workflow, delivery, observedAt, total:items.length};
 }
 
 export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen: () => void}) {
-  const [summary, setSummary] = useState<ReturnType<typeof summarize> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [reading, setReading] = useState<{scope:string; summary:ReturnType<typeof summarize>|null} | null>(null);
+  const summary = reading?.scope===scope ? reading.summary : null;
 
   useEffect(() => {
     let request: AbortController | undefined;
@@ -41,8 +41,7 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
       request = controller;
       const {signal} = controller;
       const options = {credentials:'same-origin', cache:'no-store', signal} as const;
-      setSummary(null);
-      setLoading(true);
+      let next:ReturnType<typeof summarize>|null = null;
       try {
         const status = await fetch('/api/platform/personal/status', options);
         if (!status.ok) return;
@@ -50,18 +49,14 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
         if (binding.requirementsEnabled !== true || JSON.stringify([binding.ownerId, binding.spaceId]) !== scope) return;
         const response = await fetch('/api/platform/personal/requirements/snapshot', options);
         if (!response.ok) return;
-        const snapshot = await response.json();
-        if (snapshot.scope !== 'full-current-requirements-snapshot' || snapshot.truncated !== false ||
-            !Array.isArray(snapshot.items) || snapshot.total !== snapshot.items.length) return;
-        const items: RequirementItem[] = snapshot.items.map(readRequirementItem);
-        if (items.some(item => item.id !== item.requirement.id) || new Set(items.map(item => item.id)).size !== items.length) return;
+        const snapshot = readRequirementsSnapshot(await response.json());
         const observedAt = typeof snapshot.observedAt === 'string' && Number.isFinite(Date.parse(snapshot.observedAt))
           ? snapshot.observedAt : '';
-        if (!signal.aborted) setSummary(summarize(items, observedAt));
+        next = summarize(snapshot.items, observedAt);
       } catch {
         // Incomplete or unavailable reads leave the counters unknown.
       } finally {
-        if (!signal.aborted) setLoading(false);
+        if (!signal.aborted) setReading({scope,summary:next});
       }
     }
     void refresh();
@@ -89,9 +84,9 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
             .map(([key,count])=><div key={key}><dt>{deliveryLabels[key as keyof typeof deliveryLabels]}</dt><dd>{count}</dd></div>)}
         </dl>
       </>}
-      <p className={styles.date}>{summary.observedAt
+      <p className={styles.date}>{summary.total>0 && <>待处理 {summary.total-summary.delivery.completed} / {summary.total} 项 · </>}{summary.observedAt
         ? <>读取时间 <time dateTime={summary.observedAt}>{formatDeliveryTime(summary.observedAt)}</time>（北京时间）</>
         : '读取时间待核实'}</p>
-    </> : <p className="lo-empty-compact" role="status">{loading ? '正在读取需求进度…' : '需求进度暂不可用'}</p>}
+    </> : <p className="lo-empty-compact" role="status">{reading?.scope!==scope ? '正在读取需求进度…' : '需求进度暂不可用'}</p>}
   </section>;
 }

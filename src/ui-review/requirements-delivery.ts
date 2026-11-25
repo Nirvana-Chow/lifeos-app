@@ -32,6 +32,11 @@ export type RequirementDelivery = {
  result?: {label:string; href:string; evidence?:string};
 };
 
+export function requirementIsComplete(item:Requirement, delivery:RequirementDelivery|undefined):boolean {
+ return delivery?.state==='live' && item.status==='accepted' && item.acceptance?.by==='user' &&
+  typeof item.acceptance.ref==='string' && item.acceptance.ref.trim().length>0;
+}
+
 const dateFormat = new Intl.DateTimeFormat('zh-CN',{
  timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',
 });
