@@ -54,6 +54,7 @@ async function json(path:string){const response=await fetch('/api/platform/perso
 function readStatus(v:unknown):Status{const value=v as Status;if(!value||typeof value.ownerId!=='string'||typeof value.spaceId!=='string'||value.storageVerified!==true||!Array.isArray(value.allowedTypes))throw Error('本人空间尚未就绪。');return {...value,writable:value.writable===true};}
 export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,careerSection,writeJournal,journalDay,onJournalSaved}:{type:RecordModule;linkedPersonId?:string;careerSection?:CareerSection;writeJournal?:boolean;journalDay?:string;onJournalSaved?:()=>void;navigationGuard?:{current:(()=>boolean)|null}}){
  const title=labels[careerSection??type];
+ const awaitingJournalDay=writeJournal===true&&!journalDay;
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
  const [healthCategory,setHealthCategory]=useState<HealthRecordCategory>('all');
  const [healthStatus,setHealthStatus]=useState<HealthRecordStatus>('all');
@@ -159,7 +160,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   }catch(e){setError(e instanceof Error?e.message:'请核对输入。');}
  }
  function create(kind?:PortfolioKind){
-  if(blocked||!status?.writable||!leave())return;
+  if(blocked||awaitingJournalDay||!status?.writable||!leave())return;
   const fields=careerSection==='resume'?emptyRecordFields('career',zone(),'resume'):fresh(type,kind);
   if(type==='journal'&&writeJournal&&journalDay)fields.occurredOn=journalDay;
   if(type==='media'){
@@ -251,7 +252,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    const disclosure=event.currentTarget.closest('details');
    if(disclosure){disclosure.open=false;disclosure.querySelector('summary')?.focus();}
    create();
-  }}>新增人物</Button></details>:<Button disabled={!status?.writable||blocked||(type==='media'&&(mediaKind==='music'||mediaKind==='photography'))} onClick={()=>create()}>新增{title}</Button>}</div>;
+  }}>新增人物</Button></details>:<Button disabled={!status?.writable||blocked||awaitingJournalDay||(type==='media'&&(mediaKind==='music'||mediaKind==='photography'))} onClick={()=>create()}>新增{title}</Button>}</div>;
  const recovery=mutation?.phase==='uncertain'&&<div className={s.recovery}>
   {mutation.pending?<Button type="button" variant="outline" disabled={!mayRetry(mutation.pending.type)}
    onClick={()=>void retry()}>继续上次保存（{recordLabels[mutation.pending.type]}）</Button>:<p>保留的请求无法核对，请保留当前页面。</p>}
@@ -270,7 +271,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  </>;
  return <div ref={root} className={s.workbench} data-personal-record-module={type}>
   {writeJournal?<><div className={s.toolbar}>
-   {status?.writable===true&&verified!==false&&<Button type="button" disabled={blocked} onClick={()=>create()}>写日记</Button>}
+   {status?.writable===true&&verified!==false&&<Button type="button" disabled={blocked||awaitingJournalDay} onClick={()=>create()}>写日记</Button>}
    {!status&&error&&<Button type="button" variant="outline" disabled={busy} onClick={()=>void refresh()}>重新读取日记编辑器</Button>}
   </div>{feedback}<details className={s.personActions}><summary>管理日记</summary>{toolbar}{records}</details></>:<>{toolbar}{feedback}{records}</>}
   <Dialog open={!!editor&&verified!==false} onOpenChange={open=>{if(!open&&leave())setEditor(null);}}><DialogContent container={root.current} className={s.dialog} showCloseButton={!blocked}><DialogTitle>{editor?.entry?'编辑':'新增'}{title}</DialogTitle><DialogDescription className={s.description}>{careerSection==='resume'?'引用已保存的职业经历与项目成果，整理和预览简历版本。':recordModuleDescriptions[type]}</DialogDescription>{fields&&<form onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={blocked||!status?.writable} className={s.form}><label>{type==='person'?'姓名':'标题'}<Input required maxLength={240} value={fields.title} onChange={event=>setFields({...fields,title:event.target.value})}/></label><label>{type==='journal'?'正文':'备注'}<textarea aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>

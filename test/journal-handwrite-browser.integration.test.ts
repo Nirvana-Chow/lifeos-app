@@ -49,6 +49,7 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  let writable=false,mfa=true,failSnapshot=false,failDetail=false,detailReadCount=0;
+ let holdHistory:Promise<void>|undefined;
  const handler=createPersonalPlatformHandler({config,repository:repo,storageVerified:true,
   sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{if(!writable)throw Error('Fixture is read only');}});
  const commands:{method:string;key:string;body:string}[]=[];
@@ -61,7 +62,10 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
   if(path.startsWith('/api/platform/install/'))return route.fulfill({status:404,body:''});
   if(path==='/api/platform/status')return route.fulfill({json:{scope:'isolated-synthetic-review'}});
   if(path.endsWith('/auth/get-session'))return route.fulfill({json:{session:{mfaVerified:mfa,sessionDurationMode:'fixed',sessionDurationSeconds:3600,expiresAt:new Date(Date.now()+3600000).toISOString()}}});
-  if(path.endsWith('/journal/snapshot')&&failSnapshot)return route.fulfill({status:503,json:{}});
+  if(path.endsWith('/journal/snapshot')){
+   if(holdHistory)await holdHistory;
+   if(failSnapshot)return route.fulfill({status:503,json:{}});
+  }
   if(request.method()==='GET'&&/\/journal\/[0-9a-f-]+$/.test(path)){
    detailReadCount++;
    if(failDetail)return route.fulfill({status:503,json:{}});
@@ -88,6 +92,14 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  mfa=true;
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:90000});
  await expect(journal.getByText(/北京时间/)).toBeVisible({timeout:30000});
+ await expect(write).toBeEnabled({timeout:15000});
+ let releaseHistory=()=>{};
+ holdHistory=new Promise<void>(resolve=>{releaseHistory=resolve;});
+ try{
+  await journal.getByRole('button',{name:'重新读取历史',exact:true}).click();
+  await expect(write).toBeDisabled();
+  await expect(page.getByRole('dialog',{name:'新增日记',exact:true})).toHaveCount(0);
+ }finally{holdHistory=undefined;releaseHistory();}
  await write.click({timeout:15000});
  const editor=page.getByRole('dialog',{name:'新增日记',exact:true});
  const title='Synthetic hand-written journal',original='Synthetic original body\nSecond line stays intact.';
