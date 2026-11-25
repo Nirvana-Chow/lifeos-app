@@ -9,6 +9,10 @@ export type CalendarProjection={occurrences:CalendarOccurrence[];unscheduled:str
 const dayMs=86400000;
 export const calendarDayNumber=(date:string)=>Date.parse(validateCalendarDate(date)+'T00:00:00Z')/dayMs;
 export function shiftCalendarDate(date:string,days:number):string{return validateCalendarDate(new Date((calendarDayNumber(date)+days)*dayMs).toISOString().slice(0,10));}
+export function calendarWeekStart(date: string): string {
+ const weekday = new Date(calendarDayNumber(date) * dayMs).getUTCDay();
+ return shiftCalendarDate(date, -((weekday + 6) % 7));
+}
 export function dateInCalendarZone(instant:string,timeZone:string):string{
  validateCalendarZone(timeZone);const stamp=Date.parse(instant);if(!Number.isFinite(stamp))throw new PlatformError(400,'INVALID_INSTANT','需要明确的观察时刻。');
  const fixed=/^([+-])(\d{2}):(\d{2})$/.exec(timeZone);

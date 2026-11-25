@@ -1,15 +1,30 @@
-import { calendarGrid, categories, dayLabel, initialDay as fixtureDay, periodLabels, periodRange, projectActivity, recordSources, shiftDay, stages, stateLabels, summarizePeriod } from './activity.mjs';
+import { activityDate, calendarGrid, categories, dayLabel, initialDay as fixtureDay, localDay, maxActivityDay, minActivityDay, periodLabels, periodRange, projectActivity, recordSources, shiftDay, stages, stateLabels, summarizePeriod } from './activity.mjs';
 
+/** @typedef {{ date: string, period: keyof typeof periodLabels, category: keyof typeof categories }} ActivitySelection */
 
-export function mountActivity(root, mapping, { fixtures, isolated = false } = {}) {
+/**
+ * @param {Document | HTMLElement} root
+ * @param {import('./journal-source.ts').JournalActivityInput | null} mapping
+ * @param {{ fixtures?: typeof import('./fixtures.mjs').sources, isolated?: boolean, serverDay?: string,
+ * mergeReceipts?: { label: string, href: string, at: string }[], selection?: ActivitySelection,
+ * onSelectionChange?: (selection: ActivitySelection) => void }} [options]
+ */
+export function mountActivity(root, mapping, { fixtures, isolated = false, serverDay = fixtureDay, mergeReceipts = [], selection, onSelectionChange } = {}) {
   const mapped = mapping !== null;
-  const initialDay = mapped ? mapping.asOf : fixtureDay;
+  const asOf = mapped ? mapping.asOf ?? serverDay : fixtureDay;
+  const journalEntries = mapping?.entries ?? [];
+  const developmentEntries = mergeReceipts.map(({ label, href, at }) => ({
+    id: href, title: label, when: { at }, stage: 'merged', verified: true, evidence: '查看合并记录', href,
+  }));
   const sources = mapped ? {
     memos: { coverage: new Map(), entries: [] },
-    diary: { coverage: new Map((mapping.entries ?? []).map(entry => [entry.when.date, 'observed'])), entries: mapping.entries ?? [] },
-    development: { coverage: new Map(), entries: [] },
+    diary: {
+      coverage: new Map(journalEntries.map(entry => [entry.when.date, 'observed'])), entries: journalEntries,
+      defaultState: mapping.state === 'unauthorized' ? 'unauthorized' : 'unknown',
+    },
+    development: { coverage: new Map(developmentEntries.map(entry => [localDay(entry.when), 'observed'])), entries: developmentEntries },
   } : fixtures;
-  let period = 'quarter';
+  let period = selection?.period ?? 'quarter';
   let calendar = null;
   const chartBody = root.querySelector('#chart-body');
   const calendarFooter = root.querySelector('#calendar-footer');
@@ -30,11 +45,9 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
   const buttons = new Map();
   const sourceButtons = [...root.querySelectorAll('button[data-source]')];
   const projections = new Map();
-  let category = mapped ? 'records' : 'development';
-  let selected = initialDay;
-  let focused = initialDay;
-  const minDay = '0002-01-01';
-  const maxDay = '9998-12-31';
+  let category = selection?.category ?? (mapped ? 'records' : 'development');
+  let selected = selection?.date ?? asOf;
+  let focused = selected;
   const weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
   const overviewTitles = { week: '本周总览', month: '月度总览', quarter: '季度总览', year: '全年总览' };
 
@@ -88,8 +101,8 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     }
   }
 
-  jump.min = minDay;
-  jump.max = maxDay;
+  jump.min = minActivityDay;
+  jump.max = maxActivityDay;
 
   function rangeCaption({ first, last }) {
     if (first === last) return first;
@@ -107,8 +120,8 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     currentPeriod.textContent = rangeCaption(range);
     previousPeriod.setAttribute('aria-label', '上一' + periodLabels[period]);
     nextPeriod.setAttribute('aria-label', '下一' + periodLabels[period]);
-    previousPeriod.disabled = range.first <= minDay;
-    nextPeriod.disabled = range.last >= maxDay;
+    previousPeriod.disabled = range.first <= minActivityDay;
+    nextPeriod.disabled = range.last >= maxActivityDay;
     for (const button of periodButtons) button.setAttribute('aria-pressed', String(button.dataset.period === period));
     root.querySelector('#activity-heading').textContent = singleDay ? '单日活动' : '活动热力图';
     chartBody.hidden = singleDay;
@@ -126,7 +139,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
 
   function projection(date) {
     const key = category + ':' + date;
-    if (!projections.has(key)) projections.set(key, projectActivity(sources, category, date, initialDay));
+    if (!projections.has(key)) projections.set(key, projectActivity(sources, category, date, asOf));
     return projections.get(key);
   }
 
@@ -140,6 +153,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     selected = date;
     jump.value = selected;
     renderDetail();
+    onSelectionChange?.({ date: selected, period, category });
   }
 
   function focusDay(date, moveFocus) {
@@ -153,7 +167,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
   function renderGrid() {
     graph.dataset.category = category;
     root.querySelector('#legend').dataset.category = category;
-    root.querySelector('#partial-key').hidden = category !== 'records';
+    root.querySelector('#partial-key').hidden = category === 'development' && !developmentEntries.length;
     for (const [date, { button, cell }] of buttons) {
       const day = projection(date);
       const label = date + ' · ' + dayLabel(day, category);
@@ -172,13 +186,14 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     const source = mapped ? '此日期的来源' : '此日期的样例来源';
     const text = day.state === 'future' ? '此日期尚未到达。'
       : day.state === 'unauthorized' ? source + '未获授权。'
+      : mapped && category === 'development' ? '当天没有可核对的交付证据，开发覆盖未知。'
       : day.state === 'unknown' ? source + '覆盖未知。'
       : '此日期已核对，暂无该来源的记录。';
     detail.replaceChildren();
     if (day.sourceStates) {
       const labels = Object.entries(day.sourceStates)
         .filter(([, state]) => state !== 'complete')
-        .map(([source, state]) => recordSources[source] + ' ' + stateLabels[state]);
+        .map(([source, state]) => recordSources[source] + ' ' + (mapped && source === 'memos' ? '未接入' : stateLabels[state]));
       detail.append(element('p', labels.join(' · '), 'empty'));
     }
     if (day.entries.length === 0) {
@@ -195,7 +210,13 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
             const row = element('li');
             const badge = element('span', stage.label, 'badge');
             badge.dataset.stage = stage.key;
-            row.append(badge, element('span', event.evidence, 'evidence'));
+            const evidenceLink = element(event.href ? 'a' : 'span', event.evidence, 'evidence');
+            if (event.href) {
+              evidenceLink.href = event.href;
+              evidenceLink.rel = 'noreferrer';
+              evidenceLink.setAttribute('aria-label', event.evidence + ' · ' + record.title);
+            }
+            row.append(badge, evidenceLink);
             evidence.append(row);
           }
         }
@@ -236,7 +257,8 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     periodStages.setAttribute('aria-label', periodLabels[period] + '阶段统计');
     if (category === 'development') {
       for (const stage of stages) {
-        const item = element('li', stage.label + ' ' + (coverage.complete ? stageCounts[stage.key] : '—'), 'badge');
+        const count = stageCounts[stage.key];
+        const item = element('li', stage.label + ' ' + (count || coverage.complete ? count : '—'), 'badge');
         item.dataset.stage = stage.key;
         periodStages.append(item);
       }
@@ -253,7 +275,9 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
   function renderGuide() {
     const isDevelopment = category === 'development';
     guideTitle.textContent = isDevelopment ? '开发证据说明' : '记录统计口径';
-    guideDescription.textContent = isDevelopment ? '按当天有证据的成果去重计数，同项多阶段只计一次。'
+    guideDescription.textContent = isDevelopment ? (mapped
+      ? '仅纳入需求进度已引用的合并证据，按实际合并时刻归日。开发全量来源尚未接入。'
+      : '按当天有证据的成果去重计数，同项多阶段只计一次。')
       : mapped ? '按上海日历日展示已核对的日记。原文在已有日记入口查看。'
       : '随手记与日记按上海日历日一起查看。详情保留各自来源、标题与原文。';
     guideStages.replaceChildren();
@@ -274,6 +298,7 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
       renderDetail();
       renderGuide();
       renderOverview();
+      onSelectionChange?.({ date: selected, period, category });
     });
   }
 
@@ -298,8 +323,8 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
   previousPeriod.addEventListener('click', () => setPeriod(period, shiftDay(periodRange(selected, period).first, -1)));
   nextPeriod.addEventListener('click', () => setPeriod(period, shiftDay(periodRange(selected, period).last, 1)));
   jump.addEventListener('change', () => {
-    const date = jump.value;
-    if (!date || !jump.validity.valid) jump.value = selected;
+    const date = activityDate(jump.value);
+    if (!date) jump.value = selected;
     else if (!buttons.has(date)) setPeriod(period, date);
     else selectDay(date);
   });
@@ -316,13 +341,9 @@ export function mountActivity(root, mapping, { fixtures, isolated = false } = {}
     const status = root.querySelector('#mapping-state');
     status.hidden = false;
     status.textContent = mapping.state === 'ready'
-      ? '日记来自已核对的日记快照。Memos 和开发证据尚无可核对的来源。'
+      ? '日记来自已核对的日记快照。Memos 未接入。'
       : mapping.state === 'unauthorized' ? '当前未获授权读取日记。' : '日记来源暂时无法核对。';
-    if (mapping.state !== 'ready') root.querySelector('main').hidden = true;
   }
-  if (!mapped || mapping.state === 'ready') {
-    setPeriod(period, initialDay);
-    renderGuide();
-  }
-
+  setPeriod(period, selected);
+  renderGuide();
 }

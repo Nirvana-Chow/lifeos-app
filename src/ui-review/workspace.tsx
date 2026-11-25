@@ -44,7 +44,6 @@ import {
 } from "./ui/dialog";
 import {
   filterTasks,
-  metricTaskFilter,
   taskMetrics,
   mayWrite,
   visibleWorkspaceState,
@@ -53,7 +52,6 @@ import { TaskTable, statusLabels } from "./task-table";
 import {TaskProjectGantt} from './task-project-gantt';
 import {TaskBoard} from "./task-board";
 import { TaskTitleField } from "./task-grid";
-import { OverviewChart } from "./overview-chart";
 import type {
   LifeOSWorkspaceProps,
   TaskRow,
@@ -71,10 +69,10 @@ import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
-import {RequirementProgressCard} from './requirement-progress-card';
+import {DailyOverview} from './daily-overview';
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
-import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
+import {groupWorkspaceModules} from './workspace-hierarchy';
 
 import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
 
@@ -190,7 +188,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         onClick={()=>chooseModule(group.id)}>{group.label}</Button>)}
     </nav>
   );
-  const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
   const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review'||link.id==='file-handoffs');
   const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
@@ -269,10 +266,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const [undoNow,setUndoNow]=useState(0);
   const [topicQuery,setTopicQuery]=useState("");
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
-  const overviewTasks = page === "overview" && state.status === "ready"
-    ? filterTasks(tasks, defaultFilter).slice(0, 6)
-    : emptyTasks;
-  const activeProjects = data?.projects.filter(project => project.stage === "active") ?? [];
   const detail = data?.tasks.find((task) => task.id === detailId) ?? null;
   const filterActive =
     !!filter.query ||
@@ -709,7 +702,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           data-workspace-nav
           onClick={() => navigate("overview")}
         >
-          <svg aria-hidden="true" viewBox="0 0 28 28" width="21" height="21" fill="currentColor"><path d="M3 18V6c0-2.6 1.4-4 3.3-4 2 0 3.3 1.4 3.3 4v10.8c0 2.9 1.3 4.1 4 4.1 2.7 0 6.4-1.1 9.5-2.3 1.8-.7 3.1.2 3.3 1.6.2 1.3-.6 2.3-2.3 3C20 24.8 15.6 26 11.4 26 5.4 26 3 23.2 3 18Z"/></svg>
+          <svg aria-hidden="true" viewBox="-15 -13 226 226" width="21" height="21" fill="currentColor"><path d="M1 35C1 15.7 16.5 0 36 0S71 15.5 71 35v96c0 17 4 23 13 26 14 5 52-4 89-18 11-4 19-1 22 7 4 10-1 17-9 23-28 18-72 30-118 31C30 200 1 172 1 135Z"/></svg>
           LifeOS
         </Button>
         {moduleSwitch()}
@@ -829,82 +822,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 <Button key={item.id} variant="ghost" aria-label={item.label+"分类视图"} aria-pressed={page === item.id || item.id === "tasks" && page === "inbox"}
                   data-workspace-nav onClick={() => navigate(item.id)}>{item.label}</Button>)}
             </nav>}
-          {page === "overview" && (
-            <>
-              <section className="lo-metrics" aria-label="任务指标">
-                {([
-                  {label:"待办",value:metrics.pending,metric:"pending"},
-                  {label:"今日到期",value:metrics.dueToday,metric:"today"},
-                  {label:"已逾期",value:metrics.overdue,metric:"overdue"},
-                  {label:"推进中项目",value:data?.coverage === "complete" ? activeProjects.length : null,metric:"projects"},
-                ] as const).map(({label,value,metric}) => (
-                  <button type="button" key={label} className="lo-metric" data-workspace-nav aria-label={`${label}：${value === null ? "未知" : value}`} disabled={value === null} onClick={() => {if(navigate(metric === "projects" ? "projects" : "tasks") && metric !== "projects")setFilter(metricTaskFilter(metric));}}>
-                    <span>{label}</span><strong>{value === null ? "—" : value}</strong>
-                  </button>
-                ))}
-              </section>
-              {verifiedPrivateScope && <RequirementProgressCard key={verifiedPrivateScope} scope={verifiedPrivateScope} onOpen={()=>navigate('requirements')}/>}
-              {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
-                <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
-                {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
-                <div className={workspaceStyles.domainGrid}>{domains.map(domain=><section key={domain.id??'unassigned'} className={workspaceStyles.domainSection}>
-                  <div className={workspaceStyles.domainHeading}><h3>{domain.title}</h3>{!domain.loaded&&<span>领域待核对</span>}</div>
-                  {domain.projects.length>0?<ul className={workspaceStyles.domainProjects}>{domain.projects.map(project=><li key={project.id}><Button variant="ghost" data-workspace-nav className={workspaceStyles.domainProject} onClick={()=>navigate('tasks',null,project.id)}><span><strong>{project.title}</strong><span>{project.nextStep?.trim()?project.nextStep:'下一步尚未填写'}</span></span><ChevronRight size={16}/></Button></li>)}</ul>:<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无推进中项目':'暂无推进中项目'}</p>}
-                </section>)}</div>
-                {domains.length===0&&<p className={workspaceStyles.domainEmpty}>{data?.coverage==='partial'?'已读取范围内暂无领域或推进中项目':'暂无领域或推进中项目，可在事项中整理领域与项目。'}</p>}
-              </section>}
-              <div className="lo-overview-grid">
-                <section className="lo-panel" hidden={state.status !== "ready"}>
-                  <div className="lo-panel-heading">
-                    <h2>待办</h2>
-                    <Button variant="ghost" aria-label="查看全部待办" data-workspace-nav onClick={() => navigate("tasks")}>
-                      <span>查看全部{metrics.pending === null ? "" : ` ${metrics.pending} 项`}</span><ArrowUpRight size={18} />
-                    </Button>
-                  </div>
-                  <div className="lo-overview-task-list">
-                    {overviewTasks.map(task => taskCard(task, false, true))}
-                  </div>
-                  {metrics.pending !== null && metrics.pending > overviewTasks.length && <p className="lo-overview-preview-note">显示前 {overviewTasks.length} 项待办</p>}
-                  {metrics.pending === 0 && <div className="lo-empty-compact">暂无待办</div>}
-                </section>
-                {state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> : (
-                    <section className="lo-panel">
-                      <div className="lo-panel-heading">
-                        <h2>任务状态</h2>
-                        <span>
-                          {metrics.total === null
-                            ? "完整范围未知"
-                            : `${metrics.total} 项`}
-                        </span>
-                      </div>
-                      {metrics.total !== null &&
-                      metrics.pending !== null &&
-                      metrics.done !== null ? (
-                        <>
-                          <OverviewChart
-                            pending={metrics.pending}
-                            done={metrics.done}
-                            cancelled={
-                              metrics.total - metrics.pending - metrics.done
-                            }
-                          />
-                          <div className="lo-chart-summary">
-                            <span>
-                              未完成 <strong>{metrics.pending}</strong>
-                            </span>
-                            <span>
-                              已完成 <strong>{metrics.done}</strong>
-                            </span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="lo-empty-compact">完整统计暂不可用</div>
-                      )}
-                    </section>
-                )}
-              </div>
-            </>
-          )}
+          {page === "overview" && <DailyOverview
+            key={verifiedPrivateScope??'overview-unverified'} scope={verifiedPrivateScope??null}
+            state={state} showTasks={showPrivateRequirements}
+            scheduleHref={ownerModules.scope===verifiedPrivateScope ? ownerModules.links.find(link=>link.id==='calendar')?.href : undefined}
+            journalHref={ownerModules.scope===verifiedPrivateScope ? ownerModules.links.find(link=>link.id==='journal')?.href : undefined}
+            onRequirements={()=>navigate('requirements')} onTasks={()=>navigate('tasks')}
+            renderTask={task=>taskCard(task,false,true)}
+          />}
           {(page === "tasks" || page === "inbox") && (
             <>
               <div className="lo-task-toolbar">
