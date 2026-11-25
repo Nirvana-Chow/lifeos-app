@@ -28,7 +28,6 @@ import {
   SlidersHorizontal,
   ShieldCheck,
   KeyRound,
-  Tags,
   ClipboardList,
   Folders,
   Layers,
@@ -475,23 +474,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     );
   }
   const availableSettings = ([
-    {id:'security',label:'安全与密码',icon:ShieldCheck},
     {id:'api-keys',label:'API 密钥',icon:KeyRound},
-    {id:'topics',label:'标签',icon:Tags},
-  ] as const).filter(item=>item.id==='topics'?access.allowedTypes?.includes('topic'):props.availableSettingsPanels?.includes(item.id));
+    {id:'security',label:'安全与密码',icon:ShieldCheck},
+  ] as const).filter(item=>props.availableSettingsPanels?.includes(item.id));
   const settingsNavigation = (
     <nav className={`lo-nav ${workspaceStyles.settingsNavigation}`} aria-label="设置分类">
-      <div role="group" aria-label="偏好与账号" className={workspaceStyles.navigationGroup}>
-        <span className={workspaceStyles.navigationLabel}>偏好与账号</span>
-        {availableSettings.map(({id,label,icon:Icon})=>{
-          const current=settingsOpen&&settingsPanel===id;
-          return <Button variant="ghost" data-workspace-nav key={id} aria-label={label} title={collapsed?label:undefined}
-            className={current?'is-current':undefined} aria-current={current?'page':undefined}
-            onClick={()=>{if(!settingsOpen)navigate('settings',null,null,id);else if(selectSettingsPanel(id))setMobileOpen(false);}}>
-            <Icon size={19} aria-hidden="true"/><span>{label}</span>
-          </Button>;
-        })}
-      </div>
       <div role="group" aria-label="产品" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>产品</span>
         <Button variant="ghost" data-workspace-nav aria-label="需求池" title={collapsed?"需求池":undefined}
@@ -504,6 +491,17 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>
         <OwnerModuleLinks links={toolLinks} path={ownerModules.path} collapsed={collapsed}/>
       </div>}
+      <div role="group" aria-label="偏好与账号" className={workspaceStyles.navigationGroup}>
+        <span className={workspaceStyles.navigationLabel}>偏好与账号</span>
+        {availableSettings.map(({id,label,icon:Icon})=>{
+          const current=settingsOpen&&settingsPanel===id;
+          return <Button variant="ghost" data-workspace-nav key={id} aria-label={label} title={collapsed?label:undefined}
+            className={current?'is-current':undefined} aria-current={current?'page':undefined}
+            onClick={()=>{if(!settingsOpen)navigate('settings',null,null,id);else if(selectSettingsPanel(id))setMobileOpen(false);}}>
+            <Icon size={19} aria-hidden="true"/><span>{label}</span>
+          </Button>;
+        })}
+      </div>
     </nav>
   );
   const navigation = (
