@@ -291,6 +291,9 @@ export async function assertPrivateFixtureNavigation(page:Page){
  if(urlBound)await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');
  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
  if(drawerOpen)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ const tools=categories.getByRole('group',{name:'资料与工具',exact:true});
+ await expect(tools.getByRole('link')).toHaveText(['存储审核']);
+ await expect(tools.getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await expect(page.getByRole('navigation',{name:'主导航',exact:true})).toHaveCount(0);
  await categories.getByRole('button',{name:'需求池',exact:true}).click();
  await expect(page.getByRole('heading',{level:1,name:'需求池',exact:true})).toBeVisible();
