@@ -48,7 +48,38 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
   const dialog=page.getByRole('dialog');assert.ok(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1),'dialog must fit mobile width');await page.getByRole('button',{name:'关闭',exact:true}).click();
   await page.getByRole('button',{name:'账户与分类',exact:true}).click();await expect(page.getByText('尚未填写账户引用。',{exact:true})).toBeVisible();await page.getByRole('button',{name:'流水',exact:true}).click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'page must not overflow the viewport');assert.deepEqual(errors,[]);assert.deepEqual(writes.map(write=>write.method),['POST','PATCH']);assert.notEqual(writes[0].key,writes[1].key);assert.equal([...repo.rows.values()][0].revision,2);
-  await page.screenshot({path:join(evidence,`finance-${theme}-${width}.png`),fullPage:true});await page.close();
+  await service.create(ownerId,{spaceId,confirmed:true,fields:{kind:'income',currency:'CNY',amountMinor:10000,occurredOn:'2030-11-05',notes:'Isolated chart income'}},'finance-chart-source');
+  await page.getByRole('button',{name:'刷新',exact:true}).click();
+  const chart=page.getByRole('img',{name:'记录收支流向图'});
+  await expect(chart).toHaveAccessibleDescription(/100\.00.*29\.01.*70\.99/);
+  await page.getByLabel('搜索',{exact:true}).fill('Isolated chart income');
+  await expect(page.getByText('显示 1 条流水',{exact:false})).toBeVisible();
+  await expect(chart).toHaveAccessibleDescription(/100\.00.*29\.01.*70\.99/);
+  await expect(page.getByText('暂无已核准的资产及负债快照来源。余额和净资产未知。',{exact:true})).toBeVisible();
+  await page.screenshot({path:join(evidence,`finance-${theme}-${width}.png`),fullPage:true});
+  if (width===360&&theme==='light') {
+   await service.create(ownerId,{spaceId,confirmed:true,fields:{kind:'expense',currency:'CNY',amountMinor:6099,occurredOn:'2030-11-05',notes:'Isolated high expense ratio'}},'finance-chart-high-expense');
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(chart).toHaveAccessibleDescription(/100\.00.*90\.00.*10\.00/);
+   assert.ok(await chart.evaluate(element=>{
+    const svg=element as unknown as SVGSVGElement,{y,height}=svg.viewBox.baseVal;
+    return Array.from(svg.querySelectorAll<SVGGraphicsElement>('[data-flow-node],[data-flow]')).every(shape=>{
+     const box=shape.getBBox();
+     return box.y>=y&&box.y+box.height<=y+height;
+    });
+   }),'the mobile chart must contain every ribbon and node');
+   await service.create(ownerId,{spaceId,confirmed:true,fields:{kind:'income',currency:'CNY',amountMinor:1000000000000,occurredOn:'2030-11-05',notes:'Isolated large income'}},'finance-chart-large-income');
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(chart).toHaveAccessibleDescription(/10000000100\.00/);
+   assert.ok(await chart.evaluate(element=>{
+    const svg=element as unknown as SVGSVGElement,{x,width}=svg.viewBox.baseVal;
+    return Array.from(svg.querySelectorAll('text')).every(label=>{
+     const box=label.getBBox();
+     return box.x>=x&&box.x+box.width<=x+width;
+    });
+   }),'full amounts must fit in the SVG without hiding digits');
+  }
+  await page.close();
  }
  assert.ok(!/Failed to compile|Module not found/.test(log),'fixture compiled actual UI');
 });
