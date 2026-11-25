@@ -9,6 +9,8 @@
 - [x] 2.2 Add API Key settings using the existing account shell and ReUI. Cover one-time reveal, custom expiry, replacement and revoke.
 - [x] 2.3 Update the LifeOS Agent Skill credential instructions and keep its operation reference in sync.
 
+2026-11-25 owner follow-up (LO-AGENT-001, #35): recover account key-list 401 through the existing fresh-login flow and return to that settings pane. Keep 403 denied, with no creation or metadata, and distinguish service failures. This does not alter MFA, grant scope, issuance, expiry, revocation, or database configuration.
+
 ## 3. Qualify and deliver
 
 - [ ] 3.1 Test missing, excessive, expired and boundary lifetimes, unauthorized management, both concurrent revocation orders, and redaction.
