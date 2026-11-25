@@ -147,3 +147,24 @@ test('real CLI ignores replacement ancestry without changing the caller replacem
   assert.equal(git('replace','-l'),replacements);assert.equal(readGitCandidate(dir,head).treeSha,tree);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('retired workflows are explicit drift against a legacy capture with all three pins',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'lifeos-preflight-workflow-cutover-'));
+ try {
+  const git=(...args:string[])=>execFileSync('git',['-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid',...args],{
+   cwd:dir,encoding:'utf8',stdio:['ignore','pipe','pipe'],
+  }).trim();
+  git('init','-qb','main');
+  const [current,...retired]=WORKFLOW_PATHS;
+  mkdirSync(join(dir,current,'..'),{recursive:true});
+  writeFileSync(join(dir,current),'synthetic unified workflow');
+  git('add','.');git('commit','-qm','synthetic candidate');
+  const f=fixture();f.candidate=readGitCandidate(dir,git('rev-parse','HEAD'));
+  const result=check(f);
+  assert.equal(result.code,'WORKFLOW_PIN_REVIEW_REQUIRED');
+  assert.equal(result.publicationAuthorized,false);
+  assert.deepEqual(result.differences.slice(1),retired.map(path=>({path,expected:hash('5'),actual:null})));
+  for(const path of retired)f.metadata.workflowPins[path]=null;
+  assert.equal(check(f).code,'METADATA_INVALID');
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});

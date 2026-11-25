@@ -14,14 +14,14 @@ from scripts.release_eligibility import FULL_JOBS, RELEASE_JOBS
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_SHA = '428b974cd4981edc3967c8beb8a3dad014206c31'
-UNIFIED_SHA = 'e' * 40  # Synthetic source. The exact cutover workflow is reviewed separately.
+UNIFIED_SHA = 'e' * 40  # Fixture identity, using the candidate workflow bytes.
 REPO = {'id': compat.REPOSITORY_ID, 'full_name': compat.REPOSITORY}
 WORKFLOW_IDS = {compat.CI: 101, compat.LEGACY_QUALIFICATION: 102}  # Synthetic IDs.
 
 
 def git_blob(rev, path):
     if rev == UNIFIED_SHA and path == compat.CI:
-        return b'synthetic-unified-workflow-v1'
+        return (ROOT / path).read_bytes()
     return subprocess.check_output(['git', '--no-replace-objects', 'show', f'{rev}:{path}'], cwd=ROOT)
 
 
@@ -49,11 +49,13 @@ def run_evidence(path, contract, run_id, attempt=1):
         if full:
             definitions[compat.PLATFORM] = []
             definitions[compat.RECOVERY] = []
-        if full or contract.visual:
+        if full or contract.affected_ui:
+            full_result = 'success' if full else 'skipped'
             definitions[compat.RENDERED] = [
-                step(compat.IMAGE_STEP), step('Verify compiled default-closed routes'),
-                step('Verify exact scoped release cases and cleanup'),
-                step(compat.COMPILED_STEP, 'success' if full else 'skipped'),
+                step(compat.IMAGE_STEP, full_result), step('Verify compiled default-closed routes', full_result),
+                step('Verify exact scoped release cases and cleanup', full_result),
+                step('Verify additional UI cases actually ran', 'success' if contract.affected_ui else 'skipped'),
+                step(compat.COMPILED_STEP, full_result),
                 step(compat.CAPTURE_GUARD, 'success' if contract.visual else 'skipped'),
                 step(compat.CAPTURE_STEP, 'success' if contract.visual else 'skipped'),
             ]
@@ -84,7 +86,8 @@ def fixture(mode='unified', profile='full', visual=True, attempt=1, wake=None, s
     workflow_bytes = {path: git_blob(sha, path) for path in paths}
     pins = {path: compat.WorkflowPin(workflow_ids[path], sha256(content).hexdigest())
             for path, content in workflow_bytes.items()}
-    contract = compat.SourceContract(sha, mode, profile, visual, pins)
+    contract = compat.SourceContract(sha, mode, profile, visual if mode == 'legacy' else profile == 'full' and visual,
+                                     pins, affected_ui=visual)
     release = run_evidence(compat.CI, contract, release_run_id, attempt)
     qualification = run_evidence(compat.LEGACY_QUALIFICATION, contract, 4102) if mode == 'legacy' and profile == 'full' else None
     event_run = qualification.run if wake == compat.LEGACY_QUALIFICATION else release.run
@@ -240,6 +243,23 @@ class CompatTest(unittest.TestCase):
             with sqlite3.connect(path) as db:
                 self.assertEqual(set(db.execute('SELECT sha FROM claims')), {(UNIFIED_SHA,), (LEGACY_SHA,)})
 
+    def test_candidate_still_has_one_entry_and_image_build(self):
+        workflow = (ROOT / compat.CI).read_text()
+        directory = ROOT / '.github/workflows'
+        legacy = {'qualification.yml', 'visual-qualification.yml'}
+        self.assertEqual({path.name for path in directory.iterdir() if path.suffix in {'.yaml', '.yml'}},
+                         {'ci.yml', *legacy})
+        self.assertIn('\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n', workflow)
+        for name in legacy:
+            trigger = (directory / name).read_text().split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
+            self.assertEqual(trigger.strip(), 'workflow_dispatch:', name)
+        for command in ('npm test', 'npm run typecheck', 'npm audit --audit-level=high', 'docker build --pull'):
+            self.assertEqual(workflow.count(command), 1, command)
+        self.assertEqual(workflow.count('"$CI_IMAGE_ID"'), 2)
+        for marker in (compat.GATE_STEP, compat.IMAGE_STEP, compat.COMPILED_STEP, compat.CAPTURE_GUARD, compat.CAPTURE_STEP):
+            self.assertIn('name: ' + marker, workflow)
+        for marker in (compat.IMAGE_STEP, 'Verify compiled default-closed routes'):
+            self.assertIn("name: " + marker + "\n        if: needs.policy.outputs.profile == 'full'", workflow)
 
 
 if __name__ == '__main__':
