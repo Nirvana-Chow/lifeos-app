@@ -160,6 +160,7 @@ The system SHALL expose the existing owner-gated requirements destination, prese
 - **AND** a whole requirement is published only with matching verified production evidence and the corresponding result link
 - **AND** a merged slice may link to its PR without promoting the whole requirement to merged or published
 - **AND** workflow, source implementation, build qualification and owner acceptance alone do not establish publication
+- **AND** the compact default list shows only a recorded follow-up, merge or production verification time with its source type; an unavailable time is shown as unverified without borrowing a planned date
 
 #### Scenario: Hide secondary requirements tools
 - **WHEN** the owner visits the requirements pool
