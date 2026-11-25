@@ -94,6 +94,12 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await expect(card('book')).toHaveCount(0);
    await expect(card('film')).toBeVisible();
    await expect(card('series')).toBeVisible();
+   const mediaSearch=page.getByRole('searchbox',{name:'搜索书影音',exact:true}).or(page.getByRole('textbox',{name:'搜索书影音',exact:true}));
+   await mediaSearch.fill('catalog series');
+   await expect(board.getByRole('status')).toContainText('当前显示 1 部作品');
+   await expect(card('series')).toBeVisible();
+   await expect(card('film')).toHaveCount(0);
+   await mediaSearch.clear();
    await page.getByRole('button',{name:'新增书影音',exact:true}).click();
    const workType=page.getByRole('combobox',{name:'作品类型',exact:true});
    await expect(workType).toHaveValue('film');
@@ -103,6 +109,12 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('button',{name:'表格',exact:true}).click();
    await expect(page.getByRole('button',{name:'Synthetic catalog series',exact:true})).toBeVisible();
    await expect(page.getByRole('button',{name:'Synthetic catalog book',exact:true})).toHaveCount(0);
+   await filter.selectOption('film');
+   await expect(page.getByRole('button',{name:'Synthetic catalog film',exact:true})).toBeVisible();
+   await expect(page.getByRole('button',{name:'Synthetic catalog series',exact:true})).toHaveCount(0);
+   await filter.selectOption('series');
+   await expect(page.getByRole('button',{name:'Synthetic catalog series',exact:true})).toBeVisible();
+   await expect(page.getByRole('button',{name:'Synthetic catalog film',exact:true})).toHaveCount(0);
    await filter.selectOption('book');
    await expect(page.getByRole('button',{name:'Synthetic catalog book',exact:true})).toBeVisible();
    await expect(page.getByRole('button',{name:'Synthetic catalog film',exact:true})).toHaveCount(0);
