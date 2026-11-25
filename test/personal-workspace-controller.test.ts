@@ -173,3 +173,56 @@ test('batch status and POST/GET authorization loss conceal private projections w
 test('unattempted retained batch yields to an unrelated original unknown command',async()=>{const f=fixture();await f.controller.refresh();f.lose();await f.controller.saveTask(null,{title:'Original single task',text:'',date:'',status:'open'});assert.equal(f.controller.getSnapshot().uncertain,true);assert.equal(f.controller.matchesPendingBatchCommand(null),false);const pending=[...f.storage.values()].map(v=>JSON.parse(v))[0];assert.equal(f.controller.matchesPendingBatchCommand(pending),true);assert.equal(f.writes.length,1);});
 test('batch post-readback status scope loss conceals owner space storage and writable mismatches',async()=>{for(const patch of [{ownerId:'other-owner'},{spaceId:'other-space'},{storageVerified:false},{writable:false},{scope:'wrong-scope'},{allowedTypes:[]}]){const f=fixture();const fetcher:typeof fetch=async(input,init)=>{const path=String(input);if(path.endsWith('/status')&&f.writes.length){const body=await (await f.fetcher(input,init)).json();return Response.json({...body,...patch});}if(path.includes('/todo/')&&!init?.method){const body=await (await f.fetcher('/api/platform/personal/overview')).json();return Response.json({entry:body.items[0]});}return f.fetcher(input,init);};const c=new PersonalWorkspaceController({fetcher,origin:'http://127.0.0.1:3331',storage:{getItem:k=>f.storage.get(k)??null,setItem:(k,v)=>{f.storage.set(k,v);},removeItem:k=>{f.storage.delete(k);}},today:()=> '2026-10-27',key:()=>crypto.randomUUID()});await c.refresh();const command=makePersonalCommand({ownerId:'fixture-owner',spaceId:'fixture-space'},'todo',null,{title:'Private batch',notes:'',dueOn:null,status:'open'},'batch-post-scope-loss',true);assert.equal(await c.saveBatchTask(command),null);assert.notEqual(c.getSnapshot().state.status,'ready',JSON.stringify(patch));assert.equal(c.getEditorBinding(),null);assert.equal(f.storage.size,1);assert.deepEqual(JSON.parse([...f.storage.values()][0]),command);}});
 test('stopping a held batch retry preflight settles without losing command or posting late status',async()=>{const f=fixture();let hold=false,entered!:()=>void,release!:()=>void;const seen=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);const c=new PersonalWorkspaceController({fetcher:async(input,init)=>{if(hold&&String(input).endsWith('/status')){entered();await gate;}return f.fetcher(input,init);},origin:'http://127.0.0.1:3331',storage:{getItem:k=>f.storage.get(k)??null,setItem:(k,v)=>{f.storage.set(k,v);},removeItem:k=>{f.storage.delete(k);}},today:()=> '2026-10-27',key:()=>crypto.randomUUID()});await c.refresh();const command=makePersonalCommand({ownerId:'fixture-owner',spaceId:'fixture-space'},'todo',null,{title:'Synthetic retry',notes:'',dueOn:null,status:'open'},'held-batch-retry',true);f.lose();await c.saveBatchTask(command);hold=true;let settled=false;const retry=c.saveBatchTask(command).finally(()=>settled=true);await seen;c.cancel();for(let i=0;i<5;i++)await new Promise<void>(r=>setImmediate(r));try{assert.equal(settled,true);assert.equal(c.getSnapshot().uncertain,true);assert.equal(f.writes.length,1);assert.deepEqual(JSON.parse([...f.storage.values()][0]),command);}finally{release();await retry;}assert.equal(f.writes.length,1);});
+
+test('verified tasks load while the optional login availability response is held',async()=>{
+ const f=fixture();
+ let release!:()=>void;
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ const controller=new PersonalWorkspaceController({fetcher:async(input,init)=>{
+  if(String(input).endsWith('/availability'))await gate;
+  return f.fetcher(input,init);
+ },origin:'http://127.0.0.1:3331',today:()=> '2026-10-27',key:()=>crypto.randomUUID()});
+ try{
+  const done=controller.refresh();
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(controller.getSnapshot().state.status,'ready');
+  assert.equal(controller.getSnapshot().access.loginAllowed,null);
+  assert.equal(f.reads(),1);
+  await done;
+ }finally{release();}
+ await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal(controller.getSnapshot().access.loginAllowed,true);
+ assert.equal(f.writes.length,0);
+});
+
+test('read diagnostics distinguish authentication, storage verification and snapshot failure without echoing errors',async()=>{
+ for(const [failure,expected,overviewReads] of [
+  ['identity','身份服务暂不可用，请重试。',0],
+  ['storage','本人空间存储尚未核验，暂无法读取待办。',0],
+  ['expired','登录已失效，请重新登录。',1],
+  ['network','待办数据未能读取，请重试。',1],
+  ['snapshot','待办快照未能核验，请重新读取。',1],
+ ] as const){
+  const f=fixture();
+  let reads=0;
+  const controller=new PersonalWorkspaceController({fetcher:async(input,init)=>{
+   const path=String(input);
+   if(path.endsWith('/status')){
+    if(failure==='identity')return Response.json({error:{code:'AUTH_UNAVAILABLE',message:'Synthetic hidden details'}},{status:503});
+    if(failure==='storage')return Response.json({...await (await f.fetcher(input,init)).json(),storageVerified:false});
+   }
+   if(path.includes('/overview')){
+    reads++;
+    if(failure==='expired')return Response.json({}, {status:401});
+    if(failure==='network')throw Error('Synthetic hidden details');
+    if(failure==='snapshot')return Response.json({});
+   }
+   return f.fetcher(input,init);
+  },origin:'http://127.0.0.1:3331',today:()=> '2026-10-27',key:()=>crypto.randomUUID()});
+  await controller.refresh();
+  assert.deepEqual(controller.getSnapshot().state,{status:failure==='expired'?'forbidden':'error',message:expected});
+  assert.equal(controller.getEditorBinding(),null);
+  assert.equal(reads,overviewReads);
+  assert.equal(f.writes.length,0);
+ }
+});

@@ -41,6 +41,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  DialogTrigger,
   DialogDescription,
 } from "./ui/dialog";
 import {
@@ -187,8 +188,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const routeModule=moduleGroups.find(group=>group.links.some(link=>
     ownerModules.path===link.href||ownerModules.path.startsWith(link.href+'/'),
   ));
-  const pageModule=page==='projects'||page==='areas'?'projects':'daily';
-  const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id===pageModule);
+  const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id==='daily');
   const moduleSwitch=(compact=false)=>(
     <nav aria-label="切换模块" className={compact?workspaceStyles.mobileModules:workspaceStyles.headerModules}>
       {moduleGroups.map(group=>group.id==='finance'&&financeDestination ? (
@@ -594,6 +594,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           draftMemory={props.taskCellDraftMemory}
           className="lo-task-title"
           onOpen={openTask}
+          openDetailsOnClick={!board}
         />
         <span className="lo-task-date">{task.dueOn ?? "—"}</span>
         {!board && (
@@ -692,6 +693,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   return (
     <div
       data-lifeos-surface="personal"
+      data-workspace-state={state.status}
       className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigation ? workspaceStyles.adaptiveLayout : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
       onMouseDownCapture={event => {
         const target = event.target as Element;
@@ -807,7 +809,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {(page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
+              {props.showManualTaskCreation !== false && (page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
                 state.status === "ready" && mayWrite(access) && access.allowedTypes?.includes("todo") && props.onCreateTask && (
                   <Button className="lo-primary" disabled={!canWrite} onClick={() => props.onCreateTask?.()}>
                     <Plus size={17} />
@@ -840,6 +842,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 <Button key={item.id} variant="ghost" aria-label={item.label+"分类视图"} aria-pressed={page === item.id || item.id === "tasks" && page === "inbox"}
                   data-workspace-nav onClick={() => navigate(item.id)}>{item.label}</Button>)}
             </nav>}
+          {page === "overview" && state.status !== "ready" && <DataState state={state} onRefresh={onRefresh}/>}
           {page === "overview" && <DailyOverview
             key={verifiedPrivateScope??'overview-unverified'} scope={verifiedPrivateScope??null}
             state={state} showTasks={showPrivateRequirements}
@@ -852,7 +855,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <>
               <div className="lo-task-toolbar">
                 {page === "tasks" && props.viewPreferenceScope && data?.coverage === "complete" &&
-                  <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>}
+                  (props.renderTaskClassificationPreview ? <Dialog>
+                    <DialogTrigger asChild><Button variant="outline">分类预览</Button></DialogTrigger>
+                    <DialogContent container={portalContainer} className="flex max-h-[85dvh] flex-col sm:max-w-4xl">
+                      <DialogTitle>待办分类预览</DialogTitle>
+                      <DialogDescription>核对原待办、项目和标签</DialogDescription>
+                      <div className="min-h-0 overflow-y-auto">{props.renderTaskClassificationPreview()}</div>
+                    </DialogContent>
+                  </Dialog> : <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>)}
                 <label className="lo-search">
                   <Search size={17} />
                   <Input

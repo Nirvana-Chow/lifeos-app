@@ -145,7 +145,7 @@ async function editTask(page:Page,value:string){
  await readyTaskDetail(page,value);
  await readyEditor(page,value);
 }
-async function workspaceReady(page:Page){await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();await expect(page.locator('.lo-shell')).toBeVisible();}
+async function workspaceReady(page:Page){await expect(page.locator('.lo-shell')).toHaveAttribute('data-workspace-state','ready');}
 async function json(page:Pick<Page,'evaluate'>,path:string){
  const result=await page.evaluate(async path=>{const r=await fetch(path,{credentials:'same-origin',cache:'no-store'});return {ok:r.ok,body:await r.json()};},path);
  assert.equal(result.ok,true,'personal authenticated readback');return result.body;
@@ -262,7 +262,7 @@ type LatencyPhase='tasks-table-ready'|'native-input-visible'|'editor-form-ready'
 function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.now()-start;assert.equal(Number.isFinite(elapsedMs)&&elapsedMs>=0,true);console.log('PERSONAL_LATENCY',JSON.stringify({phase,elapsedMs:Math.round(elapsedMs*100)/100}));}
 
 /** Actual Undo notice and body-portal modal, using only a temporary synthetic filing footer. */
-export async function verifyUndoFooterPresentation(page:Page):Promise<void>{
+export async function verifyUndoFooterPresentation(page:Page,taskTitle:string):Promise<void>{
  const viewport=page.viewportSize();
  assert.ok(viewport);
  const undo=page.locator('.lo-undo-notice');
@@ -270,7 +270,7 @@ export async function verifyUndoFooterPresentation(page:Page):Promise<void>{
  await expect(page.locator('body > .lifeos-filing-footer')).toHaveCount(0);
  const start=performance.now();
  const previousPointer=await undo.evaluate(node=>(node as HTMLElement).style.pointerEvents);
- const modal=page.getByRole('dialog',{name:'新建待办',exact:true});
+ const modal=page.getByRole('dialog',{name:'待办详情',exact:true});
  try{
   await page.evaluate(()=>{
    const footer=document.createElement('footer');
@@ -298,9 +298,12 @@ export async function verifyUndoFooterPresentation(page:Page):Promise<void>{
   });
   console.log('PERSONAL_UNDO_FOOTER_GEOMETRY',JSON.stringify(geometry));
   assert.equal(geometry.gap>=16,true,'The actual Undo notice must clear the filing footer by at least 16px');
-  await page.getByRole('button',{name:'新建待办',exact:true}).click();
-  await expect(modal).toBeVisible();
-  await expect(modal.getByLabel('标题',{exact:true})).toHaveValue('');
+  const filter=page.getByRole('button',{name:'筛选',exact:true});
+  await filter.click();
+  await page.getByRole('combobox',{name:'状态',exact:true}).selectOption('all');
+  await filter.click();
+  await page.getByRole('button',{name:'查看待办：'+taskTitle,exact:true}).click();
+  await expect(modal.getByLabel('标题',{exact:true})).toHaveValue(taskTitle);
   const hit=await undo.evaluate(node=>{
    (node as HTMLElement).style.pointerEvents='auto';
    const rect=node.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
@@ -319,7 +322,7 @@ export async function verifyUndoFooterPresentation(page:Page):Promise<void>{
    document.querySelector('[data-synthetic-undo-footer="true"]')?.remove();
    window.dispatchEvent(new Event('resize'));
   });
-  if(await modal.count())await modal.getByRole('button',{name:'关闭待办编辑',exact:true}).click();
+  if(await modal.count())await modal.getByRole('button',{name:'关闭待办详情',exact:true}).click();
  }
  await expect(page.getByRole('button',{name:'撤销',exact:true})).toBeVisible();
 }
@@ -333,7 +336,7 @@ export async function verifyPersonalWorkspace(page:Page){
  try{
  await workspaceReady(page);const initial=await overview(page);assert.equal(initial.total,0);assert.deepEqual(initial.items,[]);
  phase='workspace-capabilities';const access=await json(page,'/api/platform/personal/status');assert.equal(access.writable,true);assert.equal(access.storageReviewEnabled,true);assert.deepEqual(access.allowedTypes,['todo','journal','project','domain','topic']);
- phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
+ phase='cancel-empty';await page.goto(new URL('/personal?page=tasks&create=todo',page.url()).href,{waitUntil:'domcontentloaded'});await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
  phase='create-domain';await page.goto(new URL('/personal?page=areas',page.url()).href,{waitUntil:'domcontentloaded'});await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
@@ -341,7 +344,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await page.getByRole('link',{name:'新建项目',exact:true}).click();await readyEditor(page,'');
  phase='create-project';await title(page).fill(synthetic.project);await recordField(page,'目标').fill('隔离合成项目目标');await selectReference(page,'所属领域',domain);const project=await save(page,'project');assert.deepEqual((project.draft as {personal:{domain:unknown}}).personal.domain,reference(domain));
- await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');
+ await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();await page.goto(new URL('/personal?page=tasks&create=todo',page.url()).href,{waitUntil:'domcontentloaded'});await readyEditor(page,'');
  phase='create-todo';await title(page).fill(synthetic.initial);await recordField(page,'正文').fill(synthetic.notes);await recordField(page,'到期日').fill(synthetic.date);let todo=await saveTask(page);assert.equal('status'in todo.draft?todo.draft.status:null,'open');
  await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
  const trigger=page.getByRole('button',{name:'展开详情：'+synthetic.initial,exact:true});const editorStart=performance.now();await trigger.click();await editTask(page,synthetic.initial);latency('editor-form-ready',editorStart);
@@ -363,7 +366,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await discard(true,traverse('Forward'));await page.waitForURL(projectURL);await readyEditor(page,synthetic.project);await expect(recordField(page,'目标')).toHaveValue('隔离合成项目目标');
  phase='status-undo';const tasksStart=performance.now();await page.goto(tasksURL,{waitUntil:'domcontentloaded'});await workspaceReady(page);await requireNativeTable(page);latency('tasks-table-ready',tasksStart);await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
  const statusReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');await page.getByRole('button',{name:'完成：'+synthetic.title,exact:true}).click();todo=(await(await statusReceipt).json()).entry;assert.equal('status'in todo.draft?todo.draft.status:null,'done');
- phase='status-undo-footer';await verifyUndoFooterPresentation(page);
+ phase='status-undo-footer';await verifyUndoFooterPresentation(page,synthetic.title);
  const undoReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');await page.getByRole('button',{name:'撤销',exact:true}).click();todo=(await(await undoReceipt).json()).entry;assert.equal('status'in todo.draft?todo.draft.status:null,'in_progress');await readTodo(page,todo,[domain,project,todo]);
  phase='native-table-view';await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'表格',exact:true}).click();phase='native-paint-ready';await requireNativeTable(page);
  phase='native-column-resize';
@@ -449,8 +452,8 @@ export async function verifyPersonalWorkspace(page:Page){
   assert.equal(cancelledWrites,0);
  }finally{page.off('request',trackCancelledWrite);}
  phase='overview-title-open';await page.getByRole('button',{name:'总览',exact:true}).click();
- const overviewTitle=()=>page.getByRole('button',{name:'编辑标题：'+synthetic.title,exact:true});
- await overviewTitle().dblclick();
+ const overviewTitle=()=>page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true});
+ await overviewTitle().press('F2');
  const overviewInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
  await expect(overviewInput).toBeFocused();await expect(page.getByRole('dialog')).toHaveCount(0);
  await expect(page.locator('form')).toHaveCount(0);
@@ -469,10 +472,10 @@ export async function verifyPersonalWorkspace(page:Page){
  const overviewReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');
  await overviewInput.press('Enter');todo=(await(await overviewReceipt).json()).entry;
  assert.equal('notes'in todo.draft?todo.draft.notes:null,synthetic.editedNotes);
- const changedTitle=page.getByRole('button',{name:'编辑标题：'+synthetic.title+'（总览）',exact:true});
+ const changedTitle=page.getByRole('button',{name:'查看待办：'+synthetic.title+'（总览）',exact:true});
  await expect(overviewInput).toHaveCount(0);await expect(changedTitle).toBeFocused();
  await readTodo(page,todo,[domain,project,todo]);
- await changedTitle.dblclick();await overviewInput.fill(synthetic.title);
+ await changedTitle.press('F2');await overviewInput.fill(synthetic.title);
  const overviewRestore=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');
  await overviewInput.press('Enter');todo=(await(await overviewRestore).json()).entry;
  await expect(overviewTitle()).toBeFocused();

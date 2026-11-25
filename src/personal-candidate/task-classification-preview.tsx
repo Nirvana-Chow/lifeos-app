@@ -35,7 +35,7 @@ function downloadPreview(value: unknown) {
   }
 }
 
-export function TaskClassificationPreview() {
+export function TaskClassificationPreview({embedded = false}: {embedded?: boolean} = {}) {
   const host = useRef<PersonalWorkspaceController | null>(null);
   const [entries, setEntries] = useState<readonly PublicEntry[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -86,13 +86,16 @@ export function TaskClassificationPreview() {
     return host.current === controller && document.visibilityState === 'visible' &&
       snapshotIdentity(controller) === before;
   };
-  return <main className={styles.main} data-lifeos-surface="personal">
-    <a href="/personal?page=tasks">返回待办</a>
-    <h1>待办分类预览</h1>
+  const content = <>
     <p>在这里拟定项目和标签。下载副本会包含原条目及其处理结果，待办记录不受影响。</p>
     {draftEpoch > 0 && entries && <p role="status">已重新核对范围，旧预览建议已清除。</p>}
     {result && <p role="status">{result}</p>}
     <Preview key={draftEpoch} entries={entries} failed={failed} onRefresh={refresh} verifyBeforeSave={verifyBeforeSave} report={setResult}/>
+  </>;
+  return embedded ? content : <main className={styles.main} data-lifeos-surface="personal">
+    <a href="/personal?page=tasks">返回待办</a>
+    <h1>待办分类预览</h1>
+    {content}
   </main>;
 }
 

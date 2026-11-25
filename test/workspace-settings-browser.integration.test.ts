@@ -672,7 +672,7 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   if(width===1365)await page.screenshot({path:join(source,`.review-results/settings-background-${width}.png`)});
   await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();});
   await expect(page).toHaveURL(origin+'/personal');
-  await expect(page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'查看待办：合成待办甲',exact:true})).toBeVisible();
   await page.goto(origin+'/personal?page=settings');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings');
   await page.goto(origin+'/personal?page=projects&modal=settings&panel=security');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await page.reload();
   if(width===390){
@@ -742,7 +742,7 @@ test('OPT-IN overview draft survives rejected logout, Settings and matters page 
  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});t.after(()=>page.close());
  const writes=await installSyntheticReads(page,origin);
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
- await page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true}).dblclick();
+ await page.getByRole('button',{name:'查看待办：合成待办甲',exact:true}).press('F2');
  const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await expect(input).toBeFocused();
  await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('form')).toHaveCount(0);
  await input.fill('合成未保存总览草稿');const originalInput=await input.elementHandle();
