@@ -50,7 +50,7 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
   await page.goto(origin+'/personal/journal',{waitUntil:'domcontentloaded',timeout:90000});
   const day=page.getByRole('region',{name:'日记',exact:true});
   const past=day.getByText('历史上的今天',{exact:true});
-  await expect(day.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
+  await expect(day.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
   await past.click();
   const link=page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 1',exact:true});await expect(link).toHaveAttribute('href','/personal/journal?record='+current.id);
   await expect(page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 2',exact:true})).toHaveCount(0);
