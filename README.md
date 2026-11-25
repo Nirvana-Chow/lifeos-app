@@ -6,6 +6,10 @@ LifeOS 优先组合成熟组件，围绕任务、记录、日历和个人工作�
 
 **代码公开不代表个人数据公开。** 仓库只提供通用实现、结构迁移和合成样例。默认关闭数据接口；真实身份、数据源和服务配置需要各自完成配置与验证。
 
+## 添加到 iPhone 主屏幕
+
+在 iPhone 的 Safari 中打开你的 LifeOS HTTPS 站点（`/personal`），点「分享」→「添加到主屏幕」，开启「作为网页 App 打开」后点「添加」。从主屏幕打开 LifeOS 时需要联网。如果看到登录页，按网站原有流程登录。[Apple 安装说明](https://support.apple.com/zh-cn/guide/iphone/iphea86e5236/ios)
+
 ## 本地开发
 
 使用 Node.js 24（CI 固定 24.22.1）及 npm：
