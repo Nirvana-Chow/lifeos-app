@@ -14,6 +14,7 @@ import {estimateApiKeyExpiry, resolveApiKeyExpiry} from './account-api-key-expir
 import styles from './account-api-keys.module.css';
 
 const endpoint = '/api/platform/account/api-keys';
+const reauthenticateHref = '/login?reauthenticate=1&return_to=' + encodeURIComponent('/personal?page=settings&panel=api-keys');
 const skillPath = '/api/platform/agent-skill';
 
 function skillInstructions() {
@@ -43,7 +44,7 @@ const listErrors = {
   rateLimited: '读取请求过于频繁。请稍后重试。',
   invalidResponse: '密钥列表返回格式有误。请重试。',
 };
-type List = {kind: 'loading' | 'disabled' | 'denied'}
+type List = {kind: 'loading' | 'disabled' | 'reauthenticate' | 'denied'}
   | {kind: 'error'; reason: keyof typeof listErrors}
   | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'};
 const requestOptions = {cache: 'no-store', credentials: 'same-origin'} as const;
@@ -161,7 +162,8 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         const response = await fetch(endpoint, {...requestOptions, signal: controller.signal});
         if (controller.signal.aborted) return;
         if (response.status === 404) return setList({kind: 'disabled'});
-        if (response.status === 401 || response.status === 403) return setList({kind: 'denied'});
+        if (response.status === 401) return setList({kind: 'reauthenticate'});
+        if (response.status === 403) return setList({kind: 'denied'});
         if (!response.ok) return setList({kind: 'error', reason: response.status === 429 ? 'rateLimited' : 'unavailable'});
         reason = 'invalidResponse';
         const page = await readGrantPage(response);
@@ -308,8 +310,10 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         return;
       }
       if (response.status === 401 || response.status === 403) {
-        setList({kind: 'denied'});
-        setMessage('当前会话无权创建密钥。请关闭此窗口并重新登录。');
+        setList({kind: response.status === 401 ? 'reauthenticate' : 'denied'});
+        setMessage(response.status === 401
+          ? '当前会话无权创建密钥。请关闭窗口，在密钥页重新验证。'
+          : '当前会话无权创建密钥。');
         return;
       }
       if (response.status === 404) {
@@ -469,7 +473,8 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
       </div>
       {(list.kind === 'loading' || refreshing) && <p role="status">正在读取密钥…</p>}
       {list.kind === 'disabled' && <p role="status">当前站点尚未启用 API 密钥管理。</p>}
-      {list.kind === 'denied' && <p role="status">当前会话无权管理密钥。请<a href="/login">重新登录</a>并完成两步验证。</p>}
+      {list.kind === 'reauthenticate' && <p role="status">查看密钥列表需要重新验证。请<a href={reauthenticateHref}>重新登录</a>，完成两步验证后返回本页。</p>}
+      {list.kind === 'denied' && <p role="status">当前会话无权管理密钥。请确认你使用的是 LifeOS 本人账号。</p>}
       {list.kind === 'error' && !refreshing && <div className={styles.actions}>
         <p role="alert">{listErrors[list.reason]}</p>
         <Button type="button" variant="outline" onClick={reload}>重新读取</Button>

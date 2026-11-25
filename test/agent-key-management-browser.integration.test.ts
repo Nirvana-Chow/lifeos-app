@@ -536,7 +536,21 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     for (const status of [401,403,404] as const) {
       listResponse=status;
       await page.reload({waitUntil:'domcontentloaded'});
-      await expect(page.getByText(status===404?'当前站点尚未启用 API 密钥管理。':'当前会话无权管理密钥。',{exact:false})).toBeVisible();
+      const keyList = page.getByRole('region',{name:'已签发的密钥'});
+      const relogin = keyList.getByRole('link',{name:'重新登录',exact:true});
+      if (status === 401) {
+        await expect(keyList.getByRole('status')).toContainText('查看密钥列表需要重新验证。');
+        const href = await relogin.getAttribute('href');
+        assert.ok(href);
+        const recovery = new URL(href,origin);
+        assert.equal(recovery.pathname,'/login');
+        assert.equal(recovery.searchParams.get('reauthenticate'),'1');
+        assert.equal(recovery.searchParams.get('return_to'),'/personal?page=settings&panel=api-keys');
+      } else {
+        await expect(keyList.getByRole('status')).toContainText(status===404
+          ? '当前站点尚未启用 API 密钥管理。' : '当前会话无权管理密钥。');
+        await expect(relogin).toHaveCount(0);
+      }
       await expect(newKey).toHaveCount(0);
       await expect(page.getByText('还没有签发密钥。',{exact:true})).toHaveCount(0);
     }
