@@ -6,16 +6,16 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
 import {chromium,expect} from '@playwright/test';
-import {requirements,selectRequirements} from '../src/platform/requirements.ts';
+import {requirements} from '../src/platform/requirements.ts';
 
 import {requirementBinding} from '../src/requirements-candidate/service.ts';
 import type {RequirementsSnapshot} from '../src/requirements-candidate/service.ts';
 // Readonly public metadata fixture: no account service, credentials or real records.
-test('OPT-IN saved requirement workflow counts, refresh, queue and daily records render without reducing density',{
+test('OPT-IN requirement delivery filters, refresh and results render without reducing density',{
  skip:process.env.RUN_REQUIREMENTS_PROGRESS_BROWSER_TESTS!=='1'&&'Requires native Chrome and isolated Next fixture',timeout:180_000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-requirements-views-'));
- await mkdir(join(root,'app'),{recursive:true});
+ await mkdir(join(root,'app/personal'),{recursive:true});
  await Promise.all([
   cp(join(source,'src'),join(root,'src'),{recursive:true}),
   ...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
@@ -23,9 +23,13 @@ test('OPT-IN saved requirement workflow counts, refresh, queue and daily records
   symlink(join(source,'node_modules'),join(root,'node_modules')),
   symlink(join(source,'components'),join(root,'components')),
  ]);
- // Keep the production shell cascade and content allocation: a standalone page
- // misses native-button overrides and the sidebar's effect on available width.
- await writeFile(join(root,'app/page.tsx'),`import {RequirementsPage} from '../src/ui-review/requirements-page';import '../src/ui-review/review.css';export default function Page(){return <div data-lifeos-surface="personal" className="lo-shell"><header className="lo-header">LifeOS</header><div className="lo-body"><aside className="lo-sidebar" aria-label="导航">需求池</aside><main className="lo-main lo-main-bounded"><div className="lo-content lo-content-wide"><div className="lo-page-heading"><h1>需求池</h1></div><RequirementsPage/></div></main></div></div>}`);
+ // Mount the normal workspace controller at the same URL the owner opens.
+ await writeFile(join(root,'app/personal/page.tsx'),`import {LifeOSWorkspace} from '../../src/ui-review/workspace';
+ import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
+ export default async function Page({searchParams}:{searchParams:Promise<{page?:string}>}){
+  const {page}=readWorkspaceLocation(await searchParams);
+  return <LifeOSWorkspace syncUrl initialPage={page} state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:false,loginAllowed:true,allowedTypes:['todo']}} viewPreferenceScope={JSON.stringify(['synthetic-owner','synthetic-space'])}/>;
+ }`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
@@ -35,10 +39,14 @@ test('OPT-IN saved requirement workflow counts, refresh, queue and daily records
  const snapshot:RequirementsSnapshot={scope:'full-current-requirements-snapshot',total:baseline.requirements.length,truncated:false,observedAt:'2026-11-13T09:00:00Z',baseline,items:baseline.requirements.map((r,index)=>({id:r.id,revision:0,sourceId:null,baselineBinding:requirementBinding(baseline,r.id),baselineConflict:false,requirement:r,fields:{title:r.title,body:index===0?'开发队列顺序：2；下一步：继续核查\n【开发跟进 2026-11-13T09:00:00+08:00】\n合成检查已保存':index===1?'开发队列顺序：1':'',phaseId:r.roadmap!.phaseId,priority:r.roadmap!.priority,plannedStartOn:null,plannedEndOn:null,...(index<3?{workflow:{state:(['done','in_progress','planned'] as const)[index],purpose:'合成验证',nextStep:'合成下一步'}}:{})}}))};
  for(const width of [1365,390])for(const theme of ['light','dark'] as const)await t.test(`${width}x768 ${theme}`,async()=>{
   const page=await browser.newPage({viewport:{width,height:768},colorScheme:theme});t.after(()=>page.close());page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/api/platform/personal/**',async route=>{const path=new URL(route.request().url()).pathname;await route.fulfill({json:path.endsWith('/status')?{ownerId:'synthetic-owner',spaceId:'synthetic-space',requirementsEnabled:true,writable:false}:structuredClone(snapshot)});});
-  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});const filter=page.getByRole('combobox',{name:'推进状态',exact:true});
-  await expect(filter.locator('option[value="done"]')).toHaveText('开发完成 1');await expect(filter.locator('option[value="unrecorded"]')).toHaveText('未梳理 '+(snapshot.total-3));
-  await filter.selectOption('unfinished');await expect(page.locator('[data-requirement-id]')).toHaveCount(2);await filter.selectOption('done');await expect(page.locator('[data-requirement-id]')).toHaveCount(1);await filter.selectOption('all');
+  await page.route('**/api/platform/personal/**',async route=>{const path=new URL(route.request().url()).pathname;await route.fulfill({json:path.endsWith('/status')?{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,requirementsEnabled:true,requirementSupportEnabled:true,writable:false}:structuredClone(snapshot)});});
+  await page.goto(origin+'/personal?page=requirements',{waitUntil:'networkidle',timeout:60000});const filter=page.getByRole('combobox',{name:'交付状态',exact:true});
+  for(const label of ['尚未实现','进行中','已合并待上线','已上线','待核实'])await expect(filter.locator('option').filter({hasText:label})).toHaveCount(1);
+  await filter.selectOption('unverified');
+  await expect(page.locator('[data-requirement-id="'+snapshot.items[0].id+'"]')).toBeVisible();
+  await filter.selectOption('live');
+  await expect(page.locator('[data-requirement-id]')).toHaveCount(0);
+  await filter.selectOption('all');
   await page.getByRole('combobox',{name:'表格分组'}).selectOption('none');
   assert.equal(await page.locator('[data-requirement-id]').first().getAttribute('data-requirement-id'),snapshot.items[1].id);
   await expect(page.getByText('顺序 1',{exact:false})).toBeVisible();
@@ -46,9 +54,19 @@ test('OPT-IN saved requirement workflow counts, refresh, queue and daily records
   if(width===1365)assert.ok(geometry.visibleRows>=8,'Compact desktop retains at least eight complete rows: '+JSON.stringify(geometry));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.screenshot({path:join(source,'.review-results',`requirements-progress-${width}-${theme}.png`)});
-  await page.getByText('每日进展',{exact:false}).first().click();await expect(page.getByText('合成检查已保存',{exact:true})).toBeVisible();await expect(page.getByText('已保存的进度记录；开发完成依据工程检查与发布读回，本人体验验收单独保留。')).toBeVisible();await page.getByText('每日进展',{exact:false}).first().click();
-  await page.getByRole('button',{name:'看板视图',exact:true}).click();await expect(page.locator('[data-requirements-progress="done"] [data-requirement-id]')).toHaveCount(1);await expect(page.locator('[data-requirements-progress="unrecorded"] [data-requirement-id]')).toHaveCount(snapshot.total-3);await expect(page.getByText('下一步：合成下一步',{exact:true}).first()).toBeVisible();
-  snapshot.items[0].fields.workflow!.state='planned';await page.getByRole('button',{name:'刷新需求',exact:true}).click();await expect(filter.locator('option[value="done"]')).toHaveText('开发完成 0');snapshot.items[0].fields.workflow!.state='done';
+  await expect(page.getByText(/每日进展|开发路线|阶段路线图|反馈 Inbox|更新记录/)).toHaveCount(0);
+  for(const destination of ['roadmap','feedback','updates']){
+   await expect(page.locator('a[href="/personal/requirements/'+destination+'"]')).toHaveCount(0);
+  }
+  await expect(page.getByRole('link',{name:'人物只读总览（合并记录）',exact:true})).toHaveAttribute('href','https://github.com/Nirvana-Chow/lifeos-app/pull/93');
+  await page.getByRole('button',{name:'看板视图',exact:true}).click();
+  const first='[data-requirement-id="'+snapshot.items[0].id+'"]';
+  await expect(page.locator('[data-requirements-progress="unverified"] '+first)).toHaveCount(1);
+  await expect(page.getByText('下一步：合成下一步',{exact:true}).first()).toBeVisible();
+  snapshot.items[0].fields.workflow!.state='in_progress';
+  await page.getByRole('button',{name:'刷新需求',exact:true}).click();
+  await expect(page.locator('[data-requirements-progress="in_progress"] '+first)).toHaveCount(1);
+  snapshot.items[0].fields.workflow!.state='done';
   assert.deepEqual(errors,[]);
  });
 });

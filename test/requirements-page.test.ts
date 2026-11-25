@@ -30,15 +30,17 @@ function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',p
 
 test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
  const html=renderPage();
- assert.match(html,/当前阶段/);assert.match(html,/下一步/);
+ assert.doesNotMatch(html,/开发路线|每日进展|当前阶段|阶段路线图|反馈 Inbox|更新记录/);
+ assert.match(html,/交付状态/);assert.match(html,/下一步/);
+ assert.match(html,/href="https:\/\/github\.com\/Nirvana-Chow\/lifeos-app\/pull\/93"/);
  assert.match(html,/<input[^>]*type="search"/);
  for(const id of ['phase','priority','implementation','acceptance'])assert.match(html,new RegExp('<label[^>]*for="requirements-'+id+'"'));
  assert.match(html,/data-requirements-grid="reui"/);
  for(const label of ['表格','看板','甘特'])assert.match(html,new RegExp('aria-label="'+label+'视图"'));
  assert.match(html,/LO-TASK-001/);assert.match(html,/LO-PROJECT-001/);
- assert.doesNotMatch(html,/验收条件|来源与源码依据/);
+ assert.doesNotMatch(html,/<h4>验收条件|来源与源码依据/);
  assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
- assert.match(html,/本人验收/);
+ assert.match(html,/已合并待上线/);assert.match(html,/已上线/);
 });
 
 
@@ -50,9 +52,9 @@ test('board retains legacy undated requirements without optional roadmap metadat
  assert.match(html,/查看需求 LO-LEGACY-001 保留旧基线需求/);
 });
 
-test('requirement filters are disclosed on demand and native table keeps phase groups',()=>{
+test('requirement filters are disclosed on demand and default table is ungrouped',()=>{
  const html=renderPage();assert.match(html,/<details[^>]*data-requirements-filters/);assert.match(html,/<summary[^>]*>更多筛选/);
- assert.match(html,/data-requirements-phase=/);assert.match(html,/<option[^>]*>P3/);
+ assert.doesNotMatch(html,/data-requirements-phase=/);assert.match(html,/<option[^>]*>P3/);
 });
 
 test('P3 can be validated and filtered without changing other public requirement metadata',()=>{
