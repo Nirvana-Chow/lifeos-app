@@ -1,0 +1,10 @@
+.main { margin-inline: auto; max-width: 68rem; padding: clamp(1rem, 4vw, 3rem); }
+.main h1 { font-size: 1.65rem; margin-block: .8rem; }
+.controls { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin-block: 1rem; }
+.rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 23rem), 1fr)); gap: .8rem; }
+.row { border: 1px solid var(--border); border-radius: .6rem; padding: .85rem; min-width: 0; overflow-wrap: anywhere; }
+.row h2 { font-size: 1.05rem; }
+.row p, .row details, .row fieldset { margin-top: .45rem; }
+.notes { white-space: pre-wrap; }
+.row fieldset { display: flex; flex-wrap: wrap; gap: .5rem .8rem; }
+.row select { max-width: 100%; }

@@ -737,8 +737,7 @@
 .lo-settings .lo-settings-links {
   display: grid;
 }
-.lo-settings a,
-.lo-settings .lo-logout {
+.lo-settings a {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -747,8 +746,7 @@
   min-height: 52px;
   text-decoration: none;
 }
-.lo-settings a + a,
-.lo-settings .lo-settings-links + .lo-logout {
+.lo-settings a + a {
   border-top: 1px solid var(--border);
 }
 .lo-settings a {
@@ -757,7 +755,7 @@
 .lo-settings a:hover {
   background: var(--accent);
 }
-.lo-settings > button:not(.lo-logout) {
+.lo-settings > button {
   justify-self: start;
   margin: 12px;
 }

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1024">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+  <title>LifeOS 日常 · 活动热力图评审</title>
+  <link rel="stylesheet" href="./review.css">
+  <script type="module" src="./review.mjs"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner"><div class="location"><strong>LifeOS</strong><span aria-hidden="true">/</span><span>日常</span></div><span class="sample">合成数据 · 评审原型</span></div>
+  </header>
+  <p class="mapping-state" id="mapping-state" role="status" hidden></p>
+  <main>
+    <header class="page-heading">
+      <div>
+        <h1>每日活动</h1>
+        <p>按上海日历日（Asia/Shanghai）回看记录和开发成果。</p>
+      </div>
+      <div class="dimensions" role="group" aria-label="时间维度">
+        <button type="button" data-period="day" aria-pressed="false">日</button>
+        <button type="button" data-period="week" aria-pressed="false">周</button>
+        <button type="button" data-period="month" aria-pressed="false">月</button>
+        <button type="button" data-period="quarter" aria-pressed="true">季度</button>
+        <button type="button" data-period="year" aria-pressed="false">年</button>
+      </div>
+    </header>
+
+    <section class="panel calendar-panel" aria-labelledby="activity-heading">
+      <div class="panel-toolbar">
+        <h2 id="activity-heading">活动热力图</h2>
+        <div class="toolbar-controls">
+          <div class="sources" role="group" aria-label="活动类别">
+            <button type="button" data-source="records" aria-pressed="false">记录</button>
+            <button type="button" data-source="development" aria-pressed="true">开发</button>
+          </div>
+          <div class="range-control" role="group" aria-label="浏览期间">
+            <button type="button" id="previous-period" aria-label="上一季度">‹</button>
+            <span id="period-current" aria-live="polite"></span>
+            <button type="button" id="next-period" aria-label="下一季度">›</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-body" id="chart-body">
+        <div class="chart-scroll">
+          <div class="graph" id="graph" data-category="development">
+            <div class="axis-month" id="month-axis" aria-hidden="true"></div>
+            <div class="axis-day" aria-hidden="true"><span>一</span><span>三</span><span>五</span><span>日</span></div>
+            <div class="days" id="grid" role="grid" aria-label="2026 年每日活动" aria-describedby="grid-help"></div>
+          </div>
+        </div>
+        <section class="period-summary" aria-labelledby="period-title">
+          <header><h3 id="period-title">季度总览</h3></header>
+          <dl class="period-metrics" id="period-metrics"></dl>
+          <p class="coverage-note" id="period-coverage"></p>
+          <ul class="period-stages" id="period-stages" aria-label="季度阶段统计"></ul>
+        </section>
+      </div>
+      <footer class="calendar-footer" id="calendar-footer">
+        <p id="grid-help">选择一天查看详情。方向键移动，Enter 打开。</p>
+        <ul class="legend" id="legend" aria-label="热力图图例">
+          <li><i data-level="0"></i>0</li><li><i data-level="1"></i>1</li><li><i data-level="2"></i>2</li><li><i data-level="3"></i>3</li><li><i data-level="4"></i>4+</li>
+          <li class="legend-state"><i data-level="unknown"></i>覆盖未知</li><li><i data-level="unauthorized"></i>未获授权</li><li id="partial-key" hidden><i data-level="partial"></i>部分覆盖</li><li><i data-level="future"></i>未到日期</li>
+        </ul>
+      </footer>
+    </section>
+
+    <div class="detail-layout">
+      <section class="panel day-panel" aria-labelledby="detail-title">
+        <header class="detail-header">
+          <div><h2 id="detail-title">当日记录</h2><p class="muted" id="detail-summary" aria-live="polite"></p></div>
+          <label class="date-input">跳到日期 <input type="date" id="jump"></label>
+        </header>
+        <div class="entries" id="detail"></div>
+      </section>
+
+      <aside class="panel guide" aria-labelledby="guide-title">
+        <h2 id="guide-title">开发证据说明</h2>
+        <p id="guide-description"></p>
+        <dl id="guide-stages"></dl>
+        <div id="example-actions" hidden>
+          <details><summary>下一步样例</summary><p>示例负责人核对候选树和聚焦验证，再决定是否进入现有合并流程。</p></details>
+          <details><summary>回退入口样例</summary><p>样例发布失败时，由发布负责人沿既有回退流程恢复上一已验证版本，再读回版本。</p></details>
+        </div>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
