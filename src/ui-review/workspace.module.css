@@ -117,7 +117,7 @@
  .desktopNavigation > :global(.lo-body) { min-width:900px; }
  .shell.desktopNavigation > :global(.lo-body) {
   display:grid;
-  height:calc(100% - var(--lo-header-height) - var(--lo-filing-footer-space,0px));
+  height:calc(100% - var(--lo-header-height));
  }
  .shell.desktopNavigation > :global(.lo-body) > :global(.lo-main) {
   padding-bottom:var(--lo-content-padding); overscroll-behavior-x:auto;
