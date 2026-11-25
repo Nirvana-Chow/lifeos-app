@@ -9,3 +9,5 @@
 .content,.content *{box-sizing:border-box}.content{width:100%;max-width:1000px;min-width:0;margin-inline:auto;text-align:left;overflow-wrap:anywhere}.content form{width:100%;max-width:none}.page .actions a{display:inline-flex;align-items:center;max-width:100%;overflow-wrap:anywhere}.page .bar>div{min-width:0}
 
 .page .check{min-height:44px}.page input,.page select{background:var(--card);color:var(--foreground);min-height:44px}.page .check input{min-height:20px}.content{max-width:var(--lo-content-width)}
+
+.page.embedded{padding:0;max-width:none}
