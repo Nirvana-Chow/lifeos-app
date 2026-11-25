@@ -61,6 +61,8 @@ async function expectAboveFooter(page:Page,control:import('@playwright/test').Lo
 }
 async function fixture(root:string,managedCallback=false){
  await mkdir(join(root,'app/personal'),{recursive:true});
+ await mkdir(join(root,'app/login'),{recursive:true});
+ await writeFile(join(root,'app/login/page.tsx'),'export default function FixtureLogin(){return <h1>合成登录页</h1>}');
  await Promise.all([
   ...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
   cp(join(source,'app/personal/page.tsx'),join(root,'app/personal/page.tsx')),
@@ -142,7 +144,7 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
  const origin=await prepareSettingsFixture(server,'/personal?page=tasks');
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  for(const width of [1365,390])for(const height of [240,300]){
-  const page=await browser.newPage({viewport:{width,height},colorScheme:width===1365?'light':'dark'});page.setDefaultTimeout(5000);
+  const page=await browser.newPage({viewport:{width,height},hasTouch:width===390,colorScheme:width===1365?'light':'dark'});page.setDefaultTimeout(5000);
   try{
    const writes=await installSyntheticReads(page,origin);
    await page.route(origin+'/api/platform/auth/device-sessions',route=>route.request().method()==='GET'
@@ -153,6 +155,9 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    await page.getByRole('button',{name:'设置',exact:true}).click();
    const settings=page.locator('[data-settings-page]');await expect(settings).toBeVisible();
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+   const location=page.getByRole('navigation',{name:'浏览位置',exact:true});
+   await expect(location.locator('[aria-current="page"]')).toHaveText('设置');
+   await expect(location.getByText('标签',{exact:true})).toHaveCount(0);
    const mcpLink=settings.getByRole('link',{name:'ChatGPT 连接设置',exact:true});
    await expect(mcpLink).toHaveCount(0);
    await expect(settings.getByRole('group',{name:'配色预设',exact:true})).toHaveCount(0);
@@ -162,11 +167,42 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    await expect(categories.getByRole('group',{name:'偏好与账号',exact:true})).toBeVisible();
    await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+   const scroll=page.locator('#personal-main');
+   const header=page.locator('header.lo-header');
+   const logout=header.getByRole('button',{name:'退出登录',exact:true});
+   const headerTop=(await header.boundingBox())!.y;
+   await expect(logout).toBeInViewport({ratio:1});
+   await expect(settings.locator('[data-settings-panel]')).toHaveCSS('overflow-y','visible');
+   await expect(settings.locator('xpath=..')).toHaveCSS('overflow-y','visible');
+   await scroll.focus();await page.keyboard.press('PageDown');
+   await expect.poll(()=>scroll.evaluate(e=>e.scrollTop)).toBeGreaterThan(0);
+   assert.equal((await header.boundingBox())!.y,headerTop,'the header stays fixed while Settings scrolls');
+   await expect(logout).toBeInViewport({ratio:1});
+   await scroll.evaluate(e=>e.scrollTop=0);
+   if(width===1365){
+    const box=(await scroll.boundingBox())!;
+    await page.mouse.move(box.x+50,box.y+45);await page.mouse.wheel(0,161);
+    await expect.poll(()=>scroll.evaluate(e=>e.scrollTop)).toBeGreaterThan(0);
+   }else if(height===300){
+    const client=await page.context().newCDPSession(page);
+    const box=(await scroll.boundingBox())!,x=Math.min(width-35,box.x+70),y=box.y+92;
+    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+    for(const offset of [17,31,45,63])await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-offset}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await expect.poll(()=>scroll.evaluate(e=>e.scrollTop)).toBeGreaterThan(0);
+    const shell=page.locator('.lo-shell');
+    await shell.evaluate(e=>e.scrollLeft=0);
+    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+    for(const offset of [19,35,51,66])await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-offset,y}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await expect.poll(()=>shell.evaluate(e=>e.scrollLeft)).toBeGreaterThan(0);
+    await expect(logout).toBeInViewport({ratio:1});
+    await client.detach();
+   }
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),settings.getByRole('button',{name:'保存密码',exact:true})]){
     await control.scrollIntoViewIfNeeded();await expectAboveFooter(page,control);
     assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings security control receives pointer input');
    }
-   const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
    const password=settings.getByLabel('原密码',{exact:true});
    await password.fill('synthetic-short-draft');
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
@@ -364,7 +400,7 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   if(width===390){
    await page.setViewportSize({width,height:400});
    const panel=settings.locator('.lo-settings-panel'),save=settings.getByRole('button',{name:'保存密码',exact:true});
-   await expect(save).toBeEnabled();await expect.poll(()=>panel.evaluate(e=>e.clientHeight>60&&e.scrollHeight>e.clientHeight)).toBe(true);
+   await expect(save).toBeEnabled();await expect(panel).toHaveCSS('overflow-y','visible');await expect.poll(()=>page.locator('#personal-main').evaluate(e=>e.clientHeight>60&&e.scrollHeight>e.clientHeight)).toBe(true);
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),save]){await control.scrollIntoViewIfNeeded();await expect(control).toBeInViewport({ratio:0.75});}
    await page.setViewportSize({width,height:900});
   }
@@ -450,6 +486,7 @@ test('OPT-IN overview draft survives rejected logout, Settings and matters page 
   await route.fulfill({json:{success:true}});
  });
  await confirmDiscard(page,true,async()=>{await logout.click();});
+ await expect(page).toHaveURL(origin+'/login',{timeout:30_000});
  await expect(logout).toHaveCount(0);
  await expect(input).toHaveCount(0);
  assert.equal(signOutRequests,1,'confirmed logout uses the existing sign-out endpoint once');
@@ -479,6 +516,7 @@ test('OPT-IN confirmed header logout clears already loaded private requirements'
  const response=page.waitForResponse(result=>result.url()===origin+'/api/platform/auth/sign-out');
  await logout.click();
  assert.equal((await response).status(),200);
+ await expect(page).toHaveURL(origin+'/login',{timeout:30_000});
  await expect(logout).toHaveCount(0);
  await expect(page.getByText(title,{exact:true})).toHaveCount(0,{timeout:3000});
  await expect(page.locator('[data-requirements-page]')).toHaveCount(0);

@@ -101,7 +101,9 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   viewPreferenceScope:verifiedBinding?JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]):null,
   onRefresh:refresh,
   onLogin:login,
-  onLogout:()=>{if(beforeNavigate())void controller.current?.logout();},
+  onLogout:async()=>{
+   if(beforeNavigate()&&await controller.current?.logout())window.location.replace('/login');
+  },
   onCreateTask:()=>open({mode:'create'}),
   onOpenTask:(task,trigger)=>open({mode:'edit',task},trigger),
   onBeforeNavigate:beforeNavigate,

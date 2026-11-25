@@ -24,10 +24,17 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
  const page=await browser.newPage({viewport:{width:1365,height:900}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  let enabled=true,fileHandoffEnabled=false;
- const writes:string[]=[];
+ const writes:string[]=[];let releaseReads=0;
  await page.route('**/api/platform/**',route=>{
   if(route.request().method()!=='GET')writes.push(route.request().method());
-  return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,storageReviewEnabled:true,fileHandoffEnabled,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}});
+  if(new URL(route.request().url()).pathname.endsWith('/requirement-support/releases')){
+   releaseReads++;return route.fulfill({json:{
+    scope:'public-source-records',ownerAccepted:false,visualQualification:'not-attested',preferencesEnabled:true,
+    current:{sourceSha:'a'.repeat(40),sourceTreeDigest:'b'.repeat(64),buildId:'synthetic-build'},
+    readState:{sourceSha:'a'.repeat(40),seen:false},records:[],
+   }});
+  }
+  return route.fulfill({json:enabled?{scope:'personal-manual-candidate',ownerId:'hierarchy-owner',spaceId:'hierarchy-space',storageVerified:true,writable:true,storageReviewEnabled:true,fileHandoffEnabled,allowedTypes:['todo','journal'],calendarEnabled:true,financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true}: {scope:'closed'}});
  });
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
@@ -37,6 +44,8 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(moduleSwitch.getByRole('button')).toHaveText(['安排与推进','生活记录','长期积累','资料与工具']);
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('安排与推进');
  await assertWorkspaceModule(nav,'安排与推进',planning);
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ assert.equal(releaseReads,0,'opening the workspace does not consult automatic announcements');
  await expect(page.locator('header')).toHaveCSS('background-image','none');
  await expect(page.getByRole('button',{name:'LifeOS 总览',exact:true}).locator('svg path')).toHaveCount(1);
  const overviewCards=page.locator('.lo-overview-grid > .lo-panel');
@@ -55,16 +64,19 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(location).toHaveText('总览');
  await expect(back).toBeDisabled();
  await expect(forward).toBeDisabled();
- const [trailStart,trailEnd,backPosition,forwardPosition]=await Promise.all(
-  [overviewLink,location,back,forward].map(control=>control.boundingBox())
+ await expect(overviewLink).toHaveCount(0);
+ const [trailEnd,backPosition,forwardPosition,content]=await Promise.all(
+  [location,back,forward,page.locator('.lo-content')].map(control=>control.boundingBox())
  );
- assert.ok(trailStart&&trailEnd&&backPosition&&forwardPosition);
- assert.ok(trailStart.x<trailEnd.x&&trailEnd.x+trailEnd.width<backPosition.x&&backPosition.x<forwardPosition.x);
- assert.ok(backPosition.x-trailEnd.x-trailEnd.width>backPosition.width);
+ assert.ok(trailEnd&&backPosition&&forwardPosition&&content);
+ assert.ok(Math.abs(content.x-trailEnd.x)<1,'overview breadcrumb starts on the content edge');
+ assert.ok(trailEnd.x+trailEnd.width+backPosition.width<backPosition.x&&backPosition.x<forwardPosition.x);
  const metricButtons=metrics.getByRole('button');
  await expect(metricButtons).toHaveText(['待办0','今日到期0','已逾期0','推进中项目2']);
  for(const width of [1365,390]){
   await page.setViewportSize({width,height:900});
+  const [leftCard,rightCard]=await Promise.all([overviewCards.nth(0).boundingBox(),overviewCards.nth(1).boundingBox()]);
+  assert.ok(leftCard&&rightCard&&rightCard.x>=leftCard.x+leftCard.width&&Math.abs(rightCard.y-leftCard.y)<1);
   const bounds=await Promise.all((await metricButtons.all()).map(button=>button.boundingBox()));
   const rows=Map.groupBy(bounds,bound=>bound?.y);
   assert.deepEqual([...rows.values()].map(row=>row.length),[4]);
@@ -136,6 +148,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(breadcrumb).toHaveCount(1);
  await assertWorkspaceModule(nav,'安排与推进',planning);
  await expect(location).toHaveText('待办');
+ await expect(overviewLink).toHaveText('总览');
  await back.focus();await page.keyboard.press('Enter');await expect(domains).toBeVisible();
  await expect(location).toHaveText('总览');
  await expect(forward).toBeEnabled();
