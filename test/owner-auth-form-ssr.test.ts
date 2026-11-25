@@ -4,6 +4,7 @@ import {renderAuthComponent as render} from './helpers/auth-component-render.ts'
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import ts from 'typescript';
+import {lifeOSInstallMetadata} from '../src/ui-review/install-metadata.ts';
 test('the root renders login directly for anonymous or unavailable identity and redirects only a verified principal',async()=>{
  const native=createRequire(import.meta.url);
  const loginComponent=()=>null;
@@ -11,6 +12,7 @@ test('the root renders login directly for anonymous or unavailable identity and 
   const module={exports:{} as {default:()=>Promise<any>}};
   const code=ts.transpileModule(readFileSync('app/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
   new Function('require','module','exports',code)((key:string)=>{
+   if(key==='../src/ui-review/install-metadata')return{lifeOSInstallMetadata};
    if(key==='next/headers')return{headers:async()=>new Headers()};
    if(key==='next/navigation')return{redirect:(path:string)=>{throw Error('redirect:'+path);}};
    if(key.includes('/platform/runtime'))return{readPlatformPagePrincipal:async()=>{if(identity instanceof Error)throw identity;return identity;},readPlatformLoginCapability:async()=>capability};
