@@ -6,7 +6,7 @@ import {formatCareerDates} from './resume-dates.ts';
 /** Root passes an independently authorized PersonalService response; these are presentation projections. */
 export type CareerRecord={id:string;sourceId:string;revision:number;fields:CareerPersonalFields};
 export type CareerRow=CareerRecord&{title:string;summary:string[];entry:PublicEntry};
-export const careerKindLabels={education:'教育经历',employment:'工作经历',achievement:'成果与人生经历',resume:'简历版本',opportunity:'职位与 JD'};
+export const careerKindLabels={education:'教育经历',employment:'工作经历',achievement:'成果与项目素材',resume:'简历版本',opportunity:'职位与 JD'};
 export const applicationStateLabels={saved:'已收藏',preparing:'准备中',applied:'已投递',interview:'面试中',offer:'已获 Offer',closed:'已结束'};
 export const careerPeriodLabel=formatCareerDates;
 export function careerSummary(p:CareerPersonal):string[]{
