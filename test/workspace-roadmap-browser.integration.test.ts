@@ -104,7 +104,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await expect(page.getByRole('heading',{level:1,name:'待办',exact:true})).toBeVisible();
   await expect(page.locator('[data-task-grid="reui"]').getByText('合成待办甲',{exact:true})).toBeVisible();
   if(width<850)await expect(page.getByRole('button',{name:'打开导航',exact:true})).toBeHidden();
-  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','待办']);
+  await expect(page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button')).toHaveText(['总览','待办','项目','领域']);
   const sections=page.getByRole('navigation',{name:'待办分类视图'});
   await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
   await sections.getByRole('button',{name:'项目分类视图',exact:true}).click();

@@ -10,8 +10,11 @@ const project=(id:string,area:ProjectRow['area'],stage='active'):ProjectRow=>({i
 test('navigation groups only supplied authorized links without dropping or duplicating existing destinations',()=>{
  assert.equal(typeof hierarchy.groupWorkspaceModules,'function','grouped workspace navigation is required');
  const links:OwnerModuleLink[]=[{id:'journal',label:'日记',href:'/personal/journal'},{id:'calendar',label:'日程',href:'/personal/schedule'},{id:'finance',label:'财务',href:'/personal/finance'}];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']],['项目',[]]]);
- assert.deepEqual(hierarchy.groupWorkspaceModules([]).flatMap(group=>group.links),[]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']]]);
+ const development:OwnerModuleLink={id:'development-projects',label:'开发项目',href:'/personal/development-projects'};
+ assert.deepEqual(hierarchy.groupWorkspaceModules([development]).map(({label,pages,links})=>[label,pages,links]),[
+  ['日常',['overview','tasks','projects','areas'],[]],['软件开发',[],[development]],
+ ]);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links).map(link=>link.href).sort(),['/personal/finance','/personal/journal','/personal/schedule']);
 });
 
@@ -38,7 +41,7 @@ test('support and tool destinations stay outside the business tabs',()=>{
   {id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'},
   {id:'updates',label:'更新记录',href:'/personal/requirements/updates'},
  ];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常','项目']);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常']);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links),[]);
 });
 

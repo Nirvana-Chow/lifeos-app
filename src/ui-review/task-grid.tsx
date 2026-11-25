@@ -91,6 +91,7 @@ function TaskGridInput({ edit, latest, close, advance, onError }: {
 type TaskTitleFieldProps = FieldAccess & {
   task: TaskRow;
   className?: string;
+  openDetailsOnClick?: boolean;
   onOpen?: (task: TaskRow, trigger?: HTMLButtonElement) => boolean | void;
 };
 
@@ -142,12 +143,12 @@ export function TaskTitleField(props: TaskTitleFieldProps) {
   );
   const editable = canWrite(props);
   return <Button ref={trigger} variant="ghost" className={props.className}
-    aria-label={`${editable ? '编辑标题' : '查看待办'}：${props.task.title}`}
-    aria-keyshortcuts={editable ? 'Enter F2' : undefined}
-    title={editable ? '双击编辑标题' : undefined}
-    onDoubleClick={editable ? open : undefined}
+    aria-label={`${editable && !props.openDetailsOnClick ? '编辑标题' : '查看待办'}：${props.task.title}`}
+    aria-keyshortcuts={editable ? props.openDetailsOnClick ? 'F2' : 'Enter F2' : undefined}
+    title={editable ? props.openDetailsOnClick ? 'F2 编辑标题' : '双击编辑标题' : undefined}
+    onDoubleClick={editable && !props.openDetailsOnClick ? open : undefined}
     onClick={event => {
-      if (!editable) props.onOpen?.(props.task, event.currentTarget);
+      if (props.openDetailsOnClick || !editable) props.onOpen?.(props.task, event.currentTarget);
       else if (event.detail === 0) open();
     }}
     onKeyDown={event => {

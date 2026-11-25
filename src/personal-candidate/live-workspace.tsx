@@ -5,12 +5,13 @@ import {LifeOSWorkspace} from '../ui-review/workspace';
 import {ConnectedPersonalWorkspace} from './connected-workspace';
 import {AccountApiKeys} from './account-api-keys';
 import {ClassificationReview} from './classification-review';
+import {TaskClassificationPreview} from './task-classification-preview';
 import {DeviceSessionsSettings} from '../session-duration/settings';
 import {PasswordPage} from './password-page';
 export function LivePersonalWorkspace({initialPage='overview',initialModal,initialSettingsPanel,initialClassificationPlanId,initialTaskId,initialCreateTask=false,showApiKeys=false,passwordEnabled=false}:{initialPage?:WorkspacePage;initialModal?:'settings'|'classification';initialClassificationPlanId?:string;initialSettingsPanel?:SettingsPanel;initialTaskId?:string;initialCreateTask?:boolean;showApiKeys?:boolean;passwordEnabled?:boolean}){
  const classificationCloseGuard=useRef<(()=>boolean)|null>(null);
  const settingsCloseGuard=useRef<(()=>boolean)|null>(null);
- return <ConnectedPersonalWorkspace initialTaskId={initialTaskId} initialCreateTask={initialCreateTask}>{props=><LifeOSWorkspace desktopNavigation {...props} syncUrl initialPage={initialPage}
+ return <ConnectedPersonalWorkspace initialTaskId={initialTaskId} initialCreateTask={initialCreateTask}>{props=><LifeOSWorkspace desktopNavigation {...props} showManualTaskCreation={false} renderTaskClassificationPreview={()=> <TaskClassificationPreview embedded/>} syncUrl initialPage={initialPage}
   initialModal={initialModal} initialSettingsPanel={initialSettingsPanel} initialClassificationPlanId={initialClassificationPlanId} classificationCloseGuard={classificationCloseGuard}
   renderClassification={(planId,onClose,onPlanChange,container)=><ClassificationReview key={planId} {...{planId,onClose,onPlanChange,container}} closeGuard={classificationCloseGuard}/>} settingsCloseGuard={settingsCloseGuard}
   availableSettingsPanels={showApiKeys?['security','api-keys']:['security']}

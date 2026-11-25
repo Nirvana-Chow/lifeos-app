@@ -78,6 +78,8 @@ export type TaskFilter = {
 export type LifeOSWorkspaceProps = {
   /** Offer the device-local layout preference in the shared owner workspace. */
   desktopNavigation?: boolean;
+  showManualTaskCreation?: boolean;
+  renderTaskClassificationPreview?: () => ReactNode;
   /** Verified owner+space scope for browser-only layout preferences; absent disables persistence. */
   viewPreferenceScope?: string | null;
   state: WorkspaceState;
