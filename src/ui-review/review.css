@@ -228,6 +228,10 @@
   align-items: center;
   gap: 7px;
 }
+.lo-shell .lo-task-create { font-size: var(--lo-font-meta); }
+@media (min-width: 1024px) and (pointer: fine) {
+  .lo-shell .lo-task-create { min-height: 36px; }
+}
 .lo-page-actions > span {
   display: inline-flex;
 }
@@ -285,6 +289,7 @@
   border: 1px solid var(--border);
   border-radius: 7px;
 }
+.lo-task-empty { min-height: 0; padding: 24px 16px; gap: 12px; }
 .lo-empty h2 {
   font-weight: 400;
 }

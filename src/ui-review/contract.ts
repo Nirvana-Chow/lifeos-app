@@ -78,7 +78,6 @@ export type TaskFilter = {
 export type LifeOSWorkspaceProps = {
   /** Offer the device-local layout preference in the shared owner workspace. */
   desktopNavigation?: boolean;
-  showManualTaskCreation?: boolean;
   renderTaskClassificationPreview?: () => ReactNode;
   /** Verified owner+space scope for browser-only layout preferences; absent disables persistence. */
   viewPreferenceScope?: string | null;
@@ -98,7 +97,7 @@ export type LifeOSWorkspaceProps = {
   onRefresh?: () => void;
   onLogin?: () => void;
   onLogout?: () => void;
-  onCreateTask?: () => boolean | void;
+  onCreateTask?: (trigger?: HTMLButtonElement) => boolean | void;
   /** Keep the existing revision/idempotency/recovery writer in the host. No optimistic local mutation. */
   onSetTaskStatus?: (
     task: Pick<TaskRow, "id" | "revision">,
@@ -127,6 +126,7 @@ export type LifeOSWorkspaceProps = {
 /** Shared ordinary-grid boundary; the existing controller remains the only business writer. */
 export type TaskGridProps = {
   flatProjects?: boolean;
+  emptyMessage?: string;
   viewPreferenceScope?: string | null;
   draftMemory?: TaskCellDraftMemory;
   tasks: readonly TaskRow[];

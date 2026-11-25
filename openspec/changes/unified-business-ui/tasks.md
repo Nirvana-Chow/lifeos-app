@@ -205,3 +205,5 @@ For EXEC-PORTABLE-ROUTING-002, verify reproducible L0–L3 decisions and native 
 ## LO-TASK-001 workspace reading and classification checkpoint (2026-11-25)
 
 Continue [Issue #5](https://github.com/Nirvana-Chow/lifeos-app/issues/5) under 1.2 / 3.1 / 3.2. Verify same-page task details from overview and list, explicit historical detail links, conversation-first intake, and a read-only classification preview that returns to the current view. Keep personal project references and software development navigation separate. Compare task and requirements reading on matched fixtures, and distinguish identity, storage verification, snapshot and page-render failures. Formal authenticated site recovery, fixed-main release and owner acceptance remain open.
+
+The owner clarified that manual entry and conversation intake coexist. Verify a single-entry action in the task workspace, independently read back the saved item, and keep the overview without a duplicate action. Read-only access and the existing conversation intake remain governed by their original contracts.

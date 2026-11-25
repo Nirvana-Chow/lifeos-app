@@ -11,10 +11,10 @@ import{editorFromEntry,type PersonalEditorFields}from'./editor';
 import{resolveTaskTarget,type TaskIdentity,type TaskTarget}from'./task-editor-state';
 import type{PublicEntry}from'../platform/contracts';
 import type{WorkspaceTask}from'./workspace-data';
-type EditorContext={target:TaskTarget;binding:PersonalBinding};
+type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boolean};
 type TaskActions={
  viewPreferenceScope:string|null;
- onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:()=>boolean;
+ onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:(trigger?:HTMLElement)=>boolean;
  onOpenTask:(task:TaskIdentity,trigger?:HTMLElement)=>boolean;
  onBeforeNavigate:()=>boolean;
  onBeforeSettingsChange:()=>boolean;
@@ -70,12 +70,12 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const navigate=(url:string)=>{if(beforeNavigate())window.location.assign(url);};
  const login=()=>{if(batchBinding&&!verifiedBinding)window.location.assign('/login');else navigate('/login');};
  const refresh=()=>{if(batchBinding&&!verifiedBinding)void controller.current?.refresh();else if(beforeNavigate())void controller.current?.refresh();};
- const open=(next:TaskTarget,trigger?:HTMLElement)=>{
+ const open=(next:TaskTarget,trigger?:HTMLElement,singleCreate=false)=>{
   const host=controller.current,binding=host?.getEditorBinding();
   if(!binding || next.mode==='create' && (snapshot.access.writable!==true ||
     !snapshot.access.allowedTypes?.includes('todo') || !commandStorage.current) || !beforeNavigate())return false;
   returnFocus.current=trigger??(document.activeElement as HTMLElement|null);
-  setEditor({target:next,binding});
+  setEditor({target:next,binding,singleCreate});
   return true;
  };
  const close=()=>{setEditor(null);queueMicrotask(()=>returnFocus.current?.isConnected&&returnFocus.current.focus());};
@@ -94,7 +94,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   writable={snapshot.access.writable===true} saving={snapshot.saving} uncertain={snapshot.uncertain}
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}
   onStopWaiting={()=>controller.current?.cancel()}
-  onBatch={()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
+  onBatch={editor.singleCreate?undefined:()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
   closeGuard={editorCloseGuard}
  />;
  return <>{children({
@@ -105,7 +105,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   onLogout:async()=>{
    if(beforeNavigate()&&await controller.current?.logout())window.location.replace('/login');
   },
-  onCreateTask:()=>open({mode:'create'}),
+  onCreateTask:trigger=>open({mode:'create'},trigger,!!trigger),
   onOpenTask:(task,trigger)=>open({mode:'edit',task},trigger),
   onBeforeNavigate:beforeNavigate,
   onBeforeSettingsChange:()=>{

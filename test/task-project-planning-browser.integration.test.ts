@@ -29,6 +29,8 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   // Only this private test's Node memory is written. No remote service, real record or database.
   let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:null,topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
   let writable=true,writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  let rejectNextCreate=false,createRequests=0,newTaskReads=0;
+  let newReadback:Promise<void>|undefined;
   const headers={'cache-control':'private, no-store',vary:'Cookie','x-content-type-options':'nosniff'};
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),method=request.method();if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return ['GET','HEAD'].includes(method)?route.continue():route.abort();
@@ -37,9 +39,13 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
     if(url.pathname==='/api/platform/personal/availability')value={configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:true};
     else if(url.pathname==='/api/platform/personal/status')value={scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable};
     else if(url.pathname==='/api/platform/personal/overview')value={scope:'full-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
-    else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;}else projectReads++;value={entry};}}
+    else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;if(entry.id===newId){newTaskReads++;await newReadback;}}else projectReads++;value={entry};}}
    }else if(method==='PATCH'||method==='POST'){
     const match=/^\/api\/platform\/personal\/(todo|project)(?:\/([a-f0-9-]+))?$/.exec(url.pathname);if(!match)return route.abort();const body=request.postDataJSON(),key=request.headers()['idempotency-key'];if(receipts.has(key))return route.fulfill({json:{entry:receipts.get(key),duplicate:true},headers});
+    if(method==='POST'&&match[1]==='todo'){
+     createRequests++;
+     if(rejectNextCreate){rejectNextCreate=false;return route.fulfill({status:422,json:{error:{code:'VALIDATION_FAILED'}},headers});}
+    }
     const type=match[1],id=match[2]??newId,old=entries.find(entry=>entry.id===id);if(old&&old.revision!==body.expectedRevision)return route.fulfill({status:409,json:{error:{code:'REVISION_CONFLICT'}},headers});
     const normalized=normalizePersonalFields(type,body.fields),fields=old?preserveOmittedPlanning(type,body.fields,old.draft,normalized):normalized,entry=old?{...old,revision:old.revision+1,draft:type==='todo'?fields:{...fields,disposition:'reference'}}:makeEntry(id,type,fields,body);entries=entries.filter(row=>row.id!==id).concat(entry);receipts.set(key,structuredClone(entry));writes++;return route.fulfill({status:old?200:201,json:{entry,duplicate:false},headers});
    }else return route.abort();
@@ -86,9 +92,33 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
   await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-05 至 2030-11-10',exact:true})).toBeVisible();
   await page.reload({waitUntil:'domcontentloaded'});await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true}).click();dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(dialog.getByLabel('计划开始',{exact:true})).toHaveValue('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
-  await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'domcontentloaded'});
-  dialog=page.getByRole('dialog',{name:'新建待办',exact:true});await dialog.getByLabel('标题',{exact:true}).fill('合成新建排期');await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-12');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-14');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect(dialog).toHaveCount(0);await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);
+  const create=page.getByRole('button',{name:'新建待办',exact:true});
+  await expect(create).toHaveCount(1);
+  await expect(create).toHaveAttribute('data-variant','outline');
+  await create.click();
+  dialog=page.getByRole('dialog',{name:'新建待办',exact:true});
+  await expect(dialog.getByRole('button',{name:'多行录入',exact:true})).toHaveCount(0);
+  await dialog.getByLabel('标题',{exact:true}).fill('合成新建排期');
+  await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-12');
+  await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-14');
+  const submit=dialog.getByRole('button',{name:'保存待办',exact:true});
+  rejectNextCreate=true;
+  await submit.click();
+  await expect(dialog.getByRole('alert')).toContainText('请求未被接受');
+  await expect(dialog.getByLabel('标题',{exact:true})).toHaveValue('合成新建排期');
+  assert.equal(writes,2);
+  assert.equal(newTaskReads,0);
+  newReadback=new Promise<void>(resolve=>{releaseHeldReadback=resolve;});
+  await submit.click();
+  await expect.poll(()=>newTaskReads).toBe(1);
+  await expect(dialog).toBeVisible();
+  await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);
+  releaseHeldReadback!();
+  await expect(dialog).toHaveCount(0);
+  await expect(create).toBeFocused();
+  await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);
+  assert.equal(createRequests,2);
+  assert.equal(writes,3);
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
   await expect(grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'看板',exact:true}).click();
@@ -126,6 +156,15 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await projectLink.click();
   await expect(page).toHaveURL(origin+'/personal/edit?type=project&id='+projectId);
   await expect(page.getByLabel('标题',{exact:true})).toHaveValue('合成排期项目');
-  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,mobileOverflow:false}));
+  writable=true;
+  entries=[];
+  await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+  await expect(grid.getByText('暂无待办',{exact:true})).toBeVisible();
+  await expect(create).toBeEnabled();
+  assert.ok((await create.boundingBox())!.height>=44,'mobile new task target is 44px tall');
+  await page.getByRole('button',{name:'列表',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'暂无待办',exact:true})).toBeVisible();
+  await expect(create).toHaveCount(1);
+  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,mobileOverflow:false}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });
