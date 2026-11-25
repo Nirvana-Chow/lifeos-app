@@ -139,5 +139,18 @@ export class PersonalWorkspaceController{
   try{this.busy=true;await session.retry(verifyReadback);return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
  }
  cancel(){++this.generation;this.preflight?.abort();this.preflight=null;this.busy=false;this.clearUndo();this.session?.cancel();this.readMutation();}
- async logout(){this.suspend();try{const response=await this.options.fetcher('/api/platform/auth/sign-out',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}'});if(!response.ok)throw Error();this.emit({state:{status:'forbidden',message:'已退出。'},access:{authenticated:false,writable:false,loginAllowed:true}});}catch{this.emit({state:{status:'error',message:'退出结果未确认，请重试退出。'}});}}
+ async logout(){
+  this.suspend();
+  try{
+   const response=await this.options.fetcher('/api/platform/auth/sign-out',{
+    method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:'{}',
+   });
+   if(!response.ok)throw Error();
+   this.emit({state:{status:'forbidden',message:'已退出。'},access:{authenticated:false,writable:false,loginAllowed:true}});
+   return true;
+  }catch{
+   this.emit({state:{status:'error',message:'退出结果未确认，请重试退出。'}});
+   return false;
+  }
+ }
 }

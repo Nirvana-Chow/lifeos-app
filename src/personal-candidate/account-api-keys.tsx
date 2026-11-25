@@ -26,12 +26,27 @@ type Grant = {
   expiresAt: string | null;
   status: keyof typeof statuses;
 };
-type List = {kind: 'loading' | 'disabled' | 'denied' | 'error'} | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'};
+const listErrors = {
+  network: '无法连接密钥服务。请重试。',
+  unavailable: '密钥服务暂时无法返回列表。请重试。',
+  rateLimited: '读取请求过于频繁。请稍后重试。',
+  invalidResponse: '密钥列表返回格式有误。请重试。',
+};
+type List = {kind: 'loading' | 'disabled' | 'denied'}
+  | {kind: 'error'; reason: keyof typeof listErrors}
+  | {kind: 'ready'; grants: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'};
 const requestOptions = {cache: 'no-store', credentials: 'same-origin'} as const;
 async function readGrantPage(response: Response) {
   const data: {keys: Grant[]; nextCursor?: string; availableScopes?: readonly AgentScope[];availablePolicies?:readonly BusinessDataPolicy[];availableFileHandoff?:'file-handoff-v1'} = await response.json();
   if (!Array.isArray(data.keys) ||
       (data.nextCursor !== undefined && (typeof data.nextCursor !== 'string' || !data.nextCursor))) throw Error();
+  for (const grant of data.keys) {
+    if (!grant || typeof grant.id !== 'string' || !grant.id || typeof grant.name !== 'string' ||
+        !Object.hasOwn(statuses, grant.status) ||
+        typeof grant.createdAt !== 'string' || !Number.isFinite(Date.parse(grant.createdAt)) ||
+        (grant.expiresAt !== null && (typeof grant.expiresAt !== 'string' || !Number.isFinite(Date.parse(grant.expiresAt))))) throw Error();
+    normalizeAgentScopes(grant.scopes);
+  }
   if(data.availablePolicies!==undefined&&(!Array.isArray(data.availablePolicies)||data.availablePolicies.some(policy=>policy!==allPersonalBusinessPolicy)))throw Error();
   if(data.keys.some(grant=>grant.businessDataPolicy!==undefined&&grant.businessDataPolicy!==allPersonalBusinessPolicy))throw Error();
   if(data.availableFileHandoff!==undefined&&data.availableFileHandoff!=='file-handoff-v1')throw Error();
@@ -108,8 +123,6 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [skillMessage, setSkillMessage] = useState('');
-  const [instructions, setInstructions] = useState('');
   const creator = useRef<HTMLButtonElement | null>(null);
   const creatorGrant = useRef<string | null>(null);
   const newKeyButton = useRef<HTMLButtonElement>(null);
@@ -124,23 +137,28 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
   const moreRequest = useRef<AbortController | null>(null);
   const lockFile=useCallback((value:boolean)=>{actionLock.current=value;setFileBusy(value);},[]);
   const fileSaved=useCallback((grant:Grant)=>setList(current=>current.kind==='ready'?{...current,grants:current.grants.map(item=>item.id===grant.id?grant:item)}:current),[]);
+  const readyList = list.kind === 'ready' ? list : null;
+  const canCreate = !!readyList || list.kind === 'error';
+  const canSubmit = !!readyList || (list.kind === 'error' && !replacement);
 
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
+      let reason: keyof typeof listErrors = 'network';
       try {
         const response = await fetch(endpoint, {...requestOptions, signal: controller.signal});
         if (controller.signal.aborted) return;
         if (response.status === 404) return setList({kind: 'disabled'});
         if (response.status === 401 || response.status === 403) return setList({kind: 'denied'});
-        if (!response.ok) return setList({kind: 'error'});
+        if (!response.ok) return setList({kind: 'error', reason: response.status === 429 ? 'rateLimited' : 'unavailable'});
+        reason = 'invalidResponse';
         const page = await readGrantPage(response);
         if (!controller.signal.aborted) {
           setList({kind: 'ready', ...page});
           setUncertain(false);
         }
       } catch {
-        if (!controller.signal.aborted) setList({kind: 'error'});
+        if (!controller.signal.aborted) setList({kind: 'error', reason});
       } finally {
         if (!controller.signal.aborted) setRefreshing(false);
       }
@@ -208,13 +226,6 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     setDialogOpen(true);
   }
 
-  async function copyInstructions() {
-    const text = `请从 ${window.location.origin}/api/platform/agent-skill 下载 LifeOS Agent Skill（lifeos-agent.tar.gz），解压后将完整 lifeos-agent 文件夹安装到当前 AI 工具支持的 Skills 目录，并保留 SKILL.md 与 references 的相对位置。如果工具不支持安装 Skill，请先让它读取 SKILL.md 和引用文件。\n\n在本站 API 密钥设置中新建自己的密钥，只授予需要的模块读取或写入权限。通过当前工具批准的凭据存储单独配置密钥与本站 HTTPS 地址；不要把密钥写入 Skill、聊天、URL 或共享文件。压缩包不包含任何人的密钥。\n\n开始使用时，让 AI 读取 Skill 及随包的 references/operations.md，先执行能力发现，再按实际授权读取记录。写入前明确目标，写入后读回确认。当前支持待办以及项目、领域和主题的查询、新建和修改；实际可用业务以能力发现和操作清单为准。`;
-    setInstructions(text);
-    try {await navigator.clipboard.writeText(text); setSkillMessage('安装说明已复制');}
-    catch {setSkillMessage('无法访问剪贴板，请展开安装和使用说明，选中文字手动复制。');}
-  }
-
   function reload() {
     moreRequest.current?.abort();
     moreRequest.current = null;
@@ -256,14 +267,14 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (actionLock.current || uncertain || reveal || !dialogOpen || list.kind !== 'ready') return;
+    if (actionLock.current || uncertain || reveal || refreshing || !dialogOpen || !canSubmit) return;
     const data = new FormData(event.currentTarget);
     const expiration = resolveApiKeyExpiry(expiry, String(data.get('custom-expiry') ?? ''));
     if (!name.trim() || !expiration) {
       setMessage('请填写名称，并选择未来 365 天内的有效到期时间。');
       return;
     }
-    if (list.availableScopes && !createScopes.length) {
+    if (readyList?.availableScopes && !createScopes.length) {
       setMessage('请至少选择一项读取权限。');
       return;
     }
@@ -271,20 +282,32 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     setBusy(true);
     setMessage('');
     try {
-      const scopes = list.availableScopes ? normalizeAgentScopes(createScopes) : permission === 'write' ? ['todo:read', 'todo:write'] : ['todo:read'];
+      const policy = readyList ? createPolicy : null;
+      const scopes = readyList?.availableScopes ? normalizeAgentScopes(createScopes) :
+        readyList && permission === 'write' ? ['todo:read', 'todo:write'] : ['todo:read'];
       const response = await fetch(endpoint, {
         ...requestOptions,
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: name.trim(), scopes, ...expiration,...(createPolicy?{businessDataPolicy:createPolicy}:{})}),
+        body: JSON.stringify({name: name.trim(), scopes, ...expiration,...(policy?{businessDataPolicy:policy}:{})}),
       });
       if (response.status === 400) {
         setMessage('创建请求未通过。请核对名称、权限和到期时间。');
         return;
       }
+      if (response.status === 401 || response.status === 403) {
+        setList({kind: 'denied'});
+        setMessage('当前会话无权创建密钥。请关闭此窗口并重新登录。');
+        return;
+      }
+      if (response.status === 404) {
+        setList({kind: 'disabled'});
+        setMessage('当前站点尚未启用 API 密钥管理。');
+        return;
+      }
       if (!response.ok) throw Error();
       const result: {key: string; grant: Grant} = await response.json();
-      if (typeof result.key !== 'string' || !result.key || !result.grant?.id || (result.grant.businessDataPolicy??null)!==createPolicy) throw Error();
+      if (typeof result.key !== 'string' || !result.key || !result.grant?.id || (result.grant.businessDataPolicy??null)!==policy) throw Error();
       if (pageActive.current) setReveal(result);
       setCopied(false);
       setName('');
@@ -418,15 +441,18 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
     {!embedded&&<h1>API 密钥</h1>}
     <p>为 LifeOS Skill 授予所需模块的权限。每把密钥都有到期时间，也可以单独撤销。</p>
     {message && !dialogOpen && <p role="status">{message}</p>}
-    {list.kind === 'loading' && <p role="status">正在读取密钥…</p>}
-    {list.kind === 'disabled' && <p role="status">当前站点尚未启用 API 密钥管理。</p>}
-    {list.kind === 'denied' && <p>请<a href="/login">重新登录</a>并完成两步验证。</p>}
-    {list.kind === 'error' && <p>暂时无法读取密钥。 <Button type="button" variant="outline" onClick={reload}>重新读取</Button></p>}
-    {list.kind === 'ready' && <>
-      <section className={styles.section} aria-labelledby="key-list-title">
-        <div className={styles.sectionHeading}><h2 id="key-list-title">已签发的密钥</h2>
-          <Button ref={newKeyButton} type="button" disabled={busy || uncertain} onClick={event=>prepareCreate(event.currentTarget)}>新建密钥</Button>
-        </div>
+    <section className={styles.section} aria-labelledby="key-list-title" aria-busy={list.kind === 'loading' || refreshing}>
+      <div className={styles.sectionHeading}><h2 id="key-list-title">已签发的密钥</h2>
+        {canCreate && <Button ref={newKeyButton} type="button" disabled={busy || uncertain} onClick={event=>prepareCreate(event.currentTarget)}>新建密钥</Button>}
+      </div>
+      {(list.kind === 'loading' || refreshing) && <p role="status">正在读取密钥…</p>}
+      {list.kind === 'disabled' && <p role="status">当前站点尚未启用 API 密钥管理。</p>}
+      {list.kind === 'denied' && <p role="status">当前会话无权管理密钥。请<a href="/login">重新登录</a>并完成两步验证。</p>}
+      {list.kind === 'error' && !refreshing && <div className={styles.actions}>
+        <p role="alert">{listErrors[list.reason]}</p>
+        <Button type="button" variant="outline" onClick={reload}>重新读取</Button>
+      </div>}
+      {list.kind === 'ready' && <>
         {list.grants.length === 0 ? <p>还没有签发密钥。</p> : <ul className={styles.list}>
           {list.grants.map(grant => <li key={grant.id} className={styles.grant}>
             <div>
@@ -452,20 +478,7 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
         {list.nextCursor && <Button type="button" variant="outline" disabled={loadingMore} onClick={loadMore}>
           {loadingMore ? '正在读取…' : '加载更多密钥'}
         </Button>}
-      </section>
-    </>}
-    <section className={styles.section} aria-labelledby="skill-title">
-      <h2 id="skill-title">连接你的 AI 工具</h2>
-      <p>使用你自己的 API 密钥，只授予需要的权限。安装包不含凭据；不要把密钥放入 Skill、聊天、URL 或共享文件。</p>
-      <div className={styles.actions}>
-        <a className={styles.download} href="/api/platform/agent-skill" download="lifeos-agent.tar.gz">下载 LifeOS Agent Skill</a>
-        <Button type="button" variant="outline" onClick={copyInstructions}>复制安装说明</Button>
-      </div>
-      {skillMessage && <p role="status">{skillMessage}</p>}
-      <details><summary>安装和使用说明</summary>
-        <p className={styles.skillHint}>LifeOS Agent Skill 让 AI 按你的授权管理待办、项目、领域和标签。压缩包附带当前操作清单；解压后安装完整文件夹，再通过工具批准的凭据存储单独配置本站地址和自己的密钥。</p>
-        {instructions && <pre className={styles.instructions}>{instructions}</pre>}
-      </details>
+      </>}
     </section>
     <Dialog open={dialogOpen} onOpenChange={open=>{if (!open) closeDialog();}}>
       {/* Content-local Escape also covers the native layer-registration window. */}
@@ -492,10 +505,11 @@ export function AccountApiKeys({embedded=false, closeGuard}: {embedded?:boolean;
           </div>
         </> : <>
         <form method="post" action="/account/api-keys" onSubmit={create}>
-          <fieldset className={styles.fields} disabled={busy || uncertain || list.kind !== 'ready'}>
+          <fieldset className={styles.fields} disabled={busy || uncertain || refreshing || !canSubmit}>
             <label>名称<Input ref={nameInput} name="name" required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="例如：个人待办 Skill"/></label>
             {list.kind==='ready'&&(list.availablePolicies?.includes(allPersonalBusinessPolicy)||createPolicy)&&<PolicyFields value={createPolicy} allAvailable={list.availablePolicies?.includes(allPersonalBusinessPolicy)===true} onChange={policy=>{setCreatePolicy(policy);if(policy&&!createScopes.length)setCreateScopes(['todo:read']);}}/>}
-            {!createPolicy&&<>{list.kind === 'ready' && list.availableScopes ? <ScopeFields available={list.availableScopes} value={createScopes} onChange={setCreateScopes}/> : <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
+            {list.kind === 'error' && !replacement && <p className={styles.expiryHint}>列表恢复前，新密钥仅可读取待办。</p>}
+            {readyList&&!createPolicy&&<>{readyList.availableScopes ? <ScopeFields available={readyList.availableScopes} value={createScopes} onChange={setCreateScopes}/> : <label>权限<select name="permission" value={permission} onChange={event => setPermission(event.target.value)}>
               <option value="read">仅读取待办</option><option value="write">读取和写入待办</option>
             </select></label>}</>}
             <label>有效期限<select aria-describedby="key-expiry-hint" name="expiry" value={expiry} onChange={event => setExpiry(event.target.value)}>

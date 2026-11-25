@@ -3,9 +3,11 @@ import {useCallback,useEffect,useRef,useState,type MouseEvent} from 'react';
 import {Button} from '../ui-review/ui/button';
 import {readJournalHistory,readJournalOriginal,type JournalOriginal} from './history';
 import {JournalCoveragePanel} from './coverage-panel';
+import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import s from './history.module.css';
 
 export function JournalHistoryPanel({onBeforeOpen}:{onBeforeOpen?:()=>boolean}){
+ const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
  const [snapshot,setSnapshot]=useState<Awaited<ReturnType<typeof readJournalHistory>>|null>(null),[detail,setDetail]=useState<JournalOriginal|null>(null),[busy,setBusy]=useState(true),[error,setError]=useState('');
  const generation=useRef(0),guard=useRef(onBeforeOpen),originalHeading=useRef<HTMLHeadingElement>(null);guard.current=onBeforeOpen;
  useEffect(()=>{if(detail)originalHeading.current?.focus();},[detail]);
@@ -21,13 +23,13 @@ export function JournalHistoryPanel({onBeforeOpen}:{onBeforeOpen?:()=>boolean}){
   }catch(reason){if(token===generation.current)setError(reason instanceof Error?reason.message:'日记暂时无法读取，请重试。');}
   finally{if(token===generation.current)setBusy(false);}
  },[]);
+ const hide=useCallback(()=>{generation.current++;setSnapshot(null);setDetail(null);setError('');setBusy(false);},[]);
  useEffect(()=>{
-  void load();
-  const hide=()=>{generation.current++;setSnapshot(null);setDetail(null);setError('');setBusy(false);};
-  const visibility=()=>{if(document.visibilityState==='hidden')hide();else void load();};
+  const visibility=()=>{if(document.visibilityState==='hidden')hide();else if(!hasPrivacyBoundary)void load();};
   document.addEventListener('visibilitychange',visibility);window.addEventListener('pagehide',hide);
   return()=>{hide();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('pagehide',hide);};
- },[load]);
+ },[load,hide,hasPrivacyBoundary]);
+ useEffect(()=>{if(verified===false)hide();else void load();},[verified,hide,load]);
  async function open(event:MouseEvent<HTMLAnchorElement>,id:string){
   if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||event.button!==0)return;
   event.preventDefault();if(busy||!snapshot||guard.current?.()===false)return;

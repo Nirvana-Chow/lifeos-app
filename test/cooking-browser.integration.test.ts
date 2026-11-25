@@ -225,5 +225,48 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
   assert.equal(repository.historyRows.length,1);
   assert.deepEqual(errors,[]);
   assert.deepEqual(remote,[]);
+
+  sessionValid=true;
+  const logoutPage=await browser!.newPage({viewport:{width:390,height:844},extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+  try{
+   await logoutPage.route(origin+'/api/platform/status',route=>route.fulfill({json:{}}));
+   await logoutPage.route(origin+'/api/platform/personal/**',nativeRequest);
+   const historyURL=origin+'/personal/cooking/history';
+   await logoutPage.goto(historyURL);
+   const logoutHistory=logoutPage.getByRole('region',{name:'做过的菜'});
+   await logoutHistory.getByRole('button',{name:/西红柿炒鸡蛋.*2031-05-07/}).click();
+   const notes=logoutPage.getByLabel('做饭笔记（选填）');
+   const logout=logoutPage.locator('header').getByRole('button',{name:'退出登录',exact:true});
+   await notes.fill('合成的退出前未保存草稿');
+   let acceptDeparture=false,signOutRequests=0;
+   const prompts:string[]=[];
+   logoutPage.on('dialog',async dialog=>{
+    prompts.push(dialog.type());
+    if(dialog.type()==='confirm'&&acceptDeparture)await dialog.accept();
+    else await dialog.dismiss();
+   });
+   await logoutPage.route(origin+'/api/platform/auth/sign-out',async route=>{
+    assert.equal(route.request().method(),'POST');
+    signOutRequests++;
+    if(signOutRequests===1)return route.fulfill({status:503,json:{}});
+    sessionValid=false;
+    await route.fulfill({json:{success:true}});
+   });
+   await logout.click();
+   assert.equal(signOutRequests,0);
+   await expect(notes).toHaveValue('合成的退出前未保存草稿');
+   acceptDeparture=true;
+   await logout.click();
+   await expect(logoutPage.locator('header').getByRole('alert')).toHaveText('退出未获服务端确认，请重试。');
+   await expect(notes).toHaveValue('合成的退出前未保存草稿');
+   await expect(logoutPage).toHaveURL(historyURL);
+   await logout.click();
+   await expect(logoutPage).toHaveURL(origin+'/login',{timeout:10_000});
+   await expect(logoutHistory).toHaveCount(0);
+   await expect(notes).toHaveCount(0);
+   assert.equal(signOutRequests,2);
+   assert.deepEqual(prompts,['confirm','confirm','confirm'],'confirmed sign-out must not trigger the editor unload prompt');
+  }finally{await logoutPage.close();}
+
  });
 });

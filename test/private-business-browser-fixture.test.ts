@@ -10,6 +10,7 @@ import type {PublicEntry} from '../src/platform/contracts.ts';
 import {privateHrefs} from '../src/workbench/private-navigation.ts';
 import * as fixture from './helpers/private-business-browser-fixture.ts';
 import {presentationDensity} from './helpers/personal-workspace-browser-fixture.ts';
+import {expectedSyntheticCaptures} from '../scripts/synthetic-rendered-qualification.ts';
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
 import {PersonalFinanceService} from '../src/personal-finance/service.ts';
 import {readPersonalFinanceStatus} from '../src/personal-finance/client.ts';
@@ -112,11 +113,13 @@ test('keyboard roundtrips stay in-page for a workspace last stop and a standalon
  }
 });
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{
- assert.equal(fixture.privateCaptureCases.length,96);
- const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,96);
+ assert.equal(fixture.privateCaptureCases.length,88);
+ const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,88);
  const workflow=readFileSync('.github/workflows/visual-qualification.yml','utf8');
  const uploaded=Array.from(workflow.matchAll(/owner-personal-browser-screenshots\/(\S+\.png)/g),m=>m[1]);
- assert.equal(uploaded.length,112);assert.equal(new Set(uploaded).size,112);
+ const allPaths=Array.from(workflow.matchAll(/(owner-(?:personal|recovery)-browser-screenshots\/\S+\.png)/g),m=>m[1]);
+ assert.deepEqual(allPaths.sort(),expectedSyntheticCaptures.map(row=>row.directory+'/'+row.name).sort());
+ assert.equal(uploaded.length,104);assert.equal(new Set(uploaded).size,104);
  assert.deepEqual(uploaded.filter(name=>name.startsWith('private-')).sort(),[...expected].sort());
  assert.deepEqual(Array.from(workflow.matchAll(/owner-recovery-browser-screenshots\/(\S+\.png)/g),m=>m[1]).sort(),['recovery-desktop.png','recovery-mobile.png','login-desktop.png','login-mobile.png','mfa-login-desktop.png','mfa-login-mobile.png'].sort());
 });

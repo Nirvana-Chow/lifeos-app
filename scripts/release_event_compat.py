@@ -38,6 +38,8 @@ class SourceContract:
     profile: str
     visual: bool
     pins: dict[str, WorkflowPin]
+    affected_ui: bool = False
+    routine_source_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,11 @@ def _source(contract, workflow_bytes):
              and contract.profile in ('routine', 'full') and type(contract.visual) is bool,
              'SOURCE_CONTRACT_UNCONFIRMED')
     paths = {CI, LEGACY_QUALIFICATION} if contract.mode == 'legacy' else {CI}
+    if contract.mode == 'unified':
+        _require(type(contract.affected_ui) is bool
+                 and type(contract.routine_source_only) is bool
+                 and contract.visual is (contract.profile == 'full' and contract.affected_ui),
+                 'SOURCE_CONTRACT_UNCONFIRMED')
     _require(set(contract.pins) == paths and set(workflow_bytes) == paths,
              'SOURCE_CONTRACT_UNCONFIRMED')
     for path, pin in contract.pins.items():
@@ -159,21 +166,24 @@ def _artifacts(evidence, identity, expected_names):
                               'repository_id': REPOSITORY_ID, 'head_repository_id': REPOSITORY_ID}), code)
 
 
-def _unified(evidence, identity, profile, visual):
-    full = profile == 'full'
+def _unified(evidence, identity, contract):
+    full = contract.profile == 'full'
+    visual = contract.visual
+    hosted_ui = contract.affected_ui and (full or not contract.routine_source_only)
     expected = {name: 'success' for name in RELEASE_JOBS | {POLICY}}
     expected[PLATFORM] = expected[RECOVERY] = 'success' if full else 'skipped'
-    expected[RENDERED] = 'success' if full or visual else 'skipped'
+    expected[RENDERED] = 'success' if full or hosted_ui else 'skipped'
     jobs = _jobs(evidence, identity, expected)
     # The exact pinned gate checks all named producers, case guards and outputs.
     _step(jobs[GATE], GATE_STEP)
     names = []
     suffix = f'{identity.sha}-{identity.run_id}-{identity.attempt}'
-    if full or visual:
+    if full or hosted_ui:
         rendered = jobs[RENDERED]
-        for name in (IMAGE_STEP, 'Verify compiled default-closed routes', 'Verify exact scoped release cases and cleanup'):
-            _step(rendered, name)
-        _step(rendered, COMPILED_STEP, 'success' if full else 'skipped')
+        for name in (IMAGE_STEP, 'Verify compiled default-closed routes', COMPILED_STEP,
+                     'Verify exact scoped release cases and cleanup'):
+            _step(rendered, name, 'success' if full else 'skipped')
+        _step(rendered, 'Verify additional UI cases actually ran', 'success' if hosted_ui else 'skipped')
         for name in (CAPTURE_GUARD, CAPTURE_STEP):
             _step(rendered, name, 'success' if visual else 'skipped')
     if full:
@@ -223,6 +233,6 @@ def claim_completion(event, *, signature_verified, contract, workflow_bytes,
             _rows(qualification.jobs, 'jobs', len(FULL_JOBS), 'JOBS_UNCONFIRMED')
             qualify_full(qualification.run, qualification.jobs, contract.pins[LEGACY_QUALIFICATION].id, identity.sha)
     else:
-        _unified(release, identity, contract.profile, contract.visual)
+        _unified(release, identity, contract)
     _require(try_claim((REPOSITORY_ID, identity.sha)) is True, 'SOURCE_ALREADY_CLAIMED')
     return identity

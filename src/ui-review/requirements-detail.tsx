@@ -5,8 +5,9 @@ import type {RoadmapPhase,Requirement} from '../platform/requirements';
 import {Dialog,DialogContent,DialogTitle,DialogClose} from './ui/dialog';
 import {Button} from './ui/button';
 import {Input} from './ui/input';
-import {implementationLabels,acceptanceLabels,workflowLabels,RequirementWorkflowSummary} from './requirements-views';
+import {implementationLabels,acceptanceLabels,workflowLabels,RequirementWorkflowSummary,RequirementResultLink} from './requirements-views';
 import type {RequirementFields,RequirementWorkflow} from '../requirements-candidate/domain';
+import {deliveryLabels,type RequirementDelivery} from './requirements-delivery';
 import styles from './requirements-page.module.css';
 
 const publicRoot = 'https://github.com/Nirvana-Chow/lifeos-app/';
@@ -45,7 +46,7 @@ function RequirementDetailBody({item,showDescription=true}: {item: Requirement;s
 }
 
 
-export function RequirementDetail({container,item,phaseTitle,expanded,onExpandedChange,onClose,returnFocus,editor,loading=false,concealed=false}:{container?:HTMLElement|null;item:Requirement|null;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void;editor?:RequirementEditorProps;loading?:boolean;concealed?:boolean}){
+export function RequirementDetail({container,item,delivery,phaseTitle,expanded,onExpandedChange,onClose,returnFocus,editor,loading=false,concealed=false}:{container?:HTMLElement|null;item:Requirement|null;delivery?:RequirementDelivery;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void;editor?:RequirementEditorProps;loading?:boolean;concealed?:boolean}){
  const title=useRef<HTMLHeadingElement>(null);
  const [bounds,setBounds]=useState<{left:number;top:number;width:number;height:number}|null>(null);
  useEffect(()=>{if(!expanded||!container){setBounds(null);return;}const update=()=>{const r=container.getBoundingClientRect();setBounds({left:r.left,top:r.top,width:r.width,height:r.height});};update();const observer=new ResizeObserver(update);observer.observe(container);window.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);};},[expanded,container]);
@@ -58,7 +59,7 @@ export function RequirementDetail({container,item,phaseTitle,expanded,onExpanded
  if(concealed)return null;
  return <Dialog open={item!==null} onOpenChange={open=>{if(!open)onClose();}}><DialogContent container={container} style={expanded&&bounds?{...bounds,maxWidth:bounds.width,maxHeight:bounds.height,transform:'none',translate:'none'}:undefined} className={`${styles.dialog} ${expanded?styles.fullscreen:''}`} showCloseButton={false} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus();}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus();}}>
   <header className={styles.dialogHeader}><div><span className={styles.id}>{item?.id}</span><DialogTitle ref={title} tabIndex={-1}>{item?.title}</DialogTitle></div><div className={styles.dialogActions}><Button variant="outline" onClick={onExpandedChange}>{expanded?'收起详情':'展开到内容区'}</Button><DialogClose asChild><Button variant="outline">关闭</Button></DialogClose></div></header>
-  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span></div><RequirementWorkflowSummary workflow={editor?.fields.workflow}/><p><strong>{editor?.fields.workflow?'推进下一步：':'工程下一步：'}</strong>{editor?.fields.workflow?.nextStep??item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<>{currentEdit&&<RequirementEditor {...editor} draft={currentEdit.draft} dirty={dirty} changeDraft={update=>setEdit(previous=>previous?{...previous,draft:update(previous.draft)}:null)}/>}<details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} showDescription={false}/></details></>:<RequirementDetailBody item={item}/>}</>:null}</div>
+  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{delivery?deliveryLabels[delivery.state]:item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span></div><RequirementResultLink delivery={delivery}/>{delivery?.result?.evidence&&<p><a href={delivery.result.evidence} target="_blank" rel="noreferrer">查看正式站验证记录</a></p>}<RequirementWorkflowSummary workflow={editor?.fields.workflow}/><p><strong>{editor?.fields.workflow?'推进下一步：':'工程下一步：'}</strong>{editor?.fields.workflow?.nextStep??item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<>{currentEdit&&<RequirementEditor {...editor} draft={currentEdit.draft} dirty={dirty} changeDraft={update=>setEdit(previous=>previous?{...previous,draft:update(previous.draft)}:null)}/>}<details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} showDescription={false}/></details></>:<RequirementDetailBody item={item}/>}</>:null}</div>
  </DialogContent></Dialog>;
 }
 

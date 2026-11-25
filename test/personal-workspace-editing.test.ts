@@ -82,6 +82,13 @@ test('settings keeps account actions in its own content page',()=>{
  assert.equal(elements(tree,n=>n.props.className==='lo-settings-dialog').length,0);
  assert.equal(elements(tree,n=>n.props['aria-label']==='退出登录').length,1);
 });
+test('topic management keeps its heading and drops the repeated breadcrumb label',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
+ const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['topic']},initialPage:'settings',initialSettingsPanel:'topics'});
+ const breadcrumb=elements(tree,n=>n.type==='nav'&&n.props['aria-label']==='浏览位置')[0];
+ assert.deepEqual(elements(breadcrumb,n=>n.props['aria-current']==='page').map(n=>n.props.children),['设置']);
+ assert.equal(elements(tree,n=>n.type==='h2'&&n.props.children==='标签').length,1);
+});
 test('header logout delegates to the existing handler only after page guards allow departure',()=>{
  const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
  const access={authenticated:true,writable:true,loginAllowed:true};

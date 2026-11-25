@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {once} from 'node:events';
@@ -106,7 +106,12 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     assert.equal(response.headers()['content-type'],'application/gzip');
     assert.equal(response.headers()['set-cookie'],undefined);
     if (method==='HEAD') assert.equal((await response.body()).length,0);
-    else assert.ok(gunzipSync(await response.body()).includes(Buffer.from('lifeos-agent/SKILL.md')));
+    else {
+      const archive=gunzipSync(await response.body()).toString();
+      assert.ok(archive.includes('lifeos-agent/SKILL.md'));
+      assert.ok(archive.includes('references/operations.md'));
+      assert.ok(!archive.includes(syntheticKey));
+    }
   }
   const unsupported=await transport.request.post(origin+'/api/platform/agent-skill',{data:{}});
   assert.equal(unsupported.status(),405,'POST must not fall through to the private catch-all');
@@ -139,6 +144,10 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     let pageAttempts = 0;
     let personalReads = 0;
     let failReadback = false;
+    let listResponse: 'normal' | 'malformed' | 401 | 403 | 404 = 'normal';
+    let pauseList = false;
+    let releaseList: (()=>void) | undefined;
+    let rejectCreate = false;
     let unknownResponse = false;
     let releasePost: (()=>void) | undefined;
     let holdPost = false;
@@ -161,7 +170,10 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
         throw Error('Unexpected synthetic account request');
       }
       if (path === keyEndpoint && request.method() === 'GET') {
+        if (pauseList) await new Promise<void>(resolve=>{releaseList=resolve;});
         if (failReadback) return route.fulfill({status:503});
+        if (listResponse === 'malformed') return route.fulfill({json:{unexpected:[]}});
+        if (listResponse !== 'normal') return route.fulfill({status:listResponse});
         if (!url.search) return route.fulfill({json: {keys: scopePageTwo?grants.slice(0,1):grants, availableScopes:scopeSupport?availableScopes:undefined, nextCursor: grants.length ? cursor : undefined}});
         if (url.searchParams.get('cursor') !== cursor) return route.fulfill({status: 400});
         if(scopePageTwo)return route.fulfill({json:{keys:[grants[1],olderGrant],availableScopes}});
@@ -183,6 +195,7 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
       if (path === keyEndpoint && request.method() === 'POST') {
         const data = request.postDataJSON();
         posts.push(data);
+        if (rejectCreate) return route.fulfill({status:401});
         if (holdPost) await new Promise<void>(resolve=>{releasePost=resolve;});
         if (unknownResponse) return route.fulfill({status:201,body:'invalid-json'});
         const now = Date.now();
@@ -219,6 +232,7 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await expect(page.getByText('还没有签发密钥。')).toBeVisible();
     await expect(page.locator('[name="name"]')).toHaveCount(0);
     const newKey=page.getByRole('button',{name:'新建密钥',exact:true});
+    const listAlert=page.getByRole('region',{name:'已签发的密钥'}).getByRole('alert');
     await newKey.click();
     const createDialog=page.getByRole('dialog',{name:'新建密钥',exact:true});
     await expect(createDialog).toBeVisible();
@@ -356,19 +370,8 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     await expect(createDialog.getByRole('button',{name:'创建密钥',exact:true})).toBeEnabled();
     await createDialog.getByRole('button',{name:'取消',exact:true}).click();
     await expect(newKey).toBeFocused();
-    await page.getByRole('button',{name:'复制安装说明',exact:true}).click();
-    const instructions=await page.evaluate(()=>(window as unknown as {copied:string}).copied);
-    assert.ok(instructions.includes(origin+'/api/platform/agent-skill'));
-    assert.ok(!instructions.includes(syntheticKey));
-    await expect(page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true})).toHaveAttribute('href','/api/platform/agent-skill');
-    const downloading=page.waitForEvent('download');
-    await page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true}).click();
-    const download=await downloading;
-    assert.equal(download.suggestedFilename(),'lifeos-agent.tar.gz');
-    const archive=gunzipSync(await readFile((await download.path())!)).toString();
-    assert.ok(archive.includes('lifeos-agent/SKILL.md'));
-    assert.ok(archive.includes('references/operations.md'));
-    assert.ok(!archive.includes(syntheticKey));
+    await expect(page.getByRole('heading',{name:'连接你的 AI 工具',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('link',{name:'下载 LifeOS Agent Skill',exact:true})).toHaveCount(0);
     // Legacy servers omit scope capabilities: preserve the original todo form and no edit control.
     await expect(page.getByRole('button',{name:'修改权限 Synthetic replacement'})).toHaveCount(0);
     scopeSupport=true; unknownResponse=false;
@@ -472,6 +475,53 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
     const rejectedDelete=await page.evaluate(async url=>(await fetch(url,{method:'DELETE'})).status,keyEndpoint+'/'+organizationGrant.id);
     assert.equal(rejectedDelete,404);
     assert.equal(deletes,deletesBeforeOrganizationDialog+1,'counter observes DELETE for the organization-only grant');
+
+    pauseList=true;
+    listResponse='malformed';
+    await page.reload({waitUntil:'domcontentloaded'});
+    await expect(page.getByText('正在读取密钥…',{exact:true})).toBeVisible();
+    await expect(newKey).toHaveCount(0);
+    await expect.poll(()=>!!releaseList).toBe(true);
+    pauseList=false;
+    releaseList!();
+    await expect(listAlert).toHaveText('密钥列表返回格式有误。请重试。');
+    await expect(page.getByText('还没有签发密钥。',{exact:true})).toHaveCount(0);
+
+    listResponse='normal';
+    failReadback=true;
+    await page.getByRole('button',{name:'重新读取',exact:true}).click();
+    await expect(listAlert).toHaveText('密钥服务暂时无法返回列表。请重试。');
+    await newKey.click();
+    await expect(createDialog.getByText('列表恢复前，新密钥仅可读取待办。')).toBeVisible();
+    await expect(createDialog.getByLabel('写入待办',{exact:true})).toHaveCount(0);
+    await createDialog.locator('[name="name"]').fill('Synthetic read fallback');
+    await createDialog.getByRole('button',{name:'创建密钥',exact:true}).click();
+    await expect(reveal).toHaveText(syntheticKey);
+    assert.deepEqual(posts.at(-1),{name:'Synthetic read fallback',scopes:['todo:read'],expiresInDays:30});
+    await page.getByRole('button',{name:'关闭密钥',exact:true}).click();
+    await expect(page.getByText('Synthetic read fallback',{exact:true})).toHaveCount(0);
+    failReadback=false;
+    await page.getByRole('button',{name:'重新读取',exact:true}).click();
+    await expect(page.getByText('Synthetic read fallback',{exact:true})).toBeVisible();
+
+    failReadback=true;
+    rejectCreate=true;
+    await page.reload({waitUntil:'domcontentloaded'});
+    await newKey.click();
+    await createDialog.locator('[name="name"]').fill('Synthetic rejected key');
+    await createDialog.getByRole('button',{name:'创建密钥',exact:true}).click();
+    await expect(createDialog.getByRole('status')).toContainText('当前会话无权创建密钥');
+    await expect(reveal).toHaveCount(0);
+    await createDialog.getByRole('button',{name:'取消',exact:true}).click();
+    await expect(newKey).toHaveCount(0);
+    failReadback=false;
+    for (const status of [401,403,404] as const) {
+      listResponse=status;
+      await page.reload({waitUntil:'domcontentloaded'});
+      await expect(page.getByText(status===404?'当前站点尚未启用 API 密钥管理。':'当前会话无权管理密钥。',{exact:false})).toBeVisible();
+      await expect(newKey).toHaveCount(0);
+      await expect(page.getByText('还没有签发密钥。',{exact:true})).toHaveCount(0);
+    }
     await page.close();
   }
   // Actual Next route -> existing PersonalService writer -> memory storage port.

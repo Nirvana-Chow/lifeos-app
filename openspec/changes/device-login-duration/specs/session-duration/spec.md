@@ -16,6 +16,11 @@ The system SHALL default to a fixed 1800-second session. It SHALL accept a fixed
 - WHEN it is presented to any owner endpoint
 - THEN access SHALL fail and the active page SHALL lock while retaining drafts and the current safe return path
 
+#### Scenario: Temporary revalidation failure
+- GIVEN the browser cannot confirm current owner access after a network or service failure
+- THEN the page SHALL conceal private content and retain the draft
+- AND the owner SHALL be able to retry the read in place without being sent to login by the temporary failure
+
 ### Requirement: Separate security freshness
 Sensitive account/delegation operations SHALL require owner MFA and a fresh authentication window of at most 1800 seconds. Ordinary session refresh SHALL NOT refresh authentication age. Password change and recovery SHALL retain native revocation.
 
