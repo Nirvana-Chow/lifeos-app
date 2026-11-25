@@ -3,6 +3,7 @@ import {formatFinanceAmount} from './domain';
 
 const money = (minor: bigint) => `¥ ${formatFinanceAmount(minor.toString())}`;
 
+const chartWidth = 640;
 const chartHeight = 260;
 const edgeMargin = 10;
 const chartCenter = 126;
@@ -21,10 +22,14 @@ function ribbon(from: number, to: number, width: number) {
 function FlowLabel({x, y, label, value, color, anchor}: {
   x: number; y: number; label: string; value: bigint; color: string; anchor?: 'end';
 }) {
+  const amount = money(value);
+  const availableWidth = (anchor === 'end' ? x : chartWidth - x) - edgeMargin;
+  const fittedWidth = amount.length * 12 > availableWidth ? availableWidth : undefined;
   return (
     <text x={x} y={y - 4} textAnchor={anchor} fill={color} fontSize="17" fontWeight="600">
       {label}
-      <tspan x={x} dy="23" fontSize="20" fontWeight="700">{money(value)}</tspan>
+      <tspan x={x} dy="23" fontSize="20" fontWeight="700"
+        textLength={fittedWidth} lengthAdjust="spacingAndGlyphs">{amount}</tspan>
     </text>
   );
 }
@@ -52,7 +57,7 @@ export function RecordedFlowDiagram({income, netExpense, difference}: {
 
   return (
     <svg role="img" aria-labelledby={titleId} aria-describedby={descriptionId}
-      viewBox={`0 0 640 ${chartHeight}`}
+      viewBox={`0 0 ${chartWidth} ${chartHeight}`}
       style={{display: 'block', width: '100%', height: 'auto', margin: '1rem auto 0.25rem', background: '#f7faf8', borderRadius: '0.65rem'}}>
       <title id={titleId}>记录收支流向图</title>
       <desc id={descriptionId}>

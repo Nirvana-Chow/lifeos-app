@@ -68,6 +68,16 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
      return box.y>=y&&box.y+box.height<=y+height;
     });
    }),'the mobile chart must contain every ribbon and node');
+   await service.create(ownerId,{spaceId,confirmed:true,fields:{kind:'income',currency:'CNY',amountMinor:1000000000000,occurredOn:'2030-11-05',notes:'Isolated large income'}},'finance-chart-large-income');
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(chart).toHaveAccessibleDescription(/10000000100\.00/);
+   assert.ok(await chart.evaluate(element=>{
+    const svg=element as unknown as SVGSVGElement,{x,width}=svg.viewBox.baseVal;
+    return Array.from(svg.querySelectorAll('text')).every(label=>{
+     const box=label.getBBox();
+     return box.x>=x&&box.x+box.width<=x+width;
+    });
+   }),'full amounts must fit in the SVG without hiding digits');
   }
   await page.close();
  }
