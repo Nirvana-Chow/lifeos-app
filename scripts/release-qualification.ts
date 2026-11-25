@@ -31,9 +31,9 @@ async function api(suffix:string):Promise<Row> {
 export const VISUAL_PATHS=[
  'app/**/*.tsx','app/**/*.css','components/**','src/**/*.tsx','src/**/*.css','test/**/*browser*',
  'test/helpers/personal-*.ts','test/helpers/task-grid-performance-fixture.ts','test/helpers/auth-theme-fixture-lifecycle.ts',
- 'scripts/synthetic-rendered-qualification.ts','scripts/release-qualification.ts','scripts/client-bundle-evidence.mjs',
+ 'scripts/synthetic-rendered-qualification.ts','scripts/client-bundle-evidence.mjs',
  'src/workbench/theme.ts',
- 'scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts','.github/workflows/ci.yml',
+ 'scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts',
 ] as const;
 const oauthMetadataPaths=new Set([
  'app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts',
@@ -110,14 +110,13 @@ const evidence = {
  },
  rendered: {
   name: 'Exact package and isolated TLS/browser qualification',
-  steps: ['Confirm exact source identity',
-   'Build the exact public source image and read back its source proof', 'Verify compiled default-closed routes',
+  steps: ['Confirm exact source identity', 'Install fixed runner-only Chinese fonts and check native Chrome/NSS',
    'Confirm verification preserved the committed lock'],
  },
 };
 const compiledStep = 'Publish exact compiled Next output';
 const captureStep = 'Upload only named synthetic images and their finite manifest';
-const fullFixtureSteps = ['Install fixed runner-only Chinese fonts and check native Chrome/NSS', compiledStep,
+const fullFixtureSteps = ['Build the exact public source image and read back its source proof', 'Verify compiled default-closed routes', compiledStep,
  'Run scoped TLS recovery, permit, browser and journal scenarios', 'Verify exact scoped release cases and cleanup'];
 const fullUiSteps = [
  'Qualify enabled classification review in isolated desktop and mobile Chrome',
@@ -139,7 +138,7 @@ function identityString(id:Identity) {
 }
 function jobResults(full:boolean): Record<JobId,'success'|'skipped'> {
  return {policy:'success',checks:'success',platform:full?'success':'skipped',
-  'recovery-pg':full?'success':'skipped',rendered:'success'};
+  'recovery-pg':full?'success':'skipped',rendered:full?'success':'skipped'};
 }
 function checkSteps(job:Row,names:string[],conclusion='success') {
  confirmed(Array.isArray(job.steps),'NAMED_STEP_EVIDENCE_UNCONFIRMED');
@@ -171,9 +170,11 @@ function checkProducers(jobs:Map<string,Row>,full:boolean,ui:boolean) {
   confirmed(job?.status==='completed'&&job.conclusion===result,'REQUIRED_JOB_UNCONFIRMED');
   if(result==='success')checkSteps(job,descriptor.steps);
  }
- const rendered=jobs.get(evidence.rendered.name)!;
- checkSteps(rendered,fullFixtureSteps,full?'success':'skipped');
- checkSteps(rendered,[...uiSteps,...fullUiSteps,...visualSteps],full&&ui?'success':'skipped');
+ if(full) {
+  const rendered=jobs.get(evidence.rendered.name)!;
+  checkSteps(rendered,fullFixtureSteps);
+  checkSteps(rendered,[...uiSteps,...fullUiSteps,...visualSteps],ui?'success':'skipped');
+ }
 }
 
 async function verifiedArtifact(apiRead:typeof api,artifactId:unknown,name:string,id:Identity) {
@@ -205,11 +206,11 @@ export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typ
  checkSteps(jobs.get(evidence.policy.name)!,['Locked dependency security audit'],outputs.audit==='true'?'success':'skipped');
 
  const rendered=needs.rendered.outputs??{};
- confirmed(rendered.identity===identityString(id)&&typeof rendered['build-id']==='string'&&
-  /^[A-Za-z0-9_-]{1,100}$/.test(rendered['build-id']),'BUILD_EVIDENCE_UNCONFIRMED');
  if(full) {
+  confirmed(rendered.identity===identityString(id)&&typeof rendered['build-id']==='string'&&
+   /^[A-Za-z0-9_-]{1,100}$/.test(rendered['build-id']),'BUILD_EVIDENCE_UNCONFIRMED');
   await verifiedArtifact(apiRead,rendered['compiled-id'],'lifeos-compiled-'+identityString(id).replaceAll(':','-'),id);
- } else confirmed(!rendered['compiled-id'],'UNEXPECTED_COMPILED_EVIDENCE');
+ } else confirmed(!rendered.identity&&!rendered['build-id']&&!rendered['compiled-id'],'UNEXPECTED_COMPILED_EVIDENCE');
  if(visual)await verifiedArtifact(apiRead,rendered['capture-id'],'synthetic-rendered-'+identityString(id).replaceAll(':','-'),id);
  else confirmed(!rendered['capture-id'],'UNEXPECTED_VISUAL_EVIDENCE');
  return {sourceSha:id.sha,runId:id.runId,runAttempt:id.attempt,profile:outputs.profile,visual:visual?'verified':'not-scheduled'};

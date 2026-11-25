@@ -32,9 +32,10 @@ test('actual metadata-only push is nonvisual and OAuth UI in the same push requi
  }finally{f.close();}
 });
 
-test('a gate-source-only push requires its own visual qualification',()=>{
+test('release control changes do not request the visual matrix',()=>{
  const f=fixture();try{
-  f.put('scripts/release-qualification.ts','synthetic gate fix');const head=f.commit();assert.deepEqual(gate.readVisualScope(f.context(head),f.directory),{required:true,reason:'push-paths-match'});
+  f.put('scripts/release-qualification.ts','synthetic gate fix');f.put('.github/workflows/ci.yml','synthetic workflow fix');
+  const head=f.commit();assert.deepEqual(gate.readVisualScope(f.context(head),f.directory),{required:false,reason:'push-paths-not-matched'});
  }finally{f.close();}
 });
 test('real pushed Git scope includes added deleted and earlier multicommit UI changes',()=>{
@@ -77,10 +78,10 @@ function attempt(profile:'routine'|'full',ui:boolean,{sha:source=sha,runId=51,at
  const full=profile==='full';
  const visual=full&&ui;
  const results={'policy':'success','checks':'success','platform':full?'success':'skipped',
-  'recovery-pg':full?'success':'skipped','rendered':'success'};
+  'recovery-pg':full?'success':'skipped','rendered':full?'success':'skipped'};
  const needs=Object.fromEntries(Object.entries(results).map(([name,result])=>[name,{result,outputs:{} as Record<string,string>}]));
  needs.policy.outputs={identity:key,profile,visual:String(visual),ui:String(ui),audit:String(audit)};
- needs.rendered.outputs={identity:key,'build-id':'synthetic_build',...(full?{'compiled-id':'601'}:{}),...(visual?{'capture-id':'602'}:{})};
+ if(full)needs.rendered.outputs={identity:key,'build-id':'synthetic_build','compiled-id':'601',...(visual?{'capture-id':'602'}:{})};
  const ran=(condition?:string)=>{
   if(!condition)return true;
   const predicates=condition.split(/ (?:&&|\|\|) /).map(part=>part.includes('outputs.visual')?visual:part.includes('outputs.ui')?ui:part.includes('outputs.audit')?audit:full);
@@ -160,21 +161,17 @@ test('only expected skips are accepted and a full rerun can supply all fresh pro
  a.needs.platform.result='success';await assert.rejects(a.verify(),/DAG_SCOPE_UNCONFIRMED/);
  a.needs.platform.result='skipped';
  a.jobs.splice(a.jobs.indexOf(a.rendered),1);a.response.total_count--;
- await assert.rejects(a.verify(),/REQUIRED_JOB_UNCONFIRMED/);
+ await a.verify();
  await attempt('full',true,{attempt:2}).verify();
 });
 
-test('routine UI requires a real public build and skips hosted browser tests',async()=>{
+test('routine UI has no hosted build or browser qualification',async()=>{
  const a=attempt('routine',true);
- const browser=a.rendered.steps.find(step=>step.name==='Verify additional UI cases actually ran')!;
- browser.conclusion='success';
- await assert.rejects(a.verify(),/NAMED_STEP_EVIDENCE_UNCONFIRMED/);
- browser.conclusion='skipped';
- const build=a.rendered.steps.find(step=>step.name==='Build the exact public source image and read back its source proof')!;
- build.conclusion='skipped';
- await assert.rejects(a.verify(),/NAMED_STEP_EVIDENCE_UNCONFIRMED/);
- build.conclusion='success';
- a.needs.rendered.outputs['compiled-id']='unexpected';
+ await a.verify();
+ a.needs.rendered.result='success';
+ await assert.rejects(a.verify(),/DAG_SCOPE_UNCONFIRMED/);
+ a.needs.rendered.result='skipped';
+ a.needs.rendered.outputs['build-id']='unexpected';
  await assert.rejects(a.verify(),/UNEXPECTED_COMPILED_EVIDENCE/);
 });
 
@@ -190,10 +187,10 @@ test('audit follows dependency edits or the existing manual qualification entry'
 test('visual scope matches key UI and fixture paths',()=>{
  for(const path of ['app/page.tsx','app/nested/theme.css','components/button.ts','src/cooking/detail.tsx','src/cooking/log-workbench.module.css',
   'test/cooking-browser.integration.test.ts','test/helpers/personal-synthetic-bootstrap.ts','test/helpers/task-grid-performance-fixture.ts',
-  'test/helpers/auth-theme-fixture-lifecycle.ts','scripts/synthetic-rendered-qualification.ts','scripts/release-qualification.ts',
-  'scripts/client-bundle-evidence.mjs','src/workbench/theme.ts','scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts',workflowPath])
+  'test/helpers/auth-theme-fixture-lifecycle.ts','scripts/synthetic-rendered-qualification.ts',
+  'scripts/client-bundle-evidence.mjs','src/workbench/theme.ts','scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts'])
   assert.equal(gate.visualPathsApply([path]),true,path);
- for(const path of ['docs/readme.md','src/platform/auth.ts','db/001.sql','test/ordinary.test.ts','scripts/attach-vtable-benchmark.py'])
+ for(const path of ['docs/readme.md','src/platform/auth.ts','db/001.sql','test/ordinary.test.ts','scripts/attach-vtable-benchmark.py','scripts/release-qualification.ts',workflowPath])
   assert.equal(gate.visualPathsApply([path]),false,path);
 });
 

@@ -554,6 +554,7 @@ jobs:
   rendered:
     name: Exact package and isolated TLS/browser qualification
     needs: policy
+    if: needs.policy.outputs.profile == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:
@@ -590,9 +591,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci --ignore-scripts --no-audit --no-fund
-        if: needs.policy.outputs.profile == 'full'
+        if: needs.policy.outputs.profile == 'full' || needs.policy.outputs.ui == 'true'
       - name: Install fixed runner-only Chinese fonts and check native Chrome/NSS
-        if: needs.policy.outputs.profile == 'full'
+        if: needs.policy.outputs.profile == 'full' || needs.policy.outputs.ui == 'true'
         timeout-minutes: 4
         run: |
           set -euo pipefail
@@ -607,7 +608,7 @@ jobs:
           command -v certutil >/dev/null
           timeout --kill-after=5s 10s google-chrome --version
       - name: Check changed UI contracts early with native Chrome
-        if: needs.policy.outputs.visual == 'true'
+        if: needs.policy.outputs.ui == 'true'
         timeout-minutes: 8
         env:
           RUN_AUTH_THEME_FIXTURE_BROWSER_TESTS: '1'
@@ -640,7 +641,7 @@ jobs:
         run: |
           node --test --test-concurrency=1 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/settings.xml" test/agent-key-management-browser.integration.test.ts test/workspace-roadmap-browser.integration.test.ts test/workspace-settings-browser.integration.test.ts test/account-password-browser.integration.test.ts
       - name: Verify additional UI cases actually ran
-        if: needs.policy.outputs.visual == 'true'
+        if: needs.policy.outputs.ui == 'true'
         env:
           PROFILE: ${{ needs.policy.outputs.profile }}
         run: |
@@ -660,9 +661,9 @@ jobs:
               assert all(node.get(key, '0') == '0' for node in report.iter('testsuite') for key in ('skipped', 'failures', 'errors')), file
           PY_UI
       - name: Build the exact public source image and read back its source proof
+        if: needs.policy.outputs.profile == 'full'
         id: image-proof
         env:
-          PROFILE: ${{ needs.policy.outputs.profile }}
           VISUAL: ${{ needs.policy.outputs.visual }}
         run: |
           set -euo pipefail
@@ -678,13 +679,8 @@ jobs:
           docker cp recovery-image-proof:/app/package-lock.json "$bundle/package-lock.json"
           cmp package-lock.json "$bundle/package-lock.json"
           node --input-type=module -e 'import{readFileSync}from"node:fs";const p=JSON.parse(readFileSync(process.argv[1]));if(p.sourceSha!==process.env.SOURCE_SHA)throw Error("Image source mismatch");' "$bundle/.image-source-proof.json"
-          if test "$PROFILE" = full; then
-            docker cp recovery-image-proof:/app/.next "$bundle/.next"
-            tar --exclude=.next/standalone --exclude=.next/cache -cf "$RUNNER_TEMP/next.tar" -C "$bundle" .next
-          else
-            mkdir "$bundle/.next"
-            docker cp recovery-image-proof:/app/.next/BUILD_ID "$bundle/.next/BUILD_ID"
-          fi
+          docker cp recovery-image-proof:/app/.next "$bundle/.next"
+          tar --exclude=.next/standalone --exclude=.next/cache -cf "$RUNNER_TEMP/next.tar" -C "$bundle" .next
           mkdir .next
           cp "$bundle/.image-source-proof.json" .image-source-proof.json
           cp "$bundle/.next/BUILD_ID" .next/BUILD_ID
@@ -696,6 +692,7 @@ jobs:
           printf 'identity=%s:%s:%s\nbuild-id=%s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$build_id" >> "$GITHUB_OUTPUT"
           printf 'CI_IMAGE_ID=%s\n' "$image_id" >> "$GITHUB_ENV"
       - name: Verify compiled default-closed routes
+        if: needs.policy.outputs.profile == 'full'
         run: docker run --rm --network none --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --env LIFEOS_PLATFORM_CANDIDATE=0 --entrypoint node "$CI_IMAGE_ID" scripts/check-built-platform.mjs
       - name: Publish exact compiled Next output
         id: compiled

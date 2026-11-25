@@ -49,13 +49,13 @@ def run_evidence(path, contract, run_id, attempt=1):
         if full:
             definitions[compat.PLATFORM] = []
             definitions[compat.RECOVERY] = []
-        if full or contract.routine_build or contract.affected_ui:
+        hosted_ui = contract.affected_ui and (full or not contract.routine_source_only)
+        if full or hosted_ui:
             full_result = 'success' if full else 'skipped'
-            build_result = 'success' if full or contract.routine_build else 'skipped'
             definitions[compat.RENDERED] = [
-                step(compat.IMAGE_STEP, build_result), step('Verify compiled default-closed routes', build_result),
+                step(compat.IMAGE_STEP, full_result), step('Verify compiled default-closed routes', full_result),
                 step('Verify exact scoped release cases and cleanup', full_result),
-                step('Verify additional UI cases actually ran', 'success' if contract.affected_ui and (full or not contract.routine_build) else 'skipped'),
+                step('Verify additional UI cases actually ran', 'success' if hosted_ui else 'skipped'),
                 step(compat.COMPILED_STEP, full_result),
                 step(compat.CAPTURE_GUARD, 'success' if contract.visual else 'skipped'),
                 step(compat.CAPTURE_STEP, 'success' if contract.visual else 'skipped'),
@@ -81,7 +81,7 @@ def run_evidence(path, contract, run_id, attempt=1):
 
 
 def fixture(mode='unified', profile='full', visual=True, attempt=1, wake=None, source=None, workflow_ids=None, release_run_id=4101,
-            routine_build=True):
+            routine_source_only=True):
     sha = source or (UNIFIED_SHA if mode == 'unified' else LEGACY_SHA)
     workflow_ids = WORKFLOW_IDS if workflow_ids is None else workflow_ids
     paths = [compat.CI] + ([compat.LEGACY_QUALIFICATION] if mode == 'legacy' else [])
@@ -89,7 +89,7 @@ def fixture(mode='unified', profile='full', visual=True, attempt=1, wake=None, s
     pins = {path: compat.WorkflowPin(workflow_ids[path], sha256(content).hexdigest())
             for path, content in workflow_bytes.items()}
     contract = compat.SourceContract(sha, mode, profile, visual if mode == 'legacy' else profile == 'full' and visual,
-                                     pins, affected_ui=visual, routine_build=routine_build)
+                                     pins, affected_ui=visual, routine_source_only=routine_source_only)
     release = run_evidence(compat.CI, contract, release_run_id, attempt)
     qualification = run_evidence(compat.LEGACY_QUALIFICATION, contract, 4102) if mode == 'legacy' and profile == 'full' else None
     event_run = qualification.run if wake == compat.LEGACY_QUALIFICATION else release.run
@@ -121,14 +121,21 @@ class CompatTest(unittest.TestCase):
                     self.assertEqual(result, compat.Eligibility(UNIFIED_SHA, 4101, 2, 'unified'))
                     self.assertEqual(claims, [(REPO['id'], UNIFIED_SHA)])
 
-    def test_new_routine_requires_build_and_prior_pin_keeps_its_browser_contract(self):
-        data = fixture(profile='routine')
-        rendered = next(job for job in data['release'].jobs['jobs'] if job['name'] == compat.RENDERED)
-        next(row for row in rendered['steps'] if row['name'] == compat.IMAGE_STEP)['conclusion'] = 'skipped'
-        self.assert_rejected(data, 'STEP_UNCONFIRMED')
-        old = fixture(profile='routine', routine_build=False,
-                      source='66d714a1cfdec1cb4a4f9c85d60195f8b0d88c03')
-        self.assertEqual(compat.claim_completion(**old, try_claim=lambda _: True).sha, old['contract'].sha)
+    def test_source_only_routine_and_prior_pin_enforce_their_own_job_sets(self):
+        current = fixture(profile='routine')
+        self.assertEqual(compat.claim_completion(**current, try_claim=lambda _: True).sha, current['contract'].sha)
+        previous = fixture(profile='routine', routine_source_only=False,
+                           source='66d714a1cfdec1cb4a4f9c85d60195f8b0d88c03')
+        self.assertEqual(compat.claim_completion(**previous, try_claim=lambda _: True).sha, previous['contract'].sha)
+        jobs = previous['release'].jobs
+        jobs['jobs'] = [job for job in jobs['jobs'] if job['name'] != compat.RENDERED]
+        jobs['total_count'] -= 1
+        self.assert_rejected(previous, 'JOBS_UNCONFIRMED')
+
+        unexpected = fixture(profile='routine', routine_source_only=False)
+        current['release'].jobs['jobs'][:] = unexpected['release'].jobs['jobs']
+        current['release'].jobs['total_count'] = unexpected['release'].jobs['total_count']
+        self.assert_rejected(current, 'JOBS_UNCONFIRMED')
 
     def test_absent_empty_unsigned_ineligible_or_stale_events(self):
         changes = {
@@ -269,7 +276,9 @@ class CompatTest(unittest.TestCase):
         self.assertEqual(workflow.count('"$CI_IMAGE_ID"'), 2)
         for marker in (compat.GATE_STEP, compat.IMAGE_STEP, compat.COMPILED_STEP, compat.CAPTURE_GUARD, compat.CAPTURE_STEP):
             self.assertIn('name: ' + marker, workflow)
-        self.assertIn("name: Check changed UI contracts early with native Chrome\n        if: needs.policy.outputs.visual == 'true'", workflow)
+        rendered = workflow.split('\n  rendered:\n', 1)[1].split('\n  eligibility:\n', 1)[0]
+        self.assertIn("\n    if: needs.policy.outputs.profile == 'full'\n", rendered)
+        self.assertIn("name: " + compat.IMAGE_STEP + "\n        if: needs.policy.outputs.profile == 'full'", rendered)
 
 
 if __name__ == '__main__':
