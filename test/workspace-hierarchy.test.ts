@@ -9,7 +9,7 @@ const project=(id:string,area:ProjectRow['area'],stage='active'):ProjectRow=>({i
 test('navigation groups only supplied authorized links without dropping or duplicating existing destinations',()=>{
  assert.equal(typeof hierarchy.groupWorkspaceModules,'function','grouped workspace navigation is required');
  const links:OwnerModuleLink[]=[{id:'journal',label:'日记',href:'/personal/journal'},{id:'calendar',label:'日程',href:'/personal/schedule'},{id:'finance',label:'财务',href:'/personal/finance'}];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['安排与推进',['calendar']],['生活记录',['journal']],['长期积累',['finance']],['资料与工具',[]]]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']],['项目',[]]]);
  assert.deepEqual(hierarchy.groupWorkspaceModules([]).flatMap(group=>group.links),[]);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links).map(link=>link.href).sort(),['/personal/finance','/personal/journal','/personal/schedule']);
 });
@@ -31,13 +31,12 @@ test('search is discoverable in the authorized navigation grouping',()=>{
  assert.deepEqual(hierarchy.groupWorkspaceModules([search]).flatMap(group=>group.links),[search]);
 });
 
-test('storage review is discoverable in tools without dropping other authorized modules',()=>{
- const link={id:'storage-review',label:'存储审核',href:'/personal/storage-review'} as OwnerModuleLink;
- assert.deepEqual(hierarchy.groupWorkspaceModules([link]).filter(group=>group.links.length).map(group=>[group.label,group.links]),[['资料与工具',[link]]]);
-});
-
-test('tools include the supplied file handoff destination only when advertised',()=>{
- const link:OwnerModuleLink={id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'};
- assert.deepEqual(hierarchy.groupWorkspaceModules([link]).at(-1)?.links,[link]);
- assert.deepEqual(hierarchy.groupWorkspaceModules([]).at(-1)?.links,[]);
+test('support and tool destinations stay outside the business tabs',()=>{
+ const links:OwnerModuleLink[]=[
+  {id:'storage-review',label:'存储审核',href:'/personal/storage-review'},
+  {id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'},
+  {id:'updates',label:'更新记录',href:'/personal/requirements/updates'},
+ ];
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常','项目']);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links),[]);
 });

@@ -1,15 +1,27 @@
 import type {AreaRow,ProjectRow} from './contract.ts';
 import type {OwnerModuleLink} from './owner-modules.ts';
 
-/** Presentation only: groups existing status-authorized links, never creates capabilities. */
+const workspaceModules = [
+ {id:'daily',label:'日常',pages:['overview','tasks'],links:['calendar','journal','search']},
+ {id:'health',label:'身体基础',pages:[],links:['health']},
+ {id:'learning',label:'兴趣学习',pages:[],links:['media']},
+ {id:'relationships',label:'生活与关系',pages:[],links:['cooking','people']},
+ {id:'finance',label:'财务',pages:[],links:['finance','portfolio']},
+ {id:'career',label:'职业成长',pages:[],links:['career']},
+ {id:'projects',label:'项目',pages:['projects','areas'],links:[]},
+] as const;
+
+/** Present existing destinations in module order. Settings retains its own tools. */
 export function groupWorkspaceModules(links:readonly OwnerModuleLink[]){
- return [
-  {label:'安排与推进',ids:['search','calendar']},
-  {label:'生活记录',ids:['journal','health','cooking','people','media']},
-  {label:'长期积累',ids:['career','finance','portfolio']},
-  {label:'资料与工具',ids:['storage-review','file-handoffs']},
- ].map(group=>({label:group.label,links:links.filter(link=>group.ids.includes(link.id))}));
+ return workspaceModules.map(group=>({
+  id:group.id,label:group.label,pages:group.pages,
+  links:group.links.flatMap(id=>{
+   const link=links.find(candidate=>candidate.id===id);
+   return link?[id==='journal'?{...link,label:'记录'}:link]:[];
+  }),
+ })).filter(group=>group.pages.length||group.links.length);
 }
+
 export type OverviewDomain={id:string|null;title:string;loaded:boolean;projects:ProjectRow[]};
 /** Keep active-project semantics and source ordering; unavailable references remain explicit. */
 export function overviewDomains(areas:readonly AreaRow[],projects:readonly ProjectRow[]):OverviewDomain[]{
