@@ -829,7 +829,7 @@ jobs:
           assert manifest['runId']==os.environ['GITHUB_RUN_ID'] and manifest['runAttempt']==os.environ['GITHUB_RUN_ATTEMPT']
           assert manifest['buildId']==Path('.next/BUILD_ID').read_text().strip()
           assert manifest['captureGuard']=='finite-source-and-synthetic-content-v1'
-          assert len(manifest['images'])==118 and len({row['name'] for row in manifest['images']})==118
+          assert len(manifest['images'])==110 and len({row['name'] for row in manifest['images']})==110
           for row in manifest['images']:
               assert set(row)=={'name','directory','route','viewport','theme','sha256','bytes','image'}
               assert set(row['viewport'])=={'width','height'} and set(row['image'])=={'width','height'}
@@ -954,14 +954,6 @@ jobs:
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-light.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-light.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-light.png

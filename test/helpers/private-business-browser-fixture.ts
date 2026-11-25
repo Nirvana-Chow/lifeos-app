@@ -64,7 +64,8 @@ export const privateDestinations=[
 const families=[
  ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings&panel=security','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
 ] as const;
-export const privateCaptureCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'?1:0})))));
+const privatePresentationCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'?1:0})))));
+export const privateCaptureCases=Object.freeze(privatePresentationCases.filter(row=>row.key!=='private-settings'));
 export function assertPrivateCaptureScope(f:{name:string;url:string;width:number;theme:string;heading:string;dialog:number}):void{
  const row=privateCaptureCases.find(row=>row.name===f.name);if(!row||f.url!==privateOrigin+row.path||row.width!==f.width||row.theme!==f.theme||row.heading!==f.heading||row.dialog!==f.dialog)throw Error('PRIVATE_CAPTURE_DENIED');
 }
@@ -723,7 +724,7 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
  await verifyWorkspaceViewport(f);
  const transport=watchPrivateTransport(page);let cells=0;
  try{
-  for(const item of privateCaptureCases){
+  for(const item of privatePresentationCases){
    row=item;keyboardLifecycle=undefined;keyboardSkipTarget=undefined;mark('navigation');
    await page.setViewportSize({width:row.width,height:row.width===1365?900:844});await page.emulateMedia({colorScheme:row.theme});
    if(row.key==='private-settings')await openPrivateSettings(page,row.path,entries);
@@ -732,7 +733,9 @@ export async function verifyPrivatePresentationMatrix(f:PrivateFixture){
    if(row.key==='private-projects'||row.key==='private-areas'){const entry=entries[row.key==='private-projects'?1:0];await expect(page.locator('[data-category-grid="reui"]').getByText('title'in entry.draft?entry.draft.title:'',{exact:true})).toBeVisible();}
    if(row.key==='private-outputs-dialog'){await page.getByRole('button',{name:'查看录入界面',exact:true}).click();await expect(page.getByRole('dialog',{name:'输出中心录入界面',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'确认保存 · 待接入',exact:true})).toBeDisabled();}
    const observeKeyboard=row.key==='private-data'&&row.width===430&&row.theme==='light'?(values:readonly number[],skipTargets:readonly boolean[])=>{keyboardLifecycle=projectPrivateKeyboardLifecycle(values);keyboardSkipTarget=projectPrivateKeyboardSkipTarget(skipTargets);}:undefined;
-   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace',observeKeyboard);await capturePrivatePage(page,row,entries,mark);cells++;
+   await measurePrivatePresentation(page,row.width,row.theme,mark,row.dialog===1,row.key==='private-journal'?'standalone-editor':'workspace',observeKeyboard);
+   if(row.key!=='private-settings')await capturePrivatePage(page,row,entries,mark);
+   cells++;
    mark('close-dialog');if(row.dialog){await page.getByRole('button',{name:'关闭录入界面',exact:true}).click();await expect(page.getByRole('button',{name:'查看录入界面',exact:true})).toBeFocused();}
    mark('mobile-navigation');if(row.width<800&&row.key==='private-finance')await privateMobileNavigation(page);
   }

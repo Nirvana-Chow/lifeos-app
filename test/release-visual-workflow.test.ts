@@ -38,7 +38,7 @@ test('required security and data fixtures remain named and the visual matrix can
  for(const file of ['organization-key-network.integration.test.ts','organization-agent-postgres.integration.test.ts','classification-postgres.integration.test.ts','requirements-postgres.integration.test.ts','platform-postgres.integration.test.ts','platform-auth-postgres.integration.test.ts','ai-settings-postgres.integration.test.ts','calendar-candidate-postgres.integration.test.ts','agent-api-postgres.integration.test.ts','platform-network.integration.test.ts','platform-capture-network.integration.test.ts','owner-recovery-postgres.integration.test.ts','owner-mfa-postgres.integration.test.ts','agent-key-issuer-postgres.integration.test.ts','owner-recovery-https.integration.test.ts','owner-permit-https.integration.test.ts','owner-journal-browser.integration.test.ts'])assert.ok(workflow.includes(file),file);
  assert.match(workflow,/LIFEOS_OWNER_BROWSER_QUALIFICATION_MODE: .+outputs.visual.+ 'visual' \|\| 'release'/);
  assert.match(workflow,/name: lifeos-unified-full-green-v1/);
- assert.match(workflow,/len\(manifest\['images'\]\)==118/);
+ assert.match(workflow,/len\(manifest\['images'\]\)==110/);
  assert.match(workflow,/manifest\['runId'\]==os.environ\['GITHUB_RUN_ID'\] and manifest\['runAttempt'\]==os.environ\['GITHUB_RUN_ATTEMPT'\]/);
  assert.doesNotMatch(workflow,/vtable-baseline|0371234b6b472790a4b1bc78a5869a2251fda68e|LIFEOS_SYNTHETIC_GRID_ROWS/);
  for(const command of ['npm test','npm run typecheck','npm audit --audit-level=high','docker build --pull'])
