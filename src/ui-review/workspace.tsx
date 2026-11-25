@@ -195,6 +195,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     menuButton = useRef<HTMLButtonElement | null>(null),
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
+  const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
+  const [retainedPrivateScope, setRetainedPrivateScope] = useState<string | null>(null);
+  if (access.authenticated === false && retainedPrivateScope !== null) setRetainedPrivateScope(null);
+  if (verifiedPrivateScope && verifiedPrivateScope !== retainedPrivateScope) setRetainedPrivateScope(verifiedPrivateScope);
+  const showPrivateRequirements = access.authenticated === true && (props.viewPreferenceScope === undefined || !!verifiedPrivateScope);
+  const retainPrivateRequirements = access.authenticated !== false && (showPrivateRequirements || retainedPrivateScope !== null);
   const currentHref = useRef("");
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
@@ -673,7 +679,25 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
           )}
-
+          {access.authenticated === true && props.onLogout && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lo-icon-button lo-logout"
+              aria-label="退出登录"
+              title="退出登录"
+              data-workspace-nav
+              onClick={() => {
+                if (props.saving || props.uncertain) return;
+                if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return;
+                if (classificationPlanId && props.classificationCloseGuard?.current?.() === false) return;
+                if (settingsOpen && props.settingsCloseGuard?.current?.() === false) return;
+                props.onLogout?.();
+              }}
+            >
+              <LogOut size={17} aria-hidden="true" />
+            </Button>
+          )}
         </div>
       </header>
       <div className="lo-body">
@@ -1011,12 +1035,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                     前往登录
                   </Button>
                 )}
-              {access.authenticated === true && props.onLogout && (
-                <Button variant="ghost" className="lo-logout" onClick={props.onLogout}>
-                  <LogOut size={17} />
-                  退出登录
-                </Button>
-              )}
             </div>
           )}
               {settingsPanel==='topics'&&access.authenticated===true&&access.allowedTypes?.includes('topic')&&<section aria-label="标签">
@@ -1037,12 +1055,20 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               {(settingsPanel==='security'||settingsPanel==='api-keys')&&access.authenticated===true&&props.renderSettingsPanel?.(settingsPanel)}
             </div>
           </section>}
-          {page === "requirements" && <RequirementsPage container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null} navigationGuard={requirementNavigationGuard}/>}
+          {page === "requirements" && <>
+            {retainPrivateRequirements && <RequirementsPage
+              key={verifiedPrivateScope ?? retainedPrivateScope}
+              concealed={!showPrivateRequirements}
+              container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null}
+              navigationGuard={requirementNavigationGuard}
+            />}
+            {!showPrivateRequirements && <DataState state={state} onRefresh={onRefresh}/>}
+          </>}
           </>}
           </div>
         </main>
       </div>
-      {classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
+      {access.authenticated !== false && classificationPlanId && props.renderClassification?.(classificationPlanId, () => {
         if (props.classificationCloseGuard?.current?.()===false) return;
         const href=workspaceHref(page); window.history.replaceState(window.history.state,'',href); currentHref.current=href;currentHistoryState.current=window.history.state;setClassificationPlanId(null);
       }, id => {

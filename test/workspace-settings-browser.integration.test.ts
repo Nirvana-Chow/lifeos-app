@@ -9,6 +9,7 @@ import {chromium, expect,type Page} from '@playwright/test';
 import {readyHeading} from './helpers/private-business-browser-fixture.ts';
 import {confirmDiscard} from './helpers/personal-workspace-browser-fixture.ts';
 import {requirements} from '../src/platform/requirements.ts';
+import {requirementBinding} from '../src/requirements-candidate/service.ts';
 import {exerciseManagedCallback} from './helpers/managed-callback-browser.ts';
 
 const source=resolve(import.meta.dirname,'..');
@@ -144,8 +145,10 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
   const page=await browser.newPage({viewport:{width,height},colorScheme:width===1365?'light':'dark'});page.setDefaultTimeout(5000);
   try{
    const writes=await installSyntheticReads(page,origin);
+   await page.route(origin+'/api/platform/auth/device-sessions',route=>route.request().method()==='GET'
+    ?route.fulfill({json:{sessions:[],truncated:false}}):route.fallback());
    const debugRequests:string[]=[];page.on('request',r=>{if(!['GET','HEAD'].includes(r.method()))debugRequests.push(r.method()+' '+new URL(r.url()).pathname);});
-   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:55_000});await readyHeading(page,'待办');await addSyntheticFooter(page);
+   await page.goto(origin+'/personal?page=tasks',{waitUntil:'load',timeout:55_000});await readyHeading(page,'待办');await addSyntheticFooter(page);
    if(width===390)await expect(page.getByRole('button',{name:'打开导航',exact:true})).toBeHidden();
    await page.getByRole('button',{name:'设置',exact:true}).click();
    const settings=page.locator('[data-settings-page]');await expect(settings).toBeVisible();
@@ -158,12 +161,29 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
    await expect(categories.getByRole('group',{name:'偏好与账号',exact:true})).toBeVisible();
    await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
+   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
    for(const control of [settings.getByRole('textbox',{name:'本人账号',exact:true}),settings.getByRole('button',{name:'保存密码',exact:true})]){
     await control.scrollIntoViewIfNeeded();await expectAboveFooter(page,control);
     assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings security control receives pointer input');
    }
+   const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
+   const password=settings.getByLabel('原密码',{exact:true});
+   await password.fill('synthetic-short-draft');
+   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+   const [logoutPrompt]=await Promise.all([page.waitForEvent('dialog').then(async dialog=>{
+    const message=dialog.message();await dialog.dismiss();return message;
+   }),logout.click()]);
+   assert.equal(logoutPrompt,'放弃尚未保存的密码修改？');
+   await expect(password).toHaveValue('synthetic-short-draft');
+   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+   assert.equal(writes(),0,'rejected logout never calls the API');
+   const footerLink=page.getByRole('link',{name:'合成备案占位',exact:true});
+   await expect(footerLink).toBeInViewport({ratio:0.75});
+   await footerLink.click({trial:true});
+   await footerLink.focus();await expect(footerLink).toBeFocused();
+   await password.fill('');
    await categories.getByRole('button',{name:'通用',exact:true}).click();
-   const logout=page.getByRole('button',{name:'退出登录',exact:true});await logout.scrollIntoViewIfNeeded();await expectAboveFooter(page,logout);
+   await logout.scrollIntoViewIfNeeded();await expectAboveFooter(page,logout);
    assert.equal(await logout.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'short Settings logout receives pointer input');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight===innerHeight&&document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'short Settings scroll stays inside the document');
    for(let step=0;step<3;step++)await page.getByRole('button',{name:'后退',exact:true}).click();
@@ -196,6 +216,7 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
    const main=page.locator('#personal-main'),panel=main.locator('[data-settings-panel]');
    const password=panel.getByLabel('原密码',{exact:true}),theme=page.locator('header [data-slot="theme-toggle"]');
    const system=page.locator('header').getByRole('button',{name:'跟随系统',exact:true});
+   const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
    const categories=page.locator('aside').getByRole('navigation',{name:'设置分类',exact:true});
    await expect(password).toBeEnabled({timeout:15_000});
    await expect(page).toHaveURL(security);
@@ -208,7 +229,7 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
    await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
    await expect(page.locator('html')).toHaveAttribute('data-lifeos-palette','sage-teal');
    await expect(panel.getByRole('button',{name:'重新读取设备列表',exact:true})).toBeEnabled();
-   if(mobile)for(const control of [theme,system]){
+   if(mobile)for(const control of [theme,system,logout]){
     const box=await control.boundingBox();assert.ok(box&&box.width>=44&&box.height>=44);
    }
    const geometry=await panel.evaluate(node=>{
@@ -233,6 +254,13 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
     await page.screenshot({path:join(screenshots,'settings-header-narrow-sidebar.png'),animations:'disabled'});
    }
    await password.fill('synthetic-password-draft');
+   const [logoutPrompt]=await Promise.all([page.waitForEvent('dialog').then(async dialog=>{
+    const message=dialog.message();await dialog.dismiss();return message;
+   }),logout.click()]);
+   assert.equal(logoutPrompt,'放弃尚未保存的密码修改？');
+   await expect(password).toHaveValue('synthetic-password-draft');
+   await expect(page).toHaveURL(security);
+   assert.equal(writes(),0);
    await expect(main.getByRole('navigation',{name:'设置分类',exact:true})).toHaveCount(0);
    await expect(categories.getByRole('button',{name:'外观',exact:true})).toHaveCount(0);
    const generalButton=categories.getByRole('button',{name:'通用',exact:true});
@@ -252,7 +280,7 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
    await expect(page).toHaveURL(general);
    await expect(password).toHaveCount(0);
    await expect(categories).toBeVisible();
-   await expect(panel.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+   await expect(logout).toBeVisible();
    await expect(panel.getByRole('region',{name:'外观设置',exact:true})).toHaveCount(0);
    await expect(panel.getByRole('radio')).toHaveCount(0);
    await expect(panel.locator('a[href="/account/mcp"]')).toHaveCount(0);
@@ -265,7 +293,7 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
    await page.goto(general,{waitUntil:'domcontentloaded'});
    await expect(theme).toHaveAttribute('data-theme-preference','system');
    await expect(page.locator('html')).toHaveAttribute('data-lifeos-palette','sage-teal');
-   await expect(panel.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+   await expect(logout).toBeVisible();
    await page.screenshot({path:join(screenshots,`settings-header-general-${width}.png`),animations:'disabled'});
    assert.equal(writes(),0,attemptedWrites.join(', '));
   }finally{await page.close();}
@@ -391,7 +419,7 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
 
 });
 
-test('OPT-IN overview draft survives rejected Settings and matters page departures',{
+test('OPT-IN overview draft survives rejected logout, Settings and matters page departures',{
  skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-overview-settings-')),server=await fixture(root),stopped=once(server,'exit');
@@ -405,12 +433,90 @@ test('OPT-IN overview draft survives rejected Settings and matters page departur
  const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await expect(input).toBeFocused();
  await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('form')).toHaveCount(0);
  await input.fill('合成未保存总览草稿');const originalInput=await input.elementHandle();
+ await confirmDiscard(page,false,async()=>{await page.locator('header').getByRole('button',{name:'退出登录',exact:true}).click();});
+ await expect(page).toHaveURL(origin+'/personal');await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(writes(),0);
  await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'设置',exact:true}).click();});
  await expect(page.locator('[data-settings-page]')).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal');
  await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(await originalInput!.evaluate(node=>node.isConnected),true,'refused settings departure preserves the same overview input');
  assert.equal(writes(),0);
  await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'事项',exact:true}).click();});
  await expect(page).toHaveURL(origin+'/personal');await expect(input).toHaveValue('合成未保存总览草稿');assert.equal(writes(),0,'refused page departure does not submit or discard');
+ const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
+ let signOutRequests=0;
+ await page.route(origin+'/api/platform/auth/sign-out',async route=>{
+  assert.equal(route.request().method(),'POST');
+  assert.deepEqual(route.request().postDataJSON(),{});
+  signOutRequests++;
+  await route.fulfill({json:{success:true}});
+ });
+ await confirmDiscard(page,true,async()=>{await logout.click();});
+ await expect(logout).toHaveCount(0);
+ await expect(input).toHaveCount(0);
+ assert.equal(signOutRequests,1,'confirmed logout uses the existing sign-out endpoint once');
+ assert.equal(writes(),0,'confirmed logout does not submit the draft');
+});
+
+test('OPT-IN confirmed header logout clears already loaded private requirements',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-requirements-logout-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=requirements');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage();t.after(()=>page.close());
+ await installSyntheticReads(page,origin);
+ await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal'],requirementsEnabled:true}}));
+ const baseline=requirements(),example=baseline.requirements.find(item=>item.roadmap)!;
+ const title='合成退出后应清除的私有需求';
+ await page.route(origin+'/api/platform/personal/requirements/snapshot',route=>route.fulfill({json:{scope:'full-current-requirements-snapshot',total:1,truncated:false,observedAt:'2030-11-02T00:00:00Z',baseline,items:[{
+  id:example.id,revision:1,sourceId:'11111111-1111-4111-8111-111111111111',baselineBinding:requirementBinding(baseline,example.id),baselineConflict:false,
+  requirement:{...example,title},fields:{title,body:'合成需求正文',phaseId:example.roadmap!.phaseId,priority:example.roadmap!.priority,plannedStartOn:null,plannedEndOn:null},
+ }]}}));
+ await page.route(origin+'/api/platform/auth/sign-out',route=>route.fulfill({json:{success:true}}));
+ await page.goto(origin+'/personal?page=requirements');
+ await expect(page.getByText(title,{exact:true})).toBeVisible();
+ const logout=page.locator('header').getByRole('button',{name:'退出登录',exact:true});
+ const response=page.waitForResponse(result=>result.url()===origin+'/api/platform/auth/sign-out');
+ await logout.click();
+ assert.equal((await response).status(),200);
+ await expect(logout).toHaveCount(0);
+ await expect(page.getByText(title,{exact:true})).toHaveCount(0,{timeout:3000});
+ await expect(page.locator('[data-requirements-page]')).toHaveCount(0);
+});
+
+test('OPT-IN requirements draft survives only same-owner tab revalidation',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:120_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-requirements-suspend-')),server=await fixture(root),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const origin=await prepareSettingsFixture(server,'/personal?page=requirements');
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const page=await browser.newPage();t.after(()=>page.close());
+ const writes=await installSyntheticReads(page,origin);
+ const baseline=requirements();
+ let ownerId='synthetic-owner';
+ await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal'],requirementsEnabled:true}}));
+ await page.route(origin+'/api/platform/personal/requirements/snapshot',route=>route.fulfill({json:{scope:'full-current-requirements-snapshot',total:0,truncated:false,observedAt:'2030-11-02T00:00:00Z',baseline,items:[]}}));
+ await page.goto(origin+'/personal?page=requirements');
+ const add=page.getByRole('button',{name:'新增需求',exact:true});
+ const draft=page.getByLabel('需求标题',{exact:true});
+ await add.click();
+ await draft.fill('合成未保存需求草稿');
+ const visibility=(state:'hidden'|'visible')=>page.evaluate(state=>{
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:state});
+  document.dispatchEvent(new Event('visibilitychange'));
+ },state);
+ await visibility('hidden');
+ await expect(draft).toHaveCount(0);
+ await expect(page.locator('[data-requirements-page]')).toHaveCount(0);
+ await visibility('visible');
+ await expect(draft).toHaveValue('合成未保存需求草稿',{timeout:8000});
+ await visibility('hidden');
+ ownerId='synthetic-new-owner';
+ await visibility('visible');
+ await expect(add).toBeEnabled();
+ await expect(draft).toHaveCount(0);
+ assert.equal(writes(),0);
 });
 
 test('OPT-IN settings category returns to the requested panel after requirement browsing',{
