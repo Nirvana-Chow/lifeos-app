@@ -18,7 +18,13 @@ export async function handlePersonalRequest(request:Request,owner:string,baseURL
  if(['media','career','portfolio','cooking'].includes(type)&&extraGate!==true)throw new PlatformError(404,'PERSONAL_MODULE_UNAVAILABLE','此本人记录模块尚未开放。');
  if(match[2]==='snapshot'&&!['overview','search','export'].includes(type)){if(request.method!=='GET'||url.search||match[3])throw new PlatformError(400,'INVALID_QUERY','完整快照仅可读取。');const items=(await service.currentSnapshot(owner)).filter(entry=>personalEntryType(entry,service.config.spaceId)===type);await guard();return respond({scope:'full-current-snapshot',items,total:items.length,truncated:false,observedAt:new Date().toISOString()});}
  const id=match[2]?validateId(match[2]):null,history=match[3]==='history';
- if(type==='overview'||type==='search'){if(id||history)throw new PlatformError(404,'NOT_FOUND','无此查询。');if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'查询仅可读取。'}},405,{Allow:'GET'});const key=type==='overview'?'today':'q';if([...url.searchParams.keys()].some(k=>k!==key)||url.searchParams.getAll(key).length!==1)throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');const value=type==='overview'?await service.overview(owner,url.searchParams.get(key)!):await service.search(owner,url.searchParams.get(key)!);await guard();return respond(value);}
+ if(type==='overview'||type==='search'){if(id||history)throw new PlatformError(404,'NOT_FOUND','无此查询。');if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'查询仅可读取。'}},405,{Allow:'GET'});const key=type==='overview'?'today':'q',params=url.searchParams,keys=[...params.keys()];
+  const allowed=type==='overview'?['today']:['q','from','to'];
+  if(!params.has(key)||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k)))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
+  const value=type==='overview'?await service.overview(owner,params.get(key)!):await service.search(owner,params.get(key)!,
+   {from:params.get('from')??undefined,to:params.get('to')??undefined});
+  await guard();return respond(value);
+ }
  const allowed=type==='export'||history?['GET']:id?['GET','PATCH']:['GET','POST'];
  if(!allowed.includes(request.method))return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此本人空间操作不支持该方法。'}},405,{Allow:allowed.join(', ')});
  const queries=[...url.searchParams.keys()];if(queries.some(key=>key!=='limit')||url.searchParams.getAll('limit').length>1)throw new PlatformError(400,'INVALID_QUERY','读取参数无效。');const text=url.searchParams.get('limit'),limit=text===null?50:/^[1-9]\d{0,2}$/.test(text)?Number(text):NaN;
