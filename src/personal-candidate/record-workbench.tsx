@@ -71,7 +71,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId}:{t
   generation.current++;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
  }
  useEffect(()=>{
-  setView(type==='person'&&linkedPersonId?'overview':initialRecordView(type));
+  setView(initialRecordView(type));
   setLinkedProfile(linkedPersonId);
   const visibility=()=>{if(document.visibilityState==='hidden')hide();else if(!hasPrivacyBoundary)void refresh();};
   document.addEventListener('visibilitychange',visibility);window.addEventListener('pagehide',hide);
@@ -113,7 +113,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId}:{t
   });
  },[type,view,rows,healthCategory,healthStatus,mediaKind]);
  const healthFiltered=!!search.trim()||healthCategory!=='all';
- const emptyTable=type==='health'
+ const emptyTable=type==='person'?(entries.length?'没有符合搜索条件的人物。':'暂无已确认人物。'):type==='health'
   ? (healthFiltered?'当前筛选下暂无已读记录。':'暂无站内健康记录。')
   : type==='media'&&(mediaKind!=='all'||search.trim())?'没有匹配的作品，试试其他类型或关键词。':'还没有'+labels[type]+'记录，点击“新增'+labels[type]+'”开始记录。';
  const personSpace=type==='person'&&status?status.spaceId:null;

@@ -58,6 +58,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
+  let writable=true;
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
   if(type==='media'){
@@ -68,7 +69,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    }
   }
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(url.pathname==='/api/platform/status'&&(type==='person'||type==='media'))return route.fulfill({status:200,json:{}});if(!url.pathname.startsWith('/api/platform/personal/'))return route.continue();const headers=new Headers(request.headers());headers.set('host',url.host);if(request.method()==='GET')reads.push(url.pathname);else writes.push(request.method());
-   if(url.pathname.endsWith('/status'))return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
+   if(url.pathname.endsWith('/status'))return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable}});
    try{const body=request.postData(),response=await handlePersonalRequest(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});assert.ok(response);return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
   });
   if(type==='health'){
@@ -78,9 +79,16 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   await page.goto(origin+(type==='person'?'/personal/people':type==='media'?'/personal/media':'?type='+type),{waitUntil:'domcontentloaded',timeout:60000});
   if(type==='health'){await page.getByRole('button',{name:'继续上次保存（日记）',exact:true}).click();await expect(page.locator('[data-record-notice]')).toHaveText('上次的日记已保存');assert.equal(repo.rows.size,1);}
   if(type==='person'){
-   await page.getByRole('button',{name:'人物概览',exact:true}).click();
+   await expect(page.getByRole('button',{name:'人物概览',exact:true})).toHaveAttribute('aria-pressed','true');
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('暂无已确认人物。')).toBeVisible();
    await page.getByRole('button',{name:'人物列表',exact:true}).click();
+   await expect(page.getByRole('cell',{name:'暂无已确认人物。'})).toBeVisible();
+   await expect(page.getByRole('button',{name:'新增人物',exact:true})).toHaveCount(0);
+   const more=page.locator('summary').filter({hasText:'更多操作'});
+   await more.focus();
+   await page.keyboard.press('Enter');
+   await page.keyboard.press('Tab');
+   await expect(page.getByRole('button',{name:'新增人物',exact:true})).toBeFocused();
   }
   if(type==='media'){
    if(width>1000){
@@ -132,7 +140,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   if(['media','career','portfolio'].includes(type))await page.getByRole('button',{name:'表格',exact:true}).click();
   await page.getByRole('button',{name:'Synthetic '+type,exact:true}).click();await expect(title).toHaveValue('Synthetic '+type);await title.fill('Unsent synthetic '+type);
   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(title).toHaveValue('Unsent synthetic '+type);await page.getByRole('button',{name:'保存',exact:true}).click();await expect(page.locator('[data-record-notice]')).toHaveText('已保存');await page.reload();if(['media','career','portfolio'].includes(type))await page.getByRole('button',{name:'表格',exact:true}).click();await expect(page.getByRole('button',{name:'Unsent synthetic '+type,exact:true})).toBeVisible();
+  await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(title).toHaveValue('Unsent synthetic '+type);await page.getByRole('button',{name:'保存',exact:true}).click();await expect(page.locator('[data-record-notice]')).toHaveText('已保存');await page.reload();if(type==='person'){await expect(page.getByRole('region',{name:'人物概览'}).getByRole('heading',{name:'Unsent synthetic person',exact:true})).toBeVisible();await page.getByRole('button',{name:'人物列表',exact:true}).click();}if(['media','career','portfolio'].includes(type))await page.getByRole('button',{name:'表格',exact:true}).click();await expect(page.getByRole('button',{name:'Unsent synthetic '+type,exact:true})).toBeVisible();
   if(type==='career'){
    await page.getByRole('button',{name:'简历',exact:true}).click();await page.getByRole('combobox',{name:'简历版本',exact:true}).selectOption(resumeIds[0]);await expect(page.getByRole('heading',{name:'Synthetic resume A',exact:true})).toBeVisible();
    await page.getByRole('combobox',{name:'简历版本',exact:true}).selectOption(resumeIds[1]);await expect(page.getByRole('heading',{name:'Synthetic resume B',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Synthetic resume A',exact:true})).toHaveCount(0);
@@ -162,10 +170,12 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
     await expect(overview.getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
     await expect(detail).toHaveAttribute('aria-label',label!);
     await search.focus();
-    for(const name of ['人物列表','人物概览','刷新','新增人物']){
+    for(const name of ['人物列表','人物概览','刷新']){
      await page.keyboard.press('Tab');
      await expect(page.getByRole('button',{name,exact:true})).toBeFocused();
     }
+    await page.keyboard.press('Tab');
+    await expect(page.locator('summary').filter({hasText:'更多操作'})).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(detail).toBeFocused();
     await page.keyboard.press('Enter');
@@ -206,6 +216,11 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await expect(back).toHaveAttribute('href','/personal/people?record='+people[1].entry.id);
    await back.click();
    await expect(page.getByRole('region',{name:'人物概览'}).getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
+   await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
+   writable=false;
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(page.locator('summary').filter({hasText:'更多操作'})).toHaveCount(0);
+   await expect(page.getByRole('button',{name:'新增人物',exact:true})).toHaveCount(0);
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
    assert.deepEqual(writes,['POST','PATCH']);
 
