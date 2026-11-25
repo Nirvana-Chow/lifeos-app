@@ -484,7 +484,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await readyTaskDetail(page,synthetic.title);
  await recordField(page,'正文').fill(synthetic.editedNotes);todo=await saveTask(page,todo);
  phase='settings-actions';await page.getByRole('button',{name:'设置',exact:true}).click();
- await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
+ await expect(page.locator('[data-settings-page]')).toBeVisible();await expect(page.getByRole('list',{name:'可用设置',exact:true}).getByRole('button',{name:'安全与密码',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
  await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
  const records=[domain,project,todo];
