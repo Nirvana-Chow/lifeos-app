@@ -492,7 +492,7 @@ export async function verifyPersonalWorkspace(page:Page){
  let readonlyFailurePhase:string|null=null;
  try{
   phase='readonly-load';await page.goto(tasksURL,{waitUntil:'domcontentloaded'});
-  phase='readonly-create-disabled';await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeDisabled();
+  phase='readonly-create-hidden';await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
   phase='readonly-grid-ready';await requireTaskGrid(page,synthetic.title);
   phase='readonly-list';await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
   phase='readonly-title-visible';await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();
