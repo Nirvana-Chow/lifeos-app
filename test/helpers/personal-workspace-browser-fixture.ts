@@ -336,7 +336,7 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
- phase='create-domain';await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'领域分类视图',exact:true}).click();await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
+ phase='create-domain';await page.goto(new URL('/personal?page=areas',page.url()).href,{waitUntil:'domcontentloaded'});await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
  await title(page).fill(synthetic.domain);await recordField(page,'说明 / 正文').fill('隔离合成领域说明');const domain=await save(page,'domain');
  await page.getByRole('link',{name:'返回总览',exact:true}).click();await workspaceReady(page);await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await page.getByRole('link',{name:'新建项目',exact:true}).click();await readyEditor(page,'');
@@ -500,7 +500,7 @@ export async function verifyPersonalWorkspace(page:Page){
   phase='readonly-completion-disabled';await expect(complete).toBeDisabled();
   phase='readonly-completion-noop';await complete.evaluate((node:HTMLElement)=>node.click());
   phase='readonly-management-hidden';await expect(page.getByText('管理项目与领域',{exact:true})).toHaveCount(0);
-  phase='readonly-areas';await page.getByRole('button',{name:'领域分类视图',exact:true}).click();
+  phase='readonly-areas';await page.goto(origin+'/personal?page=areas',{waitUntil:'domcontentloaded'});
   phase='readonly-area-create-hidden';await expect(page.getByRole('link',{name:'新建领域',exact:true})).toHaveCount(0);
   phase='readonly-area-edit-hidden';await expect(page.getByRole('link',{name:/编辑领域/})).toHaveCount(0);
   phase='readonly-detail-load';await page.goto(editorURL,{waitUntil:'domcontentloaded'});

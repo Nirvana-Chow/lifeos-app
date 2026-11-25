@@ -42,3 +42,11 @@
 
 .titleDetails { margin-inline-start: .45rem; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
 .titleDetails:focus-visible { outline: 2px solid var(--ring); }
+
+@media (min-width: 1024px) and (pointer: fine) {
+  .root[data-flat-projects] :is(.row, .tableCell) { height: 36px; }
+  .root[data-flat-projects] :is(.cell, .open, .sort) { min-height: 30px; }
+  .root[data-flat-projects] :is(.tableCell, .header th) { padding-inline: 8px; }
+}
+.cellText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.titleDetails { flex: none; }

@@ -46,6 +46,7 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  await page.goto(origin,{waitUntil:'networkidle',timeout:60_000});
  const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();
  const title=grid.locator('tr[data-row-id="synthetic-0"] td[data-col-id="title"]');
+ await expect(title).toBeVisible();
  const measure=()=>grid.evaluate(node=>{
   const viewport=node.querySelector('[data-slot="data-grid-table-viewport"]')!,table=node.querySelector('table')!,header=node.querySelector('thead')!;
   const columns=Array.from(header.querySelectorAll('th[data-col-id]'));
@@ -85,7 +86,7 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  }finally{page.off('request',countResize);}
  const initialTitleWidth=await title.evaluate(node=>node.getBoundingClientRect().width);
  const columns=grid.getByRole('button',{name:'列设置',exact:true});await columns.click();
- for(const label of ['到期日','项目','领域','详情'])await grid.getByRole('checkbox',{name:`显示${label}列`,exact:true}).uncheck();
+ for(const label of ['到期日','项目','详情'])await grid.getByRole('checkbox',{name:`显示${label}列`,exact:true}).uncheck();
  await grid.getByRole('button',{name:'向前移动状态列',exact:true}).click();await columns.click();
  await expect(grid.locator('thead th[data-col-id="status"]')).toHaveCount(1);
  await expect.poll(async()=>(await measure()).filler).toBeLessThanOrEqual(1);
@@ -109,9 +110,9 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
  await page.screenshot({path:join(output,'desktop-todos-1365-light.png'),animations:'disabled'});
  await page.getByRole('button',{name:'看板',exact:true}).click();
  const card=page.locator('[data-kanban-task="synthetic-0"]'),classification=card.locator('dl[aria-label="待办分类"]');
- await expect(classification).toContainText('项目合成项目：');await expect(classification).toContainText('领域合成领域：');
+ await expect(classification).toContainText('项目合成项目：');await expect(classification.getByText('领域',{exact:true})).toHaveCount(0);
  await expect(page.locator('[data-kanban-task="synthetic-1"] dl')).toContainText('未关联项目');
- await expect(page.locator('[data-kanban-task="synthetic-1"] dl')).toContainText('未关联领域');
+ await expect(page.locator('[data-kanban-task="synthetic-1"] dl').getByText('领域',{exact:true})).toHaveCount(0);
  const handle=card.getByRole('button',{name:'拖动：合成待办 0',exact:true});await handle.focus();await page.keyboard.press('Space');
  await expect(page.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
  // dnd-kit 6.3.1 defers the keyboard listener to a timer after activation.
@@ -153,21 +154,23 @@ return <><aside style={{position:'fixed',bottom:0,right:0,zIndex:100,background:
    await expect(tab.locator('html')).toHaveAttribute('data-lifeos-theme',theme);
    const compactGrid=tab.locator('[data-task-grid="reui"]'),headers=()=>compactGrid.locator('thead th[data-col-id]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-col-id')));
    await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
-   await expect.poll(headers).toEqual(['complete','title','status','due','detail']);
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
    assert.equal(await tab.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await expect(compactGrid.locator('tbody td[data-col-id="title"]').first()).toBeVisible();
    const geometry=await compactGrid.evaluate(node=>({width:node.clientWidth,title:node.querySelector('td[data-col-id="title"]')!.getBoundingClientRect().width,filler:node.querySelector('[data-slot="data-grid-table-fill-head-cell"]')!.getBoundingClientRect().width}));
    if(width>=1024)assert.ok(geometry.filler<=1,JSON.stringify(geometry));
    await tab.screenshot({path:join(output,`todo-empty-columns-${width}-${theme}.png`),animations:'disabled'});
    const choices=compactGrid.getByRole('button',{name:'列设置',exact:true});await choices.click();
-   await expect(compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true})).not.toBeChecked();
-   await compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true}).check();await choices.click();
-   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
-   await tab.reload({waitUntil:'networkidle'});await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
-   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
-   await choices.click();await compactGrid.getByRole('button',{name:'恢复默认列',exact:true}).click();await choices.click();
+   await expect(compactGrid.getByRole('checkbox',{name:'显示领域列',exact:true})).toHaveCount(0);
+   await expect(compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true})).toBeChecked();
+   await compactGrid.getByRole('checkbox',{name:'显示项目列',exact:true}).uncheck();await choices.click();
    await expect.poll(headers).toEqual(['complete','title','status','due','detail']);
+   await tab.reload({waitUntil:'networkidle'});await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','detail']);
+   await choices.click();await compactGrid.getByRole('button',{name:'恢复默认列',exact:true}).click();await choices.click();
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
    await tab.getByRole('button',{name:'切换合成关联',exact:true}).click();
-   await expect.poll(headers).toEqual(['complete','title','status','due','project','area','detail']);
+   await expect.poll(headers).toEqual(['complete','title','status','due','project','detail']);
    assert.equal(await tab.getByLabel('合成写入次数').innerText(),'0');
    assert.deepEqual(businessWrites,[]);assert.deepEqual(cellErrors,[]);
    compactCells.push({width,theme,geometry,explicitChoiceSurvivedRefresh:true,referencesArrived:true,businessWrites:0,pageErrors:cellErrors});

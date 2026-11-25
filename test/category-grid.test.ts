@@ -74,7 +74,7 @@ test('category projects use native table filtering/sorting, stable identities an
   const {tables, html} = render();
   const table = tables[0];
   assert.equal(tables.length, 1);
-  assert.deepEqual(table.getAllLeafColumns().map((column: any) => column.id), ['title', 'area', 'stage', 'nextStep', 'pending', 'actions']);
+  assert.deepEqual(table.getAllLeafColumns().map((column: any) => column.id), ['title', 'stage', 'nextStep', 'pending', 'actions']);
   assert.deepEqual(ids(table), ['p-b', 'p-a']);
   assert.equal(table.getRowModel().rows[0].original.revision, 7);
   assert.equal(table.getRowModel().rows[0].getValue('pending'), 1);
@@ -82,11 +82,8 @@ test('category projects use native table filtering/sorting, stable identities an
   assert.match(renderToStaticMarkup(cellElement(table, 'p-b', 'title')), /关联待核对/);
   table.getColumn('title').toggleSorting(false);
   assert.deepEqual(ids(table), ['p-a', 'p-b']);
-  table.getColumn('area').setFilterValue('a');
-  assert.deepEqual(ids(table), ['p-b']);
+  assert.equal(table.getRowModel().rows.find((row: any) => row.id === 'p-b').original.area.id, 'a');
   table.getColumn('stage').setFilterValue('paused');
-  assert.deepEqual(ids(table), []);
-  table.getColumn('area').setFilterValue(undefined);
   assert.deepEqual(ids(table), ['p-a']);
   table.getColumn('stage').setFilterValue(undefined);
   table.getColumn('title').setFilterValue('WALK');
