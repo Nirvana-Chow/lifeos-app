@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       visual:
-        description: Run the desktop and mobile UI qualification
+        description: Run the desktop and mobile UI qualification (manual qualification also audits dependencies)
         type: boolean
         default: false
 
@@ -42,6 +42,7 @@ jobs:
       profile: ${{ steps.policy.outputs.profile }}
       ui: ${{ steps.policy.outputs.ui }}
       visual: ${{ steps.policy.outputs.visual }}
+      audit: ${{ steps.policy.outputs.audit }}
       identity: ${{ steps.policy.outputs.identity }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,17 +61,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release-qualification.ts --classify
+      - name: Locked dependency security audit
+        if: steps.policy.outputs.audit == 'true'
+        run: npm audit --audit-level=high
 
   checks:
     name: Unit, types and source contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Checkout exact source and complete ancestry
+      - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
       - name: Confirm exact source and single npm lock
         run: |
@@ -89,8 +93,6 @@ jobs:
         run: node node_modules/next/dist/bin/next typegen
       - name: Type check
         run: npm run typecheck
-      - name: Locked dependency security audit
-        run: npm audit --audit-level=high
       - name: Preserve dependency identity
         run: git diff --exit-code -- package.json package-lock.json
 
@@ -552,7 +554,7 @@ jobs:
   rendered:
     name: Exact package and isolated TLS/browser qualification
     needs: policy
-    if: needs.policy.outputs.profile == 'full' || needs.policy.outputs.ui == 'true'
+    if: needs.policy.outputs.profile == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     outputs:

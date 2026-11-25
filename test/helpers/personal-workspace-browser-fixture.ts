@@ -522,9 +522,9 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.setViewportSize({width:1365,height:900});await page.emulateMedia({colorScheme:'light'});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await workspaceReady(page);
  await page.getByRole('button',{name:'事项',exact:true}).click();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+ await page.getByRole('button',{name:'设置',exact:true}).click();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
- await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
+ await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  await page.reload({waitUntil:'domcontentloaded'});await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  phase='workspace-history-draft-refusal';
@@ -536,7 +536,7 @@ export async function verifyPersonalWorkspace(page:Page){
   await confirmDiscard(page,false,async()=>{await page.goBack();});
   await expect(page).toHaveURL(tasksURL);await expect(historyField).toHaveValue('合成后退保留草稿');
   assert.equal(historyWrites,0);await historyField.press('Escape');await expect(historyField).toHaveCount(0);
-  await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await page.goForward();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
   await expect(page.getByRole('heading',{name:'设置',exact:true})).toBeVisible();assert.equal(historyWrites,0);
   // Simulate an older real page departure, preserving Next.js router state. Standalone settings and actual page departures use the same draft guard.
   phase='workspace-history-legacy-mark';historyCanary='legacy';
