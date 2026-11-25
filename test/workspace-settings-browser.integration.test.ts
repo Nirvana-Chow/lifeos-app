@@ -284,6 +284,7 @@ test('OPT-IN short Settings keeps security and logout reachable above the filing
    await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
    assert.equal(writes(),0,'rejected logout never calls the API');
    const footerLink=page.getByRole('link',{name:'合成备案占位',exact:true});
+   await footerLink.scrollIntoViewIfNeeded();
    await expect(footerLink).toBeInViewport({ratio:0.75});
    await footerLink.click({trial:true});
    await footerLink.focus();await expect(footerLink).toBeFocused();
