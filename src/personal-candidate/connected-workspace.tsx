@@ -37,14 +37,15 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const[editor,setEditor]=useState<EditorContext|null>(null),initialOpened=useRef(false),returnFocus=useRef<HTMLElement|null>(null);
  const[batchBinding,setBatchBinding]=useState<PersonalBinding|null>(null);
  const restoredBatchScope=useRef<string|null>(null);
+ const [dismissedTaskId,setDismissedTaskId]=useState<string|null>(null);
  const batchCloseGuard=useRef<(()=>boolean)|null>(null);
  const editorCloseGuard=useRef<(()=>boolean)|null>(null);
  useEffect(()=>{let storage:Storage|undefined;try{storage=window.sessionStorage;}catch{/* Without reliable command retention, mutation will be disabled below. */}
   commandStorage.current=!!storage;
   const host=new PersonalWorkspaceController({fetcher:(url,init)=>fetch(url,init),origin:window.location.origin,storage,today:()=>new Date().toLocaleDateString('sv-SE'),key:()=>crypto.randomUUID()});controller.current=host;
-  const update=()=>{const value=host.getSnapshot();cellDrafts.verify(value.state.status==='ready'?host.getEditorBinding():null);setSnapshot(storage?value:{...value,access:{...value.access,writable:false},mutationError:'浏览器无法保留待确认请求，当前仅可读取。'});};const stop=host.subscribe(update);update();void host.refresh();
-  const visibility=()=>{if(document.visibilityState==='hidden'){cellDrafts.conceal();flushSync(()=>host.suspend());}else void host.refresh();};document.addEventListener('visibilitychange',visibility);
-  const restored=()=>void host.refresh();window.addEventListener('lifeos-owner-session-restored',restored);
+  const update=()=>{const value=host.getSnapshot();cellDrafts.verify(value.state.status==='ready'?host.getEditorBinding():null);setSnapshot(storage?value:{...value,access:{...value.access,writable:false},mutationError:'浏览器无法保留待确认请求，当前仅可读取。'});};const stop=host.subscribe(update);update();void host.refresh(initialTaskId);
+  const visibility=()=>{if(document.visibilityState==='hidden'){cellDrafts.conceal();flushSync(()=>host.suspend());}else void host.refresh(initialTaskId);};document.addEventListener('visibilitychange',visibility);
+  const restored=()=>void host.refresh(initialTaskId);window.addEventListener('lifeos-owner-session-restored',restored);
   const warn=(event:BeforeUnloadEvent)=>{cellDrafts.captureCurrent();const value=host.getSnapshot();if(cellDrafts.hasDraft()||value.saving||value.uncertain){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);
   return()=>{stop();host.suspend();cellDrafts.clear();controller.current=null;commandStorage.current=false;document.removeEventListener('visibilitychange',visibility);window.removeEventListener('beforeunload',warn);window.removeEventListener('lifeos-owner-session-restored',restored);};
  },[]);
@@ -73,7 +74,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const navigate=(url:string)=>{if(beforeNavigate())window.location.assign(url);};
  useEffect(()=>{if(snapshot.state.status==='forbidden')recheckOwner?.();},[snapshot.state.status,recheckOwner]);
  const login=()=>{if(recheckOwner)recheckOwner();else if(batchBinding&&!verifiedBinding)window.location.assign('/login');else navigate('/login');};
- const refresh=()=>{if(batchBinding&&!verifiedBinding)void controller.current?.refresh();else if(beforeNavigate())void controller.current?.refresh();};
+ const refresh=()=>{if(batchBinding&&!verifiedBinding||beforeNavigate()){setDismissedTaskId(null);void controller.current?.refresh(initialTaskId);}};
  const open=(next:TaskTarget,trigger?:HTMLElement,singleCreate=false)=>{
   const host=controller.current,binding=host?.getEditorBinding();
   if(!binding || next.mode==='create' && (snapshot.access.writable!==true ||
@@ -128,6 +129,11 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   },
  })}
  {editorContent}
+ {concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
+  target={{mode:'edit',task:snapshot.singleTask.entry}} entry={snapshot.singleTask.entry} spaceId={snapshot.singleTask.spaceId}
+  relations={{}} writable={false} saving={false} uncertain={false} error={null}
+  onSave={async()=>null} onRetry={async()=>null} onStopWaiting={()=>{}}
+  onClose={()=>setDismissedTaskId(snapshot.singleTask?.entry.id??null)}/>}
  {batchBinding&&<TaskBatchEditor key={JSON.stringify(batchBinding)} binding={batchBinding}
   concealed={!verifiedBinding||!sameBinding(batchBinding,verifiedBinding)}
   writable={snapshot.access.writable===true} saving={snapshot.saving} error={snapshot.mutationError}

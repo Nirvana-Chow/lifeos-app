@@ -28,6 +28,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
   // Only this private test's Node memory is written. No remote service, real record or database.
   let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:null,topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
+  let overviewUnavailable=false;
   let writable=true,writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   let rejectNextCreate=false,createRequests=0,newTaskReads=0;
   let newReadback:Promise<void>|undefined;
@@ -38,6 +39,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    if(method==='GET'){
     if(url.pathname==='/api/platform/personal/availability')value={configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:true};
     else if(url.pathname==='/api/platform/personal/status')value={scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable};
+    else if(url.pathname==='/api/platform/personal/overview'&&overviewUnavailable)return route.fulfill({status:503,json:{error:{code:'PERSONAL_SNAPSHOT_UNAVAILABLE'}},headers});
     else if(url.pathname==='/api/platform/personal/overview')value={scope:'full-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
     else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;if(entry.id===newId){newTaskReads++;await newReadback;}}else projectReads++;value={entry};}}
    }else if(method==='PATCH'||method==='POST'){
@@ -165,6 +167,43 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await page.getByRole('button',{name:'列表',exact:true}).click();
   await expect(page.getByRole('heading',{name:'暂无待办',exact:true})).toBeVisible();
   await expect(create).toHaveCount(1);
-  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,mobileOverflow:false}));
+  entries=[makeEntry(taskId,'todo',{title:'合成单条读取',notes:'合成原文',dueOn:null,status:'open'})];
+  overviewUnavailable=true;
+  const readsBefore=taskReads;
+  await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+  await expect(page.getByText('暂时无法读取完整待办列表，请重试。',{exact:true})).toBeVisible();
+  assert.equal(taskReads,readsBefore);
+  await page.goto(origin+'/personal/edit?type=todo&id='+taskId,{waitUntil:'domcontentloaded'});
+  const isolated=page.getByRole('dialog',{name:'待办详情',exact:true});
+  await expect(isolated.getByRole('heading',{name:'合成单条读取',exact:true})).toBeVisible();
+  await expect(isolated.getByText('合成原文',{exact:true})).toBeVisible();
+  await expect(isolated.getByRole('button',{name:'保存待办',exact:true})).toHaveCount(0);
+  await expect(isolated.getByText('未设置',{exact:true}).first()).toBeVisible();
+  assert.equal(taskReads,readsBefore+1);
+  await page.keyboard.press('Escape');
+  await expect(isolated).toHaveCount(0);
+  await page.goto(origin+'/personal/edit?type=todo&id='+newId,{waitUntil:'domcontentloaded'});
+  await expect(page.getByText('这条待办不存在或当前无法访问。',{exact:true})).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  overviewUnavailable=false;
+  await page.goto(origin+'/personal/edit?type=todo&id='+taskId,{waitUntil:'domcontentloaded',timeout:60000});
+  const draftTitle=isolated.getByLabel('标题',{exact:true});
+  await expect(draftTitle).toHaveValue('合成单条读取');
+  await draftTitle.fill('仅保留在编辑器里的合成草稿');
+  const visibility=(state:'hidden'|'visible')=>page.evaluate(value=>{
+   Object.defineProperty(document,'visibilityState',{configurable:true,value});
+   document.dispatchEvent(new Event('visibilitychange'));
+  },state);
+  overviewUnavailable=true;
+  await visibility('hidden');
+  await visibility('visible');
+  await expect(isolated.getByRole('heading',{name:'合成单条读取',exact:true})).toBeVisible();
+  await expect(isolated.getByText('合成原文',{exact:true})).toBeVisible();
+  await expect(isolated.getByRole('button',{name:'保存待办',exact:true})).toHaveCount(0);
+  overviewUnavailable=false;
+  await visibility('hidden');
+  await visibility('visible');
+  await expect(draftTitle).toHaveValue('仅保留在编辑器里的合成草稿');
+  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,isolatedReadOnly:true,mobileOverflow:false}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });
