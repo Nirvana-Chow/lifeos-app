@@ -1,3 +1,4 @@
+import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import test from'node:test';import assert from'node:assert/strict';import{readFileSync}from'node:fs';import ts from'typescript';
 import * as gridEditorModule from '../src/personal-candidate/task-grid-editor.ts';
 import {tableFeatures,columnGroupingFeature,createGroupedRowModel} from '@tanstack/react-table';
@@ -68,6 +69,7 @@ function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='gri
     './reui/data-grid-table-virtual': { DataGridTableVirtual: 'virtual' },
     './reui/data-grid-cell-selection': { DataGridCellSelection: 'selection' },
     './ui/button': { Button: 'button' },
+    '../personal-candidate/project-detail-href': {projectDetailHref},
     './task-grid.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
     '../personal-candidate/task-editor-state': stateModule,
     '../personal-candidate/task-grid-editor': gridEditorModule,

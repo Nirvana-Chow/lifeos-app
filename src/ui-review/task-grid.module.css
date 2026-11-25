@@ -39,3 +39,6 @@
 @media(min-width:1024px) and (pointer:fine){.groupingControl select{min-height:32px}}
 /* Detail labels must remain one line after native sizing/reordering. */
 .root .open[data-slot="button"]{padding:0;white-space:nowrap}.open span{white-space:nowrap}
+
+.titleDetails { margin-inline-start: .45rem; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.titleDetails:focus-visible { outline: 2px solid var(--ring); }
