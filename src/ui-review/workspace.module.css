@@ -45,8 +45,6 @@
 .settingSection:first-child { padding-top:8px; }
 .settingSection h2 { margin:0 0 16px; font-size:18px; font-weight:600; }
 .shell .settingSection :is(a,button) { border-radius:var(--lo-radius-control); }
-.shell .generalSettings > :global(.lo-logout) { justify-self:start; border:1px solid var(--border); border-radius:var(--lo-radius-control); width:auto; }
-.shell .settingSection + :global(.lo-logout) { margin-top:20px; }
 @media(max-width:850px) {
  .navigationLabel { font-size:14px; }
  .domainGrid { grid-template-columns:minmax(0,1fr); }
