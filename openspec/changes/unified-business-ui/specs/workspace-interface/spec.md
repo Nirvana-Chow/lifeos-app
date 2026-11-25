@@ -103,7 +103,7 @@ The system SHALL preserve readable Chinese text, visible focus and reachable act
 - **AND** three curated palette families each provide complete light/dark semantic states, with first-paint and preference synchronization preserved
 
 ### Requirement: Owner-review requirements and matter usability
-The system SHALL continue the existing shared workspace with a concise phase roadmap, persistent owner requirement intake/editing, leading task completion, native column preferences and authoritative Kanban status movement. Public baseline evidence and owner acceptance SHALL remain distinct from privately edited planning content.
+The system SHALL continue the existing shared workspace with persistent owner requirement intake/editing, leading task completion, native column preferences and authoritative Kanban status movement. Public baseline evidence and owner acceptance SHALL remain distinct from privately edited planning content.
 
 #### Scenario: Inspect and edit one requirements pool
 - **WHEN** an authorized owner adds text or changes a requirement's content, priority, real dates or phase
@@ -152,11 +152,23 @@ The system SHALL use one selected table foundation for current editable and read
 
 
 ### Requirement: Visible development requirements
-The system SHALL expose a canonical owner-gated requirements destination using the existing generic baseline, with stable identifiers, development goals, ordered milestones, priority, implementation state, acceptance state, blockers, next actions and traceable public references.
+The system SHALL expose the existing owner-gated requirements destination, preserving stable identifiers, editable planning, evidence and acceptance. Its default table SHALL show requirements, evidenced delivery state and available result links. The page SHALL omit phase-roadmap, feedback Inbox and update-history displays and navigation.
+
+#### Scenario: Distinguish delivery evidence
+- **WHEN** the owner opens the requirements pool
+- **THEN** the default table, delivery filter and delivery board distinguish not implemented, in progress, merged pending publication, published and unverified
+- **AND** a whole requirement is published only with matching verified production evidence and the corresponding result link
+- **AND** a merged slice may link to its PR without promoting the whole requirement to merged or published
+- **AND** workflow, source implementation, build qualification and owner acceptance alone do not establish publication
+
+#### Scenario: Hide secondary requirements tools
+- **WHEN** the owner visits the requirements pool
+- **THEN** the pool and its navigation do not display the phase roadmap, feedback Inbox, update history or the version notice
+- **AND** existing records, APIs, and saved detail and planning fields are preserved
 
 #### Scenario: Inspect the next development step
 - **WHEN** the owner opens the requirements page and filters its rows
-- **THEN** milestone order, remaining work and acceptance criteria are visible from the same baseline
+- **THEN** the next action and the requirement details, including acceptance criteria, use the existing requirement sources
 - **AND** source completion, automated evidence, deployment and owner acceptance remain distinct, with no invented calendar dates or personal data
 - **AND** the informational page does not expose task creation and anonymous access remains denied
 

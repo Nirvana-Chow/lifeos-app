@@ -115,8 +115,21 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('button',{name:'人物列表',exact:true}).click();
    await expect(overview).toHaveCount(0);
    await expect(page.getByRole('button',{name:namesake,exact:true})).toHaveCount(2);
-  }
-  await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});await page.close();
+   await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
+   const logout=page.locator('header.lo-header').getByRole('button',{name:'退出登录',exact:true});
+   await expect(logout).toBeInViewport({ratio:1});
+   let signOutRequests=0;
+   await page.route(origin+'/api/platform/auth/sign-out',async route=>{
+    assert.equal(route.request().method(),'POST');
+    assert.deepEqual(route.request().postDataJSON(),{});
+    signOutRequests++;
+    await route.fulfill({json:{success:true}});
+   });
+   await logout.focus();await page.keyboard.press('Enter');
+   await expect(page).toHaveURL(origin+'/login');
+   assert.equal(signOutRequests,1);
+  }else await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
+  await page.close();
  }
  assert.ok(!/Failed to compile|Module not found/.test(log));
 });
