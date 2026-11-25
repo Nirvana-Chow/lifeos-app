@@ -29,15 +29,16 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   await mkdir(join(root, 'app/login'), { recursive: true });
   await Promise.all([
     cp(join(source, 'src'), join(root, 'src'), { recursive: true }),
+    cp(join(source, 'app/login/page.tsx'), join(root, 'app/login/page.tsx')),
     cp(join(source, 'app/personal/activity/page.tsx'), join(root, 'app/personal/activity/page.tsx')),
     cp(join(source, 'app/personal/layout.tsx'), join(root, 'app/personal/layout.tsx')),
     ...['layout.tsx', 'globals.css', 'theme.css'].map(name => cp(join(source, 'app', name), join(root, 'app', name))),
     cp(join(source, 'postcss.config.mjs'), join(root, 'postcss.config.mjs')),
     ...['node_modules', 'components'].map(name => symlink(join(source, name), join(root, name))),
   ]);
-  await writeFile(join(root, 'app/login/page.tsx'), 'export default function Page(){return <h1>Fixture login</h1>}');
+  await writeFile(join(root, 'src/business-mcp-oauth/page-state.ts'), 'export const readOAuthPageState=async()=>null;');
   await writeFile(join(root, 'src/platform/runtime.ts'),
-    'export async function readPlatformLoginCapability(){return {sessionDuration:true}}\n' +
+    'export async function readPlatformLoginCapability(){return {mode:"personal",enabled:true,sessionDuration:true,ownerAlias:"owner"}}\n' +
     'export async function readPlatformPagePrincipal(headers:Headers){return headers.get("cookie")?.includes("activity-fixture=owner") ? {userId:"synthetic"} : null}');
   const probe = createServer();
   probe.listen(0, '127.0.0.1');
@@ -65,7 +66,7 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
   const page = await context.newPage();
   await page.goto(origin + '/personal/activity', {waitUntil:'domcontentloaded',timeout:90000});
-  await expect(page.getByRole('heading', { name: 'Fixture login' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录私人空间' })).toBeVisible();
   await context.addCookies([{ name: 'activity-fixture', value: 'owner', url: origin }]);
 
   const fixture = journalFixture(1, '2026-11-24', 'Body stays in journal');
@@ -82,12 +83,20 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   const writes: string[] = [];
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.route('**/api/platform/**', async route => {
+  await context.route('**/api/platform/**', async route => {
     const request = route.request();
     if (request.method() !== 'GET') writes.push(request.method());
     const path = new URL(request.url()).pathname;
     if (['manifest.webmanifest', 'icon.svg', 'apple-icon.png'].some(asset => path === '/api/platform/install/' + asset)) {
       return route.fulfill({ status: 404, body: '' });
+    }
+    if (path.endsWith('/sign-in/email')) return route.fulfill({ json: { twoFactorRedirect: true } });
+    if (path.endsWith('/two-factor/verify-totp')) {
+      authorized = true;
+      return route.fulfill({
+        headers: { 'set-cookie': 'activity-fixture=owner; Path=/; HttpOnly; SameSite=Lax' },
+        json: { user: { id: 'synthetic' } },
+      });
     }
     if (!authorized) return route.fulfill({ status: 401, json: {} });
     if (path.endsWith('/auth/get-session')) return route.fulfill({ json: { session: {
@@ -179,9 +188,23 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   await expect(title).toHaveCount(0);
   authorized = false;
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
-  await expect(page.getByRole('heading', { name: 'Fixture login' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录已到期或需要重新验证' })).toBeVisible();
+  await expect(page).toHaveURL(origin + '/personal/activity?date=2026-11-24');
   await expect(title).toHaveCount(0);
   assert.equal(snapshotRequests, before);
+  await context.clearCookies({ name: 'activity-fixture' });
+  const login = await context.newPage();
+  await login.goto(origin + '/login?return_to=' + encodeURIComponent('/personal/activity?date=2026-11-24'));
+  await login.getByLabel('密码', { exact: true }).fill('Synthetic-browser-password');
+  await login.getByLabel('验证器动态码', { exact: true }).fill('123456');
+  await login.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(login).toHaveURL(origin + '/personal/activity?date=2026-11-24');
+  await expect(title).toHaveCount(0);
+  await page.getByRole('button', { name: '已完成登录，继续编辑' }).click();
+  await login.close();
+  await expect(title).toBeVisible();
+  await expect(page.getByLabel('跳到日期')).toHaveValue('2026-11-24');
+  await expect(page).toHaveURL(origin + '/personal/activity?date=2026-11-24');
   assert.deepEqual(errors, []);
-  assert.deepEqual(writes, []);
+  assert.deepEqual(writes, ['POST', 'POST']);
 });

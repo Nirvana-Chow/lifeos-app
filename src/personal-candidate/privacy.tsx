@@ -2,12 +2,18 @@
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {checkOwnerPageAccess} from '../session-duration/client';
 import {flushSync} from 'react-dom';
-const OwnerPageVerification=createContext<boolean|null>(null);
+export const OwnerPageVerification=createContext<boolean|null>(null);
+export const OwnerSessionRecheck=createContext<(()=>void)|null>(null);
 export function useOwnerPageVerification(){return useContext(OwnerPageVerification);}
 
 /** Conceal cached children before background/back navigation; reveal only after
  * a fresh server owner check. No client supplied identity is trusted. */
 export function PrivacyBoundary({children}:{children:ReactNode}){
+ const managed=useOwnerPageVerification();
+ return managed===null?<StandalonePrivacyBoundary>{children}</StandalonePrivacyBoundary>:children;
+}
+
+function StandalonePrivacyBoundary({children}:{children:ReactNode}){
  const[phase,setPhase]=useState<'active'|'checking'|'unavailable'>('active');
  const retry=useRef<(()=>void)|null>(null);
  useEffect(()=>{

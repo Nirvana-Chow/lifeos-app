@@ -5,16 +5,24 @@ test('background and BFCache conceal without unmounting the editor; only fresh o
  const document={visibilityState:'visible',documentElement:{style:{visibility:''}},addEventListener:(k:string,v:()=>void)=>listeners[k]=v,removeEventListener:()=>{}};
  const window={addEventListener:(k:string,v:()=>void)=>listeners[k]=v,removeEventListener:()=>{},location:{replace:(p:string)=>replace=p}};
  const retry={current:null};
- const react={useState:()=>[phase,(v:string)=>{phase=v;}],useEffect:(fn:()=>void)=>{setup=fn;},useRef:()=>retry,createContext:()=>({Provider:'provider'})};
+ let managedScope:boolean|null=null;
+ const react={useState:()=>[phase,(v:string)=>{phase=v;}],useEffect:(fn:()=>void)=>{setup=fn;},useRef:()=>retry,createContext:()=>({Provider:'provider'}),useContext:()=>managedScope};
  const jsx={jsx:(type:unknown,props:any)=>({type,props}),jsxs:(type:unknown,props:any)=>({type,props})},module={exports:{} as any};
  const code=ts.transpileModule(readFileSync('src/personal-candidate/privacy.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  new Function('require','module','exports','document','window','fetch',code)((p:string)=>p==='react'?react:p==='../session-duration/client'?{checkOwnerPageAccess}:jsx,module,module.exports,document,window,()=>new Promise<Response>(resolve=>{respond=resolve;}));
- const editor={stable:'unsent-editor'};module.exports.PrivacyBoundary({children:editor});setup!();document.visibilityState='hidden';listeners.visibilitychange();
- const hidden=module.exports.PrivacyBoundary({children:editor});assert.ok(Array.isArray(hidden.props.children),'private editor must remain mounted while concealed');assert.equal(hidden.props.children[0].props.children.props.children,editor);assert.equal(hidden.props.children[0].props.children.props.value,false);assert.equal(hidden.props.children[0].props.hidden,true);assert.equal(document.documentElement.style.visibility,'hidden');
+ const editor={stable:'unsent-editor'};
+ for(const checked of [false,true]){
+  managedScope=checked;
+  assert.equal(module.exports.PrivacyBoundary({children:editor}),editor,'the containing guard owns verification');
+ }
+ managedScope=null;
+ const render=()=>{const wrapper=module.exports.PrivacyBoundary({children:editor});return wrapper.type(wrapper.props);};
+ render();setup!();document.visibilityState='hidden';listeners.visibilitychange();
+ const hidden=render();assert.ok(Array.isArray(hidden.props.children),'private editor must remain mounted while concealed');assert.equal(hidden.props.children[0].props.children.props.children,editor);assert.equal(hidden.props.children[0].props.children.props.value,false);assert.equal(hidden.props.children[0].props.hidden,true);assert.equal(document.documentElement.style.visibility,'hidden');
  document.visibilityState='visible';listeners.visibilitychange();assert.equal(phase,'checking');
  respond(new Response(null,{status:503}));await new Promise(r=>setImmediate(r));
  assert.equal(phase,'unavailable');assert.equal(replace,'');
- const unavailable=module.exports.PrivacyBoundary({children:editor});
+ const unavailable=render();
  assert.equal(unavailable.props.children[0].props.children.props.children,editor);
  assert.equal(unavailable.props.children[0].props.inert,true);
  assert.equal(unavailable.props.children[1].props.style.visibility,'visible');

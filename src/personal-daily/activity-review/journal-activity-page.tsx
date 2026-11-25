@@ -53,12 +53,14 @@ export function JournalActivityPage({ markup, styles, initialDate, serverDay, me
 
     window.addEventListener('pagehide', clear);
     window.addEventListener('pageshow', visibility);
+    window.addEventListener('lifeos-owner-session-restored', visibility);
     document.addEventListener('visibilitychange', visibility);
     void refresh();
     return () => {
       clear();
       window.removeEventListener('pagehide', clear);
       window.removeEventListener('pageshow', visibility);
+      window.removeEventListener('lifeos-owner-session-restored', visibility);
       document.removeEventListener('visibilitychange', visibility);
     };
   }, [markup, styles, initialDate, serverDay, mergeReceipts]);

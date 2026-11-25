@@ -2,7 +2,7 @@
 import{TaskCellDraftMemory}from'./task-cell-draft';
 import{flushSync}from'react-dom';
 import type{PersonalBinding}from'./client';
-import{useEffect,useRef,useState,type ReactNode}from'react';
+import{useContext,useEffect,useRef,useState,type ReactNode}from'react';
 import{PersonalWorkspaceController,type ControllerSnapshot}from'./workspace-controller';
 import{TaskEditor}from'./task-editor';
 import{TaskBatchEditor}from'./task-batch-editor';
@@ -11,6 +11,7 @@ import{editorFromEntry,type PersonalEditorFields}from'./editor';
 import{resolveTaskTarget,type TaskIdentity,type TaskTarget}from'./task-editor-state';
 import type{PublicEntry}from'../platform/contracts';
 import type{WorkspaceTask}from'./workspace-data';
+import{OwnerSessionRecheck,useOwnerPageVerification}from'./privacy';
 type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boolean};
 type TaskActions={
  viewPreferenceScope:string|null;
@@ -28,6 +29,8 @@ type TaskActions={
 const sameBinding=(a:PersonalBinding,b:PersonalBinding)=>a.ownerId===b.ownerId&&a.spaceId===b.spaceId;
 /** UI-only shell is supplied by its owner; this host alone owns personal API access. */
 export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreateTask=false}:{initialTaskId?:string;initialCreateTask?:boolean;children:(props:ControllerSnapshot&TaskActions)=>ReactNode}){
+ const recheckOwner=useContext(OwnerSessionRecheck);
+ const ownerConcealed=useOwnerPageVerification()===false;
  const controller=useRef<PersonalWorkspaceController|null>(null);
  const commandStorage=useRef(false);
  const cellDrafts=useRef(new TaskCellDraftMemory()).current;
@@ -43,12 +46,13 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   const host=new PersonalWorkspaceController({fetcher:(url,init)=>fetch(url,init),origin:window.location.origin,storage,today:()=>new Date().toLocaleDateString('sv-SE'),key:()=>crypto.randomUUID()});controller.current=host;
   const update=()=>{const value=host.getSnapshot();cellDrafts.verify(value.state.status==='ready'?host.getEditorBinding():null);setSnapshot(storage?value:{...value,access:{...value.access,writable:false},mutationError:'浏览器无法保留待确认请求，当前仅可读取。'});};const stop=host.subscribe(update);update();void host.refresh(initialTaskId);
   const visibility=()=>{if(document.visibilityState==='hidden'){cellDrafts.conceal();flushSync(()=>host.suspend());}else void host.refresh(initialTaskId);};document.addEventListener('visibilitychange',visibility);
+  const restored=()=>void host.refresh(initialTaskId);window.addEventListener('lifeos-owner-session-restored',restored);
   const warn=(event:BeforeUnloadEvent)=>{cellDrafts.captureCurrent();const value=host.getSnapshot();if(cellDrafts.hasDraft()||value.saving||value.uncertain){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);
-  return()=>{stop();host.suspend();cellDrafts.clear();controller.current=null;commandStorage.current=false;document.removeEventListener('visibilitychange',visibility);window.removeEventListener('beforeunload',warn);};
+  return()=>{stop();host.suspend();cellDrafts.clear();controller.current=null;commandStorage.current=false;document.removeEventListener('visibilitychange',visibility);window.removeEventListener('beforeunload',warn);window.removeEventListener('lifeos-owner-session-restored',restored);};
  },[]);
  useEffect(()=>{if(initialOpened.current||snapshot.state.status!=='ready')return;initialOpened.current=true;const target=resolveTaskTarget(initialTaskId,initialCreateTask,snapshot.state.data.tasks);if(target){returnFocus.current=document.activeElement as HTMLElement|null;open(target);}},[snapshot.state,initialTaskId,initialCreateTask]);
- // A draft stays in component memory while concealed, scoped to its original verified owner and space.
- const verifiedBinding=controller.current?.getEditorBinding()??null;
+ // Release editor portal modality on auth lock while keeping each owner-bound draft mounted.
+ const verifiedBinding=ownerConcealed?null:controller.current?.getEditorBinding()??null;
  const concealed=!verifiedBinding||!editor||!sameBinding(editor.binding,verifiedBinding);
  useEffect(()=>{if(!verifiedBinding)return;const scope=JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]);if(restoredBatchScope.current===scope)return;restoredBatchScope.current=scope;setBatchBinding(null);try{const retained=window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId));const host=controller.current;const matching=!host?.getSnapshot().uncertain||retained&&JSON.parse(retained).rows?.some((row:{command:unknown})=>host?.matchesPendingBatchCommand(row.command));if(retained&&matching){setEditor(null);setBatchBinding(verifiedBinding);}else setBatchBinding(null);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
  const selectedId=editor?.target.mode==='edit'?editor.target.task.id:null;
@@ -69,7 +73,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   return true;
  };
  const navigate=(url:string)=>{if(beforeNavigate())window.location.assign(url);};
- const login=()=>{if(batchBinding&&!verifiedBinding)window.location.assign('/login');else navigate('/login');};
+ useEffect(()=>{if(snapshot.state.status==='forbidden')recheckOwner?.();},[snapshot.state.status,recheckOwner]);
+ const login=()=>{if(recheckOwner)recheckOwner();else if(batchBinding&&!verifiedBinding)window.location.assign('/login');else navigate('/login');};
  const refresh=()=>{if(batchBinding&&!verifiedBinding||beforeNavigate()){setDismissedTaskId(null);void controller.current?.refresh(initialTaskId);}};
  const open=(next:TaskTarget,trigger?:HTMLElement,singleCreate=false)=>{
   const host=controller.current,binding=host?.getEditorBinding();
@@ -125,7 +130,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   },
  })}
  {editorContent}
- {concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
+ {!ownerConcealed&&concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
   target={{mode:'edit',task:snapshot.singleTask.entry}} entry={snapshot.singleTask.entry} spaceId={snapshot.singleTask.spaceId}
   relations={{}} writable={false} saving={false} uncertain={false} error={null}
   onSave={async()=>null} onRetry={async()=>null} onStopWaiting={()=>{}}
