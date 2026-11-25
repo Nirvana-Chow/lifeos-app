@@ -112,7 +112,7 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
    {phase==='unavailable'&&<><h1>暂时无法核对登录状态</h1><p>私人页面已隐藏，未发送的草稿仍保留在本页。</p><button type="button" onClick={()=>recheck.current()}>重新核对</button></>}
    {phase==='locked'&&<><h1>登录已到期或需要重新验证</h1><p>重新登录后可继续编辑，未发送的草稿仍保留在本页。</p>
     <button type="button" onClick={()=>{setReturnTo(safeSessionReturn(location.pathname+location.search));setAuthenticating(true);}}>重新登录</button>
-    <button type="button" onClick={()=>recheck.current()}>已完成登录，继续编辑</button>
+    <button type="button" onClick={()=>recheck.current(true)}>已完成登录，继续编辑</button>
    </>}
   </section></main>}
  </>;

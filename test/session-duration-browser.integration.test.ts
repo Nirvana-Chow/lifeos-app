@@ -70,8 +70,12 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     await expect(page.getByRole('button',{name:'重新登录',exact:true})).toBeVisible();
     await expect(draft).toBeHidden();
     ownerReady=true;
+    await page.evaluate(()=>window.addEventListener('lifeos-owner-session-restored',()=>{
+     document.documentElement.dataset.ownerRecovered='true';
+    },{once:true}));
     await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();
     await expect(draft).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-owner-recovered','true');
     assert.deepEqual(posts,[]);
 
     const beforeDeadline=expires-(await page.evaluate(()=>Date.now()))-500;
