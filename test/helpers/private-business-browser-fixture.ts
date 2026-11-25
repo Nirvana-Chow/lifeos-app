@@ -204,6 +204,10 @@ export async function readyHeading(page:Page,heading:string){
   return;
  }
  if(heading==='数据库与数据')await expect(page.locator('.lo-unavailable')).toBeVisible();
+ else if(heading==='记录'){
+  await expect(page.getByRole('heading',{name:'Memos',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
+ }
  else if(heading==='搜索本人记录'){
   const form=page.getByRole('search');await expect(form).toHaveCount(1);await expect(form).toBeVisible();
   await expect(form).toHaveAttribute('action','/personal/search');await expect(form).toHaveAttribute('method','get');
@@ -240,6 +244,7 @@ export async function readyHeading(page:Page,heading:string){
 }
 async function navigateDestination(page:Page,id:string,path:string,heading:string){
  await page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'});await readyHeading(page,heading);
+ if(id==='records')await expect(page).toHaveURL(privateOrigin+'/personal/journal');
  await page.reload({waitUntil:'domcontentloaded'});await readyHeading(page,heading);
  if(['overview','todos','settings'].includes(id)){
   const name=id==='todos'?'事项':id==='settings'?'设置':'总览';
