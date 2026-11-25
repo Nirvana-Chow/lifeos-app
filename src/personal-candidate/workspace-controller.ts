@@ -23,7 +23,11 @@ export class PersonalWorkspaceController{
  private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  suspend(){++this.generation;this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  private async json(path:string,signal?:AbortSignal){
-  const read=async()=>{const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});const body:unknown=await response.json();return{response,body};};
+  const read=async()=>{
+   const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});
+   const body:unknown=await response.json().catch(error=>{if(response.ok)throw error;return null;});
+   return{response,body};
+  };
   if(!signal)return read();signal.throwIfAborted();
   // Settle the caller even if a transport/body ignores abort; generation still fences late results.
   let onAbort!:()=>void;const cancelled=new Promise<never>((_,reject)=>{onAbort=()=>reject(signal.reason);signal.addEventListener('abort',onAbort,{once:true});});

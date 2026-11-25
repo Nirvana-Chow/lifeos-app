@@ -198,6 +198,7 @@ test('verified tasks load while the optional login availability response is held
 test('read diagnostics distinguish authentication, storage verification and snapshot failure without echoing errors',async()=>{
  for(const [failure,expected,overviewReads] of [
   ['identity','身份服务暂不可用，请重试。',0],
+  ['login','请登录本人账号。',0],
   ['storage','本人空间存储尚未核验，暂无法读取待办。',0],
   ['expired','登录已失效，请重新登录。',1],
   ['network','待办数据未能读取，请重试。',1],
@@ -208,6 +209,7 @@ test('read diagnostics distinguish authentication, storage verification and snap
   const controller=new PersonalWorkspaceController({fetcher:async(input,init)=>{
    const path=String(input);
    if(path.endsWith('/status')){
+    if(failure==='login')return new Response('Synthetic non-JSON denial',{status:401});
     if(failure==='identity')return Response.json({error:{code:'AUTH_UNAVAILABLE',message:'Synthetic hidden details'}},{status:503});
     if(failure==='storage')return Response.json({...await (await f.fetcher(input,init)).json(),storageVerified:false});
    }
@@ -220,7 +222,7 @@ test('read diagnostics distinguish authentication, storage verification and snap
    return f.fetcher(input,init);
   },origin:'http://127.0.0.1:3331',today:()=> '2026-10-27',key:()=>crypto.randomUUID()});
   await controller.refresh();
-  assert.deepEqual(controller.getSnapshot().state,{status:failure==='expired'?'forbidden':'error',message:expected});
+  assert.deepEqual(controller.getSnapshot().state,{status:failure==='expired'||failure==='login'?'forbidden':'error',message:expected});
   assert.equal(controller.getEditorBinding(),null);
   assert.equal(reads,overviewReads);
   assert.equal(f.writes.length,0);
