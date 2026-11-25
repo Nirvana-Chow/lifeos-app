@@ -45,7 +45,15 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   assert.equal(anonymous.headers.get('location'),'/login');
  }
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());const evidence=join(tmpdir(),'lifeos-record-browser-evidence-20261105');await mkdir(evidence,{recursive:true});
- for(const type of (process.env.RECORD_BROWSER_MODULE==='business'?['media','career','portfolio'] as const:process.env.RECORD_BROWSER_MODULE==='health'?['health'] as const:process.env.RECORD_BROWSER_MODULE==='person'?['person'] as const:['journal','person','health','media','career','portfolio'] as const))for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
+ const recordModules = {
+  business: ['media','career','portfolio'],
+  health: ['health'],
+  media: ['media'],
+  person: ['person'],
+ } as const;
+ const requestedModule = process.env.RECORD_BROWSER_MODULE as keyof typeof recordModules;
+ const modules = recordModules[requestedModule] ?? ['journal','person','health','media','career','portfolio'] as const;
+ for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
@@ -87,7 +95,10 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await expect(card('film')).toBeVisible();
    await expect(card('series')).toBeVisible();
    await page.getByRole('button',{name:'新增书影音',exact:true}).click();
-   await expect(page.getByRole('combobox',{name:'作品类型',exact:true})).toHaveValue('film');
+   const workType=page.getByRole('combobox',{name:'作品类型',exact:true});
+   await expect(workType).toHaveValue('film');
+   await workType.selectOption('series');
+   await expect(workType).toHaveValue('series');
    await page.getByRole('button',{name:'关闭',exact:true}).click();
    await page.getByRole('button',{name:'表格',exact:true}).click();
    await expect(page.getByRole('button',{name:'Synthetic catalog series',exact:true})).toBeVisible();
