@@ -91,7 +91,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    if(token!==generation.current)return;
    const scope=keyOf(after);
    if(keyOf(next)!==scope){
-    if(type==='journal'){discardJournalDraft();hide();setError('本人空间已变化，请重新核对。');}
+    if(type==='journal')discardJournalDraft();
+    if(type==='journal'||type==='person'){hide();setError('本人空间已变化，请重新核对。');}
     return;
    }
    if(type==='journal'&&draftCache.current?.scope!==scope)draftCache.current=null;
