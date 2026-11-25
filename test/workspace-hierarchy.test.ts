@@ -10,7 +10,7 @@ const project=(id:string,area:ProjectRow['area'],stage='active'):ProjectRow=>({i
 test('navigation groups only supplied authorized links without dropping or duplicating existing destinations',()=>{
  assert.equal(typeof hierarchy.groupWorkspaceModules,'function','grouped workspace navigation is required');
  const links:OwnerModuleLink[]=[{id:'journal',label:'日记',href:'/personal/journal'},{id:'calendar',label:'日程',href:'/personal/schedule'},{id:'finance',label:'财务',href:'/personal/finance'}];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']],['项目',[]]]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']]]);
  assert.deepEqual(hierarchy.groupWorkspaceModules([]).flatMap(group=>group.links),[]);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links).map(link=>link.href).sort(),['/personal/finance','/personal/journal','/personal/schedule']);
 });
@@ -38,7 +38,7 @@ test('support and tool destinations stay outside the business tabs',()=>{
   {id:'file-handoffs',label:'文件交接',href:'/personal/file-handoffs'},
   {id:'updates',label:'更新记录',href:'/personal/requirements/updates'},
  ];
- assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常','项目']);
+ assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常']);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links),[]);
 });
 
@@ -51,4 +51,16 @@ test('cooking is in learning independently of the media flag and remains owner-s
   assert.deepEqual(groups.find(group=>group.id==='relationships')?.links.map(link=>link.href),['/personal/people']);
  }
  assert.deepEqual(hierarchy.groupWorkspaceModules(ownerModules(status,'foreign-scope')).flatMap(group=>group.links),[]);
+});
+
+test('development projects are gated and career and resume remain distinct links',()=>{
+ const links:OwnerModuleLink[]=[
+  {id:'development-projects',label:'开发项目',href:'/personal/development-projects'},
+  {id:'career',label:'职业',href:'/personal/career'},
+  {id:'resume',label:'简历',href:'/personal/resume'},
+ ];
+ const groups=hierarchy.groupWorkspaceModules(links);
+ assert.deepEqual(groups.find(group=>group.id==='development-projects')?.pages,[]);
+ assert.deepEqual(groups.find(group=>group.id==='development-projects')?.links,[links[0]]);
+ assert.deepEqual(groups.find(group=>group.id==='career')?.links,links.slice(1));
 });

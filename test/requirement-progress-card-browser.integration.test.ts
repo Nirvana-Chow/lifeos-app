@@ -186,7 +186,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
- await expect(page.getByRole('heading',{name:'项目',level:1,exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'个人项目',level:1,exact:true})).toBeVisible();
  await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'兴趣学习',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'设置',exact:true}).click();
  const product=page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'产品',exact:true});

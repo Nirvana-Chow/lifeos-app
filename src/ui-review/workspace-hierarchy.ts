@@ -7,8 +7,8 @@ const workspaceModules = [
  {id:'learning',label:'兴趣学习',pages:[],links:['media','cooking']},
  {id:'relationships',label:'生活与关系',pages:[],links:['people']},
  {id:'finance',label:'财务',pages:[],links:['finance','portfolio']},
- {id:'career',label:'职业成长',pages:[],links:['career']},
- {id:'projects',label:'项目',pages:['projects','areas'],links:['development-projects']},
+ {id:'career',label:'职业成长',pages:[],links:['career','resume']},
+ {id:'development-projects',label:'开发项目',pages:[],links:['development-projects']},
 ] as const;
 
 /** Present existing destinations in module order. Settings retains its own tools. */

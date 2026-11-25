@@ -82,7 +82,7 @@ import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspa
 const workspacePageNavigation = {
  overview:{label:'总览',icon:LayoutDashboard},
  tasks:{label:'待办',icon:CheckSquare2},
- projects:{label:'项目',icon:Folders},
+ projects:{label:'个人项目',icon:Folders},
  areas:{label:'领域',icon:Layers},
 } as const;
 const viewItems = [
@@ -122,7 +122,7 @@ const pageTitles: Record<WorkspacePage, string> = {
   tasks: "待办",
   inbox: "收件箱",
   areas: "领域",
-  projects: "项目",
+  projects: "个人项目",
   settings: "设置",
   requirements: "需求池",
 };
@@ -182,18 +182,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const financeLink=props.desktopNavigation ? ownerModules.links.find(link=>link.id==='finance') : undefined;
   const portfolioLink=props.desktopNavigation ? ownerModules.links.find(link=>link.id==='portfolio') : undefined;
   const financeDestination=financeLink??portfolioLink;
+  const developmentDestination=ownerModules.links.find(link=>link.id==='development-projects');
   const selectedModule=moduleGroups.find(group=>group.id===chosenModule);
   const settingsNavigationActive=settingsSection&&!selectedModule;
   const routeModule=moduleGroups.find(group=>group.links.some(link=>
     ownerModules.path===link.href||ownerModules.path.startsWith(link.href+'/'),
   ));
-  const pageModule=page==='projects'||page==='areas'?'projects':'daily';
-  const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id===pageModule);
+  const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id==='daily');
   const moduleSwitch=(compact=false)=>(
     <nav aria-label="切换模块" className={compact?workspaceStyles.mobileModules:workspaceStyles.headerModules}>
       {moduleGroups.map(group=>group.id==='finance'&&financeDestination ? (
         <Button key={group.id} asChild variant="ghost">
           <a href={financeDestination.href} data-workspace-nav aria-current={routeModule?.id==='finance'?'page':undefined}>{group.label}</a>
+        </Button>
+      ) : group.id==='development-projects'&&developmentDestination ? (
+        <Button key={group.id} asChild variant="ghost">
+          <a href={developmentDestination.href} data-workspace-nav aria-current={routeModule?.id===group.id?'page':undefined}>{group.label}</a>
         </Button>
       ) : <Button key={group.id} variant="ghost" aria-pressed={group.id===activeModule?.id} data-workspace-nav
         onClick={()=>chooseModule(group.id)}>{group.label}</Button>)}
