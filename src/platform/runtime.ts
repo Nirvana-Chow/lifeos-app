@@ -48,7 +48,7 @@ async function buildRuntime(config:PlatformConfig):Promise<Runtime>{
 async function runtime():Promise<Runtime|null>{const config=readPlatformConfig(process.env);if(!config)return null;if(!pending)pending=buildRuntime(config).catch(error=>{pending=undefined;throw error;});return pending;}
 export async function getPlatformOwnerAuthority(){try{return (await runtime())?.ownerAuthority??null;}catch{return null;}}
 export async function readPlatformPagePrincipal(headers:Headers){const value=await runtime();return value?readOwnerPrincipal(value.readAuth??value.auth,value.config,headers):null;}
-const unavailable=()=>Response.json({error:{code:'PLATFORM_UNAVAILABLE',message:'服务暂不可用，请稍后重试。'}},{status:503,headers:{'Cache-Control':'private, no-store','Vary':'Cookie'}});
+const unavailable=()=>Response.json({error:{code:'PLATFORM_UNAVAILABLE',message:'此隔离候选尚未配置可用的身份与 PostgreSQL 服务。'}},{status:503,headers:{'Cache-Control':'private, no-store','Vary':'Cookie'}});
 export async function handlePlatformRequest(request:Request):Promise<Response>{const recoveryPath=new URL(request.url).pathname==='/api/platform/personal/recover-password';try{const value=await runtime();if(recoveryPath)return value?.recovery?value.recovery.handle(request):ownerRecoveryUnavailable();return value?value.handler(request):unavailable();}catch{return recoveryPath?ownerRecoveryUnavailable():unavailable();}}
 export async function readPlatformRecoveryCapability(){try{const value=await runtime();return value?.recovery?await value.recovery.capability():{enabled:false};}catch{return{enabled:false};}}
 export async function handlePlatformAuthRequest(request:Request):Promise<Response>{

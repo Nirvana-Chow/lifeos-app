@@ -125,7 +125,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   },
  })}
  {editorContent}
- {!editor&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
+ {concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
   target={{mode:'edit',task:snapshot.singleTask.entry}} entry={snapshot.singleTask.entry} spaceId={snapshot.singleTask.spaceId}
   relations={{}} writable={false} saving={false} uncertain={false} error={null}
   onSave={async()=>null} onRetry={async()=>null} onStopWaiting={()=>{}}

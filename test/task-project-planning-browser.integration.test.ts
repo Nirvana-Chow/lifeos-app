@@ -185,6 +185,25 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await page.goto(origin+'/personal/edit?type=todo&id='+newId,{waitUntil:'domcontentloaded'});
   await expect(page.getByText('这条待办不存在或当前无法访问。',{exact:true})).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  overviewUnavailable=false;
+  await page.goto(origin+'/personal/edit?type=todo&id='+taskId,{waitUntil:'domcontentloaded',timeout:60000});
+  const draftTitle=isolated.getByLabel('标题',{exact:true});
+  await expect(draftTitle).toHaveValue('合成单条读取');
+  await draftTitle.fill('仅保留在编辑器里的合成草稿');
+  const visibility=(state:'hidden'|'visible')=>page.evaluate(value=>{
+   Object.defineProperty(document,'visibilityState',{configurable:true,value});
+   document.dispatchEvent(new Event('visibilitychange'));
+  },state);
+  overviewUnavailable=true;
+  await visibility('hidden');
+  await visibility('visible');
+  await expect(isolated.getByRole('heading',{name:'合成单条读取',exact:true})).toBeVisible();
+  await expect(isolated.getByText('合成原文',{exact:true})).toBeVisible();
+  await expect(isolated.getByRole('button',{name:'保存待办',exact:true})).toHaveCount(0);
+  overviewUnavailable=false;
+  await visibility('hidden');
+  await visibility('visible');
+  await expect(draftTitle).toHaveValue('仅保留在编辑器里的合成草稿');
   assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,isolatedReadOnly:true,mobileOverflow:false}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });
