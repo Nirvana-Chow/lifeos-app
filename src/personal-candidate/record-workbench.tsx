@@ -149,7 +149,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   setError('');setNotice('');
   try{
    const fields=normalizePersonalFields(type,editor.fields);
-   const routine=type==='journal'&&!editor.entry?readJournalRoutine(editor.fields.text):null;
+   const routine=type==='journal'?readJournalRoutine(editor.fields.text):null;
    if(routine&&!Object.values(routine).some(Boolean))throw Error('请至少填写一段日记内容。');
    const command=makePersonalCommand({ownerId:status.ownerId,spaceId:status.spaceId},type,editor.entry?.id??null,fields,'record-'+crypto.randomUUID(),true,editor.entry?.revision);
    await active.submit(command,type==='journal');

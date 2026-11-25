@@ -177,6 +177,10 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await expect(occurrence).not.toContainText('Legacy unmarked section');
  await page.setViewportSize({width:1365,height:900});
  await journal.getByRole('button',{name:routineTitle,exact:true}).click();
+ await edit.getByLabel('正文',{exact:true}).fill(journalRoutineTemplate);
+ await edit.getByRole('button',{name:'保存',exact:true}).click();
+ await expect(edit.getByRole('alert')).toHaveText('请至少填写一段日记内容。');
+ assert.equal(commands.length,4);
  await edit.getByLabel('正文',{exact:true}).fill(routine);
  await edit.getByRole('button',{name:'保存',exact:true}).click();
  await expect(edit).toBeHidden();
