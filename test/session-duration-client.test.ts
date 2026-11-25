@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {checkDeviceSession,checkOwnerPageAccess,safeSessionReturn} from '../src/session-duration/client.ts';
+import {checkDeviceSession,checkOwnerPageAccess,personalLoginHref,safeSessionReturn} from '../src/session-duration/client.ts';
 const value=(mode='fixed',needsRefresh=false)=>({user:{id:'fixture-owner'},session:{mfaVerified:true,sessionDurationMode:mode,sessionDurationSeconds:mode==='fixed'?1800:400*86400,expiresAt:new Date(Date.now()+60000).toISOString()},needsRefresh});
 test('fixed active session needs one read while only an explicit rolling refresh needs a POST',async()=>{
  for(const rolling of [false,true]){const calls:string[]=[];const state=await checkDeviceSession((async(_url,init)=>{calls.push(init?.method??'GET');return Response.json(value(rolling?'rolling':'fixed',rolling&&calls.length===1));}) as typeof fetch);assert.equal(state.kind,'active');assert.deepEqual(calls,rolling?['GET','POST']:['GET']);}
@@ -42,4 +42,12 @@ test('legacy private page checks distinguish explicit denial from a failed read'
  }
  assert.equal(await checkOwnerPageAccess(async()=>new Response('<html>temporary gateway</html>')),'unavailable');
  assert.equal(await checkOwnerPageAccess(async()=>{throw Error('synthetic offline');}),'unavailable');
+});
+
+test('a direct login redirect preserves a safe personal destination and repeated query values',()=>{
+ assert.equal(personalLoginHref('/personal',{}),'/login');
+ const url=new URL(personalLoginHref('/personal/journal',{record:'one',person:['a','b']}),'https://fixture.invalid');
+ assert.equal(url.pathname,'/login');
+ assert.equal(url.searchParams.get('return_to'),'/personal/journal?record=one&person=a&person=b');
+ assert.equal(personalLoginHref('/personal/../api/platform',{}),'/login');
 });

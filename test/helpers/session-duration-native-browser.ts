@@ -26,6 +26,13 @@ export async function checkNativeBrowserSessions(t:TestContext,root:string,origi
    for(const [name,value] of Object.entries(request.headers))if(value!==undefined)headers.set(name,Array.isArray(value)?value.join('; '):value);
    headers.set('host',url.host);
    headers.delete('content-length');
+   if(url.pathname==='/api/platform/status'){
+    const owner=await readOwnerMfaState(reader,config,headers);
+    response.statusCode=owner.kind==='ready'?200:owner.kind==='unavailable'?503:401;
+    response.setHeader('Content-Type','application/json');
+    response.end('{}');
+    return;
+   }
    const method=request.method!,parts:Buffer[]=[];
    for await(const part of request)parts.push(part);
    if(method==='POST')posts.push(url.pathname);
@@ -59,7 +66,7 @@ export async function checkNativeBrowserSessions(t:TestContext,root:string,origi
   await context.route('**/api/platform/**',async route=>{
    const url=new URL(route.request().url());
    assert.equal(url.origin,origin);
-   if(!url.pathname.startsWith('/api/platform/auth/'))return route.fulfill({status:404});
+   if(url.pathname!=='/api/platform/status'&&!url.pathname.startsWith('/api/platform/auth/'))return route.fulfill({status:404});
    return route.fulfill({response:await route.fetch({url:fixtureOrigin+url.pathname,maxRedirects:0})});
   });
   return context;
