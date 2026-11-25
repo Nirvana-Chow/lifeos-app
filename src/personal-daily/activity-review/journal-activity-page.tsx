@@ -2,9 +2,12 @@
 
 import { useEffect, useRef } from 'react';
 import { readJournalActivity } from './journal-source';
-import { mountActivity } from './view.mjs';
+import { mountActivity, type ActivitySelection } from './view.mjs';
 
-export function JournalActivityPage({ markup, styles }: { markup: string; styles: string }) {
+export function JournalActivityPage({ markup, styles, initialDate, serverDay, mergeReceipts }: {
+  markup: string; styles: string; initialDate?: string; serverDay: string;
+  mergeReceipts: { label: string; href: string; at: string }[];
+}) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -12,6 +15,7 @@ export function JournalActivityPage({ markup, styles }: { markup: string; styles
     if (!node) return;
     const shadow = node.shadowRoot ?? node.attachShadow({ mode: 'open' });
     let pending: AbortController | undefined;
+    let selection: ActivitySelection | undefined = initialDate ? { date: initialDate, period: 'day', category: 'records' } : undefined;
 
     function clear() {
       pending?.abort();
@@ -34,7 +38,12 @@ export function JournalActivityPage({ markup, styles }: { markup: string; styles
       // Only the repository's static layout is markup. Journal fields are mounted as text.
       layout.innerHTML = markup;
       shadow.replaceChildren(stylesheet, layout);
-      mountActivity(layout, mapping);
+      mountActivity(layout, mapping, {
+        serverDay,
+        mergeReceipts,
+        selection,
+        onSelectionChange: next => { selection = next; },
+      });
     }
 
     function visibility() {
@@ -52,7 +61,7 @@ export function JournalActivityPage({ markup, styles }: { markup: string; styles
       window.removeEventListener('pageshow', visibility);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [markup, styles]);
+  }, [markup, styles, initialDate, serverDay, mergeReceipts]);
 
   return <div ref={container} />;
 }

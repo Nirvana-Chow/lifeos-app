@@ -13,13 +13,16 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-journal-history-browser-'));
  await mkdir(join(root,'app/personal/journal'),{recursive:true});
+ await mkdir(join(root,'app/personal/activity'),{recursive:true});
  await Promise.all([
   ...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
+  cp(join(source,'app/personal/activity/page.tsx'),join(root,'app/personal/activity/page.tsx')),
   cp(join(source,'src'),join(root,'src'),{recursive:true}),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
  ]);
  // Isolated route harness uses the shipped client composition; owner API reads below contain synthetic records only.
  await writeFile(join(root,'app/personal/journal/page.tsx'),`import {JournalRecordPage} from '../../../src/personal-journal/page';export default function Page(){return <JournalRecordPage/>;}`);
+ await writeFile(join(root,'src/platform/runtime.ts'),`export async function readPlatformPagePrincipal(){return {userId:'synthetic'};}`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3007'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
@@ -52,6 +55,16 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
   await link.focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
   const article=page.getByRole('article',{name:'日记原文'});await expect(article.getByText('Synthetic original diary',{exact:true})).toBeVisible();await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();
   await page.goto(origin+'/personal/journal?record='+current.id);await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
+  const activity=article.getByRole('link',{name:'查看当天活动',exact:true});
+  await expect(activity).toHaveAttribute('href','/personal/activity?date=2025-11-13');
+  if(width===1365){
+   await activity.click();
+   await expect(page.getByRole('button',{name:'日',exact:true})).toHaveAttribute('aria-pressed','true',{timeout:30000});
+   await expect(page.getByLabel('跳到日期')).toHaveValue('2025-11-13');
+   await expect(page.getByRole('link',{name:'打开日记原记录'})).toHaveAttribute('href','/personal/journal?record='+current.id);
+   await page.goBack();
+   await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();
+  }
   await page.getByText('相似日的实现状态',{exact:true}).click();await expect(page.getByText(/相似日尚未启用/)).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});
