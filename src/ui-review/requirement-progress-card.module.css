@@ -1,0 +1,28 @@
+.card {
+  margin-bottom: 18px;
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 12px 16px;
+}
+
+.counts dt, .date {
+  color: var(--muted-foreground);
+}
+
+.counts dd {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.date {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: 13px;
+}

@@ -69,6 +69,7 @@ import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
+import {RequirementProgressCard} from './requirement-progress-card';
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
 import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
@@ -815,6 +816,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   </button>
                 ))}
               </section>
+              {verifiedPrivateScope && <RequirementProgressCard key={verifiedPrivateScope} scope={verifiedPrivateScope} onOpen={()=>navigate('requirements')}/>}
               {state.status === "ready" && <section aria-label="生活维度" className={workspaceStyles.domainOverview}>
                 <div className={workspaceStyles.sectionHeading}><div><h2>生活维度</h2><p>从领域看正在推进的项目与下一步。</p></div><Button variant="ghost" aria-label="查看全部项目" data-workspace-nav onClick={()=>navigate('projects')}>全部项目<ArrowUpRight size={16}/></Button></div>
                 {data?.coverage==='partial'&&<p className={workspaceStyles.coverageNote}>仅显示已读取的领域与项目，完整范围待确认。</p>}
