@@ -38,12 +38,20 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
    const geometry=await page.locator('[data-requirements-grid="reui"]').evaluate(node=>({
     viewport:node.querySelector('[data-slot="data-grid-table-viewport"]')!.clientWidth,
     cols:[...node.querySelectorAll('col')].map(c=>({style:c.getAttribute('style'),width:getComputedStyle(c).width})),
-    widths:[...node.querySelectorAll('thead th')].map(cell=>cell.getBoundingClientRect().width),
+    headers:[...node.querySelectorAll('thead th')].map(cell=>({
+     label:cell.querySelector('button')?.getAttribute('aria-label')??null,width:cell.getBoundingClientRect().width,
+    })),
    }));
    t.diagnostic(JSON.stringify({beforeHydration:geometry}));
-   for(const [index,width] of [[1,180],[2,100],[3,140],[4,170],[5,240]])assert.ok(Math.abs(geometry.widths[index]!-width!)<1,`Metadata column ${index} should retain its ${width}px model width before hydration, got ${geometry.widths[index]}`);
-   assert.ok(Math.abs(geometry.widths[0]!-(geometry.viewport-830))<2,'Title owns all workspace surplus before hydration');
-   assert.ok(geometry.widths[6]!<=1,'No empty fill strip before hydration');
+   const metadata=[['按交付状态排序',150],['按结果排序',185],['按优先级排序',100],['按下一步排序',240]] as const;
+   assert.deepEqual(geometry.headers.map(header=>header.label),['按需求排序',...metadata.map(([label])=>label),null]);
+   for(const [label,width] of metadata){
+    const actual=geometry.headers.find(header=>header.label===label)!.width;
+    assert.ok(Math.abs(actual-width)<1,`${label} should retain its ${width}px model width before hydration, got ${actual}`);
+   }
+   const fixedWidth=metadata.reduce((total,[,width])=>total+width,0);
+   assert.ok(Math.abs(geometry.headers[0]!.width-(geometry.viewport-fixedWidth))<2,'Title owns all workspace surplus before hydration');
+   assert.ok(geometry.headers.at(-1)!.width<=1,'No empty fill strip before hydration');
   }finally{await page.close();}
  });
  for(const [width,theme] of [[1920,'light'],[1920,'dark'],[1365,'light'],[1365,'dark'],[390,'light'],[390,'dark']] as const){
@@ -165,8 +173,10 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
    await page.screenshot({path:join(screenshots,`requirements-short-${view}-390x400-dark.png`)});
    const table=gantt.getByRole('button',{name:'查看需求表格',exact:true});await table.scrollIntoViewIfNeeded();await expect(table).toBeInViewport({ratio:0.5});await table.click();
   }
-  const populatedColumn=page.locator('[aria-label="按推进状态查看需求"]').locator(':scope > section').filter({has:page.locator('[data-requirement-id]')});
-  const viewport=view==='board'?populatedColumn.first().locator(':scope > div'):page.locator('[data-slot="data-grid-table-viewport"]');
+  const populatedColumn=page.locator('[aria-label="按交付状态查看需求"]')
+   .locator('section[data-requirements-progress]').filter({has:page.locator('[data-requirement-id]')});
+  const viewport=view==='board'?populatedColumn.first().locator(':scope > div').filter({has:page.locator('[data-requirement-id]')}):page.locator('[data-slot="data-grid-table-viewport"]');
+  await expect(viewport).toBeVisible();
   const headerHeight=view!=='board'?(await viewport.locator('thead').boundingBox())!.height:0;
   const height=(await viewport.boundingBox())!.height;
   assert.ok(height-headerHeight>=96,`${view} requires visible row area, got ${height-headerHeight}px`);
