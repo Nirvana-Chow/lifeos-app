@@ -818,21 +818,28 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
  };
  await page.goto(origin+'/personal?page=settings&panel=security',{waitUntil:'domcontentloaded'});
  const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
- await expect(categories.getByRole('link',{name:'反馈 Inbox',exact:true})).toBeVisible();
- await categories.getByRole('link',{name:'反馈 Inbox',exact:true}).click();
+ await expect(categories.getByRole('link',{name:'反馈 Inbox',exact:true})).toHaveCount(0);
+ await page.goto(origin+'/personal/requirements/feedback',{waitUntil:'domcontentloaded'});
  const original=page.getByRole('textbox',{name:'原文',exact:true});await expect(original).toBeEnabled();
- await categories.getByRole('link',{name:'更新记录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/requirements/updates');
+ await page.goto(origin+'/personal/requirements/updates',{waitUntil:'domcontentloaded'});
  await page.goBack({waitUntil:'domcontentloaded'});await expect(original).toBeEnabled();
  // Exercise the privacy recheck required when a document returns from bfcache.
  const privacyRead=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/status');
  await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
  assert.equal((await privacyRead).status(),200,'restored synthetic owner passes the fresh platform privacy check');
  await expect(page).toHaveURL(origin+'/personal/requirements/feedback');await expect(original).toBeEnabled();await original.fill('Synthetic unsaved feedback');
- feedbackPhase='link-refused';await confirmFeedback(false,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click());await expect(original).toHaveValue('Synthetic unsaved feedback');
+ // Exercise delegated same-origin navigation without restoring a hidden navigation link.
+ await categories.evaluate(nav=>{
+  const link=document.createElement('a');
+  link.href='/personal/requirements/updates';
+  link.textContent='合成直达检查';
+  nav.append(link);
+ });
+ feedbackPhase='link-refused';await confirmFeedback(false,()=>categories.getByRole('link',{name:'合成直达检查',exact:true}).click());await expect(original).toHaveValue('Synthetic unsaved feedback');
  for(const direction of ['后退','前进']){feedbackPhase='button-'+direction;await confirmFeedback(false,()=>page.getByRole('button',{name:direction,exact:true}).click());}
  for(const direction of ['back','forward'] as const)await confirmDiscard(page,false,async signal=>{await(direction==='back'?page.goBack({waitUntil:'domcontentloaded',signal}):page.goForward({waitUntil:'domcontentloaded',signal}));},5000,'beforeunload');
  await expect(page).toHaveURL(origin+'/personal/requirements/feedback');await expect(original).toHaveValue('Synthetic unsaved feedback');assert.equal(writes,0);
- feedbackPhase='link-accepted';await confirmFeedback(true,()=>categories.getByRole('link',{name:'更新记录',exact:true}).click(),origin+'/personal/requirements/updates');
+ feedbackPhase='link-accepted';await confirmFeedback(true,()=>categories.getByRole('link',{name:'合成直达检查',exact:true}).click(),origin+'/personal/requirements/updates');
  await page.goBack({waitUntil:'domcontentloaded'});await expect(original).toBeEnabled();await original.fill('Synthetic pending feedback');
  await page.getByRole('button',{name:'保存反馈',exact:true}).click();await expect(page.getByRole('button',{name:'恢复原请求并回读',exact:true})).toBeVisible();assert.equal(writes,1);
  const checkPending=async(name:string)=>{const dialog=page.waitForEvent('dialog'),action=page.getByRole('button',{name,exact:true}).click({noWaitAfter:true});const alert=await dialog;assert.equal(alert.type(),'alert');assert.match(alert.message(),/保存结果尚未确认/);await alert.accept();await action;};
