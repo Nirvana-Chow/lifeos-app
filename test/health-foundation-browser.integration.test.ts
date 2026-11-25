@@ -11,12 +11,16 @@ import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from 
 
 const spaceId = 'synthetic-health-space';
 const observedAt = '2030-11-02T00:00:00.000Z';
-function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee',state:'planned'|'completed'='completed') {
-  const defaults = emptyHealthFields(kind==='sleep'?'sleep':'training','Asia/Shanghai');
+function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body',state:'planned'|'completed'='completed') {
+  const defaults = emptyHealthFields(kind==='sleep'||kind==='body'?kind:'training','Asia/Shanghai');
   const fields = {...defaults,title,occurredOn:'2030-11-02'};
   if (fields.personal.healthKind==='training') {
     fields.personal.activity = kind==='frisbee'?'other':'strength';
     fields.personal.state = state;
+  }
+  if (fields.personal.healthKind==='body') {
+    fields.personal.weight={value:70,unit:'kg'};
+    fields.personal.bodyFatPercent=20;
   }
   const id = '10000000-0000-4000-8000-'+String(n).padStart(12,'0');
   return {
@@ -87,7 +91,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   let items = [
     healthRecord(1,'合成睡眠','sleep'),healthRecord(2,'合成健身','strength'),
     healthRecord(3,'合成飞盘计划','frisbee','planned'),healthRecord(4,'合成飞盘实绩','frisbee'),
-    healthRecord(5,'合成健身计划','strength','planned'),
+    healthRecord(5,'合成健身计划','strength','planned'),healthRecord(6,'合成体重体脂','body'),
   ];
   const writes:string[] = [];
   await page.route('**/api/platform/**',async route => {
@@ -118,6 +122,12 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await filters.getByRole('button',{name:'睡眠',exact:true}).click();
   await expect(row('合成睡眠')).toBeVisible();
   await expect(row('合成健身')).toHaveCount(0);
+  await expect(row('合成体重体脂')).toHaveCount(0);
+  await filters.getByRole('button',{name:'体重与体脂',exact:true}).click();
+  await expect(row('合成体重体脂')).toBeVisible();
+  await expect(row('合成睡眠')).toHaveCount(0);
+  await expect(row('合成健身')).toHaveCount(0);
+  await expect(filters.getByLabel('运动状态')).toHaveCount(0);
   await filters.getByRole('button',{name:'健身训练',exact:true}).click();
   await expect(row('合成健身')).toBeVisible();
   await expect(row('合成飞盘实绩')).toHaveCount(0);
