@@ -613,14 +613,13 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   if(width<850)await expect(page.getByRole('button',{name:'打开导航',exact:true})).toBeHidden();
   await page.locator('aside').getByRole('button',{name:'待办',exact:true}).click();
   assert.equal(personalReads,reads,'client page transitions retain the verified data controller');
-  await viewport.evaluate(e=>e.scrollTop=0);await page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true}).dblclick();
+  await viewport.evaluate(e=>e.scrollTop=0);await viewport.getByText('合成待办甲',{exact:true}).dblclick();
   const input=page.getByRole('textbox',{name:'编辑待办',exact:true});await input.fill('未保存合成草稿');
   await confirmDiscard(page,false,nav);await expect(settingsPage).toHaveCount(0);
   await expect(input).toHaveValue('未保存合成草稿');assert.equal(writes,0,'refused settings departure never blur-submits or discards the draft');
   if(width===1365)await page.screenshot({path:join(source,`.review-results/settings-background-${width}.png`)});
   await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();});
   await expect(page).toHaveURL(origin+'/personal');
-  await page.getByRole('button',{name:'查看全部未完待办',exact:true}).click();
   await expect(page.getByRole('button',{name:'编辑标题：合成待办甲',exact:true})).toBeVisible();
   await page.goto(origin+'/personal?page=settings');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings');
   await page.goto(origin+'/personal?page=projects&modal=settings&panel=security');await expect(settingsPage).toBeVisible();await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await page.reload();
