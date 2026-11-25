@@ -7,6 +7,7 @@ import * as React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 import {requirements,selectRequirements,validateRequirementBaseline} from '../src/platform/requirements.ts';
+import {requirementDelivery} from '../src/ui-review/requirements-delivery.ts';
 const native=createRequire(import.meta.url);
 
 // Execute real React and the real baseline; CSS is the only loader replacement.
@@ -28,20 +29,30 @@ function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',p
  return renderToStaticMarkup(React.createElement(Page,props));
 }
 
-test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
+test('requirement pool renders its compact table and views without rows before status is checked',()=>{
  const html=renderPage();
  assert.doesNotMatch(html,/<(?:h[1-6]|summary)\b[^>]*>\s*(?:开发路线|每日进展|当前阶段|阶段路线图|反馈 Inbox|更新记录)/);
  assert.doesNotMatch(html,/href="\/personal\/requirements\/(?:roadmap|feedback|updates)(?:[?#][^"]*)?"/);
- assert.match(html,/按交付状态排序/);assert.match(html,/按时间排序/);assert.match(html,/部分合并/);assert.doesNotMatch(html,/按下一步排序/);
- assert.match(html,/href="https:\/\/github\.com\/Nirvana-Chow\/lifeos-app\/pull\/93"/);
+ assert.match(html,/按交付状态排序/);assert.match(html,/按时间排序/);assert.doesNotMatch(html,/按下一步排序/);
  assert.match(html,/<input[^>]*type="search"/);
  for(const id of ['phase','priority','implementation','acceptance'])assert.match(html,new RegExp('<label[^>]*for="requirements-'+id+'"'));
  assert.match(html,/data-requirements-grid="reui"/);
  for(const label of ['表格','看板','甘特'])assert.match(html,new RegExp('aria-label="'+label+'视图"'));
- assert.match(html,/LO-TASK-001/);assert.match(html,/LO-PROJECT-001/);
+ assert.match(html,/正在读取需求/);assert.doesNotMatch(html,/data-requirement-id|LO-TASK-001|LO-PROJECT-001/);
  assert.doesNotMatch(html,/<h4>验收条件|来源与源码依据/);
  assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
  assert.match(html,/已合并待上线/);assert.match(html,/已上线/);
+});
+
+
+test('the compact table shows public baseline rows and their existing result links once supplied',()=>{
+ const baseline=requirements(),rows=baseline.requirements;
+ const delivery=new Map(rows.map(item=>[item.id,requirementDelivery(item)]));
+ const html=renderPage('requirements-views.tsx','RequirementsTable',{rows,phases:baseline.roadmap!.phases,grouping:'none',onOpen:()=>{},delivery});
+ assert.match(html,/LO-TASK-001/);assert.match(html,/LO-PROJECT-001/);
+ assert.match(html,/部分合并/);
+ assert.match(html,/href="https:\/\/github\.com\/Nirvana-Chow\/lifeos-app\/pull\/93"/);
+ assert.doesNotMatch(html,/<h4>验收条件|来源与源码依据/);
 });
 
 

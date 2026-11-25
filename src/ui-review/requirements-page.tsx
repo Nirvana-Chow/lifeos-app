@@ -75,14 +75,14 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
   if(mutation.phase!=='saved'||!mutation.observed||concealed||handledObservation.current===mutation.observed)return;
   const entry=mutation.observed;
   handledObservation.current=entry;
-  if(creating){setRange('pending');setFilters({});setProgressFilter('all');void reload();}
+  if(mutation.savedMethod==='POST'){setRange('pending');setFilters({});setProgressFilter('all');void reload();}
   dirty.current=false;setCreating(false);setEditorItem(entry);setSelected(entry.requirement);
   setPool(previous=>{
    if(!previous)return previous;
    const present=previous.items.some(item=>item.id===entry.id);
    return {...previous,items:present?previous.items.map(item=>item.id===entry.id?entry:item):[...previous.items,entry],total:previous.total+(present?0:1)};
   });
- },[concealed,creating,mutation.phase,mutation.observed,reload]);
+ },[concealed,mutation.phase,mutation.observed,mutation.savedMethod,reload]);
  const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:pool?pool.items.map(item=>item.requirement):publicOnly?baseline.requirements:[]}),[displayed,pool,publicOnly]);
  const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
  const workflow=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields.workflow])??[]),[pool]);
