@@ -617,6 +617,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       return (
         <TaskTable
           viewPreferenceScope={props.viewPreferenceScope}
+          flatProjects
           tasks={rows}
           writable={canWrite}
           blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain}
@@ -659,7 +660,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <div className="lo-list-rows">{rows.map((task) => taskCard(task))}</div>
         </div>
       );
-    return <TaskBoard tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
+    return <TaskBoard flatProjects tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
   }
   function canLogOut() {
     if (props.saving || props.uncertain) return false;
@@ -812,7 +813,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           )}
           {(page === "tasks" || page === "inbox" || page === "projects" || page === "areas") &&
             <nav className="lo-task-sections" aria-label="待办分类视图">
-              {([{id:"tasks",label:"待办"},{id:"projects",label:"项目"},{id:"areas",label:"领域"}] as const).map(item =>
+              {([{id:"tasks",label:"待办"},{id:"projects",label:"项目"},{id:"areas",label:"领域"}] as const).filter(item=>item.id!=="areas"||page==="areas").map(item =>
                 <Button key={item.id} variant="ghost" aria-label={item.label+"分类视图"} aria-pressed={page === item.id || item.id === "tasks" && page === "inbox"}
                   data-workspace-nav onClick={() => navigate(item.id)}>{item.label}</Button>)}
             </nav>}
@@ -968,26 +969,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                 </label>
                 <label>到期<select aria-label="到期筛选" value={filter.due ?? "all"} onChange={event=>setFilter({...filter,due:event.target.value as TaskFilter['due']})}><option value="all">全部日期</option><option value="today">今日到期</option><option value="overdue">已逾期</option></select></label>
                 <label>收件箱<select aria-label="收件箱筛选" value={filter.inboxOnly?'inbox':'all'} onChange={event=>setFilter({...filter,inboxOnly:event.target.value==='inbox'})}><option value="all">全部待办</option><option value="inbox" disabled={metrics.inbox === null}>收件箱{metrics.inbox === null?'（未提供分类）':''}</option></select></label>
-                <label>
-                  领域
-                  <select
-                    value={filter.areaId ?? ""}
-                    onChange={(event) =>
-                      setFilter({
-                        ...filter,
-                        areaId: event.target.value || null,
-                        projectId: null,
-                      })
-                    }
-                  >
-                    <option value="">全部领域</option>
-                    {data?.areas.map((area) => (
-                      <option key={area.id} value={area.id}>
-                        {area.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label>
                   项目
                   <select
