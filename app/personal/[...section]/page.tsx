@@ -14,13 +14,13 @@ import {PrivacyBoundary} from '../../../src/personal-candidate/privacy';
 
 export const dynamic='force-dynamic';
 export const metadata={title:'LifeOS · 私人工作台',robots:{index:false,follow:false}};
-export default async function Page({params,searchParams}:{params:Promise<{section:string[]}>;searchParams:Promise<{q?:string;type?:string;id?:string}>}){
+export default async function Page({params,searchParams}:{params:Promise<{section:string[]}>;searchParams:Promise<{q?:string;type?:string;id?:string;from?:string|string[];to?:string|string[]}>}){
  let principal=null;
  try{principal=await readPlatformPagePrincipal(await headers());}catch{}
  if(!principal)redirect('/login');
  const module=resolvePrivateModule((await params).section);
  if(!module)notFound();
- if(module.id==='search'){const q=await searchParams;return <PrivacyBoundary><PersonalSearchPage query={q.q} type={q.type} id={q.id}/></PrivacyBoundary>;}
+ if(module.id==='search'){const q=await searchParams;return <PrivacyBoundary><PersonalSearchPage query={q.q} type={q.type} id={q.id} from={q.from} to={q.to}/></PrivacyBoundary>;}
  if(module.id==='schedule')return <PrivacyBoundary><PersonalCalendarPage/></PrivacyBoundary>;
  if(module.id==='health'||module.id==='people'||module.id==='journal')return <PrivacyBoundary><PersonalRecordPage type={module.id==='people'?'person':module.id}/></PrivacyBoundary>;
  if(module.id==='finance')return <PrivacyBoundary><PersonalFinancePage/></PrivacyBoundary>;
