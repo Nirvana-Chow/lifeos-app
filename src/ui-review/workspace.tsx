@@ -854,15 +854,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {(page === "tasks" || page === "inbox") && (
             <>
               <div className="lo-task-toolbar">
-                {page === "tasks" && props.viewPreferenceScope && data?.coverage === "complete" &&
-                  (props.renderTaskClassificationPreview ? <Dialog>
-                    <DialogTrigger asChild><Button variant="outline">分类预览</Button></DialogTrigger>
+                {page === "tasks" && (props.renderTaskClassificationPreview
+                  ? access.authenticated !== false && <Dialog key={retainedPrivateScope}>
+                    {verifiedPrivateScope && data?.coverage === "complete" &&
+                      <DialogTrigger asChild><Button variant="outline">分类预览</Button></DialogTrigger>}
                     <DialogContent container={portalContainer} className="flex max-h-[85dvh] flex-col sm:max-w-4xl">
                       <DialogTitle>待办分类预览</DialogTitle>
                       <DialogDescription>核对原待办、项目和标签</DialogDescription>
                       <div className="min-h-0 overflow-y-auto">{props.renderTaskClassificationPreview()}</div>
                     </DialogContent>
-                  </Dialog> : <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>)}
+                  </Dialog>
+                  : verifiedPrivateScope && data?.coverage === "complete" &&
+                    <Button asChild variant="outline"><a href="/personal/task-classification-preview">分类预览</a></Button>)}
                 <label className="lo-search">
                   <Search size={17} />
                   <Input
