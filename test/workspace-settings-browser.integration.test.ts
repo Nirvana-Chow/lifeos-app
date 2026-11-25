@@ -179,7 +179,7 @@ async function fixture(root:string,managedCallback=false,moduleNavigation=false)
   symlink(join(source,'components'),join(root,'components')),
  ]);
  await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformMfaState=async()=>({kind:"ready"}); export const readPlatformPagePrincipal=async()=>({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true;\n');
- if(moduleNavigation)await Promise.all(['journal','schedule'].map(name=>
+ if(moduleNavigation)await Promise.all(['journal','schedule','media','cooking'].map(name=>
   cp(join(source,'app/personal',name),join(root,'app/personal',name),{recursive:true})));
  if(managedCallback){
   await cp(join(source,'app/account/mcp'),join(root,'app/account/mcp'),{recursive:true});
@@ -267,7 +267,7 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const expected=[
   ['日常',[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]],
   ['身体基础',[['健康','/personal/health']]],
-  ['兴趣学习',[['做饭','/personal/cooking'],['书影音','/personal/media']]],
+  ['兴趣学习',[['书影音','/personal/media'],['做饭','/personal/cooking']]],
   ['生活与关系',[['人物','/personal/people']]],
   ['财务',[['财务','/personal/finance'],['账户资产投资','/personal/portfolio']]],
   ['职业成长',[['职业与简历','/personal/career']]],
@@ -283,6 +283,20 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
   await expect(mainNav).toHaveText(items.map(([label])=>label));
   for(const [label,href] of items)if(href)await expect(nav.getByRole('link',{name:label,exact:true})).toHaveAttribute('href',href);
  }
+ const learning=modules.getByRole('button',{name:'兴趣学习',exact:true});
+ for(const [label,path] of [['书影音','/personal/media'],['做饭','/personal/cooking']] as const){
+  await learning.click();
+  const response=await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(45_000)});
+  assert.equal(response.status,200);await response.text();
+  await nav.getByRole('link',{name:label,exact:true}).click();
+  await expect(page).toHaveURL(origin+path);
+  await expect(page.getByRole('heading',{name:label,exact:true,level:1})).toBeVisible();
+  await expect(learning).toHaveAttribute('aria-pressed','true');
+  await expect(nav.getByRole('link',{name:label,exact:true})).toHaveAttribute('aria-current','page');
+ }
+ await header.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal');
+ await modules.getByRole('button',{name:'项目',exact:true}).click();
  await nav.getByRole('button',{name:'项目',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=projects');
  await expect(modules.getByRole('button',{name:'项目',exact:true})).toHaveAttribute('aria-pressed','true');
