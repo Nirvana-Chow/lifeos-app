@@ -245,7 +245,14 @@ class CompatTest(unittest.TestCase):
 
     def test_candidate_still_has_one_entry_and_image_build(self):
         workflow = (ROOT / compat.CI).read_text()
-        self.assertEqual([path.name for path in (ROOT / '.github/workflows').glob('*.yml')], ['ci.yml'])
+        directory = ROOT / '.github/workflows'
+        legacy = {'qualification.yml', 'visual-qualification.yml'}
+        self.assertEqual({path.name for path in directory.iterdir() if path.suffix in {'.yaml', '.yml'}},
+                         {'ci.yml', *legacy})
+        self.assertIn('\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n', workflow)
+        for name in legacy:
+            trigger = (directory / name).read_text().split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
+            self.assertEqual(trigger.strip(), 'workflow_dispatch:', name)
         for command in ('npm test', 'npm run typecheck', 'npm audit --audit-level=high', 'docker build --pull'):
             self.assertEqual(workflow.count(command), 1, command)
         self.assertEqual(workflow.count('"$CI_IMAGE_ID"'), 2)
