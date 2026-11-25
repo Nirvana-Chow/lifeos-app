@@ -26,7 +26,7 @@ PINS = {
         compat.CI: 'da08f412b20a21a1d36642cf137acadcae917fe054803bca6bf63e9021bbd724',
         compat.LEGACY_QUALIFICATION: '384e14c8680899a8e170d05dfa10ceb50e6eb33a2ca299dd843859b3d5c666d4',
     },
-    UNIFIED: {compat.CI: '64891668f9b612a7215f26f69d3498f108fbb79c29a453496892b1abda476260'},
+    UNIFIED: {compat.CI: '96479b817a67d8e5f02f2db4f359d34185ed3474e0b1a16877cd4e9478ff05df'},
 }
 KEY = b'fixture-only-webhook-key'
 TARGET = 'fixture-platform'

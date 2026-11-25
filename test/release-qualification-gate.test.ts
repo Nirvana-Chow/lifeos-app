@@ -72,18 +72,18 @@ const jobSections=Object.fromEntries([...workflow.split('jobs:\n')[1]!.matchAll(
 const capture='Upload only named synthetic images and their finite manifest';
 const captureGuard='Verify finite synthetic capture manifest and PNGs';
 const attemptUrl=(runId:number,attempt:number)=>`/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`;
-function attempt(profile:'routine'|'full',ui:boolean,{sha:source=sha,runId=51,attempt=1}={}){
+function attempt(profile:'routine'|'full',ui:boolean,{sha:source=sha,runId=51,attempt=1,audit=profile==='full'}={}){
  const identity={sha:source,runId,attempt},key=`${source}:${runId}:${attempt}`,suffix=key.replaceAll(':','-');
  const full=profile==='full';
  const visual=full&&ui;
  const results={'policy':'success','checks':'success','platform':full?'success':'skipped',
-  'recovery-pg':full?'success':'skipped','rendered':full||ui?'success':'skipped'};
+  'recovery-pg':full?'success':'skipped','rendered':'success'};
  const needs=Object.fromEntries(Object.entries(results).map(([name,result])=>[name,{result,outputs:{} as Record<string,string>}]));
- needs.policy.outputs={identity:key,profile,visual:String(visual),ui:String(ui)};
- if(full)needs.rendered.outputs={identity:key,'build-id':'synthetic_build','compiled-id':'601',...(visual?{'capture-id':'602'}:{})};
+ needs.policy.outputs={identity:key,profile,visual:String(visual),ui:String(ui),audit:String(audit)};
+ needs.rendered.outputs={identity:key,'build-id':'synthetic_build',...(full?{'compiled-id':'601'}:{}),...(visual?{'capture-id':'602'}:{})};
  const ran=(condition?:string)=>{
   if(!condition)return true;
-  const predicates=condition.split(/ (?:&&|\|\|) /).map(part=>part.includes('outputs.visual')?visual:part.includes('outputs.ui')?ui:full);
+  const predicates=condition.split(/ (?:&&|\|\|) /).map(part=>part.includes('outputs.visual')?visual:part.includes('outputs.ui')?ui:part.includes('outputs.audit')?audit:full);
   return condition.includes(' || ')?predicates.some(Boolean):predicates.every(Boolean);
  };
  const url=`https://github.com/${repo.full_name}/actions/runs/${runId}`;
@@ -137,7 +137,7 @@ const failures:[string,(value:ReturnType<typeof attempt>)=>void][]=[
  ['pending capture guard',a=>{a.rendered.steps.find(step=>step.name===captureGuard)!.status='in_progress';}],
  ['skipped named upload',a=>{a.rendered.steps.find(step=>step.name===capture)!.conclusion='skipped';}],
  ['required security case absent',a=>{const p=a.jobs.find(job=>job.name===jobSections.platform.name)!;p.steps=p.steps.filter(step=>!step.name.startsWith('Qualify native MFA'));}],
- ['unit checks ran without the security audit',a=>{const j=a.jobs.find(job=>job.name===jobSections.checks.name)!;j.steps=j.steps.filter(step=>!step.name.includes('security audit'));}],
+ ['dependency audit required but absent',a=>{const j=a.jobs.find(job=>job.name===jobSections.policy.name)!;j.steps=j.steps.filter(step=>!step.name.includes('security audit'));}],
  ['missing screenshot artifact ID',a=>{delete a.needs.rendered.outputs['capture-id'];}],
  ['missing compiled artifact ID',a=>{delete a.needs.rendered.outputs['compiled-id'];}],
  ['expired screenshot archive',a=>{a.images.expired=true;}],
@@ -160,22 +160,31 @@ test('only expected skips are accepted and a full rerun can supply all fresh pro
  a.needs.platform.result='success';await assert.rejects(a.verify(),/DAG_SCOPE_UNCONFIRMED/);
  a.needs.platform.result='skipped';
  a.jobs.splice(a.jobs.indexOf(a.rendered),1);a.response.total_count--;
- await a.verify();
+ await assert.rejects(a.verify(),/REQUIRED_JOB_UNCONFIRMED/);
  await attempt('full',true,{attempt:2}).verify();
 });
 
-test('routine UI requires source browser evidence and rejects a public build',async()=>{
+test('routine UI requires a real public build and skips hosted browser tests',async()=>{
  const a=attempt('routine',true);
  const browser=a.rendered.steps.find(step=>step.name==='Verify additional UI cases actually ran')!;
- browser.conclusion='skipped';
- await assert.rejects(a.verify(),/NAMED_STEP_EVIDENCE_UNCONFIRMED/);
  browser.conclusion='success';
- const build=a.rendered.steps.find(step=>step.name==='Build the exact public source image and read back its source proof')!;
- build.conclusion='success';
  await assert.rejects(a.verify(),/NAMED_STEP_EVIDENCE_UNCONFIRMED/);
+ browser.conclusion='skipped';
+ const build=a.rendered.steps.find(step=>step.name==='Build the exact public source image and read back its source proof')!;
  build.conclusion='skipped';
- a.needs.rendered.outputs['build-id']='unexpected';
+ await assert.rejects(a.verify(),/NAMED_STEP_EVIDENCE_UNCONFIRMED/);
+ build.conclusion='success';
+ a.needs.rendered.outputs['compiled-id']='unexpected';
  await assert.rejects(a.verify(),/UNEXPECTED_COMPILED_EVIDENCE/);
+});
+
+test('audit follows dependency edits or the existing manual qualification entry',async()=>{
+ const ordinary={profile:'routine',reason:'presentation-only-since-full-green',baselineSha:sha,changedPaths:['src/ui-review/requirements-page.tsx']} as const;
+ assert.equal(gate.dependencyAuditRequired({...ordinary,changedPaths:[...ordinary.changedPaths]},'push'),false);
+ assert.equal(gate.dependencyAuditRequired({...ordinary,profile:'full',changedPaths:['src/platform/auth.ts']},'push'),false);
+ assert.equal(gate.dependencyAuditRequired({...ordinary,profile:'full',changedPaths:['package-lock.json']},'push'),true);
+ assert.equal(gate.dependencyAuditRequired({...ordinary,changedPaths:[]},'workflow_dispatch'),true);
+ await attempt('full',false,{audit:false}).verify();
 });
 
 test('visual scope matches key UI and fixture paths',()=>{
@@ -215,7 +224,7 @@ test('real CLI classifies first as full and final gate rejects missing exact-att
   };
   const classifyResult=run('--classify',{});
   assert.equal(classifyResult.status,0,classifyResult.stderr);
-  assert.match(readFileSync(output,'utf8'),/^profile=full\nui=true\nvisual=true\nidentity=/);
+  assert.match(readFileSync(output,'utf8'),/^profile=full\nui=true\nvisual=true\naudit=true\nidentity=/);
   const good=run('--verify',responses);
   assert.equal(good.status,0,good.stderr);
   assert.equal(JSON.parse(good.stdout).visual,'verified');

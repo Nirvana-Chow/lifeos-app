@@ -39,6 +39,7 @@ class SourceContract:
     visual: bool
     pins: dict[str, WorkflowPin]
     affected_ui: bool = False
+    routine_build: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ def _source(contract, workflow_bytes):
     paths = {CI, LEGACY_QUALIFICATION} if contract.mode == 'legacy' else {CI}
     if contract.mode == 'unified':
         _require(type(contract.affected_ui) is bool
+                 and type(contract.routine_build) is bool
                  and contract.visual is (contract.profile == 'full' and contract.affected_ui),
                  'SOURCE_CONTRACT_UNCONFIRMED')
     _require(set(contract.pins) == paths and set(workflow_bytes) == paths,
@@ -167,20 +169,23 @@ def _artifacts(evidence, identity, expected_names):
 def _unified(evidence, identity, contract):
     full = contract.profile == 'full'
     visual = contract.visual
+    routine_build = contract.routine_build
     expected = {name: 'success' for name in RELEASE_JOBS | {POLICY}}
     expected[PLATFORM] = expected[RECOVERY] = 'success' if full else 'skipped'
-    expected[RENDERED] = 'success' if full or contract.affected_ui else 'skipped'
+    expected[RENDERED] = 'success' if full or routine_build or contract.affected_ui else 'skipped'
     jobs = _jobs(evidence, identity, expected)
     # The exact pinned gate checks all named producers, case guards and outputs.
     _step(jobs[GATE], GATE_STEP)
     names = []
     suffix = f'{identity.sha}-{identity.run_id}-{identity.attempt}'
-    if full or contract.affected_ui:
+    if full or routine_build or contract.affected_ui:
         rendered = jobs[RENDERED]
-        for name in (IMAGE_STEP, 'Verify compiled default-closed routes', COMPILED_STEP,
-                     'Verify exact scoped release cases and cleanup'):
+        for name in (IMAGE_STEP, 'Verify compiled default-closed routes'):
+            _step(rendered, name, 'success' if full or routine_build else 'skipped')
+        for name in (COMPILED_STEP, 'Verify exact scoped release cases and cleanup'):
             _step(rendered, name, 'success' if full else 'skipped')
-        _step(rendered, 'Verify additional UI cases actually ran', 'success' if contract.affected_ui else 'skipped')
+        _step(rendered, 'Verify additional UI cases actually ran',
+              'success' if contract.affected_ui and (full or not routine_build) else 'skipped')
         for name in (CAPTURE_GUARD, CAPTURE_STEP):
             _step(rendered, name, 'success' if visual else 'skipped')
     if full:

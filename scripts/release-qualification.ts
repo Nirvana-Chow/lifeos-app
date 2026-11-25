@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {appendFileSync, readFileSync} from 'node:fs';
 import {matchesGlob} from 'node:path';
-import {fullGreenRecord, localReleaseDecision, outputDecision} from './release-policy.ts';
+import {fullGreenRecord, localReleaseDecision, outputDecision, type Decision} from './release-policy.ts';
 
 const repository='Nirvana-Chow/lifeos-app';
 const path='.github/workflows/ci.yml';
@@ -75,6 +75,11 @@ export function readVisualScope(context:ScopeContext,directory=process.cwd()):{r
  }catch{return reject();}
 }
 
+export function dependencyAuditRequired(decision:Decision,event:string) {
+ return event==='workflow_dispatch'||decision.reason==='local-evidence-unavailable'||!decision.changedPaths.length||
+  decision.changedPaths.some(file=>/(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|\.npmrc)$/.test(file));
+}
+
 const evidence = {
  policy: {
   name: 'Qualification policy',
@@ -83,7 +88,7 @@ const evidence = {
  checks: {
   name: 'Unit, types and source contracts',
   steps: ['Confirm exact source and single npm lock', 'Unit and source contract tests (optional integrations are not acceptance)',
-   'Generate route types without building an application', 'Type check', 'Locked dependency security audit', 'Preserve dependency identity'],
+   'Generate route types without building an application', 'Type check', 'Preserve dependency identity'],
  },
  platform: {
   name: 'Isolated Auth, permissions and PostgreSQL',
@@ -105,13 +110,14 @@ const evidence = {
  },
  rendered: {
   name: 'Exact package and isolated TLS/browser qualification',
-  steps: ['Confirm exact source identity', 'Install fixed runner-only Chinese fonts and check native Chrome/NSS',
+  steps: ['Confirm exact source identity',
+   'Build the exact public source image and read back its source proof', 'Verify compiled default-closed routes',
    'Confirm verification preserved the committed lock'],
  },
 };
 const compiledStep = 'Publish exact compiled Next output';
 const captureStep = 'Upload only named synthetic images and their finite manifest';
-const fullFixtureSteps = ['Build the exact public source image and read back its source proof', 'Verify compiled default-closed routes', compiledStep,
+const fullFixtureSteps = ['Install fixed runner-only Chinese fonts and check native Chrome/NSS', compiledStep,
  'Run scoped TLS recovery, permit, browser and journal scenarios', 'Verify exact scoped release cases and cleanup'];
 const fullUiSteps = [
  'Qualify enabled classification review in isolated desktop and mobile Chrome',
@@ -131,9 +137,9 @@ const hashPattern = /^[0-9a-f]{64}$/;
 function identityString(id:Identity) {
  return [id.sha,id.runId,id.attempt].join(':');
 }
-function jobResults(full:boolean,ui:boolean): Record<JobId,'success'|'skipped'> {
+function jobResults(full:boolean): Record<JobId,'success'|'skipped'> {
  return {policy:'success',checks:'success',platform:full?'success':'skipped',
-  'recovery-pg':full?'success':'skipped',rendered:full||ui?'success':'skipped'};
+  'recovery-pg':full?'success':'skipped',rendered:'success'};
 }
 function checkSteps(job:Row,names:string[],conclusion='success') {
  confirmed(Array.isArray(job.steps),'NAMED_STEP_EVIDENCE_UNCONFIRMED');
@@ -155,7 +161,7 @@ function attemptJobs(id:Identity,jobs:Row) {
  return map;
 }
 function checkProducers(jobs:Map<string,Row>,full:boolean,ui:boolean) {
- const expected=jobResults(full,ui);
+ const expected=jobResults(full);
  for(const [jobId,descriptor] of Object.entries(evidence)) {
   const result=expected[jobId as JobId];
   const job=jobs.get(descriptor.name);
@@ -165,13 +171,9 @@ function checkProducers(jobs:Map<string,Row>,full:boolean,ui:boolean) {
   confirmed(job?.status==='completed'&&job.conclusion===result,'REQUIRED_JOB_UNCONFIRMED');
   if(result==='success')checkSteps(job,descriptor.steps);
  }
- if(full||ui) {
-  const rendered=jobs.get(evidence.rendered.name);
-  confirmed(rendered);
-  checkSteps(rendered,fullFixtureSteps,full?'success':'skipped');
-  checkSteps(rendered,uiSteps,ui?'success':'skipped');
-  checkSteps(rendered,[...fullUiSteps,...visualSteps],full&&ui?'success':'skipped');
- }
+ const rendered=jobs.get(evidence.rendered.name)!;
+ checkSteps(rendered,fullFixtureSteps,full?'success':'skipped');
+ checkSteps(rendered,[...uiSteps,...fullUiSteps,...visualSteps],full&&ui?'success':'skipped');
 }
 
 async function verifiedArtifact(apiRead:typeof api,artifactId:unknown,name:string,id:Identity) {
@@ -191,7 +193,8 @@ export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typ
  const full=outputs.profile==='full';
  const visual=full&&ui;
  confirmed(outputs.visual===String(visual),'POLICY_EVIDENCE_UNCONFIRMED');
- const expected=jobResults(full,ui);
+ const expected=jobResults(full);
+ confirmed(outputs.audit==='true'||outputs.audit==='false','POLICY_EVIDENCE_UNCONFIRMED');
  confirmed(Object.keys(needs).length===Object.keys(expected).length&&
   Object.entries(expected).every(([name,result])=>needs[name]?.result===result),'DAG_SCOPE_UNCONFIRMED');
 
@@ -199,13 +202,14 @@ export async function verifyAttempt(id:Identity,ui:boolean,needs:Row,apiRead:typ
  const allowed=new Set([eligibilityName,...Object.values(evidence).map(job=>job.name)]);
  confirmed([...jobs.keys()].every(name=>allowed.has(name)),'ATTEMPT_JOBS_UNCONFIRMED');
  checkProducers(jobs,full,ui);
+ checkSteps(jobs.get(evidence.policy.name)!,['Locked dependency security audit'],outputs.audit==='true'?'success':'skipped');
 
  const rendered=needs.rendered.outputs??{};
+ confirmed(rendered.identity===identityString(id)&&typeof rendered['build-id']==='string'&&
+  /^[A-Za-z0-9_-]{1,100}$/.test(rendered['build-id']),'BUILD_EVIDENCE_UNCONFIRMED');
  if(full) {
-  confirmed(rendered.identity===identityString(id)&&typeof rendered['build-id']==='string'&&
-   /^[A-Za-z0-9_-]{1,100}$/.test(rendered['build-id']),'BUILD_EVIDENCE_UNCONFIRMED');
   await verifiedArtifact(apiRead,rendered['compiled-id'],'lifeos-compiled-'+identityString(id).replaceAll(':','-'),id);
- } else confirmed(!rendered.identity&&!rendered['build-id']&&!rendered['compiled-id'],'UNEXPECTED_COMPILED_EVIDENCE');
+ } else confirmed(!rendered['compiled-id'],'UNEXPECTED_COMPILED_EVIDENCE');
  if(visual)await verifiedArtifact(apiRead,rendered['capture-id'],'synthetic-rendered-'+identityString(id).replaceAll(':','-'),id);
  else confirmed(!rendered['capture-id'],'UNEXPECTED_VISUAL_EVIDENCE');
  return {sourceSha:id.sha,runId:id.runId,runAttempt:id.attempt,profile:outputs.profile,visual:visual?'verified':'not-scheduled'};
@@ -288,7 +292,7 @@ async function main() {
  if(process.argv[2]==='--classify') {
   const decision=await classify(id,event);
   outputDecision(decision);
-  appendFileSync(process.env.GITHUB_OUTPUT!,`ui=${scope.required}\nvisual=${decision.profile==='full'&&scope.required}\nidentity=${identityString(id)}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT!,`ui=${scope.required}\nvisual=${decision.profile==='full'&&scope.required}\naudit=${dependencyAuditRequired(decision,event)}\nidentity=${identityString(id)}\n`);
  } else if(process.argv[2]==='--verify') {
   const result=await verifyAttempt(id,scope.required,JSON.parse(process.env.CI_NEEDS!),api);
   console.log(JSON.stringify({...result,visualScope:scope.reason}));
