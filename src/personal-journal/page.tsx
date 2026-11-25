@@ -11,8 +11,6 @@ export function JournalRecordPage(){
  const guard=useRef<(()=>boolean)|null>(null);
  const mayLeave=()=>guard.current?.()!==false;
  return <LifeOSWorkspace desktopNavigation state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} contentPage={{wide:true,title:'记录',content:<div className={s.page}>
-  <JournalHistoryPanel onBeforeOpen={mayLeave} activityLink={<Link href="/personal/activity" onNavigate={event=>{if(!mayLeave())event.preventDefault();}}>查看每日活动 · 记录与开发</Link>}>
-   <details className={s.disclosure}><summary>管理日记</summary><PersonalRecordWorkbench type="journal" navigationGuard={guard}/></details>
-  </JournalHistoryPanel>
+  <JournalHistoryPanel onBeforeOpen={mayLeave} renderEditor={(onSaved,journalDay)=><PersonalRecordWorkbench type="journal" navigationGuard={guard} writeJournal journalDay={journalDay} onJournalSaved={onSaved}/>} activityLink={<Link href="/personal/activity" onNavigate={event=>{if(!mayLeave())event.preventDefault();}}>查看每日活动 · 记录与开发</Link>}/>
  </div>}} onBeforeNavigate={mayLeave}/>;
 }
