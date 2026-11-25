@@ -78,7 +78,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   setEditor({target:next,binding,singleCreate});
   return true;
  };
- const close=()=>{setEditor(null);queueMicrotask(()=>returnFocus.current?.isConnected&&returnFocus.current.focus());};
+ const restoreFocus=()=>{if(returnFocus.current?.isConnected)returnFocus.current.focus();};
+ const close=()=>{setEditor(null);if(!editor?.singleCreate)queueMicrotask(restoreFocus);};
  const save=async(task:TaskIdentity|null,fields:PersonalEditorFields)=>{if(!commandStorage.current)return null;const saved=await controller.current?.saveTask(task,fields)??null;if(saved)cellDrafts.confirm(saved);return saved;};
  const retry=async()=>{const saved=await controller.current?.retry()??null;if(saved)cellDrafts.confirm(saved);return saved;};
  const getTaskFields=(task:TaskIdentity)=>{
@@ -95,6 +96,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}
   onStopWaiting={()=>controller.current?.cancel()}
   onBatch={editor.singleCreate?undefined:()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
+  onRestoreFocus={editor.singleCreate?restoreFocus:undefined}
   closeGuard={editorCloseGuard}
  />;
  return <>{children({
