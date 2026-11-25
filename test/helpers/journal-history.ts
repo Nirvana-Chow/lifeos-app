@@ -5,3 +5,15 @@ export function journalFixture(number:number,date:string|null,text='Synthetic or
  return {id,kind:'inbox',draft:{...fields,disposition:'reference'},revision:1,createdAt:'2026-11-12T00:00:00.000Z',updatedAt:'2026-11-12T00:00:00.000Z',syncState:'draft',externalStatus:null,source:{id:'20000000-0000-4000-8000-'+String(number).padStart(12,'0'),system:'website',externalId:id,version:1,asOf:'2026-11-12T00:00:00.000Z',original:{marker:'personal-manual-v1',spaceId:'synthetic-journal-space',type:'journal',input:{spaceId:'synthetic-journal-space',confirmed:true,fields}}}};
 }
 export const journalStatus={ownerId:'synthetic-journal-owner',spaceId:'synthetic-journal-space',storageVerified:true,allowedTypes:['journal']};
+
+export function topicFixture(number:number,title:string):PublicEntry {
+ const row=journalFixture(number,null,'');
+ const fields={title,text:'',occurredOn:null,personal:{type:'topic' as const}};
+ return {...row,draft:{...fields,disposition:'reference'},source:{...row.source,original:{marker:'personal-manual-v1',spaceId:journalStatus.spaceId,type:'topic',input:{spaceId:journalStatus.spaceId,confirmed:true,fields}}}};
+}
+export function journalWithTopic(row:PublicEntry,topic:PublicEntry):PublicEntry {
+ if(!("disposition" in row.draft))throw Error("Expected a journal fixture");
+ const {id,revision,source:{id:sourceId}}=topic;
+ const draft={...row.draft,personal:{type:'journal' as const,links:{project:null,domain:null,people:[],topics:[{id,revision,sourceId}]} }};
+ return {...row,draft};
+}

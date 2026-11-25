@@ -33,6 +33,6 @@ node src/personal-daily/activity-review/check-browser.mjs /tmp/lifeos-activity-e
 
 现有日记页的「查看每日活动」进入 `/personal/activity`。打开日记原文后可选择「查看当天活动」，以 `/personal/activity?date=YYYY-MM-DD` 定位到日视图。热力图内切换时间维度或类别时保留所选日期。`journal-source.ts` 复用本人日记 GET 契约和前后绑定校验。现有快照包含正文，活动页只投影已核对的 ID、标题、来源引用和记录日期。正文仍在既有原记录入口查看。
 
-完整当前快照只能证明读到了哪些记录。存在日记的日期为「部分覆盖」，相邻无条目的日期为「覆盖未知」。日记未获授权、绑定变更或响应截断时仍可浏览日期与已有开发凭据，日记详情清空。Memos 明确显示未接入。站内开发复用需求进度已有的合并凭据，链接指向原 PR。仅展示有证据的合并结果，覆盖保持不完整，候选、实际发布、验收和其余开发日期未知。
+完整当前快照只能证明读到了哪些记录。存在日记的日期为「部分覆盖」，相邻无条目的日期为「覆盖未知」。日记未获授权、绑定变更或响应截断时仍可浏览日期与已有开发凭据，日记详情清空。Memos 复用站内日记快照中已确认关联随手记、思考或 Memos 主题的记录。缺失或过期主题引用保留待核对，热力图只计已归类条目。站内开发复用需求进度已有的合并凭据，链接指向原 PR。仅展示有证据的合并结果，覆盖保持不完整，候选、实际发布、验收和其余开发日期未知。
 
-运行 `node src/personal-daily/activity-review/check-journal-mapping.mjs` 或以 `RUN_ACTIVITY_OWNER_BROWSER=1` 运行 `test/activity-owner-browser.integration.test.ts`。浏览器使用合成日记响应。正式发布、本人实际记录读回以及 Memos 和完整开发来源仍由既有流程分别验证。
+运行 `node src/personal-daily/activity-review/check-journal-mapping.mjs` 或以 `RUN_ACTIVITY_OWNER_BROWSER=1` 运行 `test/activity-owner-browser.integration.test.ts`。浏览器使用合成日记响应。正式发布、本人实际记录读回、主题覆盖及完整开发来源仍由既有流程分别验证。

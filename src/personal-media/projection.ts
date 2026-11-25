@@ -10,6 +10,27 @@ export const mediaKindFilterLabels:Record<MediaKindFilter,string>={all:'全部�
 export function matchesMediaKind(kind:MediaKind,filter:MediaKindFilter):boolean{
  return filter==='all'||kind===filter||filter==='screen'&&(kind==='film'||kind==='series');
 }
+export const mediaBrowseGroups = [
+ {label:'阅读', options:[['reading','全部阅读'],['book','书籍'],['novel','网文／小说']]},
+ {label:'影视', options:[['screen','全部影视'],['film','电影'],['series','电视剧']]},
+ {label:'其他兴趣', options:[['music','音乐'],['photography','摄影']]},
+] as const;
+export type MediaBrowseFilter = 'all' | typeof mediaBrowseGroups[number]['options'][number][0];
+const novelTopicTitles = new Set(['网文','網文','网络小说','網絡小說','网络小說','網路小說','网文小说','網文小說','小说','小說']);
+
+export function isNovelTopic(entry:PublicEntry):boolean {
+ const draft=entry.draft as {title?:unknown;personal?:{type?:unknown}};
+ return draft?.personal?.type==='topic'&&typeof draft.title==='string'&&novelTopicTitles.has(draft.title.normalize('NFKC').trim());
+}
+
+export function matchesMediaBrowse(personal:MediaPersonal, filter:MediaBrowseFilter, topics:readonly PublicEntry[]):boolean {
+ if(filter==='music'||filter==='photography')return false;
+ if(filter==='reading')return personal.mediaKind==='book';
+ if(filter!=='book'&&filter!=='novel')return matchesMediaKind(personal.mediaKind,filter);
+ if(personal.mediaKind!=='book')return false;
+ const hasNovelTopic=personal.links.topics.some(pin=>topics.some(topic=>topic.id===pin.id&&topic.source?.id===pin.sourceId&&isNovelTopic(topic)));
+ return filter==='novel'?hasNovelTopic:!hasNovelTopic;
+}
 export const mediaStateLabels:Record<MediaState,string>={wish:'想读 / 想看',in_progress:'进行中',completed:'已完成',paused:'已暂停'};
 export const mediaUnitLabels={page:'页',episode:'集',percent:'%'} as const;
 export function mediaProgressLabel(personal:MediaPersonal):string|null{const p=personal.progress;if(p.unit===null)return null;const unit=mediaUnitLabels[p.unit];if(p.current===null)return p.total===null?null:`总量 ${p.total} ${unit}，进度未知`;return `${p.current}${p.total===null?'':` / ${p.total}`} ${unit}`;}

@@ -51,9 +51,12 @@ test('the original route-ready oracle accepts the exact read-only search surface
 test('the real route-ready oracle rejects incomplete or writable search and retains the todo requirement elsewhere',async()=>{
  const changes:((nodes:ReadyNode[])=>void)[]=[nodes=>{nodes[0].name='统一搜索';},nodes=>{nodes.splice(1,1);},nodes=>{nodes[1].attributes!.action='/personal';},nodes=>{nodes[1].attributes!.method='post';},nodes=>{nodes.splice(2,1);},nodes=>{nodes[2].enabled=false;},nodes=>{nodes[2].attributes!.name='other';},nodes=>{nodes[2].attributes!.maxlength='1000';},nodes=>{nodes[3].enabled=false;},nodes=>{nodes[3].attributes!.type='button';},nodes=>{nodes[3].parent='outside';},nodes=>{nodes.push({role:'button',name:'新建待办'});}];
  for(const change of changes){const nodes=searchReadyNodes();change(nodes);await assert.rejects(fixture.readyHeading(readySurface(nodes) as never,'搜索本人记录'));}
- const overview:ReadyNode[]=[{role:'heading',level:1,name:'总览'},{role:'button',name:'新建待办'}];
+ const overview:ReadyNode[]=[{role:'heading',level:1,name:'总览'}];
  await fixture.readyHeading(readySurface(overview) as never,'总览');
- await assert.rejects(fixture.readyHeading(readySurface(overview.slice(0,1)) as never,'总览'));
+ await assert.rejects(fixture.readyHeading(readySurface([...overview,{role:'button',name:'新建待办'}]) as never,'总览'));
+ const todo:ReadyNode={role:'heading',level:1,name:'待办'};
+ await fixture.readyHeading(readySurface([todo,{role:'button',name:'新建待办'}]) as never,'待办');
+ await assert.rejects(fixture.readyHeading(readySurface([todo]) as never,'待办'));
 });
 test('keyboard lifecycle diagnostics contain at most three bounded integer snapshots and no private values',()=>{
  const secret='private-keyboard-secret';

@@ -39,12 +39,13 @@ async function upcoming(fetcher: typeof fetch, scope: string) {
   return {rows:rows.slice(0,5), appleMissing:!snapshot.sources.some(source=>source.id==='apple-calendar'&&source.connected)};
 }
 
-async function recentJournal(fetcher: typeof fetch, scope: string) {
-  const {binding,history} = await readJournalHistory(fetcher);
+async function recentMemos(fetcher: typeof fetch, scope: string) {
+  const {binding,sources:{memos:history,unclassified}} = await readJournalHistory(fetcher);
   if (JSON.stringify([binding.ownerId,binding.spaceId]) !== scope) throw Error();
-  return history.rows.filter(row=>!row.occurredOn||row.occurredOn<=history.today)
+  const rows = history.rows.filter(row=>!row.occurredOn||row.occurredOn<=history.today)
     .toSorted((a,b)=>(b.occurredOn??'').localeCompare(a.occurredOn??''))
-    .slice(0,5).map(({id,title,occurredOn,href})=>({id,title,occurredOn,href}));
+    .slice(0,5).map(({id,title,text,occurredOn,href})=>({id,title,text,occurredOn,href}));
+  return {rows, classificationPending: unclassified.length > 0};
 }
 
 function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string)=>Promise<T>): Source<T> {
@@ -82,17 +83,16 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
   onRequirements:()=>void;onTasks:()=>void;renderTask:(row:TaskRow)=>ReactNode;
 }) {
   const calendar = useSource(scope && scheduleHref ? scope : null,upcoming);
-  const journal = useSource(scope && journalHref ? scope : null,recentJournal);
+  const memos = useSource(scope && journalHref ? scope : null,recentMemos);
   const tasks = showTasks && state.status === 'ready' ? filterTasks(state.data.tasks, metricTaskFilter('pending')) : null;
   const partial = state.status === 'ready' && state.data.coverage === 'partial';
   return <div className={s.overview}>
-    {scope && <RequirementProgressCard scope={scope} onOpen={onRequirements}/>}
-    <OverviewPanel title="未完待办" action={<Button variant="ghost" aria-label="查看全部未完待办" data-workspace-nav onClick={onTasks}>查看全部<ArrowUpRight size={18} aria-hidden="true"/></Button>}>
-      {tasks?.length ? <div className={`lo-overview-task-list ${s.tasks}`}>{tasks.slice(0,6).map(renderTask)}</div>
-        : <p className="lo-empty-compact">{!tasks || partial ? '未完待办暂不可用' : '暂无未完待办'}</p>}
-      {partial && tasks?.length ? <p className={s.note}>仅显示已读取的待办</p> : null}
-    </OverviewPanel>
     <div className={s.previews}>
+      <OverviewPanel title="未完待办" action={<Button variant="ghost" aria-label="查看全部未完待办" data-workspace-nav onClick={onTasks}>查看全部<ArrowUpRight size={18} aria-hidden="true"/></Button>}>
+        {tasks?.length ? <div className={`lo-overview-task-list ${s.tasks}`}>{tasks.slice(0,6).map(renderTask)}</div>
+          : <p className="lo-empty-compact">{!tasks || partial ? '未完待办暂不可用' : '暂无未完待办'}</p>}
+        {partial && tasks?.length ? <p className={s.note}>仅显示已读取的待办</p> : null}
+      </OverviewPanel>
       <OverviewPanel title="近期日程" action={scheduleHref && <Button variant="ghost" asChild><a href={scheduleHref}>查看日程</a></Button>}>
         {calendar.state === 'ready' ? <>
           {calendar.value.rows.length ? <ul className={s.rows}>{calendar.value.rows.map(row=><li key={row.id}><span>{row.title}</span><time dateTime={row.day}>{row.day} · {row.label}</time></li>)}</ul>
@@ -100,12 +100,16 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
           {calendar.value.appleMissing && <p className={s.note}>Apple 日历尚未连接</p>}
         </> : <p className="lo-empty-compact" role="status">{calendar.state === 'loading'?'正在读取日程…':'近期日程暂不可用'}</p>}
       </OverviewPanel>
-      <OverviewPanel title="最近思考" action={journalHref && <Button variant="ghost" asChild><a href={journalHref}>查看记录</a></Button>}>
-        {journal.state === 'ready' ? journal.value.length ? <ul className={s.rows}>{journal.value.map(row=><li key={row.id}>
-          <a href={row.href}>{row.title}</a>{row.occurredOn ? <time dateTime={row.occurredOn}>{row.occurredOn}</time> : <span className={s.date}>日期未记录</span>}
-        </li>)}</ul> : <p className="lo-empty-compact">暂无日记</p> : <p className="lo-empty-compact" role="status">{journal.state === 'loading'?'正在读取日记…':'日记暂不可用'}</p>}
-        <p className={s.note}>Memos 尚未接入</p>
-      </OverviewPanel>
     </div>
+    <OverviewPanel title="最近思考" action={journalHref && <Button variant="ghost" asChild><a href={journalHref}>查看记录</a></Button>}>
+      {memos.state === 'ready' ? memos.value.rows.length ? <ul className={`${s.rows} ${s.thoughts}`}>{memos.value.rows.map(row=><li key={row.id}>
+        <div className={s.thoughtHeading}>
+          <a href={row.href}>{row.title}</a>
+          {row.occurredOn ? <time dateTime={row.occurredOn}>{row.occurredOn}</time> : <span className={s.date}>日期未记录</span>}
+        </div>
+        {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
+      </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : <p className="lo-empty-compact" role="status">{memos.state === 'loading'?'正在读取随手记…':'随手记暂不可用'}</p>}
+    </OverviewPanel>
+    {scope && <RequirementProgressCard scope={scope} onOpen={onRequirements}/>}
   </div>;
 }

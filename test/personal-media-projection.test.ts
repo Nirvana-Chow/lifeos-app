@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';
 import {emptyMediaPersonal,type MediaPersonalFields} from '../src/personal-media/domain.ts';
-import {projectMediaEntries,projectMediaBoard,mediaProgressPercent,mediaSummary} from '../src/personal-media/projection.ts';
+import {matchesMediaBrowse,projectMediaEntries,projectMediaBoard,mediaProgressPercent,mediaSummary} from '../src/personal-media/projection.ts';
 const title='内部合成书籍',space='internal-media-space',id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';
 const fields:MediaPersonalFields={title,text:'内部合成笔记',occurredOn:null,personal:{...emptyMediaPersonal(),creators:['合成作者'],state:'in_progress',progress:{current:10,total:200,unit:'page'}}};
 const entry=()=>({id,kind:'inbox',revision:2,syncState:'draft',externalStatus:null,draft:{...fields,disposition:'reference'},source:{id:sourceId,system:'website',externalId:id,version:1,original:{marker:'personal-manual-v1',spaceId:space,type:'media',input:{spaceId:space,confirmed:true,fields}}}} as any);
@@ -23,4 +23,19 @@ test('screen groups films and series while reading keeps the existing book recor
 });
 test('media progress display preserves zero and only draws known in-progress amounts',()=>{
  assert.equal(mediaProgressPercent(fields.personal),5);assert.equal(mediaProgressPercent({...fields.personal,progress:{current:0,total:200,unit:'page'}}),0);assert.equal(mediaProgressPercent({...fields.personal,state:'completed'}),null);assert.equal(mediaProgressPercent({...fields.personal,progress:{current:1,total:null,unit:'page'}}),null);assert.ok(mediaSummary({...fields.personal,rating:0}).includes('个人评分 0 / 10'));
+});
+
+test('novel classification only comes from an explicit matching saved topic',()=>{
+ const topic={...entry(),draft:{title:'网文',personal:{type:'topic'}}};
+ const personal=emptyMediaPersonal('book');
+ const tagged={...personal,links:{...personal.links,topics:[{id,sourceId,revision:1}]}};
+ assert.equal(matchesMediaBrowse(tagged,'novel',[topic]),true);
+ assert.equal(matchesMediaBrowse(tagged,'book',[topic]),false);
+ assert.equal(matchesMediaBrowse(tagged,'reading',[topic]),true);
+ assert.equal(matchesMediaBrowse(personal,'novel',[topic]),false);
+ assert.equal(matchesMediaBrowse(tagged,'novel',[]),false);
+ assert.equal(matchesMediaBrowse(tagged,'novel',[{...topic,source:{...topic.source,id}}]),false);
+ assert.equal(matchesMediaBrowse(tagged,'novel',[{...topic,draft:{...topic.draft,title:'网文评论'}}]),false);
+ assert.equal(matchesMediaBrowse(tagged,'music',[topic]),false);
+ assert.equal(matchesMediaBrowse(tagged,'photography',[topic]),false);
 });

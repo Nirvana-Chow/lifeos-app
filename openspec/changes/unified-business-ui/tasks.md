@@ -201,3 +201,7 @@ Initial integration checks passed 68 focused cases with zero failures/skips and 
 Under the existing 1.2/3.1/3.2 mapping, check that a copied [task launcher](../../../tools/ai-router/README.md) can preview each supported client and forward the same task bytes from the caller's project. Record native executions separately from adapter tests. Keep the existing delivery and owner acceptance gates.
 
 For EXEC-PORTABLE-ROUTING-002, verify reproducible L0–L3 decisions and native arguments from a copied launcher. Explicit client, access and manual profile selection remain available. Check that exact local operations avoid model calls and that mixed or ambiguous tasks retain their complete input. The original [worker pilot](https://github.com/Nirvana-Chow/lifeos-app/pull/83) covers an isolated engineering task with independent producer and consumer checks.
+
+## LO-TASK-001 workspace reading and classification checkpoint (2026-11-25)
+
+Continue [Issue #5](https://github.com/Nirvana-Chow/lifeos-app/issues/5) under 1.2 / 3.1 / 3.2. Verify same-page task details from overview and list, explicit historical detail links, conversation-first intake, and a read-only classification preview that returns to the current view. Keep personal project references and software development navigation separate. Compare task and requirements reading on matched fixtures, and distinguish identity, storage verification, snapshot and page-render failures. Formal authenticated site recovery, fixed-main release and owner acceptance remain open.

@@ -24,7 +24,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
  export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;empty?:string;page?:string}>}){
   const params=await searchParams;const owner=!params.guest,location=readWorkspaceLocation(params),awaitedEmpty=new URLSearchParams(params).has('empty');
-  return <LifeOSWorkspace syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:['open','done','cancelled'].map(status=>({id:status,revision:1,title:'待办示例 '+status,status,notes:null,dueOn:null,area:null,project:null,inInbox:false,sourceLabel:null} as const)).filter((_,index)=>!(awaitedEmpty&&index===0)),projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
+  return <LifeOSWorkspace desktopNavigation syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:['open','done','cancelled'].map(status=>({id:status,revision:1,title:'待办示例 '+status,status,notes:null,dueOn:null,area:null,project:null,inInbox:false,sourceLabel:null} as const)).filter((_,index)=>!(awaitedEmpty&&index===0)),projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
   access={{authenticated:owner,writable:false,loginAllowed:true}} viewPreferenceScope={owner?JSON.stringify(['overview-owner','overview-space']):null}/>;
  }`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
@@ -63,7 +63,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
     workflow:{state,purpose:'',nextStep:''}}};
  });
  const config={ownerId:'overview-owner',ownerEmail:'fixture@example.test',spaceId:'overview-space',baseURL:origin,
-  databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal'],calendarEnabled:true,requirementsEnabled:true} as const;
+  databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  let writable=true, mode:'ok'|'truncated'|'wrong-space'|'denied'='ok', reads=0;
@@ -78,7 +78,12 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   return body.entry.id as string;
  }
  const day=dateInCalendarZone(new Date().toISOString(),'Asia/Shanghai'),tomorrow=shiftCalendarDate(day,1);
- const journalId=await seed('journal',{title:'合成日记近期',text:'合成日记正文不展示',occurredOn:day},'overview-journal');
+ const topicId=await seed('topic',{title:'思考',text:'',occurredOn:null,personal:{type:'topic'}},'overview-topic');
+ const topic=[...repo.rows.values()].find(row=>row.id===topicId)!;
+ const journalId=await seed('journal',{title:'合成思考近期',text:'合成日记正文第一行\n第二行保持原文。',occurredOn:day,personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-journal');
+ await seed('journal',{title:'合成正式日记',text:'未标记的正式日记',occurredOn:day},'overview-formal-diary');
+ await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
  await seed('calendar',{title:'合成明日日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:tomorrow,endDate:shiftCalendarDate(tomorrow,1)}}},'overview-calendar');
  await seed('calendar',{title:'合成已过期日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
@@ -124,16 +129,36 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByText('合成已过期日程')).toHaveCount(0);
  await expect(schedule.getByText('Apple 日历尚未连接')).toBeVisible();
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
- await expect(thoughts.getByRole('link',{name:'合成日记近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
+ await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
- await expect(thoughts.getByText('Memos 尚未接入')).toBeVisible();
- await expect(thoughts.getByText('合成日记正文不展示')).toHaveCount(0);
+ await expect(thoughts.getByText(/Memos.*接入/)).toHaveCount(0);
+ const excerpt=thoughts.getByText('合成日记正文第一行 第二行保持原文。',{exact:true});
+ await expect(excerpt).toBeVisible();
+ assert.equal(await excerpt.textContent(),'合成日记正文第一行\n第二行保持原文。');
+ await expect(excerpt).toHaveCSS('font-size','14px');
+ await expect(thoughts.getByText('合成标题与原文相同',{exact:true})).toHaveCount(1);
+ const location=page.getByRole('navigation',{name:'浏览位置'});
+ const title=page.getByRole('heading',{name:'总览',exact:true,level:1});
+ await expect(location.locator('h1')).toHaveText('总览');
+ await expect(title).toHaveCount(1);
+ await expect(title).toHaveCSS('font-size','14px');
+ await expect(page.locator('main .lo-page-heading')).toHaveCount(0);
+ await expect(page.locator('main').getByRole('button',{name:/^(新建待办|刷新数据)$/})).toHaveCount(0);
+ await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(thoughts.getByText('合成正式日记')).toHaveCount(0);
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
- for(const width of [1440,390]){
+ for(const width of [1365,390,430]){
   await page.setViewportSize({width,height:900});
-  const [calendar,notes]=await Promise.all([schedule.boundingBox(),thoughts.boundingBox()]);
-  assert.ok(calendar&&notes&&(width===390?notes.y>calendar.y:notes.y===calendar.y));
+  const [todo,calendar,notes,progress,trail,head]=await Promise.all([
+   tasks,schedule,thoughts,card,location,page.locator('header.lo-header'),
+  ].map(control=>control.boundingBox()));
+  assert.ok(todo&&calendar&&notes&&progress&&trail&&head);
+  assert.ok(width<800 ? calendar.y>todo.y : calendar.y===todo.y&&calendar.x>todo.x);
+  assert.ok(notes.y>=Math.max(todo.y+todo.height,calendar.y+calendar.height));
+  assert.ok(progress.y>=notes.y+notes.height);
+  assert.ok(Math.abs(notes.x-todo.x)<1&&Math.abs(notes.width-(width<800?todo.width:calendar.x+calendar.width-todo.x))<1);
+  assert.ok(Math.abs(trail.x-todo.x)<1&&trail.y-head.y-head.height<=4);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  }
  await page.setViewportSize({width:1440,height:900});
@@ -143,7 +168,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(card.getByText('需求进度暂不可用')).toBeVisible();
   await expect(card.locator('dd')).toHaveCount(0);
-  if(invalid==='wrong-space')assert.equal(reads,before);
+  if(invalid==='wrong-space'){
+   assert.equal(reads,before);
+   await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
+   await expect(excerpt).toHaveCount(0);
+  }
  }
  mode='ok';
  await card.getByRole('button',{name:'查看全部需求'}).click();
@@ -154,11 +183,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
  await expect(tasks.getByText('暂无未完待办')).toBeVisible();
  await expect(schedule.getByText('未来 7 天暂无已读取的日程')).toBeVisible();
- await expect(thoughts.getByText('暂无日记')).toBeVisible();
+ await expect(thoughts.getByText('暂无已核对的随手记或思考')).toBeVisible();
  readsDisabled=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
  await expect(schedule.getByText('近期日程暂不可用')).toBeVisible();
- await expect(thoughts.getByText('日记暂不可用')).toBeVisible();
+ await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});

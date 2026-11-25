@@ -39,9 +39,9 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
  const moduleSwitch=page.locator('header').getByRole('navigation',{name:'切换模块'});
- const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal']] as const;
+ const planning=[['总览'],['待办'],['项目'],['领域'],['日程','/personal/schedule'],['记录','/personal/journal']] as const;
  const records=[['做饭','/personal/cooking']] as const;
- await expect(moduleSwitch.locator('button, a')).toHaveText(['日常','兴趣学习','财务','项目']);
+ await expect(moduleSwitch.locator('button, a')).toHaveText(['日常','兴趣学习','财务','软件开发']);
  await expect(moduleSwitch.getByRole('link',{name:'财务',exact:true})).toHaveAttribute('href','/personal/finance');
  await expect(nav.getByRole('link',{name:'财务',exact:true})).toHaveCount(0);
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('日常');
@@ -52,7 +52,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(page.locator('header')).toHaveCSS('background-image','none');
  await expect(page.getByRole('button',{name:'LifeOS 总览',exact:true}).locator('svg path')).toHaveCount(1);
  const todoCard=page.getByRole('region',{name:'未完待办',exact:true});
- const overviewCards=['需求进度','未完待办','近期日程','最近思考'].map(name=>page.getByRole('region',{name,exact:true}));
+ const overviewCards=['未完待办','近期日程','最近思考','需求进度'].map(name=>page.getByRole('region',{name,exact:true}));
  for(const card of overviewCards)await expect(card).toBeVisible();
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
@@ -78,8 +78,10 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await page.setViewportSize({width,height:900});
   const bounds=await Promise.all(overviewCards.map(card=>card.boundingBox()));
   assert.ok(bounds.every(bound=>bound&&bound.width>0&&bound.height>0));
-  const [schedule,thoughts]=bounds.slice(2);
-  assert.ok(schedule&&thoughts&& (width===390?thoughts.y>schedule.y:thoughts.y===schedule.y));
+  const [tasks,schedule,thoughts,progress]=bounds;
+  assert.ok(tasks&&schedule&&thoughts&&progress);
+  assert.ok(width===390?schedule.y>tasks.y:schedule.y===tasks.y);
+  assert.ok(thoughts.y>schedule.y&&progress.y>thoughts.y);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   const shell=page.locator('.lo-shell');
   if(width===390){
@@ -111,7 +113,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  const historyLength=await page.evaluate(()=>history.length);
  for(const [module,items] of [
   ['兴趣学习',records],
-  ['项目',[['项目'],['领域'],['开发项目','/personal/development-projects']]],
+  ['软件开发',[['开发项目','/personal/development-projects']]],
  ] as const){
   await moduleSwitch.getByRole('button',{name:module,exact:true}).click();
   await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName(module);
@@ -180,9 +182,9 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await recordsModule.focus();
   await page.keyboard.press('Enter');
   await assertWorkspaceModule(nav,'兴趣学习',records);
-  await moduleSwitch.getByRole('button',{name:'项目',exact:true}).focus();
+  await moduleSwitch.getByRole('button',{name:'日常',exact:true}).focus();
   await page.keyboard.press('Enter');
-  await assertWorkspaceModule(nav,'项目',[['项目'],['领域'],['开发项目','/personal/development-projects']]);
+  await assertWorkspaceModule(nav,'日常',planning);
   const projectNavigation=nav.getByRole('button',{name:'项目',exact:true});
   await projectNavigation.evaluate(button=>button.scrollIntoView({inline:'end',block:'nearest'}));
   const points=await projectNavigation.evaluate(button=>{
@@ -208,9 +210,9 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.locator('aside').getByRole('button',{name:'设置',exact:true}).click();
  await expect(settings.getByRole('link',{name:'文件交接'})).toHaveAttribute('href','/personal/file-handoffs');
  enabled=false;await page.reload({waitUntil:'networkidle'});
- await expect(moduleSwitch.getByRole('button')).toHaveText(['日常','项目']);
+ await expect(moduleSwitch.getByRole('button')).toHaveText(['日常']);
  await moduleSwitch.getByRole('button',{name:'日常',exact:true}).click();
- await assertWorkspaceModule(nav,'日常',[['总览'],['待办']]);
+ await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['项目'],['领域']]);
  assert.deepEqual(writes,[]);
  assert.deepEqual(errors,[]);
 });

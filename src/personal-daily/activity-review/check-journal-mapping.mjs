@@ -88,7 +88,7 @@ try {
   assert.equal(await detail.locator('h3').innerText(), marker);
   assert.equal(await detail.getByRole('link').getAttribute('href'), '/personal/journal?record=' + worn.id);
   assert.doesNotMatch(await page.content(), /body stays outside|undated synthetic body|future synthetic body/);
-  assert.match(await detail.innerText(), /Memos 未接入 · 日记 覆盖未知/);
+  assert.match(await detail.innerText(), /Memos 覆盖未知 · 日记 覆盖未知/);
   const dateCell = date => page.locator('button[data-date="' + date + '"]');
   assert.equal(await dateCell('2026-11-24').getAttribute('data-level'), 'partial');
   assert.equal(await dateCell('2026-11-23').getAttribute('data-level'), 'unknown');
@@ -126,7 +126,7 @@ try {
 
   const shortcut = await open('shortcut');
   assert.match(await shortcut.page.locator('#detail-summary').innerText(), /已核对 1 条记录/);
-  assert.match(await shortcut.page.locator('#detail').innerText(), /Memos 未接入/);
+  assert.match(await shortcut.page.locator('#detail').innerText(), /Memos 覆盖未知/);
   assert.doesNotMatch(await shortcut.page.locator('#detail').innerText(), /日记 覆盖未知/);
   assert.equal(await shortcut.page.locator('#period-metrics dd').last().innerText(), '0');
   assert.deepEqual(shortcut.errors, []);
