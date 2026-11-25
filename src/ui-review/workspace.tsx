@@ -640,6 +640,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     return !settingsOpen || props.settingsCloseGuard?.current?.() !== false;
   }
 
+  const [signedOut,setSignedOut]=useState(false);
+  if(signedOut)return <p role="status">已退出。</p>;
+
   return (
     <div
       data-lifeos-surface="personal"
@@ -704,7 +707,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           )}
           {access.authenticated === true && contentPage && !props.onLogout && (
             <LogoutButton className="lo-icon-button lo-logout" icon={<LogOut size={17} aria-hidden="true"/>}
-              beforeLogout={()=>canLogOut()&&props.onBeforeNavigate?.()!==false}/>
+              beforeLogout={()=>canLogOut()&&props.onBeforeNavigate?.()!==false}
+              onConfirmed={()=>setSignedOut(true)}/>
           )}
         </div>
       </header>
