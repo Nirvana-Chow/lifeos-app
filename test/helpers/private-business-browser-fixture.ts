@@ -270,8 +270,12 @@ export async function assertPrivateFixtureNavigation(page:Page){
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  const switcher=(drawerOpen?page.getByRole('dialog',{name:'LifeOS',exact:true}):page.locator('header')).getByRole('navigation',{name:'切换模块',exact:true});
  await expect(switcher.getByRole('button')).toHaveText(['日常','生活与关系','项目']);
+ // The modal drawer hides the header from the accessibility tree until it closes.
+ const headerSearch=page.locator('header a[aria-label="搜索本人记录"]');
+ const searchInHeader=await headerSearch.count()>0;
+ if(searchInHeader)await expect(headerSearch).toHaveAttribute('href','/personal/search');
  const modules=[
-  ['日常',[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]],
+  ['日常',[['总览'],['待办'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
   ['生活与关系',[['做饭','/personal/cooking']]],
   ['项目',[['项目'],['领域']]],
  ] as const;
@@ -568,7 +572,9 @@ export async function privateLocalInteractions(page:Page,key:string){
   await expect(page.getByRole('status')).toHaveText('数据管理入口已收起。');
   await expect(page.getByRole('link',{name:/管理|导出/})).toHaveCount(0);
  }else if(key==='private-settings'){
-  await expect(page.getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'账号与更多操作',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'账号操作'}).getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.getByText(/登录状态|数据权限|数据管理与导出|分类管理|管理项目与领域/)).toHaveCount(0);
   const settings=page.locator('[data-settings-page]'),bounds=await settings.boundingBox(),main=await page.locator('#personal-main').boundingBox();
   assert.ok(bounds&&main&&bounds.x>=main.x&&bounds.y>=main.y&&bounds.x+bounds.width<=main.x+main.width+1,'settings remain in the main content pane');
@@ -706,9 +712,12 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
    await expect(settingsPage).toBeVisible();
    await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);
    await expect(page.locator('body')).toHaveCSS('pointer-events','auto');
-   const logout=page.getByRole('button',{name:'退出登录',exact:true});await logout.scrollIntoViewIfNeeded();
-   const aboveFooter=await logout.evaluate(button=>{const rect=button.getBoundingClientRect(),footer=document.querySelector('.lifeos-filing-footer')!.getBoundingClientRect();return rect.bottom<=footer.top+1&&button.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));});
+   const account=page.getByRole('button',{name:'账号与更多操作',exact:true});await account.scrollIntoViewIfNeeded();
+   const aboveFooter=await account.evaluate(button=>{const rect=button.getBoundingClientRect(),footer=document.querySelector('.lifeos-filing-footer')!.getBoundingClientRect();return rect.bottom<=footer.top+1&&button.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));});
    assert.equal(aboveFooter,true,'settings controls remain reachable above the filing footer');
+   await account.click();
+   await expect(page.getByRole('dialog',{name:'账号操作'}).getByRole('button',{name:'退出登录',exact:true})).toBeVisible();
+   await page.keyboard.press('Escape');
    await page.getByRole('button',{name:'后退',exact:true}).click();await readyHeading(page,'待办');
   }finally{
    await page.evaluate(()=>{document.querySelector('[data-synthetic-filing-probe]')?.remove();document.querySelector('[data-synthetic-scroll-probe]')?.remove();window.dispatchEvent(new Event('resize'));});

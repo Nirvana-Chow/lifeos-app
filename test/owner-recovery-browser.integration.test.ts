@@ -143,9 +143,10 @@ test('isolated browser owner recovery and password flow',{skip:!enabled?'isolate
   const finishSecondFactor=async()=>{await page.getByLabel('验证器动态码',{exact:true}).waitFor();await page.getByLabel('验证器动态码',{exact:true}).fill(await syntheticOwnerTotp(nativeMfa,config.ownerId));await page.getByRole('button',{name:'登录',exact:true}).click();await page.waitForURL(origin+'/personal');};
   const logoutAfterMfa=async()=>{
    await page.getByRole('button',{name:'设置',exact:true}).click();
+   await page.getByRole('button',{name:'账号与更多操作',exact:true}).click();
    const [response]=await Promise.all([
     page.waitForResponse(response=>response.url()===origin+'/api/platform/auth/sign-out'&&response.request().method()==='POST'),
-    page.locator('header').getByRole('button',{name:'退出登录',exact:true}).click(),
+    page.getByRole('dialog',{name:'账号操作'}).getByRole('button',{name:'退出登录',exact:true}).click(),
    ]);
    must(response.ok(),'confirmed-logout-response');
    await page.waitForURL(origin+'/login');

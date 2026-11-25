@@ -15,7 +15,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  let browser:Browser|undefined,browserServer:BrowserServer|undefined,browserProcess:FixtureProcess|undefined,server:FixtureProcess|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server}));
  await mkdir(join(root,'app','personal'),{recursive:true});
- await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+ await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'app','personal','layout.tsx'),join(root,'app','personal','layout.tsx')),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await writeFile(join(root,'app','personal','page.tsx'),`'use client';import {useEffect,useState} from 'react';import {LifeOSWorkspace} from '../../src/ui-review/workspace';import {readWorkspaceLocation} from '../../src/workbench/private-navigation';export default function Page(){const[dirty,setDirty]=useState(false),[query,setQuery]=useState<URLSearchParams|null>(null);useEffect(()=>setQuery(new URLSearchParams(window.location.search)),[]);if(!query)return null;const initial=readWorkspaceLocation(Object.fromEntries(query));return <LifeOSWorkspace desktopNavigation syncUrl initialPage={initial.page} initialSettingsPanel={initial.panel} state={{status:'ready',data:{tasks:[],projects:[{id:'project-a',title:'合成项目甲',revision:1,area:{id:'area-a',title:'合成领域'},stage:'active',nextStep:'合成下一步'},{id:'project-b',title:'合成未关联项目',revision:1,area:null,stage:'active',nextStep:null}],areas:[{id:'area-a',title:'合成领域',revision:1}],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:query.has('partial')?'partial':'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','topic']}} viewPreferenceScope={JSON.stringify(['hierarchy-owner','hierarchy-space'])} availableSettingsPanels={['security','api-keys']} renderSettingsPanel={panel=><section><h2>{panel==='security'?'安全面板':'密钥面板'}</h2><button onClick={()=>setDirty(!dirty)}>合成草稿保护 {dirty?'开':'关'}</button></section>} settingsCloseGuard={{current:()=>!dirty}}/>;}`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3010'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
@@ -39,11 +39,14 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
  const moduleSwitch=page.locator('header').getByRole('navigation',{name:'切换模块'});
- const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
+ const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal']] as const;
  const records=[['做饭','/personal/cooking']] as const;
- await expect(moduleSwitch.getByRole('button')).toHaveText(['日常','生活与关系','财务','项目']);
+ await expect(moduleSwitch.locator('button, a')).toHaveText(['日常','生活与关系','财务','项目']);
+ await expect(moduleSwitch.getByRole('link',{name:'财务',exact:true})).toHaveAttribute('href','/personal/finance');
+ await expect(nav.getByRole('link',{name:'财务',exact:true})).toHaveCount(0);
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('日常');
  await assertWorkspaceModule(nav,'日常',planning);
+ await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
  await expect(page.getByRole('dialog')).toHaveCount(0);
  assert.equal(releaseReads,0,'opening the workspace does not consult automatic announcements');
  await expect(page.locator('header')).toHaveCSS('background-image','none');
@@ -65,6 +68,9 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(back).toBeDisabled();
  await expect(forward).toBeDisabled();
  await expect(overviewLink).toHaveCount(0);
+ await page.setViewportSize({width:390,height:900});
+ await page.getByRole('button',{name:'切换到桌面版',exact:true}).click();
+ await page.setViewportSize({width:1365,height:900});
  const [trailEnd,backPosition,forwardPosition,content]=await Promise.all(
   [location,back,forward,page.locator('.lo-content')].map(control=>control.boundingBox())
  );
@@ -131,7 +137,6 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  const historyLength=await page.evaluate(()=>history.length);
  for(const [module,items] of [
   ['生活与关系',records],
-  ['财务',[['财务','/personal/finance']]],
   ['项目',[['项目'],['领域']]],
  ] as const){
   await moduleSwitch.getByRole('button',{name:module,exact:true}).click();
@@ -171,12 +176,13 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  const appearance=page.locator('header [data-slot="theme-toggle"]');
  await appearance.focus();await page.keyboard.press('Space');await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
  await expect(appearance).toBeFocused();
- const accumulationModule=moduleSwitch.getByRole('button',{name:'财务',exact:true});
- await accumulationModule.click();
- await expect(accumulationModule).toBeFocused();
+ const dailyModule=moduleSwitch.getByRole('button',{name:'日常',exact:true});
+ await dailyModule.click();
+ await expect(dailyModule).toBeFocused();
  await expect(apiKeys).toBeVisible();
- await page.setViewportSize({width:1024,height:844});await expect(nav.getByRole('link',{name:'财务',exact:true})).toBeVisible();
- await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ await page.setViewportSize({width:1024,height:844});await expect(moduleSwitch.getByRole('link',{name:'财务',exact:true})).toBeVisible();
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
  await expect(settings).toHaveCount(0);
  await expect(moduleSwitch).toBeVisible();
  await expect(page.getByRole('button',{name:'打开导航'})).toBeHidden();
@@ -244,9 +250,9 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
  let browser:Browser|undefined,browserServer:BrowserServer|undefined,browserProcess:FixtureProcess|undefined,server:FixtureProcess|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server}));
  await mkdir(join(root,'app','personal'),{recursive:true});
- await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+ await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'app','personal','layout.tsx'),join(root,'app','personal','layout.tsx')),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
- await writeFile(join(root,'app','personal','page.tsx'),`'use client';import {LifeOSWorkspace} from '../../src/ui-review/workspace';export default function Page(){return <LifeOSWorkspace syncUrl state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']}} onCreateTask={()=>true} viewPreferenceScope={JSON.stringify(['navigation-owner','navigation-space'])}/>;}`);
+ await writeFile(join(root,'app','personal','page.tsx'),`'use client';import {LifeOSWorkspace} from '../../src/ui-review/workspace';export default function Page(){return <LifeOSWorkspace desktopNavigation syncUrl state={{status:'ready',data:{tasks:[],projects:[],areas:[],topics:[],today:'2030-11-05',asOf:'2030-11-05T00:00:00Z',coverage:'complete'}}} access={{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']}} onCreateTask={()=>true} viewPreferenceScope={JSON.stringify(['navigation-owner','navigation-space'])}/>;}`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout')),30000);const check=()=>{const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);child.stdout.off('data',check);accept(match[0]);}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit'));});check();});
@@ -273,7 +279,7 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
    if(storage)await page.locator('aside').getByRole('button',{name:'设置',exact:true}).click();
    else await page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:module,exact:true}).click();
    const nav=storage?page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'资料与工具'}):page.getByRole('navigation',{name:'主导航',exact:true});
-   const items=[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
+   const items=[['总览'],['待办'],['记录','/personal/journal']] as const;
    const href=storage?'/personal/storage-review':items[2][1];
    await nav.evaluate((nav,{change,href})=>{
     const link=nav.querySelector<HTMLAnchorElement>('a[href="'+href+'"]')!;
@@ -281,7 +287,7 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
     else if(change.endsWith('href'))link.setAttribute('href',href+'/extra');
     else if(change.endsWith('missing'))link.remove();
     else if(change==='role'){const button=document.createElement('button');button.textContent=link.textContent;link.replaceWith(button);}
-    else link.parentElement!.append(link);
+    else link.parentElement!.prepend(link);
    },{change,href});
    if(storage){
     const link=nav.getByRole('link',{name:'存储审核',exact:true});

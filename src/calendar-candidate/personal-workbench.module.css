@@ -4,3 +4,12 @@
 @media(max-width:680px){.toolbar label{flex:1 1 calc(50% - 10px)}.toolbar input,.toolbar input[type=month],.toolbar select{width:100%;max-width:none}.toolbar .search{flex-basis:100%}.views{flex-wrap:wrap}.editor.editor{position:fixed;top:0;left:0;transform:none;translate:none;width:100vw;height:100dvh;max-height:100dvh;border-radius:0}.editor header{padding:16px}.editor form{padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom))}.formRow{grid-template-columns:1fr}.editor label{font-size:16px}}
 .table tbody td{height:52px;padding:0 12px}.stageTrack{display:block;width:100%;height:18px;max-width:800px;background:var(--muted);border-radius:4px;margin-block:8px}.stageTrack rect{fill:var(--lo-link)}
 @media(min-width:1024px) and (pointer:fine){.table tbody td{height:40px}}
+
+@media(max-width:680px) {
+ .editor.editor {
+  top:var(--lo-keyboard-top,0px);
+  height:var(--lo-keyboard-height,100dvh);
+  max-height:var(--lo-keyboard-height,100dvh);
+ }
+ .editor header { padding-top:max(16px,env(safe-area-inset-top,0px)); }
+}

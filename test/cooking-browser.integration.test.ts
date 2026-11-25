@@ -236,7 +236,8 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
    const logoutHistory=logoutPage.getByRole('region',{name:'做过的菜'});
    await logoutHistory.getByRole('button',{name:/西红柿炒鸡蛋.*2031-05-07/}).click();
    const notes=logoutPage.getByLabel('做饭笔记（选填）');
-   const logout=logoutPage.locator('header').getByRole('button',{name:'退出登录',exact:true});
+   const account=logoutPage.getByRole('dialog',{name:'账号操作'});
+   const logout=account.getByRole('button',{name:'退出登录',exact:true});
    await notes.fill('合成的退出前未保存草稿');
    let acceptDeparture=false,signOutRequests=0;
    const prompts:string[]=[];
@@ -252,12 +253,13 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
     sessionValid=false;
     await route.fulfill({json:{success:true}});
    });
+   await logoutPage.getByRole('button',{name:'账号与更多操作',exact:true}).click();
    await logout.click();
    assert.equal(signOutRequests,0);
    await expect(notes).toHaveValue('合成的退出前未保存草稿');
    acceptDeparture=true;
    await logout.click();
-   await expect(logoutPage.locator('header').getByRole('alert')).toHaveText('退出未获服务端确认，请重试。');
+   await expect(account.getByRole('alert')).toHaveText('退出未获服务端确认，请重试。');
    await expect(notes).toHaveValue('合成的退出前未保存草稿');
    await expect(logoutPage).toHaveURL(historyURL);
    await logout.click();

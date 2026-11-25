@@ -116,7 +116,9 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await expect(overview).toHaveCount(0);
    await expect(page.getByRole('button',{name:namesake,exact:true})).toHaveCount(2);
    await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
-   const logout=page.locator('header.lo-header').getByRole('button',{name:'退出登录',exact:true});
+   const account=page.getByRole('button',{name:'账号与更多操作',exact:true});
+   await account.press('Enter');
+   const logout=page.getByRole('dialog',{name:'账号操作'}).getByRole('button',{name:'退出登录',exact:true});
    await expect(logout).toBeInViewport({ratio:1});
    let signOutRequests=0;
    await page.route(origin+'/api/platform/auth/sign-out',async route=>{
