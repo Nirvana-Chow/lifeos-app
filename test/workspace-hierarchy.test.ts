@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type {AreaRow,ProjectRow} from '../src/ui-review/contract.ts';
 import type {OwnerModuleLink} from '../src/ui-review/owner-modules.ts';
 
+import {ownerModules} from '../src/ui-review/owner-modules.ts';
 import * as hierarchy from '../src/ui-review/workspace-hierarchy.ts';
 const project=(id:string,area:ProjectRow['area'],stage='active'):ProjectRow=>({id,title:id,revision:1,area,stage,nextStep:'真实下一步'});
 
@@ -39,4 +40,15 @@ test('support and tool destinations stay outside the business tabs',()=>{
  ];
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>group.label),['日常','项目']);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links),[]);
+});
+
+test('cooking is in learning independently of the media flag and remains owner-scoped',()=>{
+ const status={scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,peopleEnabled:true};
+ for(const mediaEnabled of [true,false]){
+  const groups=hierarchy.groupWorkspaceModules(ownerModules({...status,mediaEnabled},null));
+  assert.deepEqual(groups.find(group=>group.id==='learning')?.links.map(link=>link.href),
+   mediaEnabled?['/personal/media','/personal/cooking']:['/personal/cooking']);
+  assert.deepEqual(groups.find(group=>group.id==='relationships')?.links.map(link=>link.href),['/personal/people']);
+ }
+ assert.deepEqual(hierarchy.groupWorkspaceModules(ownerModules(status,'foreign-scope')).flatMap(group=>group.links),[]);
 });

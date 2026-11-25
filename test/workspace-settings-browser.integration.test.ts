@@ -267,8 +267,8 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const expected=[
   ['日常',[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]],
   ['身体基础',[['健康','/personal/health']]],
-  ['兴趣学习',[['书影音','/personal/media']]],
-  ['生活与关系',[['做饭','/personal/cooking'],['人物','/personal/people']]],
+  ['兴趣学习',[['做饭','/personal/cooking'],['书影音','/personal/media']]],
+  ['生活与关系',[['人物','/personal/people']]],
   ['财务',[['财务','/personal/finance'],['账户资产投资','/personal/portfolio']]],
   ['职业成长',[['职业与简历','/personal/career']]],
   ['项目',[['项目'],['领域']]],
@@ -771,7 +771,7 @@ test('OPT-IN settings category returns to the requested panel after requirement 
  await categories.getByRole('button',{name:'需求池',exact:true}).click();await expect(page.getByLabel('搜索需求',{exact:true})).toBeVisible();
  await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(page.getByLabel('原密码',{exact:true})).toBeVisible();
- const living=page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'生活与关系',exact:true});
+ const living=page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'兴趣学习',exact:true});
  await living.click();
  await expect(living).toHaveAttribute('aria-pressed','true');
  await expect(page.getByRole('navigation',{name:'主导航'}).getByRole('link',{name:'做饭'})).toBeVisible();

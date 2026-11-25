@@ -5,15 +5,20 @@ import {normalizeMediaPersonalFields,mediaStates,type MediaPersonal,type MediaPe
 export type MediaEntry={id:string;revision:number;fields:MediaPersonalFields};
 export type MediaRow=MediaEntry&{sourceId:string;title:string;summary:string[];entry:PublicEntry};
 export const mediaKindLabels:Record<MediaKind,string>={book:'书籍',film:'电影',series:'剧集'};
+export type MediaKindFilter=MediaKind|'all'|'screen';
+export const mediaKindFilterLabels:Record<MediaKindFilter,string>={all:'全部作品',book:'读书',screen:'影视',film:mediaKindLabels.film,series:mediaKindLabels.series};
+export function matchesMediaKind(kind:MediaKind,filter:MediaKindFilter):boolean{
+ return filter==='all'||kind===filter||filter==='screen'&&(kind==='film'||kind==='series');
+}
 export const mediaStateLabels:Record<MediaState,string>={wish:'想读 / 想看',in_progress:'进行中',completed:'已完成',paused:'已暂停'};
 export const mediaUnitLabels={page:'页',episode:'集',percent:'%'} as const;
 export function mediaProgressLabel(personal:MediaPersonal):string|null{const p=personal.progress;if(p.unit===null)return null;const unit=mediaUnitLabels[p.unit];if(p.current===null)return p.total===null?null:`总量 ${p.total} ${unit}，进度未知`;return `${p.current}${p.total===null?'':` / ${p.total}`} ${unit}`;}
 /** Adapted from Jelu BookCard.vue showProgressBar, MIT; full source pin/license in third-party/personal-media. */
 export function mediaProgressPercent(personal:MediaPersonal):number|null{const p=personal.progress;if(personal.state!=='in_progress'||p.current===null)return null;if(p.unit==='percent')return p.current;return p.total===null?null:p.current/p.total*100;}
 export function mediaSummary(personal:MediaPersonal):string[]{return[mediaKindLabels[personal.mediaKind],mediaStateLabels[personal.state],personal.creators.length?personal.creators.join(' / '):null,mediaProgressLabel(personal),personal.rating===null?null:`个人评分 ${personal.rating} / 10`].filter((value):value is string=>value!==null);}
-export function projectMediaBoard(records:readonly MediaEntry[],filter:{kind?:MediaKind|'all';search?:string}={}){
+export function projectMediaBoard(records:readonly MediaEntry[],filter:{kind?:MediaKindFilter;search?:string}={}){
  const query=filter.search?.trim().toLocaleLowerCase()??'',buckets:Record<MediaState,MediaEntry[]>={wish:[],in_progress:[],completed:[],paused:[]};
- for(const record of records){const p=record.fields.personal;if(filter.kind&&filter.kind!=='all'&&p.mediaKind!==filter.kind)continue;if(query&&![record.fields.title,record.fields.text,...p.creators,p.isbn,p.external.id].filter(Boolean).join('\n').toLocaleLowerCase().includes(query))continue;buckets[p.state].push(record);}
+ for(const record of records){const p=record.fields.personal;if(filter.kind&&!matchesMediaKind(p.mediaKind,filter.kind))continue;if(query&&![record.fields.title,record.fields.text,...p.creators,p.isbn,p.external.id].filter(Boolean).join('\n').toLocaleLowerCase().includes(query))continue;buckets[p.state].push(record);}
  return{columns:mediaStates.map(state=>({state,label:mediaStateLabels[state],records:buckets[state]})),total:mediaStates.reduce((count,state)=>count+buckets[state].length,0),completed:buckets.completed.length,inProgress:buckets.in_progress.length};
 }
 /** Projects an already owner-scoped PersonalService response. It does not authorize access. */

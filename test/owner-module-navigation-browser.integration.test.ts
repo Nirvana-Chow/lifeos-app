@@ -52,7 +52,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
   }else await expect(menu).toBeVisible();
  };
  const readyMenu=async()=>{
-  await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^生活与关系$/})).toHaveCount(1);
+  await expect(page.locator('header nav[aria-label="切换模块"] button').filter({hasText:/^兴趣学习$/})).toHaveCount(1);
   await openMenu();
  };
  const closeMenu=async()=>{
@@ -63,7 +63,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
  const records=[['做饭','/personal/cooking']] as const;
  await openMenu();
- await expect(switcher.getByRole('button')).toHaveText(['日常','生活与关系','项目']);
+ await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习','项目']);
  await assertWorkspaceModule(nav,'日常',planning);
  await nav.getByRole('link',{name:'日程',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal/schedule');
@@ -74,8 +74,8 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  assert.ok(await page.locator('.lo-shell').evaluate(el=>el.scrollWidth>el.clientWidth));
  await assertWorkspaceModule(nav,'日常',planning);
  await expect(nav.getByRole('link',{name:'日程',exact:true})).toHaveAttribute('aria-current','page');
- await switcher.getByRole('button',{name:'生活与关系',exact:true}).click();
- await assertWorkspaceModule(nav,'生活与关系',records);
+ await switcher.getByRole('button',{name:'兴趣学习',exact:true}).click();
+ await assertWorkspaceModule(nav,'兴趣学习',records);
  await closeMenu();
  await page.goBack({waitUntil:'domcontentloaded'});
  await expect(page).toHaveURL(origin+'/personal');
@@ -86,8 +86,8 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  await page.goForward({waitUntil:'domcontentloaded'});
  await expect(page).toHaveURL(origin+'/personal/schedule');
  await readyMenu();
- await expect(switcher.getByRole('button',{pressed:true})).toHaveAccessibleName('生活与关系');
- await assertWorkspaceModule(nav,'生活与关系',records);
+ await expect(switcher.getByRole('button',{pressed:true})).toHaveAccessibleName('兴趣学习');
+ await assertWorkspaceModule(nav,'兴趣学习',records);
  await menu.getByRole('button',{name:'设置',exact:true}).click();
  await expect(page.getByRole('heading',{name:'设置',exact:true,level:1})).toBeVisible();
  await readyMenu();

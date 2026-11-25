@@ -269,10 +269,10 @@ export async function assertPrivateFixtureNavigation(page:Page){
  const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  const switcher=(drawerOpen?page.getByRole('dialog',{name:'LifeOS',exact:true}):page.locator('header')).getByRole('navigation',{name:'切换模块',exact:true});
- await expect(switcher.getByRole('button')).toHaveText(['日常','生活与关系','项目']);
+ await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习','项目']);
  const modules=[
   ['日常',[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]],
-  ['生活与关系',[['做饭','/personal/cooking']]],
+  ['兴趣学习',[['做饭','/personal/cooking']]],
   ['项目',[['项目'],['领域']]],
  ] as const;
  for(const [module,items] of modules){
