@@ -576,6 +576,17 @@ test('OPT-IN settings category returns to the requested panel after requirement 
  await categories.getByRole('button',{name:'需求池',exact:true}).click();await expect(page.getByLabel('搜索需求',{exact:true})).toBeVisible();
  await categories.getByRole('button',{name:'安全与密码',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');await expect(page.getByLabel('原密码',{exact:true})).toBeVisible();
+ const living=page.getByRole('navigation',{name:'切换模块',exact:true}).getByRole('button',{name:'生活记录',exact:true});
+ await living.click();
+ await expect(living).toHaveAttribute('aria-pressed','true');
+ await categories.getByRole('button',{name:'标签',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
+ await page.getByRole('button',{name:'后退',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
+ await expect(living).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('button',{name:'前进',exact:true}).click();
+ await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
+ await expect(living).toHaveAttribute('aria-pressed','true');
  assert.equal(writes(),0);
 });
 

@@ -385,7 +385,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     if(props.syncUrl){
       const active=currentHistory.current??{scope:crypto.randomUUID(),index:0},entry={scope:active.scope,index:active.index+1};
       const href=workspaceLocationHref({page:'settings',panel});
-      window.history.pushState({[workspaceHistoryKey]:entry},'',href);
+      window.history.pushState({[workspaceHistoryKey]:entry,[moduleHistoryKey]:historyModule(window.history.state)},'',href);
       currentHistory.current=entry;historyLimit.current=entry.index;currentHistoryState.current=window.history.state;currentHref.current=href;currentBrowserIndex.current=browserHistoryIndex();updateHistoryControls();
     }
     setSettingsPanel(panel);
