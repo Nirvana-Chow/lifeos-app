@@ -23,12 +23,12 @@ function JournalReferences({rows,onOpen}:{rows:JournalHistoryRow[];onOpen:OpenOr
 }
 
 /** Read-only views of the same complete, owner-verified snapshot as journal history. */
-export function JournalCoveragePanel({history,onOpen}:{history:JournalHistory;onOpen:OpenOriginal}){
- const [date,setDate]=useState(history.today),[period,setPeriod]=useState<JournalPeriod>('month'),[inputError,setInputError]=useState('');
+export function JournalCoveragePanel({history,onOpen,period,onPeriodChange}:{history:JournalHistory;onOpen:OpenOriginal;period:JournalPeriod;onPeriodChange:(period:JournalPeriod)=>void}){
+ const [date,setDate]=useState(history.today),[inputError,setInputError]=useState('');
  const month=useMemo(()=>journalMonthDays(date,history.rows),[date,history.rows]);
  const selection=useMemo(()=>projectJournalPeriod(history,date,period),[history,date,period]);
  const previous=shiftJournalMonth(date,-1),next=shiftJournalMonth(date,1),coverage=history.coverage;
- function select(value:string,grain=period){setDate(value);setPeriod(grain);setInputError('');}
+ function select(value:string,grain=period){setDate(value);onPeriodChange(grain);setInputError('');}
  function enterDate(value:string){try{validateCalendarDate(value);select(value);}catch{setInputError('请选择有效的参考日期。');}}
  return <section className={s.panel} aria-label="日记日历与周期资料">
   <div className={s.heading}><div><h2>日记日历</h2><p className={s.meta}>北京时间 {history.today}</p></div><Button type="button" variant="outline" onClick={()=>select(history.today,'day')}>回到今天</Button></div>
@@ -41,7 +41,7 @@ export function JournalCoveragePanel({history,onOpen}:{history:JournalHistory;on
    </div>
    <div className={s.period}>
     <h3>周期资料</h3>
-    <div className={s.controls}><label>参考日期<input aria-label="参考日期" type="date" min="0001-01-01" max="9999-12-31" value={date} onChange={event=>enterDate(event.target.value)} aria-invalid={!!inputError}/></label><label>资料周期<select aria-label="资料周期" value={period} onChange={event=>setPeriod(event.target.value as JournalPeriod)}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>
+    <div className={s.controls}><label>参考日期<input aria-label="参考日期" type="date" min="0001-01-01" max="9999-12-31" value={date} onChange={event=>enterDate(event.target.value)} aria-invalid={!!inputError}/></label><label>资料周期<select aria-label="资料周期" value={period} onChange={event=>onPeriodChange(event.target.value as JournalPeriod)}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>
     {inputError&&<p role="alert">{inputError}</p>}
     <p className={s.range}>{selection.range.from} 至 {selection.range.to}（含首尾日）</p>
     <p aria-live="polite">已保存 {selection.rows.length} 条，分布在 {selection.recordedDays} 个记录日期。</p>

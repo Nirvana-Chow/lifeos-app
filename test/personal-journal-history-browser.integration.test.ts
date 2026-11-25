@@ -48,12 +48,14 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
    return route.fulfill({status:200,json:values[url.pathname]??{}});
   });
   await page.goto(origin+'/personal/journal',{waitUntil:'domcontentloaded',timeout:90000});
-  await expect(page.getByRole('heading',{name:'历史上的今天',exact:true})).toBeVisible();
-  await expect(page.getByRole('region',{name:'历史上的今天'}).getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
+  const day=page.getByRole('region',{name:'日记',exact:true});
+  const past=day.getByText('历史上的今天',{exact:true});
+  await expect(day.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
+  await past.click();
   const link=page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 1',exact:true});await expect(link).toHaveAttribute('href','/personal/journal?record='+current.id);
   await expect(page.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 2',exact:true})).toHaveCount(0);
   await link.focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
-  const article=page.getByRole('article',{name:'日记原文'});await expect(article.getByText('Synthetic original diary',{exact:true})).toBeVisible();await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();
+  const article=page.getByRole('article',{name:'日记原文'});await expect(article.getByText('Synthetic original diary',{exact:true})).toBeHidden();await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();await article.getByText('最初保存的原文',{exact:true}).click();await expect(article.getByText('Synthetic original diary',{exact:true})).toBeVisible();
   await page.goto(origin+'/personal/journal?record='+current.id);await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
   const activity=article.getByRole('link',{name:'查看当天活动',exact:true});
   await expect(activity).toHaveAttribute('href','/personal/activity?date=2025-11-13');
@@ -65,16 +67,15 @@ test('OPT-IN journal history route preserves original links, closed semantics, p
    await page.goBack();
    await expect(article.getByText('Synthetic corrected diary',{exact:true})).toBeVisible();
   }
-  await page.getByText('相似日的实现状态',{exact:true}).click();await expect(page.getByText(/相似日尚未启用/)).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});
   await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toHaveCount(0);
   await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});
   await expect(page.getByRole('heading',{name:'日记原文',exact:true})).toBeVisible();
-  empty=true;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(page.getByRole('region',{name:'历史上的今天'}).getByRole('alert')).toHaveText('日记已不在当前快照中，请重新读取历史。');
+  empty=true;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(day.getByRole('alert')).toHaveText('日记已不在当前快照中，请重新读取历史。');
   await expect(page.getByRole('article',{name:'日记原文'})).toHaveCount(0);
-  await page.goto(origin+'/personal/journal');await expect(page.getByText('当前记录库没有过去年份同月同日的日记。',{exact:true})).toBeVisible();
-  authorized=false;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(page.getByRole('region',{name:'历史上的今天'}).getByText('Synthetic corrected diary',{exact:true})).toHaveCount(0);
+  await page.goto(origin+'/personal/journal');await expect(day.getByText('当前库内没有当天日记。',{exact:true})).toBeVisible();await past.click();await expect(page.getByText('当前记录库没有过去年份同月同日的日记。',{exact:true})).toBeVisible();
+  authorized=false;await page.getByRole('button',{name:'重新读取历史',exact:true}).click();await expect(day.getByText('Synthetic corrected diary',{exact:true})).toHaveCount(0);
   assert.deepEqual(external,[]);assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);await page.close();
  }
  assert.ok(!/Failed to compile|Module not found/.test(log),log);

@@ -67,6 +67,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      return route.fulfill({json:data[path]??{}});
     });
     await page.goto(journal,{waitUntil:'networkidle'});
+    await page.getByText('管理日记',{exact:true}).click();
     await page.getByRole('button',{name:'新增日记',exact:true}).click();
     const draft=page.getByRole('textbox',{name:'正文',exact:true});
     await page.getByRole('textbox',{name:'标题',exact:true}).fill('Synthetic unsaved title');
@@ -86,7 +87,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      await expect(retry).toBeVisible();
      await expect(page).toHaveURL(journal);
      await expect(draft).toBeHidden();
-     await expect(page.getByRole('heading',{name:'日记',exact:true,level:1})).toBeHidden();
+     await expect(page.getByRole('heading',{name:'记录',exact:true,level:1})).toBeHidden();
      failure=null;
      await retry.click();
      await expect(draft).toBeVisible();
