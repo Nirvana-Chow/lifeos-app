@@ -106,6 +106,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     failure=null;
     await context.addCookies([{name:'fixture-ready',value:'1',url:origin}]);
     await page.goto(journal,{waitUntil:'domcontentloaded',timeout:90000});
+    await expect(page.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
     await page.getByRole('button',{name:'退出登录',exact:true}).click();
     await expect(page).toHaveURL(origin+'/login');
     assert.deepEqual(commands,['POST /api/platform/auth/sign-out']);
