@@ -41,7 +41,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  const moduleSwitch=page.locator('header').getByRole('navigation',{name:'切换模块'});
  const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
  const records=[['做饭','/personal/cooking']] as const;
- await expect(moduleSwitch.getByRole('button')).toHaveText(['日常','生活与关系','财务','项目']);
+ await expect(moduleSwitch.getByRole('button')).toHaveText(['日常','兴趣学习','财务','项目']);
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('日常');
  await assertWorkspaceModule(nav,'日常',planning);
  await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -130,7 +130,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.goto(origin+'/personal',{waitUntil:'networkidle'});
  const historyLength=await page.evaluate(()=>history.length);
  for(const [module,items] of [
-  ['生活与关系',records],
+  ['兴趣学习',records],
   ['财务',[['财务','/personal/finance']]],
   ['项目',[['项目'],['领域']]],
  ] as const){
@@ -140,7 +140,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  }
  await expect(page).toHaveURL(origin+'/personal');
  assert.equal(await page.evaluate(()=>history.length),historyLength);
- await moduleSwitch.getByRole('button',{name:'生活与关系',exact:true}).click();
+ await moduleSwitch.getByRole('button',{name:'兴趣学习',exact:true}).click();
  await expect(domains.getByRole('heading',{name:'合成领域',exact:true})).toBeVisible();
  await expect(domains.getByText('合成下一步',{exact:true})).toBeVisible();
  await expect(domains.getByRole('heading',{name:'未关联领域',exact:true})).toBeVisible();
@@ -152,7 +152,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await back.focus();await page.keyboard.press('Enter');await expect(domains).toBeVisible();
  await expect(location).toHaveText('总览');
  await expect(forward).toBeEnabled();
- await assertWorkspaceModule(nav,'生活与关系',records);
+ await assertWorkspaceModule(nav,'兴趣学习',records);
  await breadcrumb.getByRole('button',{name:'前进',exact:true}).click();await expect(page).toHaveURL(/page=tasks/);
  await assertWorkspaceModule(nav,'日常',planning);
  await breadcrumb.getByRole('button',{name:'后退',exact:true}).click();await expect(domains).toBeVisible();
@@ -199,10 +199,10 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   const cdp=await page.context().newCDPSession(page);
   await cdp.send('Emulation.setPageScaleFactor',{pageScaleFactor:2});
   await expect.poll(()=>page.evaluate(()=>visualViewport?.scale)).toBe(2);
-  const recordsModule=moduleSwitch.getByRole('button',{name:'生活与关系'});
+  const recordsModule=moduleSwitch.getByRole('button',{name:'兴趣学习'});
   await recordsModule.focus();
   await page.keyboard.press('Enter');
-  await assertWorkspaceModule(nav,'生活与关系',records);
+  await assertWorkspaceModule(nav,'兴趣学习',records);
   const lastMetric=metricButtons.last();
   await lastMetric.evaluate(button=>button.scrollIntoView({inline:'end',block:'nearest'}));
   const points=await lastMetric.evaluate(button=>{
