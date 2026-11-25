@@ -67,6 +67,7 @@ import {ThemeSwitch} from "../workbench/theme-switch";
 import {CategoryGrid} from "./category-grid";
 import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
+import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
@@ -166,7 +167,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
   const settingsSection=page==='settings'||page==='requirements';
-  const settingsLabels:Record<SettingsPanel,string>={general:'通用',topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
+  const settingsSubpage=settingsOpen&&(settingsPanel==='security'||settingsPanel==='api-keys');
+  const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
+  const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
   const [chosenModule,setChosenModule]=useState<string|null>(null);
   const moduleGroups=groupWorkspaceModules(ownerModules.links).filter((group,index)=>index===0||group.links.length>0);
   const pathModule=moduleGroups.find(group=>group.links.some(link=>link.href===ownerModules.path))?.label;
@@ -630,6 +633,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       );
     return <TaskBoard tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
   }
+  function canLogOut() {
+    if (props.saving || props.uncertain) return false;
+    if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return false;
+    if (classificationPlanId && props.classificationCloseGuard?.current?.() === false) return false;
+    return !settingsOpen || props.settingsCloseGuard?.current?.() !== false;
+  }
+
+  const [signedOut,setSignedOut]=useState(false);
+  if(signedOut)return <p role="status">已退出。</p>;
+
   return (
     <div
       data-lifeos-surface="personal"
@@ -650,7 +663,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }}
       ref={setPortalContainer}
     >
-      {page!=='requirements'&&ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope} container={portalContainer} blocked={state.status!=='ready'||!!props.saving||!!props.uncertain||settingsOpen||!!classificationPlanId||mobileOpen}/>}
+      {page!=='requirements'&&ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
       <header className="lo-header">
         <Button
@@ -687,29 +700,28 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               aria-label="退出登录"
               title="退出登录"
               data-workspace-nav
-              onClick={() => {
-                if (props.saving || props.uncertain) return;
-                if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return;
-                if (classificationPlanId && props.classificationCloseGuard?.current?.() === false) return;
-                if (settingsOpen && props.settingsCloseGuard?.current?.() === false) return;
-                props.onLogout?.();
-              }}
+              onClick={() => {if(canLogOut())props.onLogout?.();}}
             >
               <LogOut size={17} aria-hidden="true" />
             </Button>
+          )}
+          {access.authenticated === true && contentPage && !props.onLogout && (
+            <LogoutButton className="lo-icon-button lo-logout" icon={<LogOut size={17} aria-hidden="true"/>}
+              beforeLogout={()=>canLogOut()&&props.onBeforeNavigate?.()!==false}
+              onConfirmed={()=>setSignedOut(true)}/>
           )}
         </div>
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
-        <main id="personal-main" className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""} ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas"].includes(page)?"lo-main-matters":""}`}>
+        <main id="personal-main" tabIndex={settingsOpen?0:undefined} className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""} ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas"].includes(page)?"lo-main-matters":""}`}>
           <div data-matters-filters-expanded={filtersOpen&&(page==="tasks"||page==="inbox")?"":undefined} className={contentPage ? contentPage.wide?"lo-content lo-content-wide":"lo-content lo-content-account" : page === "settings" ? `lo-content lo-content-wide ${workspaceStyles.settingsContent}` :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <nav aria-label="浏览位置" className={workspaceStyles.breadcrumbs}>
             <div className={workspaceStyles.breadcrumbTrail}>
-              <Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>LifeOS</Button><ChevronRight aria-hidden="true" size={14}/>
-              {settingsSection&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight aria-hidden="true" size={14}/></>}
-              <span aria-current="page">{settingsOpen?settingsLabels[settingsPanel]:title}</span>
+              {!isOverview&&<><Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>总览</Button><ChevronRight aria-hidden="true" size={14}/></>}
+              {settingsSubpage&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight aria-hidden="true" size={14}/></>}
+              <span aria-current="page">{breadcrumbTitle}</span>
             </div>
             <div className={workspaceStyles.historyButtons}>
               <Button variant="ghost" data-workspace-nav aria-label="后退" disabled={!historyControls.back} onClick={()=>traverseHistory('back')}><ArrowLeft size={16}/></Button>
