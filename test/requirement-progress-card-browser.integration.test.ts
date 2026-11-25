@@ -70,7 +70,7 @@ test('owner overview uses verified requirement delivery evidence and opens the c
     truncated:mode==='truncated',observedAt:'2026-11-25T00:00:00Z',baseline}});
   }
   return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'overview-owner',
-   spaceId:mode==='wrong-space'?'another-space':'overview-space',requirementsEnabled:true,writable:false}});
+   spaceId:mode==='wrong-space'?'another-space':'overview-space',requirementsEnabled:true,storageVerified:true,writable:false}});
  });
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
  const card=page.getByRole('region',{name:'需求进度',exact:true});
@@ -96,6 +96,7 @@ test('owner overview uses verified requirement delivery evidence and opens the c
  await expect(page.locator('[data-requirements-page]')).toBeVisible();
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
  await expect(page.getByRole('heading',{name:'项目',level:1,exact:true})).toBeVisible();
+ await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'生活与关系',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'设置',exact:true}).click();
  const product=page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'产品',exact:true});
  await product.getByRole('button',{name:'需求池',exact:true}).click();
