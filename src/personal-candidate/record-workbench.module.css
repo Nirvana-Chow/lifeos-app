@@ -12,3 +12,11 @@
 }
 .personActions > summary:hover { color: var(--foreground); }
 .personActions > summary:focus-visible { outline: 2px solid var(--ring); }
+
+@media(max-width:640px) {
+ .dialog {
+  top:calc(var(--lo-keyboard-top,0px) + var(--lo-keyboard-height,100dvh) / 2);
+  max-height:calc(var(--lo-keyboard-height,100dvh) - 20px);
+ }
+ .form :is(input,textarea,select) { font-size:16px; min-height:44px; }
+}

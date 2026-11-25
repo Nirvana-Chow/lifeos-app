@@ -35,6 +35,7 @@ test('workspace settings navigation keeps the three legacy routes outside the de
  function settings(value:unknown,preferenceScope=scope){
   const navigated:string[]=[],module={exports:{} as any};
   const imports:Record<string,unknown>={
+   '../workbench/workspace-layout-control':{},'radix-ui':{Popover:{}},
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
    '../personal-candidate/project-detail-href':{projectDetailHref},

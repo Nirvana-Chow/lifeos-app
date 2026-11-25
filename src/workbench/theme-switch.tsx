@@ -44,6 +44,14 @@ export function ThemeSwitch({allowSystem=false}:{allowSystem?:boolean}={}) {
  </div>;
 }
 
+export function ThemeSystemAction({className}: {className: string}) {
+ const {ready, preference}=useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot, () => serverThemeSnapshot);
+ return <button type="button" className={className} disabled={!ready} aria-pressed={preference==='system'}
+  onClick={()=>themeStore.setPreference('system')}>
+  <Monitor size={17} aria-hidden="true"/>跟随系统
+ </button>;
+}
+
 /** General settings uses the same document store and early-paint preference as the header. */
 export function AppearanceSettings({showPalettePresets=true}:{showPalettePresets?:boolean}={}){
  const paletteGroup=useId();

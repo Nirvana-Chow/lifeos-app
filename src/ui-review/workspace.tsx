@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {Popover} from "radix-ui";
 import {
   LayoutDashboard,
+  Ellipsis,
   CheckSquare2,
   Settings,
   PanelLeftClose,
@@ -63,7 +65,8 @@ import type {
   TaskView,
 } from "./contract";
 import "./review.css";
-import {ThemeSwitch} from "../workbench/theme-switch";
+import {ThemeSwitch,ThemeSystemAction} from "../workbench/theme-switch";
+import {WorkspaceLayoutSettings, WorkspaceLayoutToggle} from "../workbench/workspace-layout-control";
 import {CategoryGrid} from "./category-grid";
 import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
@@ -174,7 +177,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
   const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
   const [chosenModule,setChosenModule]=useState<string|null>(null);
-  const moduleGroups=groupWorkspaceModules(ownerModules.links);
+  const globalSearch=props.desktopNavigation ? ownerModules.links.find(link=>link.id==='search') : undefined;
+  const moduleGroups=groupWorkspaceModules(globalSearch ? ownerModules.links.filter(link=>link!==globalSearch) : ownerModules.links);
+  const financeLink=props.desktopNavigation ? ownerModules.links.find(link=>link.id==='finance') : undefined;
+  const portfolioLink=props.desktopNavigation ? ownerModules.links.find(link=>link.id==='portfolio') : undefined;
+  const financeDestination=financeLink??portfolioLink;
   const selectedModule=moduleGroups.find(group=>group.id===chosenModule);
   const settingsNavigationActive=settingsSection&&!selectedModule;
   const routeModule=moduleGroups.find(group=>group.links.some(link=>
@@ -184,7 +191,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id===pageModule);
   const moduleSwitch=(compact=false)=>(
     <nav aria-label="切换模块" className={compact?workspaceStyles.mobileModules:workspaceStyles.headerModules}>
-      {moduleGroups.map(group=><Button key={group.id} variant="ghost" aria-pressed={group.id===activeModule?.id} data-workspace-nav
+      {moduleGroups.map(group=>group.id==='finance'&&financeDestination ? (
+        <Button key={group.id} asChild variant="ghost">
+          <a href={financeDestination.href} data-workspace-nav aria-current={routeModule?.id==='finance'?'page':undefined}>{group.label}</a>
+        </Button>
+      ) : <Button key={group.id} variant="ghost" aria-pressed={group.id===activeModule?.id} data-workspace-nav
         onClick={()=>chooseModule(group.id)}>{group.label}</Button>)}
     </nav>
   );
@@ -507,7 +518,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const navigation = (
     <>
       {settingsNavigationActive?settingsNavigation:<nav className="lo-nav" aria-label="主导航">
-        {activeModule&&<div role="group" aria-label={activeModule.label} className={workspaceStyles.navigationGroup}>
+        {activeModule&&!(activeModule.id==='finance'&&financeDestination)&&<div role="group" aria-label={activeModule.label} className={workspaceStyles.navigationGroup}>
           <span className={workspaceStyles.navigationLabel}>{activeModule.label}</span>
           {activeModule.pages.map(id=>{
             const {label,icon:Icon}=workspacePageNavigation[id];
@@ -651,6 +662,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       );
     return <TaskBoard flatProjects tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
   }
+  function keepFocusedWorkspaceField(event: Event) {
+    const field=document.activeElement;
+    if(field?.matches("input, textarea, select")&&!field.closest('[data-workspace-account-menu]'))event.preventDefault();
+  }
+
   function canLogOut() {
     if (props.saving || props.uncertain) return false;
     if (page === 'requirements' && requirementNavigationGuard.current?.() === false) return false;
@@ -660,11 +676,23 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
 
   const [signedOut,setSignedOut]=useState(false);
   if(signedOut)return <p role="status">已退出。</p>;
+  const refreshAvailable=page!=="settings" && page!=="requirements" && !unavailablePage && !contentPage && onRefresh;
+  const logoutIcon=<LogOut size={17} aria-hidden="true"/>;
+  const logoutClass=props.desktopNavigation ? workspaceStyles.accountAction : "lo-icon-button lo-logout";
+  const logoutAction=access.authenticated===true && (props.onLogout ? (
+    <Button variant="ghost" className={logoutClass} aria-label="退出登录" data-workspace-nav
+      onClick={()=>{if(canLogOut())props.onLogout?.();}}>
+      {logoutIcon}{props.desktopNavigation && "退出登录"}
+    </Button>
+  ) : contentPage && (
+    <LogoutButton className={logoutClass} icon={props.desktopNavigation ? <>{logoutIcon}退出登录</> : logoutIcon}
+      beforeLogout={()=>canLogOut()&&props.onBeforeNavigate?.()!==false} onConfirmed={()=>setSignedOut(true)}/>
+  ));
 
   return (
     <div
       data-lifeos-surface="personal"
-      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigation ? workspaceStyles.desktopNavigation : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
+      className={`lo-shell ${workspaceStyles.shell} ${props.desktopNavigation ? workspaceStyles.adaptiveLayout : ""} ${collapsed ? "lo-is-collapsed" : ""}`}
       onMouseDownCapture={event => {
         const target = event.target as Element;
         if (target.closest?.("[data-workspace-nav], a[href]") && document.activeElement?.matches("input, textarea, select")) event.preventDefault();
@@ -706,30 +734,33 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         </Button>
         {moduleSwitch()}
         <div className="lo-header-actions">
+          {props.desktopNavigation && <WorkspaceLayoutToggle className={`lo-icon-button ${workspaceStyles.layoutToggle}`}/>}
           <Button variant="ghost" size="icon" className="lo-icon-button" aria-label="打开设置" title="设置"
             data-workspace-nav onClick={()=>openSettings()}><Settings size={19} aria-hidden="true"/></Button>
-          <ThemeSwitch allowSystem={settingsSection}/>
-          {access.authenticated === true && access.writable === false && (
-            <Badge variant="outline">只读</Badge>
-          )}
-          {access.authenticated === true && props.onLogout && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="lo-icon-button lo-logout"
-              aria-label="退出登录"
-              title="退出登录"
-              data-workspace-nav
-              onClick={() => {if(canLogOut())props.onLogout?.();}}
-            >
-              <LogOut size={17} aria-hidden="true" />
-            </Button>
-          )}
-          {access.authenticated === true && contentPage && !props.onLogout && (
-            <LogoutButton className="lo-icon-button lo-logout" icon={<LogOut size={17} aria-hidden="true"/>}
-              beforeLogout={()=>canLogOut()&&props.onBeforeNavigate?.()!==false}
-              onConfirmed={()=>setSignedOut(true)}/>
-          )}
+          {globalSearch && <Button asChild variant="ghost" size="icon" className="lo-icon-button">
+            <a href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
+              <Search size={19} aria-hidden="true"/>
+            </a>
+          </Button>}
+          <ThemeSwitch allowSystem={!props.desktopNavigation && settingsSection}/>
+          {access.authenticated===true && access.writable===false && <Badge variant="outline">只读</Badge>}
+          {props.desktopNavigation ? <Popover.Root>
+            <Popover.Trigger asChild>
+              <Button variant="ghost" size="icon" className="lo-icon-button" data-workspace-nav
+                aria-label="账号与更多操作" title="账号与更多操作"><Ellipsis size={20} aria-hidden="true"/></Button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content align="end" sideOffset={8} collisionPadding={8} aria-label="账号操作" className={workspaceStyles.accountMenu}
+                data-workspace-account-menu onOpenAutoFocus={keepFocusedWorkspaceField} onCloseAutoFocus={keepFocusedWorkspaceField}>
+                <WorkspaceLayoutSettings className={workspaceStyles.layoutSettings}/>
+                <ThemeSystemAction className={workspaceStyles.accountAction}/>
+                {refreshAvailable && <Button variant="ghost" className={workspaceStyles.accountAction} onClick={onRefresh}>
+                  <RefreshCw size={17} aria-hidden="true"/>刷新数据
+                </Button>}
+                {logoutAction}
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root> : logoutAction}
         </div>
       </header>
       <div className="lo-body">
@@ -763,7 +794,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
             <div className="lo-page-actions">
-              {page !== "settings" && page !== "requirements" && !unavailablePage && !contentPage && onRefresh && (
+              {contentPage&&financeLink&&portfolioLink&&ownerModules.path===financeLink.href&&<Button asChild variant="ghost">
+                <a href={portfolioLink.href} data-workspace-nav>账户与投资</a>
+              </Button>}
+              {!props.desktopNavigation && refreshAvailable && (
                 <Button
                   variant="ghost"
                   className="lo-icon-button"
