@@ -11,7 +11,7 @@ import{editorFromEntry,type PersonalEditorFields}from'./editor';
 import{resolveTaskTarget,type TaskIdentity,type TaskTarget}from'./task-editor-state';
 import type{PublicEntry}from'../platform/contracts';
 import type{WorkspaceTask}from'./workspace-data';
-import{OwnerSessionRecheck}from'./privacy';
+import{OwnerSessionRecheck,useOwnerPageVerification}from'./privacy';
 type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boolean};
 type TaskActions={
  viewPreferenceScope:string|null;
@@ -30,6 +30,7 @@ const sameBinding=(a:PersonalBinding,b:PersonalBinding)=>a.ownerId===b.ownerId&&
 /** UI-only shell is supplied by its owner; this host alone owns personal API access. */
 export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreateTask=false}:{initialTaskId?:string;initialCreateTask?:boolean;children:(props:ControllerSnapshot&TaskActions)=>ReactNode}){
  const recheckOwner=useContext(OwnerSessionRecheck);
+ const ownerConcealed=useOwnerPageVerification()===false;
  const controller=useRef<PersonalWorkspaceController|null>(null);
  const commandStorage=useRef(false);
  const cellDrafts=useRef(new TaskCellDraftMemory()).current;
@@ -50,8 +51,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   return()=>{stop();host.suspend();cellDrafts.clear();controller.current=null;commandStorage.current=false;document.removeEventListener('visibilitychange',visibility);window.removeEventListener('beforeunload',warn);window.removeEventListener('lifeos-owner-session-restored',restored);};
  },[]);
  useEffect(()=>{if(initialOpened.current||snapshot.state.status!=='ready')return;initialOpened.current=true;const target=resolveTaskTarget(initialTaskId,initialCreateTask,snapshot.state.data.tasks);if(target){returnFocus.current=document.activeElement as HTMLElement|null;open(target);}},[snapshot.state,initialTaskId,initialCreateTask]);
- // A draft stays in component memory while concealed, scoped to its original verified owner and space.
- const verifiedBinding=controller.current?.getEditorBinding()??null;
+ // Release editor portal modality on auth lock while keeping each owner-bound draft mounted.
+ const verifiedBinding=ownerConcealed?null:controller.current?.getEditorBinding()??null;
  const concealed=!verifiedBinding||!editor||!sameBinding(editor.binding,verifiedBinding);
  useEffect(()=>{if(!verifiedBinding)return;const scope=JSON.stringify([verifiedBinding.ownerId,verifiedBinding.spaceId]);if(restoredBatchScope.current===scope)return;restoredBatchScope.current=scope;setBatchBinding(null);try{const retained=window.sessionStorage.getItem('lifeos.personal.todo-batch.v1:'+encodeURIComponent(verifiedBinding.ownerId)+':'+encodeURIComponent(verifiedBinding.spaceId));const host=controller.current;const matching=!host?.getSnapshot().uncertain||retained&&JSON.parse(retained).rows?.some((row:{command:unknown})=>host?.matchesPendingBatchCommand(row.command));if(retained&&matching){setEditor(null);setBatchBinding(verifiedBinding);}else setBatchBinding(null);}catch{/* Editor reports storage failure on open. */}},[verifiedBinding?.ownerId,verifiedBinding?.spaceId]);
  const selectedId=editor?.target.mode==='edit'?editor.target.task.id:null;
@@ -129,7 +130,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   },
  })}
  {editorContent}
- {concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
+ {!ownerConcealed&&concealed&&!batchBinding&&snapshot.singleTask&&snapshot.singleTask.entry.id!==dismissedTaskId&&<TaskEditor
   target={{mode:'edit',task:snapshot.singleTask.entry}} entry={snapshot.singleTask.entry} spaceId={snapshot.singleTask.spaceId}
   relations={{}} writable={false} saving={false} uncertain={false} error={null}
   onSave={async()=>null} onRetry={async()=>null} onStopWaiting={()=>{}}

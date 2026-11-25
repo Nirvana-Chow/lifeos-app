@@ -176,10 +176,12 @@ async function expectAboveFooter(page:Page,control:import('@playwright/test').Lo
   return !!box&&!!footer&&box.y>=0&&box.y+box.height<=footer.y+1;
  }).toBe(true);
 }
-async function fixture(root:string,managedCallback=false,moduleNavigation=false){
+async function fixture(root:string,managedCallback=false,moduleNavigation=false,sessionRecovery=false){
  await mkdir(join(root,'app/personal'),{recursive:true});
  await mkdir(join(root,'app/login'),{recursive:true});
- await writeFile(join(root,'app/login/page.tsx'),'export default function FixtureLogin(){return <h1>合成登录页</h1>}');
+ if(sessionRecovery){
+  await cp(join(source,'app/login/page.tsx'),join(root,'app/login/page.tsx'));
+ }else await writeFile(join(root,'app/login/page.tsx'),'export default function FixtureLogin(){return <h1>合成登录页</h1>}');
  await Promise.all([
   ...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
   cp(join(source,'app/personal/page.tsx'),join(root,'app/personal/page.tsx')),
@@ -190,7 +192,8 @@ async function fixture(root:string,managedCallback=false,moduleNavigation=false)
   symlink(join(source,'node_modules'),join(root,'node_modules')),
   symlink(join(source,'components'),join(root,'components')),
  ]);
- await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformMfaState=async()=>({kind:"ready"}); export const readPlatformPagePrincipal=async(headers?:Headers)=>headers?.has("x-fixture-denied")?null:({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true; export const readPlatformLoginCapability=async()=>({sessionDuration:false});\n');
+ await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformMfaState=async()=>({kind:"ready"}); export const readPlatformPagePrincipal=async(headers?:Headers)=>headers?.has("x-fixture-denied")?null:({id:"synthetic-owner"}); export const readPlatformPasswordCapability=async()=>true; export const readPlatformLoginCapability=async()=>('+JSON.stringify(sessionRecovery?{mode:'personal',enabled:true,sessionDuration:true,ownerAlias:'owner'}:{sessionDuration:false})+');\n');
+ if(sessionRecovery)await writeFile(join(root,'src/business-mcp-oauth/page-state.ts'),'export const readOAuthPageState=async()=>null;');
  if(moduleNavigation)await Promise.all(['journal','schedule','media','cooking','portfolio','[...section]'].map(name=>
   cp(join(source,'app/personal',name),join(root,'app/personal',name),{recursive:true})));
  if(managedCallback){
@@ -737,6 +740,76 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
   });
  }
 
+});
+
+test('OPT-IN foreground task editor expiry releases modality and restores its draft after login',{
+ skip:process.env.RUN_SETTINGS_BROWSER_TESTS!=='1'&&'Requires native Chrome and disposable synthetic Next fixture',timeout:180_000,
+},async t=>{
+ const root=await mkdtemp(join(tmpdir(),'lifeos-task-expiry-')),server=await fixture(root,false,false,true),stopped=once(server,'exit');
+ t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
+ const entry='/personal?page=tasks&create=todo',origin=await prepareSettingsFixture(server,entry);
+ const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ for(const batch of [false,true])await t.test(batch?'batch draft':'single-task draft',async t=>{
+  const page=await browser.newPage({viewport:{width:390,height:844}});t.after(()=>page.close());
+  const writes=await installSyntheticReads(page,origin),authPosts:string[]=[];
+  let expiresAt=Date.now()+120_000;
+  await page.route(origin+'/api/platform/status',route=>route.fulfill({json:{scope:'synthetic-owner-session'}}));
+  await page.route(origin+'/api/platform/auth/**',route=>{
+   const request=route.request(),path=new URL(request.url()).pathname;
+   if(path.endsWith('/get-session')){
+    assert.equal(request.method(),'GET');
+    return route.fulfill({json:{user:{id:'synthetic-owner'},session:{
+     mfaVerified:true,sessionDurationMode:'fixed',sessionDurationSeconds:1800,expiresAt:new Date(expiresAt).toISOString(),
+    }}});
+   }
+   assert.equal(request.method(),'POST');
+   authPosts.push(path);
+   if(path.endsWith('/sign-in/email'))return route.fulfill({json:{twoFactorRedirect:true}});
+   assert.equal(path,'/api/platform/auth/two-factor/verify-totp');
+   assert.equal(request.postDataJSON().code,'123456');
+   expiresAt=Date.now()+180_000;
+   return route.fulfill({json:{user:{id:'synthetic-owner'}}});
+  });
+  await page.clock.install();
+  await page.goto(origin+entry,{waitUntil:'domcontentloaded'});
+  const single=page.getByRole('dialog',{name:'新建待办',exact:true});
+  await expect(single).toBeVisible({timeout:30000});
+  if(batch)await single.getByRole('button',{name:'多行录入',exact:true}).click();
+  const editor=batch?page.getByRole('dialog',{name:'多行录入待办',exact:true}):single;
+  const title=editor.getByRole('textbox',{name:batch?'第1项标题':'标题',exact:true});
+  const body=editor.getByRole('textbox',{name:'正文',exact:true});
+  const selected=editor.getByRole('checkbox',{name:'保存第2项',exact:true});
+  if(batch){
+   await editor.getByRole('textbox',{name:'原始输入（最多50行）',exact:true}).fill('合成第一行\n合成第二行');
+   await editor.getByRole('button',{name:'预检条目',exact:true}).click();
+   await selected.uncheck();
+  }else await body.fill('合成待办未保存正文');
+  await title.fill('合成待办未保存标题');
+  const originalUrl=page.url();
+  const untilExpiry=expiresAt-(await page.evaluate(()=>Date.now()));
+  assert.ok(untilExpiry>0);
+  assert.equal(await page.evaluate(()=>document.visibilityState),'visible');
+  await page.clock.fastForward(untilExpiry+100);
+  const reauth=page.getByRole('button',{name:'重新登录',exact:true});
+  await expect(reauth).toBeVisible();
+  await page.keyboard.press('Tab');await expect(reauth).toBeFocused();
+  await reauth.click({timeout:5000});
+  await expect(editor).toHaveCount(0);
+  const password=page.getByLabel('密码',{exact:true});
+  const code=page.getByLabel('验证器动态码',{exact:true});
+  await password.focus();await expect(password).toBeFocused();
+  await page.keyboard.type('Synthetic-browser-password');
+  await page.keyboard.press('Tab');await expect(code).toBeFocused();
+  await page.keyboard.type('123456');
+  await page.getByRole('button',{name:'登录',exact:true}).click();
+  await expect(editor).toBeVisible();
+  await expect(title).toHaveValue('合成待办未保存标题');
+  if(batch)await expect(selected).not.toBeChecked();
+  else await expect(body).toHaveValue('合成待办未保存正文');
+  await expect(page).toHaveURL(originalUrl);
+  assert.deepEqual(authPosts,['/api/platform/auth/sign-in/email','/api/platform/auth/two-factor/verify-totp']);
+  assert.equal(writes(),0);
+ });
 });
 
 test('OPT-IN overview draft survives rejected logout, Settings and matters page departures',{
