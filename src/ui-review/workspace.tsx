@@ -619,12 +619,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     if (state.status !== "ready")
       return <DataState state={state} onRefresh={onRefresh} />;
     if (view === "gantt") return <TaskProjectGantt label="待办" rows={rows} renderTitle={task=><button type="button" aria-label={`查看待办 ${task.title}`} onClick={event=>openTask(task,event.currentTarget)}>{task.title}</button>} partial={data?.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setView('table');}}/>;
+    const emptyMessage = filterActive ? "没有符合条件的待办"
+      : page === "inbox" && tasks.some(task => task.inInbox === null) ? "收件箱分类尚未提供"
+      : data?.coverage === "partial" ? "当前已加载范围暂无待办" : "暂无待办";
     if (view === "table")
       return (
         <TaskTable
           viewPreferenceScope={props.viewPreferenceScope}
           flatProjects
           tasks={rows}
+          emptyMessage={emptyMessage}
           writable={canWrite}
           blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain}
           onSave={props.onSaveTask}
@@ -636,17 +640,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       );
     if (!rows.length)
       return (
-        <div className="lo-empty">
-          <CheckSquare2 size={26} />
-          <h2>
-            {filterActive
-              ? "没有符合条件的待办"
-              : page === "inbox" && tasks.some((task) => task.inInbox === null)
-                ? "收件箱分类尚未提供"
-                : data?.coverage === "partial"
-                  ? "当前已加载范围暂无待办"
-                  : "暂无待办"}
-          </h2>
+        <div className="lo-empty lo-task-empty">
+          <h2>{emptyMessage}</h2>
           {filterActive && (
             <Button variant="outline" onClick={() => setFilter(defaultFilter)}>
               清除筛选
@@ -817,9 +812,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {props.showManualTaskCreation !== false && (page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
+              {page === "tasks" && !unavailablePage && !contentPage &&
                 state.status === "ready" && mayWrite(access) && access.allowedTypes?.includes("todo") && props.onCreateTask && (
-                  <Button className="lo-primary" disabled={!canWrite} onClick={() => props.onCreateTask?.()}>
+                  <Button variant="outline" size="sm" className="lo-task-create" disabled={!canWrite} onClick={event => props.onCreateTask?.(event.currentTarget)}>
                     <Plus size={17} />
                     新建待办
                   </Button>
@@ -1043,6 +1038,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {page === "requirements" && <>
             {retainPrivateRequirements && <RequirementsPage
               key={verifiedPrivateScope ?? retainedPrivateScope}
+              scope={verifiedPrivateScope??undefined}
               concealed={!showPrivateRequirements}
               container={portalContainer?.querySelector<HTMLElement>('#personal-main')??null}
               navigationGuard={requirementNavigationGuard}

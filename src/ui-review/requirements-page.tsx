@@ -4,11 +4,11 @@ import {useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from
 import {requirements,selectRequirements,type Requirement,type RequirementFilters} from '../platform/requirements';
 import {RequirementsTable,RequirementsBoard,RequirementsGantt,implementationLabels,acceptanceLabels,type RequirementView,type RequirementGrouping} from './requirements-views';
 import {RequirementDetail} from './requirements-detail';
-import {RequirementMutationSession,makeRequirementCommand,readRequirementItem,type RequirementBinding,type RequirementMutationState} from '../requirements-candidate/client';
+import {RequirementMutationSession,makeRequirementCommand,readRequirementItem,readRequirementsSnapshot,type RequirementBinding,type RequirementMutationState} from '../requirements-candidate/client';
 import {requirementDepartureAllowed} from '../requirements-candidate/navigation';
 import type {RequirementFields} from '../requirements-candidate/domain';
 import type {RequirementItem,RequirementsSnapshot} from '../requirements-candidate/service';
-import {deliveryLabels,requirementDelivery,type DeliveryState} from './requirements-delivery';
+import {deliveryLabels,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
 import styles from './requirements-page.module.css';
 
 const baseline=requirements();
@@ -18,10 +18,12 @@ const noSubscribe=()=>()=>{};
 const emptyFields=():RequirementFields=>({title:'',body:'',phaseId:phases[0]?.id??'foundation',priority:'P2',plannedStartOn:null,plannedEndOn:null});
 const createPreview=(fields:RequirementFields):Requirement=>({id:'new-requirement',version:1,title:'新增需求',description:fields.body,status:'not_started',delivery:'backlog',sourceRefs:[],acceptanceCriteria:[],evidence:[],blockedBy:[]});
 const viewLabels:Record<RequirementView,string>={table:'表格',board:'看板',gantt:'甘特'};
+type PoolRange='pending'|'completed';
 
 /** The server composes private records; browser storage retains only unresolved commands. */
-export function RequirementsPage({container,navigationGuard,concealed=false}:{container?:HTMLElement|null;navigationGuard?:{current:(()=>boolean)|null};concealed?:boolean}={}){
+export function RequirementsPage({container,navigationGuard,scope,concealed=false}:{container?:HTMLElement|null;navigationGuard?:{current:(()=>boolean)|null};scope?:string;concealed?:boolean}={}){
  const [filters,setFilters]=useState<RequirementFilters>({});
+ const [range,setRange]=useState<PoolRange>('pending');
  const [view,setView]=useState<RequirementView>('table');
  const [progressFilter,setProgressFilter]=useState<DeliveryState|'all'>('all');
  const [grouping,setGrouping]=useState<RequirementGrouping>('none');
@@ -29,48 +31,70 @@ export function RequirementsPage({container,navigationGuard,concealed=false}:{co
  const chooseView=(next:RequirementView)=>{if(filterDisclosure.current)filterDisclosure.current.open=false;setView(next);};
  const [selected,setSelected]=useState<Requirement|null>(null);
  const [expanded,setExpanded]=useState(false);
- const [pool,setPool]=useState<RequirementsSnapshot|null>(null),[binding,setBinding]=useState<RequirementBinding|null>(null),[writable,setWritable]=useState(false),[availability,setAvailability]=useState('正在读取需求…'),[denied,setDenied]=useState(false);
+ const [pool,setPool]=useState<RequirementsSnapshot|null>(null),[binding,setBinding]=useState<RequirementBinding|null>(null),[writable,setWritable]=useState(false),[availability,setAvailability]=useState('正在读取需求…'),[publicOnly,setPublicOnly]=useState(false);
  const [session,setSession]=useState<RequirementMutationSession|null>(null),[editorItem,setEditorItem]=useState<RequirementItem|null>(null),[creating,setCreating]=useState(false),[detailLoading,setDetailLoading]=useState(false);
  const mutation=useSyncExternalStore(session?.subscribe??noSubscribe,session?.getSnapshot??(()=>idle),()=>idle);
+ const handledObservation=useRef<RequirementItem|null>(null);
  const opener=useRef<HTMLButtonElement|null>(null),viewButton=useRef<HTMLButtonElement|null>(null),dirty=useRef(false),currentPhase=useRef(mutation.phase),activeBinding=useRef<RequirementBinding|null>(null),sessionRef=useRef<RequirementMutationSession|null>(null),generation=useRef(0),detailGeneration=useRef(0);
  currentPhase.current=mutation.phase;
  const mayDepart=useCallback(()=>requirementDepartureAllowed({dirty:dirty.current,phase:currentPhase.current},()=>window.confirm('需求内容尚未保存，确定放弃这些修改并离开？'),()=>window.alert('需求保存结果尚未确认，请先恢复原请求并读取结果。')),[]);
- const closePrivate=useCallback((deny:boolean,message:string)=>{detailGeneration.current++;activeBinding.current=null;sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setSelected(null);setEditorItem(null);setCreating(false);setDetailLoading(false);dirty.current=false;setDenied(deny);setWritable(false);setAvailability(message);},[]);
+ const closePrivate=useCallback((allowPublic:boolean,message:string)=>{generation.current++;detailGeneration.current++;activeBinding.current=null;sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setSelected(null);setEditorItem(null);setCreating(false);setDetailLoading(false);dirty.current=false;setPublicOnly(allowPublic);setWritable(false);setAvailability(message);},[]);
  const reload=useCallback(async()=>{
   const epoch=++generation.current;
   try{
-   const status=await fetch('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store'}),value=await status.json();
+   const status=await fetch('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store'});
    if(epoch!==generation.current)return;
-   if(status.status===401||status.status===403){closePrivate(true,'当前账号不能读取本人需求，请恢复本人登录。');return;}
-   if(status.status!==200||typeof value.ownerId!=='string'||typeof value.spaceId!=='string')throw Error();
-   if(value.requirementsEnabled!==true){closePrivate(false,'当前仅可查看公开需求。');return;}
-   const result=await fetch('/api/platform/personal/requirements/snapshot',{credentials:'same-origin',cache:'no-store'}),snapshot:RequirementsSnapshot=await result.json();
+   if(status.status===401||status.status===403){closePrivate(false,'当前账号不能读取本人需求，请恢复本人登录。');return;}
+   if(!status.ok)throw Error();
+   const value=await status.json();
    if(epoch!==generation.current)return;
-   if(result.status===401||result.status===403){closePrivate(true,'当前账号不能读取本人需求，请恢复本人登录。');return;}
-   if(result.status!==200||snapshot.scope!=='full-current-requirements-snapshot'||snapshot.truncated!==false||snapshot.total!==snapshot.items?.length||!snapshot.baseline?.requirements||new Set(snapshot.items.map(item=>item.id)).size!==snapshot.items.length)throw Error();
-   snapshot.items.forEach(readRequirementItem);
+   if(typeof value.ownerId!=='string'||typeof value.spaceId!=='string')throw Error();
    const next={ownerId:value.ownerId,spaceId:value.spaceId};
+   const bound=activeBinding.current;
+   if((scope&&JSON.stringify([next.ownerId,next.spaceId])!==scope)||(bound&&(bound.ownerId!==next.ownerId||bound.spaceId!==next.spaceId))){closePrivate(false,'当前本人身份或空间已变化，请重新打开需求池。');return;}
+   if(value.requirementsEnabled!==true){closePrivate(true,'当前仅可查看公开需求。');return;}
+   if(value.writable!==true)setWritable(false);
+   const result=await fetch('/api/platform/personal/requirements/snapshot',{credentials:'same-origin',cache:'no-store'});
+   if(epoch!==generation.current)return;
+   if(result.status===401||result.status===403||result.status===404){closePrivate(false,'当前账号不能读取本人需求，请恢复本人登录。');return;}
+   if(!result.ok)throw Error();
+   const snapshot=readRequirementsSnapshot(await result.json());
+   if(epoch!==generation.current)return;
    if(activeBinding.current?.ownerId!==next.ownerId||activeBinding.current?.spaceId!==next.spaceId){
     sessionRef.current?.invalidateBinding();activeBinding.current=next;
     const storage={getItem:(key:string)=>window.localStorage.getItem(key),setItem:(key:string,text:string)=>window.localStorage.setItem(key,text),removeItem:(key:string)=>window.localStorage.removeItem(key)};
     const writer=new RequirementMutationSession({binding:next,storage,assertBinding:()=>activeBinding.current?.ownerId===next.ownerId&&activeBinding.current?.spaceId===next.spaceId});sessionRef.current=writer;setSession(writer);
    }
-   setBinding(next);setPool(snapshot);setDenied(false);setWritable(value.writable===true);setAvailability(value.writable===true?'':'当前仅可查看需求。');
+   setBinding(next);setPool(snapshot);setPublicOnly(false);setWritable(value.writable===true);setAvailability(value.writable===true?'':'当前仅可查看需求。');
   }catch{if(epoch===generation.current){setWritable(false);setAvailability('需求读取暂不可用，当前内容尚未刷新。');}}
- },[closePrivate]);
+ },[closePrivate,scope]);
  useEffect(()=>{if(concealed){setWritable(false);setDetailLoading(false);return;}void reload();const focus=()=>{void reload();};window.addEventListener('focus',focus);return()=>{generation.current++;detailGeneration.current++;activeBinding.current=null;sessionRef.current?.invalidateBinding();window.removeEventListener('focus',focus);};},[concealed,reload]);
  useEffect(()=>{if(!navigationGuard)return;navigationGuard.current=mayDepart;return()=>{if(navigationGuard.current===mayDepart)navigationGuard.current=null;};},[navigationGuard,mayDepart]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current||currentPhase.current==='saving'||currentPhase.current==='uncertain'){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
- useEffect(()=>{if(mutation.phase!=='saved'||!mutation.observed)return;const entry=mutation.observed;dirty.current=false;setCreating(false);setEditorItem(entry);setSelected(entry.requirement);setPool(previous=>previous?{...previous,items:previous.items.some(item=>item.id===entry.id)?previous.items.map(item=>item.id===entry.id?entry:item):[...previous.items,entry],total:previous.total+(previous.items.some(item=>item.id===entry.id)?0:1)}:previous);},[mutation.phase,mutation.observed]);
- const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:denied?[]:pool?pool.items.map(item=>item.requirement):baseline.requirements}),[displayed,pool,denied]);
+ useEffect(()=>{
+  if(mutation.phase!=='saved'||!mutation.observed||concealed||handledObservation.current===mutation.observed)return;
+  const entry=mutation.observed;
+  handledObservation.current=entry;
+  if(mutation.savedMethod==='POST'){setRange('pending');setFilters({});setProgressFilter('all');void reload();}
+  dirty.current=false;setCreating(false);setEditorItem(entry);setSelected(entry.requirement);
+  setPool(previous=>{
+   if(!previous)return previous;
+   const present=previous.items.some(item=>item.id===entry.id);
+   return {...previous,items:present?previous.items.map(item=>item.id===entry.id?entry:item):[...previous.items,entry],total:previous.total+(present?0:1)};
+  });
+ },[concealed,mutation.phase,mutation.observed,mutation.savedMethod,reload]);
+ const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:pool?pool.items.map(item=>item.requirement):publicOnly?baseline.requirements:[]}),[displayed,pool,publicOnly]);
  const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
  const workflow=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields.workflow])??[]),[pool]);
  const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id),planning.get(item.id)?.body)])),[visible,workflow,planning]);
- const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>progressFilter==='all'||delivery.get(item.id)?.state===progressFilter),[visible,filters,progressFilter,delivery]);
+ const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>{
+  const evidence=delivery.get(item.id);
+  return requirementIsComplete(item,evidence)===(range==='completed')&&(progressFilter==='all'||evidence?.state===progressFilter);
+ }),[visible,filters,range,progressFilter,delivery]);
  const open=useCallback((item:Requirement,trigger:HTMLButtonElement)=>{
   if(!mayDepart())return;dirty.current=false;opener.current=trigger;setExpanded(false);setSelected(item);setCreating(false);setEditorItem(null);
   if(!activeBinding.current)return;const epoch=++detailGeneration.current;setDetailLoading(true);
-  void fetch('/api/platform/personal/requirements/'+item.id,{credentials:'same-origin',cache:'no-store'}).then(async response=>{const value=await response.json();if(epoch!==detailGeneration.current)return;if(response.status===401||response.status===403){closePrivate(true,'当前账号不能读取本人需求，请恢复本人登录。');return;}if(response.status!==200)throw Error();const entry=readRequirementItem(value.entry);setEditorItem(entry);setSelected(entry.requirement);}).catch(()=>{if(epoch===detailGeneration.current)setAvailability('需求详情读取失败，请刷新后重试。');}).finally(()=>{if(epoch===detailGeneration.current)setDetailLoading(false);});
+  void fetch('/api/platform/personal/requirements/'+item.id,{credentials:'same-origin',cache:'no-store'}).then(async response=>{if(epoch!==detailGeneration.current)return;if(response.status===401||response.status===403){closePrivate(false,'当前账号不能读取本人需求，请恢复本人登录。');return;}if(response.status!==200)throw Error();const value=await response.json();if(epoch!==detailGeneration.current)return;const entry=readRequirementItem(value.entry);setEditorItem(entry);setSelected(entry.requirement);}).catch(()=>{if(epoch===detailGeneration.current)setAvailability('需求详情读取失败，请刷新后重试。');}).finally(()=>{if(epoch===detailGeneration.current)setDetailLoading(false);});
  },[mayDepart,closePrivate]);
  const linkedRequirementOpened=useRef(false);
  useEffect(()=>{
@@ -88,6 +112,9 @@ export function RequirementsPage({container,navigationGuard,concealed=false}:{co
   <div className={styles.controls}>
    <div className={styles.filters} role="search" aria-label="筛选需求">
     <label htmlFor="requirements-search">搜索需求<input id="requirements-search" type="search" placeholder="标题、编号或来源" value={filters.query??''} onChange={event=>setFilter('query',event.target.value)}/></label>
+    <label>显示范围<select aria-label="显示范围" value={range} onChange={event=>setRange(event.target.value as PoolRange)}>
+     <option value="pending">待处理</option><option value="completed">已完成</option>
+    </select></label>
     <label className={styles.filterField}>交付状态
      <select aria-label="交付状态" value={progressFilter} onChange={event=>setProgressFilter(event.target.value as DeliveryState|'all')}>
       <option value="all">全部</option>

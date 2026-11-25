@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
-import {chromium,expect} from '@playwright/test';
+import {chromium,expect,type Page} from '@playwright/test';
 import {requirements,selectRequirements} from '../src/platform/requirements.ts';
 
 // Readonly public metadata fixture: no account service, credentials or real records.
@@ -30,11 +30,22 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
  const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{output+=String(chunk);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  const baseline=requirements(), allIds=baseline.requirements.map(r=>r.id).sort();
+ const openReadonlyBaseline=async(page:Page)=>{
+  await page.route('**/*',route=>{
+   const request=route.request(),url=new URL(request.url());
+   if(url.origin!==origin||!['GET','HEAD'].includes(request.method()))return route.abort();
+   if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{ownerId:'synthetic-owner',spaceId:'synthetic-space',requirementsEnabled:false}});
+   return route.continue();
+  });
+  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+  await expect(page.getByText('当前仅可查看公开需求。',{exact:true})).toBeVisible();
+ };
  const screenshots=join(source,'.review-results');await mkdir(screenshots,{recursive:true});
  await t.test('full-width title owns surplus before hydration without stretching metadata',async()=>{
   const page=await browser.newPage({viewport:{width:1920,height:900},javaScriptEnabled:false});
   try{
    await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+   await expect(page.locator('[data-requirement-id]')).toHaveCount(0);
    const geometry=await page.locator('[data-requirements-grid="reui"]').evaluate(node=>({
     viewport:node.querySelector('[data-slot="data-grid-table-viewport"]')!.clientWidth,
     cols:[...node.querySelectorAll('col')].map(c=>({style:c.getAttribute('style'),width:getComputedStyle(c).width})),
@@ -57,8 +68,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
  for(const [width,theme] of [[1920,'light'],[1920,'dark'],[1365,'light'],[1365,'dark'],[390,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme});page.setDefaultTimeout(8000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.route('**/*',route=>new URL(route.request().url()).origin===origin&&['GET','HEAD'].includes(route.request().method())?route.continue():route.abort());
-  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+  await openReadonlyBaseline(page);
   await expect(page.locator('[data-requirements-grid="reui"]')).toBeVisible();
   await expect(page.getByText('验收条件',{exact:true})).toHaveCount(0);
   await t.test(`title stays an unboxed row action in the real shell ${width}/${theme}`,async()=>{
@@ -161,8 +171,7 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
  }
  for(const view of ['table','board','gantt'] as const)await t.test(`390x400 ${view} keeps first and last records reachable`,async()=>{
   const page=await browser.newPage({viewport:{width:390,height:400},colorScheme:'dark'});page.setDefaultTimeout(8000);t.after(()=>page.close());
-  await page.route('**/*',route=>new URL(route.request().url()).origin===origin&&['GET','HEAD'].includes(route.request().method())?route.continue():route.abort());
-  await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
+  await openReadonlyBaseline(page);
   await page.getByRole('button',{name:({table:'表格',board:'看板',gantt:'甘特'}[view])+'视图',exact:true}).click();
   if(view==='gantt'){
    // The public baseline has no planning dates. Preserve reachability through the table;

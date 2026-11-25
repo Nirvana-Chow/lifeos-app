@@ -27,13 +27,14 @@ type TaskEditorProps={
  concealed?:boolean;
  closeGuard?:CloseGuard;
  onBatch?:()=>void;
+ onRestoreFocus?:()=>void;
 };
 function confirmClose(busy:boolean,dirty:boolean){
  return !busy&&(!dirty||window.confirm('放弃尚未保存的修改？'));
 }
 export function TaskEditor({
  target,entry,spaceId,relations,writable,saving,uncertain,error,onSave,onClose,onRetry,onStopWaiting,
- concealed=false,closeGuard,onBatch,
+ concealed=false,closeGuard,onBatch,onRestoreFocus,
 }:TaskEditorProps){
  const [openingEdit]=useState(()=>{
   if(concealed||target.mode!=='edit'||!entry||!spaceId||
@@ -122,7 +123,7 @@ export function TaskEditor({
    {(localError||error)&&<p role="alert">{localError||error}</p>}{uncertain&&<p role="alert">结果尚未确认，请保留输入并重试原请求。</p>}
    <footer className={styles.footer}>{target.mode==='create'&&onBatch&&<button type="button" disabled={busy||dirty||!writable} onClick={onBatch}>多行录入</button>}{uncertain&&<button type="button" disabled={saving} onClick={async()=>{const saved=await onRetry();if(saved&&taskReceiptMatchesSubmission(editTask?{mode:'edit',task:editTask}:target,submitted.current,saved,spaceId))onClose();}}>重试同一请求</button>}{saving&&<button type="button" onClick={onStopWaiting}>停止等待并保留请求</button>}<button type="button" disabled={busy} onClick={close}>{dirty?'取消':'关闭'}</button><button type="submit" disabled={blocked}>{saving||submitting?'正在保存…':'保存待办'}</button></footer>
   </form>;
- return <div data-lifeos-surface="personal"><Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className={styles.editor} data-lifeos-surface="personal" onCloseAutoFocus={event=>event.preventDefault()} showCloseButton={false} onEscapeKeyDown={event=>{if(busy)event.preventDefault();}} onPointerDownOutside={event=>{event.preventDefault();close();}}>
+ return <div data-lifeos-surface="personal"><Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className={styles.editor} data-lifeos-surface="personal" onCloseAutoFocus={event=>{event.preventDefault();onRestoreFocus?.();}} showCloseButton={false} onEscapeKeyDown={event=>{if(busy)event.preventDefault();}} onPointerDownOutside={event=>{event.preventDefault();close();}}>
   <header className={styles.header}><div><DialogTitle>{heading}</DialogTitle><DialogDescription className={styles.accessibleDescription}>{missing?'无法读取所选待办。':!writable?'当前为只读，可查看内容。':viewing?'查看待办内容及分类。':'待办内容'}</DialogDescription>{!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}</div><button type="button" aria-label={target.mode==='create'?'关闭待办编辑':'关闭待办详情'} disabled={busy} onClick={close}>关闭</button></header>
   {content}
  </DialogContent></Dialog></div>;

@@ -1,11 +1,11 @@
 import {object,validateId,validateIdempotencyKey,validateRevision} from '../platform/domain.ts';
 import {requirementId,validateBaselineBinding,validateRequirementFields,type RequirementFields,type BaselineBinding} from './domain.ts';
-import type {RequirementItem} from './service.ts';
+import type {RequirementItem,RequirementsSnapshot} from './service.ts';
 export type RequirementBinding={ownerId:string;spaceId:string};
 export type RequirementCommand={ownerId:string;spaceId:string;id:string|null;key:string;method:'POST'|'PATCH';body:{spaceId:string;confirmed:true;fields:RequirementFields;expectedRevision?:number;baselineBinding?:BaselineBinding|null}};
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>;
 type Fetch=(url:string,init?:RequestInit)=>Promise<Response>;
-export type RequirementMutationState={phase:'idle'|'saving'|'uncertain'|'saved'|'rejected';pending:RequirementCommand|null;saved:RequirementItem|null;observed:RequirementItem|null;error:string};
+export type RequirementMutationState={phase:'idle'|'saving'|'uncertain'|'saved'|'rejected';pending:RequirementCommand|null;saved:RequirementItem|null;observed:RequirementItem|null;savedMethod?:RequirementCommand['method'];error:string};
 const freeze=<T,>(v:T):T=>{if(v&&typeof v==='object'){Object.values(v).forEach(freeze);Object.freeze(v);}return v;};
 const canonical=(v:unknown):string=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.entries(v).sort(([a],[b])=>a.localeCompare(b,'en')).map(([k,x])=>JSON.stringify(k)+':'+canonical(x)).join(',')+'}':JSON.stringify(v);
 function checked(value:unknown,binding:RequirementBinding):RequirementCommand{
@@ -25,6 +25,13 @@ export function readRequirementItem(value:unknown):RequirementItem{
  const binding=validateBaselineBinding(v.baselineBinding);validateRequirementFields(v.fields);
  if(typeof v.baselineConflict!=='boolean'||v.revision===0&&v.sourceId!==null||v.revision!==0&&v.sourceId===null||String(v.id).startsWith('LO-')!==!!binding||!v.requirement||typeof v.requirement!=='object')throw Error('需求读取响应无效。');
  return structuredClone(v) as RequirementItem;
+}
+
+export function readRequirementsSnapshot(snapshot:RequirementsSnapshot):RequirementsSnapshot{
+ if(snapshot?.scope!=='full-current-requirements-snapshot'||snapshot.truncated!==false||!Array.isArray(snapshot.items)||snapshot.total!==snapshot.items.length||!Array.isArray(snapshot.baseline?.requirements))throw Error('需求快照不完整。');
+ const items=snapshot.items.map(readRequirementItem);
+ if(items.some(item=>item.id!==item.requirement.id)||new Set(items.map(item=>item.id)).size!==items.length)throw Error('需求快照身份无效。');
+ return {...snapshot,items};
 }
 // Legacy PATCH replaces six required fields, leaving newly introduced optional workflow intact.
 const receiptMatches=(receipt:RequirementFields,command:RequirementCommand)=>{const compared={...receipt};if(command.method==='PATCH'&&!Object.hasOwn(command.body.fields,'workflow'))delete compared.workflow;return canonical(compared)===canonical(command.body.fields);};
@@ -60,7 +67,7 @@ export class RequirementMutationSession{
    const read=await this.fetcher('/api/platform/personal/requirements/'+receipt.id,{method:'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal});
    if(!current())return;const observed=readRequirementItem((await read.json()).entry);
    if(!current())return;if(!this.active()||controller.signal.aborted||read.status!==200||observed.id!==receipt.id||observed.sourceId!==receipt.sourceId||observed.revision<receipt.revision||observed.revision===receipt.revision&&canonical(observed.fields)!==canonical(receipt.fields))throw Error();
-   this.clear(command);this.update({phase:'saved',pending:null,saved:receipt,observed,error:observed.revision>receipt.revision?'保存已确认；记录之后又有更新，现显示最新版本。':''});
+   this.clear(command);this.update({phase:'saved',pending:null,saved:receipt,observed,savedMethod:command.method,error:observed.revision>receipt.revision?'保存已确认；记录之后又有更新，现显示最新版本。':''});
   }catch{if(current()){this.uncertain=true;this.update({phase:'uncertain',pending:command,saved:null,observed:null,error:unknown});}}finally{if(current()&&this.controller===controller)this.controller=null;}
  }
 }
