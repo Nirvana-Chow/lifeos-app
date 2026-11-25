@@ -11,7 +11,7 @@ import styles from './workspace.module.css';
 
 export function CookingFrame({title,children,canNavigate}:{title:string;children:ReactNode;canNavigate?:()=>boolean}){
  const router=useRouter();
- return <LifeOSWorkspace state={{status:'unknown'}}
+ return <LifeOSWorkspace desktopNavigation state={{status:'unknown'}}
   access={{authenticated:true,writable:null,loginAllowed:true}}
   initialPage="overview"
   contentPage={{title,wide:true,content:<PrivacyBoundary>
