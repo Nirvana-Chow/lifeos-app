@@ -3,6 +3,7 @@ import type {HealthPersonalFields} from './domain.ts';
 export const healthRecordCategories = {
   all: '全部记录',
   sleep: '睡眠',
+  body: '体重与体脂',
   training: '健身训练',
   frisbee: '飞盘',
 } as const;
@@ -16,7 +17,7 @@ export function matchesHealthRecord(
   status: HealthRecordStatus,
 ): boolean {
   if (category === 'all') return true;
-  if (category === 'sleep') return personal.healthKind === 'sleep';
+  if (category === 'sleep' || category === 'body') return personal.healthKind === category;
   if (personal.healthKind !== 'training') return false;
 
   // The existing form stores frisbee as "other". Use its explicit record title.
