@@ -41,8 +41,8 @@ for (const [artifact,requests] of [
     checks.push({method,path:'/api/platform/'+path,status:503});
   }
 }
-// This reviewed generic package is the sole anonymous static artifact under the
-// platform prefix. Checking it separately must not relax the closed handlers.
+// The reviewed Skill package and the install assets are public static content.
+// Check their package contents independently of the closed platform handlers.
 const artifactPath='app/api/platform/agent-skill/route.js';
 const {routeModule:skillRoute}=require(resolve(root,buildDirectory,'server',artifactPath));
 assert.equal(typeof skillRoute?.userland?.GET,'function',`Built Next route missing: ${artifactPath}`);
@@ -53,7 +53,29 @@ assert.equal(skillResponse.headers.get('content-disposition'),'attachment; filen
 assert.equal(skillResponse.headers.get('set-cookie'),null,'Generic download must not establish a session');
 assert.ok(gunzipSync(Buffer.from(await skillResponse.arrayBuffer())).includes(Buffer.from('lifeos-agent/SKILL.md')));
 checks.push({method:'GET',path:'/api/platform/agent-skill',status:200});
+const installPrefix='/api/platform/install/';
+const installAssets=[
+  ['manifest.webmanifest','application/manifest+json'],
+  ['icon.svg','image/svg+xml'],
+  ['apple-icon.png','image/png'],
+];
+for (const [name,mime] of installAssets) {
+  const artifact=resolve(root,buildDirectory,'server','app','api','platform','install',name);
+  const metadata=JSON.parse(readFileSync(artifact+'.meta','utf8'));
+  const body=readFileSync(artifact+'.body');
+  assert.equal(metadata.status,200,installPrefix+name);
+  assert.equal(metadata.headers['content-type'],mime,installPrefix+name);
+  assert.equal(metadata.headers['set-cookie'],undefined,'Public install assets must not establish a session');
+  assert.ok(body.length>0,'Compiled install assets must include their file body');
+  if (name==='manifest.webmanifest') {
+    const manifest=JSON.parse(body.toString('utf8'));
+    assert.equal(manifest.start_url,'/personal');
+    assert.equal(manifest.display,'standalone');
+    assert.deepEqual(manifest.icons.map(icon=>icon.src),installAssets.slice(1).map(([file])=>installPrefix+file));
+  }
+  checks.push({method:'GET',path:installPrefix+name,status:200});
+}
 console.log(JSON.stringify({
-  buildId,passed:true,checks,scope:'compiled Next userland handlers called in-process; no HTTP listener or browser',
+  buildId,passed:true,checks,scope:'compiled Next userland handlers and static route bodies inspected in-process; no HTTP listener or browser',
   httpTransportTested:false,browserTested:false,databaseTested:false,externalModelCalls:0,
 },null,2));
