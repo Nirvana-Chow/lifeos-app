@@ -474,7 +474,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>
           <ClipboardList size={19} aria-hidden="true"/><span>需求池</span>
         </Button>
-        <OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>
+        {page!=='requirements'&&<OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>}
       </div>
       {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>
@@ -663,7 +663,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }}
       ref={setPortalContainer}
     >
-      {ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
+      {page!=='requirements'&&ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
       <header className="lo-header">
         <Button
