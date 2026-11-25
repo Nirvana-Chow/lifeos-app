@@ -2,14 +2,14 @@
 .breadcrumbTrail { display:flex; align-items:center; gap:4px; min-width:0; }
 .breadcrumbTrail > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--foreground); }
 .breadcrumbTrail > svg { flex:none; }
+.breadcrumbTrail > span:first-child { line-height:32px; }
 .shell .breadcrumbs button { flex:none; min-height:32px; padding:4px 6px; font-size:inherit; color:var(--muted-foreground); }
 .shell .breadcrumbTrail > button:first-child { justify-content:flex-start; padding-inline-start:0; border-inline-start-width:0; }
 .historyButtons { display:flex; flex:none; gap:2px; margin-inline-start:auto; padding-inline-start:8px; border-inline-start:1px solid var(--border); }
-.settingsContent { height:100%; min-height:0; display:flex; flex-direction:column; overflow-y:auto; }
-.settingsContent > :not(.settingsPage) { flex:none; }
-.settingsPage { display:flex; flex:1; min-width:0; min-height:96px; overflow:hidden; }
+.settingsContent { min-width:0; }
+.settingsPage { display:flex; min-width:0; }
 .shell .settingsPanel {
- flex:1; min-width:0; padding:0 0 24px;
+ flex:1; min-width:0; overflow:visible; padding:0 0 16px;
  --primary:var(--foreground); --primary-foreground:var(--background);
 }
 .shell .settingsPanel :global([aria-label="修改密码"]) { max-width:none; margin-inline:0; }
@@ -90,16 +90,38 @@
 }
 
 
+/* Keep bounded scrollers native and their bars on the edge of each region. */
+.shell :is(:global(.lo-nav),:global(.lo-mobile-sidebar),:global(.lo-list-rows),:global(.lo-board-cards),:global([data-slot="data-grid-table-viewport"])) {
+ scrollbar-width:thin;
+}
+.shell :global(.lo-header-actions) > [role="alert"] {
+ position:absolute; inset-block-start:100%; inset-inline-end:0;
+ max-inline-size:min(280px,100vw); padding:8px 12px;
+ background:var(--card); border:1px solid var(--border);
+}
+
+/* The desktop overview keeps its columns inside the pannable workspace. */
+.desktopNavigation .domainGrid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.shell.desktopNavigation :global(.lo-overview-grid) {
+ grid-template-columns:minmax(0,1.8fr) minmax(260px,1fr);
+}
+
 /* Keep navigation and the content frame on one horizontally scrollable surface. */
 @media(max-width:850px) {
  .shell.desktopNavigation { overflow-x:auto; }
+ .shell.desktopNavigation :global(.lo-header-actions) {
+  position:sticky; inset-inline-end:0; z-index:1;
+  background:var(--lo-chrome); padding-inline:8px;
+ }
  .desktopNavigation > :global(.lo-header),
  .desktopNavigation > :global(.lo-body) { min-width:900px; }
  .shell.desktopNavigation > :global(.lo-body) {
   display:grid;
   height:calc(100% - var(--lo-header-height) - var(--lo-filing-footer-space,0px));
  }
- .shell.desktopNavigation > :global(.lo-body) > :global(.lo-main) { padding-bottom:var(--lo-content-padding); }
+ .shell.desktopNavigation > :global(.lo-body) > :global(.lo-main) {
+  padding-bottom:var(--lo-content-padding); overscroll-behavior-x:auto;
+ }
  .desktopNavigation :global(.lo-sidebar) { display:flex; }
  .desktopNavigation .headerModules { display:flex; }
  .desktopNavigation :global(.lo-header) > :global(.lo-mobile-menu) { display:none!important; }
