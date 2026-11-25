@@ -2,10 +2,12 @@ import {workbenchNavigation,type ModuleId,type WorkbenchModule} from './navigati
 import type {WorkspacePage, WorkspaceLocation, SettingsPanel} from '../ui-review/contract';
 
 /** Finite canonical controller pages; query input never becomes a route or dispatcher. */
-export function workspaceHref(page:WorkspacePage):string{return page==='settings'?workspaceLocationHref({page:'settings',panel:'general'}):page==='overview'?'/personal':'/personal?page='+page;}
+export const defaultSettingsPanel = 'security' satisfies SettingsPanel;
+
+export function workspaceHref(page:WorkspacePage):string{return page==='settings'?workspaceLocationHref({page:'settings',panel:defaultSettingsPanel}):page==='overview'?'/personal':'/personal?page='+page;}
 export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; panel?: unknown; planId?: unknown}): WorkspaceLocation {
  const value=readWorkspacePage(query.page);
- const panel:SettingsPanel=query.panel==='topics'||query.panel==='security'||query.panel==='api-keys'?query.panel:'general';
+ const panel:SettingsPanel=query.panel==='topics'||query.panel==='security'||query.panel==='api-keys'?query.panel:defaultSettingsPanel;
  if(value==='settings'||query.modal==='settings')return {page:'settings',panel};
  const page=value;
  if(query.modal==='classification' && typeof query.planId==='string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query.planId))return {page,modal:'classification',planId:query.planId};
@@ -14,7 +16,7 @@ export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; p
 export function workspaceLocationHref(location:WorkspaceLocation):string {
  const safe=readWorkspaceLocation(location),query=new URLSearchParams();
  if(safe.page!=='overview')query.set('page',safe.page);
- if(safe.page==='settings')query.set('panel',safe.panel??'general');
+ if(safe.page==='settings')query.set('panel',safe.panel??defaultSettingsPanel);
  if(safe.modal==='classification'){query.set('modal','classification');query.set('planId',safe.planId);}
  return '/personal'+(query.size?'?'+query.toString():'');
 }

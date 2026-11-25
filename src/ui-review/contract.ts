@@ -62,7 +62,7 @@ export type WorkspacePage =
   | "projects"
   | "settings"
   | "requirements";
-export type SettingsPanel = "general" | "topics" | "security" | "api-keys";
+export type SettingsPanel = "topics" | "security" | "api-keys";
 export type WorkspaceLocation =
   | {page:"settings";panel?:SettingsPanel;modal?:undefined;planId?:never}
   | ({page:Exclude<WorkspacePage,"settings">} & ({modal?:undefined;panel?:never;planId?:never}|{modal:"classification";planId:string;panel?:never}));
@@ -114,7 +114,6 @@ export type LifeOSWorkspaceProps = {
   onUndoTaskStatus?: () => void;
   pendingTaskIds?: readonly string[];
   mutationError?: string | null;
-  settingsContent?: ReactNode;
   contentPage?: {title: string; content: ReactNode;wide?:boolean};
   onNavigatePage?: (page: WorkspacePage) => void;
   syncUrl?: boolean;
