@@ -29,7 +29,7 @@ test('workspace settings navigation hides support routes until owner scope and b
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const scope=JSON.stringify(['owner','space']);
  const status={scope:'personal-manual-candidate',storageVerified:true,ownerId:'owner',spaceId:'space',requirementsEnabled:true,requirementSupportEnabled:true};
- const jsxOnly=new Set(['lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page']);
+ const jsxOnly=new Set(['lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page','./requirement-progress-card']);
  const components=new Proxy({},{get:(_target,name)=>String(name)});
  function settings(value:unknown,preferenceScope=scope){
   const navigated:string[]=[],module={exports:{} as any};
