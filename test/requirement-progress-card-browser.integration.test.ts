@@ -21,9 +21,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','personal','page.tsx'),`import {LifeOSWorkspace} from '../../src/ui-review/workspace';
- export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;empty?:string}>}){
-  const params=await searchParams;const owner=!params.guest,awaitedEmpty=new URLSearchParams(params).has('empty');
-  return <LifeOSWorkspace syncUrl state={{status:'ready',data:{tasks:['open','done','cancelled'].map(status=>({id:status,revision:1,title:'待办示例 '+status,status,notes:null,dueOn:null,area:null,project:null,inInbox:false,sourceLabel:null} as const)).filter((_,index)=>!(awaitedEmpty&&index===0)),projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
+ import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
+ export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;empty?:string;page?:string}>}){
+  const params=await searchParams;const owner=!params.guest,location=readWorkspaceLocation(params),awaitedEmpty=new URLSearchParams(params).has('empty');
+  return <LifeOSWorkspace syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:['open','done','cancelled'].map(status=>({id:status,revision:1,title:'待办示例 '+status,status,notes:null,dueOn:null,area:null,project:null,inInbox:false,sourceLabel:null} as const)).filter((_,index)=>!(awaitedEmpty&&index===0)),projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
   access={{authenticated:owner,writable:false,loginAllowed:true}} viewPreferenceScope={owner?JSON.stringify(['overview-owner','overview-space']):null}/>;
  }`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
@@ -157,6 +158,16 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByText('近期日程暂不可用')).toBeVisible();
  await expect(thoughts.getByText('日记暂不可用')).toBeVisible();
  assert.deepEqual(repo.rows,beforeRows);
+ readsDisabled=false;
+ await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
+ await expect(page.getByRole('heading',{name:'项目',level:1,exact:true})).toBeVisible();
+ await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'兴趣学习',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'设置',exact:true}).click();
+ const product=page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'产品',exact:true});
+ await product.getByRole('button',{name:'需求池',exact:true}).click();
+ await expect(page).toHaveURL(/\/personal\?page=requirements$/);
+ await expect(page.locator('[data-requirements-page]')).toBeVisible();
+
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});
  await expect(card).toHaveCount(0);

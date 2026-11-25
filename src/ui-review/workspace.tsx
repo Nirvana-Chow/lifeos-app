@@ -190,7 +190,6 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     </nav>
   );
   const toolLinks=ownerModules.links.filter(link=>link.id==='storage-review'||link.id==='file-handoffs');
-  const settingsLinks=ownerModules.links.filter(link=>['roadmap','feedback','updates'].includes(link.id));
   const [projectView,setProjectView]=useState<"table"|"gantt">("table");
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
@@ -493,14 +492,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           </Button>;
         })}
       </div>
-      <div role="group" aria-label="产品与反馈" className={workspaceStyles.navigationGroup}>
-        <span className={workspaceStyles.navigationLabel}>产品与反馈</span>
+      <div role="group" aria-label="产品" className={workspaceStyles.navigationGroup}>
+        <span className={workspaceStyles.navigationLabel}>产品</span>
         <Button variant="ghost" data-workspace-nav aria-label="需求池" title={collapsed?"需求池":undefined}
           className={page==='requirements'&&!contentPage?'is-current':undefined}
           aria-current={page==='requirements'&&!contentPage?'page':undefined} onClick={()=>navigate('requirements')}>
           <ClipboardList size={19} aria-hidden="true"/><span>需求池</span>
         </Button>
-        {(page!=='requirements'||contentPage)&&<OwnerModuleLinks links={settingsLinks} path={ownerModules.path} collapsed={collapsed}/>}
       </div>
       {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>

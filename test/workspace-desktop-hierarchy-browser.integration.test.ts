@@ -133,7 +133,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(page.locator('aside').getByRole('navigation',{name:'设置分类'})).toBeVisible();
  await expect(page.locator('main').getByRole('navigation',{name:'设置分类'})).toHaveCount(0);
  await expect(nav).toHaveCount(0);
- await expect(settings.getByRole('group',{name:'偏好与账号'})).toBeVisible();await expect(settings.getByRole('group',{name:'产品与反馈'}).getByRole('button',{name:'需求池',exact:true})).toBeVisible();
+ await expect(settings.getByRole('group',{name:'偏好与账号'})).toBeVisible();await expect(settings.getByRole('group',{name:'产品'}).getByRole('button',{name:'需求池',exact:true})).toBeVisible();
  await settings.getByRole('button',{name:'安全与密码',exact:true}).focus();await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();
  await page.getByRole('button',{name:'合成草稿保护 关'}).click();await settings.getByRole('button',{name:'API 密钥',exact:true}).click();await expect(page.getByRole('heading',{name:'安全面板'})).toBeVisible();await page.getByRole('button',{name:'合成草稿保护 开'}).click();
  const apiKeys=page.locator('[data-settings-panel="api-keys"]');
