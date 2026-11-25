@@ -59,6 +59,7 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   const periods=page.getByRole('region',{name:'周期回顾',exact:true});
   await expect(memos.getByText('随手记未接入。',{exact:true})).toBeVisible();
   await expect(memos.getByRole('textbox')).toHaveCount(0);
+  await expect(journal.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
   const positions=await page.getByRole('heading',{name:/^(Memos|日记|周期回顾)$/}).evaluateAll(headings=>headings.map(heading=>heading.getBoundingClientRect().top));
   assert.equal(positions.length,3);assert.ok(positions[0]<positions[1]&&positions[1]<positions[2]&&positions[2]<900);
   await expect(journal.getByRole('link')).toHaveCount(3);

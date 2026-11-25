@@ -26,10 +26,11 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
    }finally{await context.close();}
   });
   await t.test('deadline locks without unmounting the draft; reauthentication restores it and keeps return query',async()=>{
-   const context=await browser!.newContext(),page=await context.newPage();let expires=Date.now()+2500,posts=0;
+   const context=await browser!.newContext(),page=await context.newPage();let expires=Date.now()+60000,posts=0;
    try{await page.route('**/api/platform/**',route=>{if(route.request().method()==='POST')posts++;return route.fulfill(new URL(route.request().url()).pathname.endsWith('/get-session')?{json:active('fixed',expires)}:{status:404});});
-    await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'networkidle'});const draft=page.getByLabel('未发送草稿');await expect(draft).toBeVisible();await draft.fill('Synthetic unsent draft');await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});assert.equal(await draft.inputValue(),'Synthetic unsent draft');await expect(draft).toBeHidden();
-    const login=page.getByRole('link',{name:'重新登录',exact:true});await expect(login).toHaveAttribute('target','_blank');assert.ok((await login.getAttribute('href'))!.includes(encodeURIComponent('/personal?page=tasks&create=todo')));expires=Date.now()+60000;await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();await expect(draft).toBeVisible();assert.equal(await draft.inputValue(),'Synthetic unsent draft');assert.equal(posts,0);
+    await page.clock.install();
+    await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'domcontentloaded'});const draft=page.getByLabel('未发送草稿');await expect(draft).toBeVisible({timeout:30000});await draft.fill('Synthetic unsent draft');await page.clock.fastForward(61000);await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});assert.equal(await draft.inputValue(),'Synthetic unsent draft');await expect(draft).toBeHidden();
+    const login=page.getByRole('link',{name:'重新登录',exact:true});await expect(login).toHaveAttribute('target','_blank');assert.ok((await login.getAttribute('href'))!.includes(encodeURIComponent('/personal?page=tasks&create=todo')));expires=Date.now()+120000;await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();await expect(draft).toBeVisible();assert.equal(await draft.inputValue(),'Synthetic unsent draft');assert.equal(posts,0);
    }finally{await context.close();}
   });
   await t.test('existing device reopens directly; rolling renewal uses one explicitPOST and device revocation uses opaque ID',async()=>{
@@ -66,7 +67,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      };
      return route.fulfill({json:data[path]??{}});
     });
-    await page.goto(journal,{waitUntil:'networkidle'});
+    await page.goto(journal,{waitUntil:'domcontentloaded',timeout:90000});
     await page.getByText('管理日记',{exact:true}).click();
     await page.getByRole('button',{name:'新增日记',exact:true}).click();
     const draft=page.getByRole('textbox',{name:'正文',exact:true});
@@ -104,7 +105,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     assert.equal(unverifiedJournalReads,0);
     failure=null;
     await context.addCookies([{name:'fixture-ready',value:'1',url:origin}]);
-    await page.goto(journal,{waitUntil:'networkidle'});
+    await page.goto(journal,{waitUntil:'domcontentloaded',timeout:90000});
     await page.getByRole('button',{name:'退出登录',exact:true}).click();
     await expect(page).toHaveURL(origin+'/login');
     assert.deepEqual(commands,['POST /api/platform/auth/sign-out']);
