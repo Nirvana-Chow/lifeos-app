@@ -2,7 +2,7 @@ import {workbenchNavigation,type ModuleId,type WorkbenchModule} from './navigati
 import type {WorkspacePage, WorkspaceLocation, SettingsPanel} from '../ui-review/contract';
 
 /** Finite canonical controller pages; query input never becomes a route or dispatcher. */
-export const defaultSettingsPanel = 'security' satisfies SettingsPanel;
+export const defaultSettingsPanel = 'index' satisfies SettingsPanel;
 
 export function workspaceHref(page:WorkspacePage):string{return page==='settings'?workspaceLocationHref({page:'settings',panel:defaultSettingsPanel}):page==='overview'?'/personal':'/personal?page='+page;}
 export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; panel?: unknown; planId?: unknown}): WorkspaceLocation {
@@ -16,7 +16,7 @@ export function readWorkspaceLocation(query: {page?: unknown; modal?: unknown; p
 export function workspaceLocationHref(location:WorkspaceLocation):string {
  const safe=readWorkspaceLocation(location),query=new URLSearchParams();
  if(safe.page!=='overview')query.set('page',safe.page);
- if(safe.page==='settings')query.set('panel',safe.panel??defaultSettingsPanel);
+ if(safe.page==='settings'&&safe.panel&&safe.panel!==defaultSettingsPanel)query.set('panel',safe.panel);
  if(safe.modal==='classification'){query.set('modal','classification');query.set('planId',safe.planId);}
  return '/personal'+(query.size?'?'+query.toString():'');
 }
