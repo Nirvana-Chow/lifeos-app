@@ -1,0 +1,31 @@
+.view{display:flex;flex-direction:column;gap:12px;min-width:0;width:100%}
+.calendar{width:100%;max-width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;border:1px solid var(--border)}
+.calendar th{font-size:var(--lo-font-meta);padding:8px 4px;background:var(--muted);color:var(--muted-foreground)}
+.calendar td{height:86px;padding:4px;vertical-align:top;border:1px solid var(--border)}
+.calendar td[data-selected]{background:var(--lo-selected);color:var(--lo-selected-foreground)}
+.calendar .outside{background:var(--muted);color:var(--muted-foreground);padding:10px 8px}
+.date,.chip{width:100%;min-width:0;text-align:left;font:inherit;color:inherit;border:0;background:transparent;border-radius:var(--lo-radius-control);cursor:pointer}
+.date{display:flex;align-items:center;justify-content:space-between;gap:4px;min-height:36px;padding:4px}
+.date[aria-current=date] time{font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.date span,.agenda header span{font-size:var(--lo-font-meta);color:var(--muted-foreground)}
+.calendar td[data-selected] .date span{color:inherit}
+.chip{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:var(--card);color:var(--lo-link);padding:4px;margin-bottom:2px;min-height:28px}
+.date:focus-visible,.chip:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+.agenda{border:1px solid var(--border);border-radius:var(--lo-radius-surface);padding:12px;min-width:0}
+.agenda header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+.agenda h3{margin:0;font-size:var(--lo-font-section)}
+.agenda p{margin:8px 0 0}
+.agenda ul{list-style:none;padding:0;margin:8px 0 0}
+.agenda li{border-top:1px solid var(--border);display:grid;grid-template-columns:minmax(66px,auto) minmax(0,1fr);align-items:baseline;gap:6px;padding:2px 0}
+.agenda li span{font-size:var(--lo-font-meta);color:var(--muted-foreground)}
+.agenda li button{white-space:normal;overflow-wrap:anywhere;height:auto;min-height:44px;text-align:left;justify-content:flex-start}
+@media(max-width:850px){
+ .workbench{max-inline-size:calc(100vw - 2 * var(--lo-content-padding, 12px))}
+}
+@media(max-width:680px){
+ .calendar td{height:54px;padding:0}
+ .calendar .outside{padding:6px 0;text-align:center}
+ .date{display:grid;justify-content:center;text-align:center;gap:0;min-height:54px;padding:2px 0}
+ .date span{font-size:11px;white-space:nowrap}
+ .chip{display:none}
+}
