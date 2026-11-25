@@ -49,6 +49,7 @@ import {
   visibleWorkspaceState,
 } from "./selectors";
 import { TaskTable, statusLabels } from "./task-table";
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import {TaskProjectGantt} from './task-project-gantt';
 import {TaskBoard} from "./task-board";
 import { TaskTitleField } from "./task-grid";
@@ -589,7 +590,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         />
         <span className="lo-task-date">{task.dueOn ?? "—"}</span>
         {!board && (
-          <span className="lo-task-project">{task.project?.title ?? "—"}</span>
+          task.project ? <a className="lo-task-project" href={projectDetailHref(task.project.id)}>{task.project.title}</a>
+            : <span className="lo-task-project">—</span>
         )}
         <Badge variant="outline" className="lo-task-status">
           {statusLabels[task.status]}
@@ -774,27 +776,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {(page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage && (
-                <span
-                  title={
-                    !canWrite
-                      ? (access.message ?? "尚未获得写入权限")
-                      : !props.onCreateTask
-                        ? "创建入口尚未接入"
-                        : undefined
-                  }
-                >
-                  <Button
-                    className="lo-primary"
-                    disabled={!canWrite || !props.onCreateTask}
-                    onClick={() => {
-                      if (canWrite) props.onCreateTask?.();
-                    }}
-                  >
+              {(page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
+                state.status === "ready" && mayWrite(access) && access.allowedTypes?.includes("todo") && props.onCreateTask && (
+                  <Button className="lo-primary" disabled={!canWrite} onClick={() => props.onCreateTask?.()}>
                     <Plus size={17} />
                     新建待办
                   </Button>
-                </span>
               )}
             </div>
           </div>
@@ -984,7 +971,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {(page === "projects" || page === "areas") &&
             (state.status !== "ready" ? <DataState state={state} onRefresh={onRefresh}/> :
               <>{page==='projects'&&<div className="lo-task-toolbar"><div className="lo-view-switch" role="group" aria-label="项目视图">{(['table','gantt'] as const).map(id=><Button key={id} variant="ghost" className={projectView===id?"is-active":""} aria-pressed={projectView===id} onClick={()=>{if(projectView!==id&&props.onBeforeNavigate?.()===false)return;setProjectView(id);}}>{id==='table'?<Table2 size={17}/>:<ChartNoAxesGantt size={17}/>}<span>{id==='table'?'表格':'甘特'}</span></Button>)}</div></div>}
-              {page==='projects'&&projectView==='gantt'?<TaskProjectGantt label="项目" rows={data!.projects} renderTitle={project=><a href={`/personal/edit?type=project&id=${encodeURIComponent(project.id)}`}>{project.title}</a>} partial={data!.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setProjectView('table');}}/>:<CategoryGrid key={page} kind={page} areas={data!.areas} projects={data!.projects} tasks={tasks}
+              {page==='projects'&&projectView==='gantt'?<TaskProjectGantt label="项目" rows={data!.projects} renderTitle={project=><a href={projectDetailHref(project.id)}>{project.title}</a>} partial={data!.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setProjectView('table');}}/>:<CategoryGrid key={page} kind={page} areas={data!.areas} projects={data!.projects} tasks={tasks}
                 coverage={data!.coverage} writable={canWrite && access.allowedTypes?.includes(page === "projects" ? "project" : "domain") === true}
                 onViewTasks={(areaId,projectId) => navigate("tasks",areaId,projectId)}/>}</>
             )}

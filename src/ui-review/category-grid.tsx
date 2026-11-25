@@ -5,6 +5,7 @@ import { useTable, type ColumnDef, type HeaderContext } from '@tanstack/react-ta
 import type { AreaRow, ProjectRow, TaskRow } from './contract';
 import { DataGrid, DataGridContainer, dataGridFeatures } from './reui/data-grid';
 import { DataGridTableVirtual } from './reui/data-grid-table-virtual';
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import { Button } from './ui/button';
 import styles from './category-grid.module.css';
 
@@ -80,7 +81,9 @@ export function CategoryGrid({kind, areas, projects, tasks, coverage, writable, 
           </div>;
         }
         return <span className={styles.value} title={id === 'nextStep' ? row.original.nextStep ?? undefined : undefined}>
-          {String(getValue() ?? '—') || '—'}
+          {id === 'title' && isProject
+            ? <a href={projectDetailHref(row.original.id)} aria-label={`查看项目：${row.original.title}`}>{row.original.title}</a>
+            : String(getValue() ?? '—') || '—'}
           {id === 'title' && row.original.referenceChanged && <span className={styles.changed} role="img" aria-label="关联待核对" title="关联记录已变化，请核对">!</span>}
         </span>;
       },

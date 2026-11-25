@@ -5,6 +5,7 @@ import { useTable, tableFeatures, columnGroupingFeature, createGroupedRowModel, 
 import type { TaskGridProps, TaskRow } from './contract';
 import type { TaskCellDraft, TaskCellField } from '../personal-candidate/task-cell-draft';
 import { taskStatusLabels } from '../personal-candidate/task-editor-state';
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import { mountTaskGridEditor } from '../personal-candidate/task-grid-editor';
 import { DataGrid, DataGridContainer, dataGridFeatures } from './reui/data-grid';
 import { DataGridTableVirtual } from './reui/data-grid-table-virtual';
@@ -190,6 +191,11 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
       }}
     ><span aria-hidden="true">{task.status === 'done' ? '✓' : '○'}</span></Button>;
   }
+  if (column.id === 'project') {
+    const project = row.original.project;
+    return project ? <a className={styles.open} data-cell-interactive href={projectDetailHref(project.id)}
+      aria-label={`查看项目：${project.title}`}>{project.title}</a> : <span className={styles.cell}>—</span>;
+  }
   if (!editableFields.includes(column.id as TaskCellField)) {
     return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
       aria-label={column.id === 'detail' ? `打开任务：${row.original.title}` : `${columnLabels[column.id]}：${String(getValue())}，打开任务：${row.original.title}`}
@@ -199,7 +205,13 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
     return <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError} />;
   }
   const value = column.id === 'status' ? taskStatusLabels[row.original.status] : String(getValue());
-  return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>{value || '—'}</span>;
+  return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>
+    {value || '—'}
+    {column.id === 'title' && <button type="button" className={styles.titleDetails} data-cell-interactive
+      aria-label={`查看待办详情：${row.original.title}`} disabled={latest.current.blocked}
+      onClick={event => latest.current.onOpen(row.original, event.currentTarget)}
+      onDoubleClick={event => event.stopPropagation()}>↗</button>}
+  </span>;
 }
 
 function TaskGridColumnHeader({ column }: HeaderContext<typeof taskGridFeatures, TaskRow, unknown>) {

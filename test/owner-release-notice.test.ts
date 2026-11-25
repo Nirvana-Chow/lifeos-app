@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
+import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import {ownerModules,verifiedModuleScope} from '../src/ui-review/owner-modules.ts';
 import * as selectors from '../src/ui-review/selectors.ts';
 import * as privateNavigation from '../src/workbench/private-navigation.ts';
@@ -36,6 +37,7 @@ test('workspace settings navigation hides support routes until owner scope and b
   const imports:Record<string,unknown>={
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
+   '../personal-candidate/project-detail-href':{projectDetailHref},
    './selectors':selectors,'./workspace-hierarchy':workspaceHierarchy,'../workbench/private-navigation':privateNavigation,
    './owner-module-navigation':{useOwnerModules:(enabled:boolean,currentScope:string|null)=>({links:enabled?ownerModules(value,currentScope):[],scope:verifiedModuleScope(value),path:'/personal/requirements/updates'}),OwnerModuleLinks:'owner-links'},
   };

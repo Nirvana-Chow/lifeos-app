@@ -72,7 +72,8 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const refresh=()=>{if(batchBinding&&!verifiedBinding)void controller.current?.refresh();else if(beforeNavigate())void controller.current?.refresh();};
  const open=(next:TaskTarget,trigger?:HTMLElement)=>{
   const host=controller.current,binding=host?.getEditorBinding();
-  if(!binding||!beforeNavigate())return false;
+  if(!binding || next.mode==='create' && (snapshot.access.writable!==true ||
+    !snapshot.access.allowedTypes?.includes('todo') || !commandStorage.current) || !beforeNavigate())return false;
   returnFocus.current=trigger??(document.activeElement as HTMLElement|null);
   setEditor({target:next,binding});
   return true;

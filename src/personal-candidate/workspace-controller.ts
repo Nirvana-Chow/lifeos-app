@@ -66,7 +66,7 @@ export class PersonalWorkspaceController{
   const baseline=context.base??current;
   if(baseline&&(saved.kind!==baseline.kind||canonical(saved.source)!==canonical(baseline.source)))throw Error('保存回执的来源或版本不符，请重新读取核对。');
   let observed=saved;
-  if('status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
+  if(command.id&&'status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
    this.planningReadbackRequired=true;
    try{
     const result=await this.json('/api/platform/personal/todo/'+saved.id,this.preflight?.signal);
@@ -116,7 +116,7 @@ export class PersonalWorkspaceController{
    if(!check.response.ok||!obj(check.body)||check.body.scope!=='personal-manual-candidate'||check.body.ownerId!==binding.ownerId||check.body.spaceId!==binding.spaceId||check.body.storageVerified!==true||check.body.writable!==true||!Array.isArray(check.body.allowedTypes)||!check.body.allowedTypes.includes('todo')){this.suspend();this.emit({state:{status:'forbidden',message:'会话或写入权限已变化，请重新登录核对。'}});return null;}
    const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision);
    if(batchCommand&&canonical(command)!==canonical(batchCommand))throw Error('保留的行请求内容不符，未发送。');
-   this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,!!batchCommand);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
+   this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,command.id===null);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
   }catch(error){if(token===this.generation)this.emit({mutationError:error instanceof Error?error.message:'操作未确认，请重新读取核对。'});return null;}
   finally{if(this.preflight===preflight)this.preflight=null;if(session===this.session&&token===this.generation)this.busy=false;if(session===this.session&&token===this.generation&&this.value.saving&&session.getSnapshot().phase!=='saving'){const state=session.getSnapshot();if(state.phase==='idle'||state.phase==='saved')this.emit({saving:false,pendingTaskIds:[]});else this.readMutation();}}
  }
@@ -136,7 +136,7 @@ export class PersonalWorkspaceController{
   const context=this.pending?{...this.pending,generation:this.generation}:{command,base:current,generation:this.generation,session};
   // Retry preserves the original command and key; it never creates a second mutation.
   let failure:string|null=null;
-  try{this.busy=true;await session.retry(verifyReadback);return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
+  try{this.busy=true;await session.retry(verifyReadback||command.type==='todo'&&command.id===null);return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
  }
  cancel(){++this.generation;this.preflight?.abort();this.preflight=null;this.busy=false;this.clearUndo();this.session?.cancel();this.readMutation();}
  async logout(){
