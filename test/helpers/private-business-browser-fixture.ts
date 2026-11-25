@@ -62,7 +62,7 @@ export const privateDestinations=[
  ['overview','/personal','总览'],['search','/personal/search','搜索本人记录'],['records','/personal/records','记录'],['inbox','/personal?page=inbox','收件箱'],['todos','/personal?page=tasks','待办'],['finance','/personal/finance','财务'],['health','/personal/health','健康'],['growth','/personal/growth','学习与项目'],['journal','/personal/edit?type=journal','日记'],['articles','/personal/articles','文章'],['albums','/personal/albums','相册'],['schedule','/personal/schedule','日程'],['time','/personal/time','时间分配'],['people','/personal/people','人物'],['files','/personal/files','文件地图'],['reports','/personal/reports','回顾与报告'],['outputs','/personal/outputs','输出中心'],['chat','/personal/chat','AI 聊天'],['knowledge','/personal/knowledge','资料索引'],['rag','/personal/rag','RAG 知识库'],['agents','/personal/agents','Agent'],['workflows','/personal/workflows','固定流程'],['executions','/personal/executions','执行历史'],['approvals','/personal/approvals','待审批'],['tools','/personal/tools','工具与连接'],['settings','/personal?page=settings','设置'],['ai-settings','/personal/settings/ai','AI 服务设置'],['database','/personal/settings/data','数据库与数据'],
 ] as const;
 const families=[
- ['private-home','/personal','总览'],['private-projects','/personal?page=projects','项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
+ ['private-home','/personal','总览'],['private-projects','/personal?page=projects','个人项目'],['private-areas','/personal?page=areas','领域'],['private-journal','/personal/edit?type=journal','日记'],['private-finance','/personal/finance','财务'],['private-health','/personal/health','健康'],['private-workflows','/personal/workflows','固定流程'],['private-tools','/personal/tools','工具与连接'],['private-data','/personal/settings/data','数据库与数据'],['private-chat','/personal/chat','AI 聊天'],['private-settings','/personal?page=settings','设置'],['private-outputs-dialog','/personal/outputs','输出中心'],
 ] as const;
 const privatePresentationCases=Object.freeze(families.flatMap(([key,path,heading])=>[1365,360,390,430].flatMap(width=>(['light','dark'] as const).map(theme=>Object.freeze({key,path,heading,width,theme,name:`${key}-${width}-${theme}.png`,dialog:key==='private-outputs-dialog'?1:0})))));
 export const privateCaptureCases=Object.freeze(privatePresentationCases.filter(row=>row.key!=='private-settings'));
@@ -228,10 +228,11 @@ export async function readyHeading(page:Page,heading:string){
    await expect(page.getByRole('button',{name:'新建日程',exact:true})).toBeDisabled();
   }
  }
- else if(heading==='项目'||heading==='领域'){
-  const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:'新建'+heading,exact:true});
+ else if(heading==='个人项目'||heading==='领域'){
+  const project=heading==='个人项目';
+  const create=page.locator('[data-category-grid="reui"]').getByRole('link',{name:project?'新建项目':'新建领域',exact:true});
   await expect(create).toBeVisible();
-  await expect(create).toHaveAttribute('href','/personal/edit?type='+(heading==='项目'?'project':'domain'));
+  await expect(create).toHaveAttribute('href','/personal/edit?type='+(project?'project':'domain'));
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
  }
  else if(heading==='总览')await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
@@ -270,15 +271,14 @@ export async function assertPrivateFixtureNavigation(page:Page){
  const drawerOpen=await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible();
  const navigation=page.getByRole('navigation',{name:'主导航',exact:true});
  const switcher=(drawerOpen?page.getByRole('dialog',{name:'LifeOS',exact:true}):page.locator('header')).getByRole('navigation',{name:'切换模块',exact:true});
- await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习','项目']);
+ await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习']);
  // The modal drawer hides the header from the accessibility tree until it closes.
  const headerSearch=page.locator('header a[aria-label="搜索本人记录"]');
  const searchInHeader=await headerSearch.count()>0;
  if(searchInHeader)await expect(headerSearch).toHaveAttribute('href','/personal/search');
  const modules=[
-  ['日常',[['总览'],['待办'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
+  ['日常',[['总览'],['待办'],['个人项目'],['领域'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
   ['兴趣学习',[['做饭','/personal/cooking']]],
-  ['项目',[['项目'],['领域']]],
  ] as const;
  for(const [module,items] of modules){
   const button=switcher.getByRole('button',{name:module,exact:true});

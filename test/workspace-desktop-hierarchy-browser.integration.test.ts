@@ -39,11 +39,12 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});
  const nav=page.locator('aside').getByRole('navigation',{name:'主导航'});
  const moduleSwitch=page.locator('header').getByRole('navigation',{name:'切换模块'});
- const planning=[['总览'],['待办'],['项目'],['领域'],['日程','/personal/schedule'],['记录','/personal/journal']] as const;
+ const planning=[['总览'],['待办'],['个人项目'],['领域'],['日程','/personal/schedule'],['记录','/personal/journal']] as const;
  const records=[['做饭','/personal/cooking']] as const;
- await expect(moduleSwitch.locator('button, a')).toHaveText(['日常','兴趣学习','财务','软件开发']);
+ await expect(moduleSwitch.locator('button, a')).toHaveText(['日常','兴趣学习','财务','开发项目']);
  await expect(moduleSwitch.getByRole('link',{name:'财务',exact:true})).toHaveAttribute('href','/personal/finance');
  await expect(nav.getByRole('link',{name:'财务',exact:true})).toHaveCount(0);
+ await expect(moduleSwitch.getByRole('link',{name:'开发项目',exact:true})).toHaveAttribute('href','/personal/development-projects');
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('日常');
  await assertWorkspaceModule(nav,'日常',planning);
  await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
@@ -113,7 +114,6 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  const historyLength=await page.evaluate(()=>history.length);
  for(const [module,items] of [
   ['兴趣学习',records],
-  ['软件开发',[['开发项目','/personal/development-projects']]],
  ] as const){
   await moduleSwitch.getByRole('button',{name:module,exact:true}).click();
   await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName(module);
@@ -185,7 +185,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await moduleSwitch.getByRole('button',{name:'日常',exact:true}).focus();
   await page.keyboard.press('Enter');
   await assertWorkspaceModule(nav,'日常',planning);
-  const projectNavigation=nav.getByRole('button',{name:'项目',exact:true});
+  const projectNavigation=nav.getByRole('button',{name:'个人项目',exact:true});
   await projectNavigation.evaluate(button=>button.scrollIntoView({inline:'end',block:'nearest'}));
   const points=await projectNavigation.evaluate(button=>{
    const r=button.getBoundingClientRect(),v=visualViewport!;
@@ -212,7 +212,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  enabled=false;await page.reload({waitUntil:'networkidle'});
  await expect(moduleSwitch.getByRole('button')).toHaveText(['日常']);
  await moduleSwitch.getByRole('button',{name:'日常',exact:true}).click();
- await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['项目'],['领域']]);
+ await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['个人项目'],['领域']]);
  assert.deepEqual(writes,[]);
  assert.deepEqual(errors,[]);
 });
@@ -257,8 +257,9 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
    if(storage)await page.locator('aside').getByRole('button',{name:'设置',exact:true}).click();
    else await page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:module,exact:true}).click();
    const nav=storage?page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'资料与工具'}):page.getByRole('navigation',{name:'主导航',exact:true});
-   const items=[['总览'],['待办'],['记录','/personal/journal']] as const;
-   const href=storage?'/personal/storage-review':items[2][1];
+   const journal=['记录','/personal/journal'] as const;
+   const items=[['总览'],['待办'],['个人项目'],['领域'],journal] as const;
+   const href=storage?'/personal/storage-review':journal[1];
    await nav.evaluate((nav,{change,href})=>{
     const link=nav.querySelector<HTMLAnchorElement>('a[href="'+href+'"]')!;
     if(change==='extra'){const extra=document.createElement('a');extra.href='/personal/extra';extra.textContent='额外入口';nav.append(extra);}

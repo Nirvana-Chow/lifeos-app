@@ -22,7 +22,7 @@ test('release notice uses only an actual unread running source and never announc
 
 test('new business links appear only for the exact verified module flags',()=>{
  const flags={mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
- const expected=['/personal/cooking','/personal/media','/personal/career','/personal/portfolio'];
+ const expected=['/personal/cooking','/personal/media','/personal/career','/personal/resume','/personal/portfolio'];
  assert.deepEqual(ownerModules({...status,calendarEnabled:false,requirementsEnabled:false,...flags},scope).map(row=>row.href),expected);
  assert.deepEqual(ownerModules({...status,storageVerified:false,...flags},scope),[]);
  for(const key of Object.keys(flags))assert.equal(ownerModules({...status,[key]:false},scope).some(row=>expected.slice(1).includes(row.href)),false);

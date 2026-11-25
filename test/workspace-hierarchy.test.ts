@@ -13,8 +13,9 @@ test('navigation groups only supplied authorized links without dropping or dupli
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).map(group=>[group.label,group.links.map(link=>link.id)]),[['日常',['calendar','journal']],['财务',['finance']]]);
  const development:OwnerModuleLink={id:'development-projects',label:'开发项目',href:'/personal/development-projects'};
  assert.deepEqual(hierarchy.groupWorkspaceModules([development]).map(({label,pages,links})=>[label,pages,links]),[
-  ['日常',['overview','tasks','projects','areas'],[]],['软件开发',[],[development]],
+  ['日常',['overview','tasks','projects','areas'],[]],['开发项目',[],[development]],
  ]);
+ assert.deepEqual(hierarchy.groupWorkspaceModules([]).flatMap(group=>group.links),[]);
  assert.deepEqual(hierarchy.groupWorkspaceModules(links).flatMap(group=>group.links).map(link=>link.href).sort(),['/personal/finance','/personal/journal','/personal/schedule']);
 });
 
@@ -54,4 +55,16 @@ test('cooking is in learning independently of the media flag and remains owner-s
   assert.deepEqual(groups.find(group=>group.id==='relationships')?.links.map(link=>link.href),['/personal/people']);
  }
  assert.deepEqual(hierarchy.groupWorkspaceModules(ownerModules(status,'foreign-scope')).flatMap(group=>group.links),[]);
+});
+
+test('development projects are gated and career and resume remain distinct links',()=>{
+ const links:OwnerModuleLink[]=[
+  {id:'development-projects',label:'开发项目',href:'/personal/development-projects'},
+  {id:'career',label:'职业',href:'/personal/career'},
+  {id:'resume',label:'简历',href:'/personal/resume'},
+ ];
+ const groups=hierarchy.groupWorkspaceModules(links);
+ assert.deepEqual(groups.find(group=>group.id==='development-projects')?.pages,[]);
+ assert.deepEqual(groups.find(group=>group.id==='development-projects')?.links,[links[0]]);
+ assert.deepEqual(groups.find(group=>group.id==='career')?.links,links.slice(1));
 });
