@@ -80,7 +80,38 @@ test('settings keeps account actions in its own content page',()=>{
  const tree=LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['topic']},initialPage:'settings',onLogout:()=>{}});
  assert.ok(elements(tree,n=>n.type==='h1'&&n.props.children==='设置').length);
  assert.equal(elements(tree,n=>n.props.className==='lo-settings-dialog').length,0);
- assert.ok(elements(tree,n=>n.props.className==='lo-logout').length);
+ assert.equal(elements(tree,n=>n.props['aria-label']==='退出登录').length,1);
+});
+test('header logout delegates to the existing handler only after page guards allow departure',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
+ const access={authenticated:true,writable:true,loginAllowed:true};
+ let logouts=0,allowSettings=false;
+ const render=(overrides:Partial<LifeOSWorkspaceProps>={})=>LifeOSWorkspace({state:{status:'unknown'},access,onLogout:()=>{logouts++;},...overrides});
+ const logout=(tree:any)=>elements(tree,n=>n.props['aria-label']==='退出登录');
+ for(const flags of [{saving:true},{uncertain:true}])logout(render(flags))[0].props.onClick();
+ const settings=render({initialPage:'settings',settingsCloseGuard:{current:()=>allowSettings}});
+ const header=elements(settings,n=>n.type==='header')[0];
+ assert.equal(logout(settings).length,1);
+ assert.equal(logout(header)[0].props['data-workspace-nav'],true);
+ logout(header)[0].props.onClick();
+ const requirements=render({initialPage:'requirements'});
+ elements(requirements,n=>n.type?.name==='RequirementsPage')[0].props.navigationGuard.current=()=>false;
+ logout(requirements)[0].props.onClick();
+ assert.equal(logouts,0);
+ allowSettings=true;
+ logout(header)[0].props.onClick();
+ assert.equal(logouts,1);
+ assert.equal(logout(render({access:{...access,authenticated:false}})).length,0);
+});
+test('unverified access starts without private requirements and confirmed logout clears classification',()=>{
+ const {LifeOSWorkspace}=rawComponent('src/ui-review/workspace.tsx');
+ for(const authenticated of [null,false]){
+  let classificationRenders=0;
+  const tree=LifeOSWorkspace({state:{status:'forbidden',message:'已退出。'},access:{authenticated,writable:false,loginAllowed:true},initialPage:'requirements',
+   initialModal:'classification',initialClassificationPlanId:'synthetic-plan',renderClassification:()=>{classificationRenders++;return null;}});
+  assert.equal(elements(tree,n=>n.type?.name==='RequirementsPage').length,0);
+  assert.equal(classificationRenders,authenticated===false?0:1);
+ }
 });
 test('overview metrics are actionable and unknown metrics are disabled',()=>{
  const html=workspace({initialPage:'overview'});
