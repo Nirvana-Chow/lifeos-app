@@ -25,6 +25,7 @@ function render(rows:Record<string,unknown>[],label='待办',partial=false){
 test('a deadline-only todo stays visible as one dated milestone without an invented duration',()=>{
  const html=render([{id:'due',title:'Deadline only',dueOn:'2030-11-05',createdAt:'2020-01-01',sourceCapturedAt:'2021-01-01'}]);
  assert.match(html,/data-gantt-milestone/);assert.doesNotMatch(html,/data-gantt-bar/);
+ assert.match(html,/data-gantt-scale=""><time dateTime="2030-11-05">2030-11-05<\/time><\/div>/);
  assert.match(html,/aria-label="截止 2030-11-05"/);assert.match(html,/dateTime="2030-11-05"/);assert.match(html,/data-open-id="due"/);
  assert.doesNotMatch(html,/2020-01-01|2021-01-01/);
 });

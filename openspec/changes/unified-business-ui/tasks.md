@@ -209,3 +209,5 @@ Continue [Issue #5](https://github.com/Nirvana-Chow/lifeos-app/issues/5) under 1
 The owner clarified that manual entry and conversation intake coexist. Verify a single-entry action in the task workspace, independently read back the saved item, and keep the overview without a duplicate action. Read-only access and the existing conversation intake remain governed by their original contracts.
 
 For the existing owner workspace read flow, verify neutral page recovery and a read-only historical task link when the confirmed owner cannot load the full snapshot. Require an independently validated response before showing details, preserve failed-list and missing-record states, and leave authenticated production incident attribution and rollout pending independent evidence.
+
+With the flat Todo table and its previous candidate integrated, keep existing status filtering, single-entry creation and project relationships. Finish the compact Todo timeline and make the Kanban title open the existing in-place detail; verify the independent plan and deadline scales, keyboard editing and receipt-driven moves.
