@@ -15,9 +15,9 @@ function assertLifetime(response:Response,row:Record<string,unknown>,seconds:num
  assert.match(cookie,/HttpOnly/i);assert.match(cookie,/SameSite=Strict/i);
  const maxAge=Number(/Max-Age=(\d+)/i.exec(cookie)?.[1]);assert.ok(Math.abs(maxAge-seconds)<=2,`cookie Max-Age ${maxAge} must match server ${seconds}`);
 }
-test('new sessions default to fixed30minutes and honor selected day/custom with matching native cookies',async()=>{
- const f=await fixture();
- for(const [duration,seconds] of [[undefined,1800],[{mode:'fixed',seconds:day},day],[{mode:'fixed',seconds:3*day},3*day]] as const){
+test('new sessions default to fixed 30 days and honor selected day/custom with matching native cookies',async()=>{
+ for(const [duration,seconds] of [[undefined,30*day],[{mode:'fixed',seconds:1800},1800],[{mode:'fixed',seconds:day},day],[{mode:'fixed',seconds:3*day},3*day]] as const){
+  const f=await fixture();
   const response=await f.login(duration);assert.equal(response.status,200);const row=f.db.platform_session.at(-1)!;
   assertLifetime(response,row,seconds);assert.equal(row.sessionDurationMode,'fixed');assert.equal(row.sessionDurationSeconds,seconds);
  }
@@ -27,11 +27,13 @@ test('invalid duration cannot mint a native session',async()=>{
   const f=await fixture(),response=await f.login(duration);assert.equal(response.status,400);assert.equal(f.db.platform_session.length,0);
  }
 });
-test('fixed sessions never slide on GET or deferredPOST and expired cookies cannot restore them',async()=>{
- const f=await fixture(),response=await f.login({mode:'fixed',seconds:day}),cookie=mergeSyntheticAuthCookies(response),row=f.db.platform_session[0];
- row.expiresAt=new Date(Date.now()+60000);const before=new Date(row.expiresAt as Date).valueOf();
- for(const method of ['GET','POST']){const checked=await f.send('get-session',{},cookie,method);assert.equal(checked.status,200);assert.equal(new Date(row.expiresAt as Date).valueOf(),before);assert.ok(!checked.headers.getSetCookie().some(value=>/session_token=.*Max-Age=[1-9]/.test(value)));}
- row.expiresAt=new Date(Date.now()-1);assert.equal(await readOwnerPrincipal(f.auth,f.config,new Headers({cookie})),null);
+test('default 30-day session never slides and expires at its original deadline',async t=>{
+ const f=await fixture(),response=await f.login(),cookie=mergeSyntheticAuthCookies(response),row=f.db.platform_session[0];
+ const before=new Date(row.expiresAt as Date).valueOf();
+ assert.equal(before-new Date(row.createdAt as Date).valueOf(),30*day*1000);
+ t.mock.timers.enable({apis:['Date'],now:before-60000});
+ for(const method of ['GET','POST']){const checked=await f.send('get-session',{},cookie,method);assert.equal(checked.status,200);const current=(await checked.json()).session;assert.equal(current.id,row.id);assert.equal(new Date(current.expiresAt).valueOf(),before);assert.equal(new Date(f.db.platform_session[0].expiresAt as Date).valueOf(),before);assert.ok(!checked.headers.getSetCookie().some(value=>/session_token=.*Max-Age=[1-9]/.test(value)));}
+ t.mock.timers.setTime(before+1);assert.equal(await readOwnerPrincipal(f.auth,f.config,new Headers({cookie})),null);
 });
 test('only rollingPOST refreshes both server/native cookie while GET and read-only auth stay unchanged',async()=>{
  const f=await fixture(),response=await f.login({mode:'rolling'}),cookie=mergeSyntheticAuthCookies(response),row=f.db.platform_session[0];assertLifetime(response,row,400*day);
@@ -83,7 +85,7 @@ test('expired devices can sign in again, sign out independently, and use a backu
  const first=await owner(expiredCookie);
  assert.ok(first);
  const firstRow=f.db.platform_session.find(row=>row.id===first.sessionRef)!;
- assert.equal(firstRow.sessionDurationSeconds,1800);
+ assert.equal(firstRow.sessionDurationSeconds,30*day);
 
  const returnTo='/personal?page=tasks&create=todo';
  async function login(sessionDuration:SessionDuration,cookie=''){
@@ -106,12 +108,15 @@ test('expired devices can sign in again, sign out independently, and use a backu
   return {cookie,factor};
  }
 
+ t.mock.timers.enable({apis:['Date'],now:new Date(firstRow.createdAt as Date).valueOf()+31*60*1000});
+ assert.equal((await state(expiredCookie)).kind,'ready');
+ assert.equal(await owner(expiredCookie),null,'ordinary access remains active while sensitive operations require fresh MFA');
  const second=await login({mode:'rolling'});
  const secondSession=await owner(second.cookie);
  assert.ok(secondSession);
  assert.notEqual(secondSession.sessionRef,first.sessionRef);
 
- t.mock.timers.enable({apis:['Date'],now:new Date(firstRow.expiresAt as Date).valueOf()+1});
+ t.mock.timers.setTime(new Date(firstRow.expiresAt as Date).valueOf()+1);
  assert.deepEqual(await state(expiredCookie),{kind:'anonymous'});
  const fixed={mode:'fixed',seconds:3*day} as const;
  const replacement=await login(fixed,expiredCookie);

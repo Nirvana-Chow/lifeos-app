@@ -2,6 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {spa
 import {cp,mkdir,mkdtemp,symlink,writeFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser} from '@playwright/test';import {trackAuthThemeProcess,cleanupAuthThemeFixture,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {journalFixture,journalStatus} from './helpers/journal-history.ts';
+import {checkNativeBrowserSessions} from './helpers/session-duration-native-browser.ts';
 test('OPT-IN real login page and mounted expiry guard preserve device choice, keyboard use, drafts and return path',{skip:process.env.RUN_SESSION_DURATION_BROWSER_TESTS==='1'?false:'Requires isolated Next and native Chrome',timeout:180000},async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-session-'));let server:FixtureProcess|undefined,browser:Browser|undefined;
  try{
@@ -11,25 +12,29 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
   await writeFile(join(root,'src/business-mcp-oauth/page-state.ts'),`export const readOAuthPageState=async()=>null;\n`);
   await writeFile(join(root,'app/layout.tsx'),`import type{ReactNode}from'react';import './globals.css';import './theme.css';import './style.css';export default function Layout({children}:{children:ReactNode}){return <html lang="zh-CN"><body>{children}</body></html>;}`);
   await writeFile(join(root,'app/style.css'),`*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif} :root{--lo-content-padding:24px;--background:#fafafa;--foreground:#111;--card:#fff;--border:#ddd;--input:#aaa;--lo-radius-surface:12px;--lo-radius-control:6px;--lo-font-title:28px;--muted-foreground:#555;--primary:#111;--primary-foreground:#fff}input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid #111;outline-offset:3px}`);
-  await writeFile(join(root,'app/personal/page.tsx'),`'use client';import{useState}from'react';import{DeviceSessionsSettings}from'../../src/session-duration/settings';export default function Page(){const[value,setValue]=useState('');return <main><h1>合成本人空间</h1><label>未发送草稿<input value={value} onChange={e=>setValue(e.target.value)}/></label><DeviceSessionsSettings/></main>;}`);
+  await writeFile(join(root,'app/personal/page.tsx'),`'use client';import{useState}from'react';import{DeviceSessionsSettings}from'../../src/session-duration/settings';import{LogoutButton}from'../../src/personal-candidate/privacy';export default function Page(){const[value,setValue]=useState('');return <main><h1>合成本人空间</h1><label>未发送草稿<input value={value} onChange={e=>setValue(e.target.value)}/></label><DeviceSessionsSettings/><LogoutButton/></main>;}`);
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
   const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','32142'],{cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});server=trackAuthThemeProcess(child,true);
   await new Promise<void>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Session fixture startup timeout')),30000);child.stdout.on('data',part=>{output+=String(part);if(/Ready in/.test(output)){clearTimeout(timer);accept();}});child.stderr.on('data',part=>{output+=String(part);});child.once('exit',()=>{clearTimeout(timer);reject(Error('Session fixture exited: '+output.slice(-300)));});});
   const origin='http://127.0.0.1:32142';browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
   const active=(mode='fixed',expires=Date.now()+60000,needsRefresh=false)=>({user:{id:'fixture-owner'},session:{mfaVerified:true,sessionDurationMode:mode,sessionDurationSeconds:mode==='rolling'?34560000:1800,expiresAt:new Date(expires).toISOString()},needsRefresh});
+  await t.test('native MFA login persists through a browser restart and still expires or signs out',async t=>{
+   await checkNativeBrowserSessions(t,root,origin,process.env.LIFEOS_TEST_CHROMIUM_PATH??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+  });
   await t.test('actual login page carries day selection through both native requests and supports mobile keyboard/custom validity',async()=>{
    const context=await browser!.newContext({viewport:{width:390,height:844}}),page=await context.newPage();const bodies:Record<string,unknown>[]=[];
    try{await page.route('**/api/platform/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/get-session'))return route.fulfill({json:active()});if(path.endsWith('/device-sessions'))return route.fulfill({status:404});bodies.push(JSON.parse(route.request().postData()??'{}'));return route.fulfill({json:path.endsWith('/sign-in/email')?{twoFactorRedirect:true}:{user:{id:'fixture-owner'}}});});
-    await page.goto(origin+'/login',{waitUntil:'networkidle'});const select=page.getByLabel('这台设备保持登录');await expect(select).toHaveValue('temporary');await expect(select).toBeEnabled();await select.focus();await expect(select).toBeFocused();await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'登录',exact:true})).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(select).toBeFocused();await select.selectOption('day');await expect(select).toHaveValue('day');
+    await page.goto(origin+'/login',{waitUntil:'networkidle'});const select=page.getByLabel('这台设备保持登录');await expect(select).toHaveValue('month');await expect(select).toBeEnabled();await select.focus();await expect(select).toBeFocused();await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'登录',exact:true})).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(select).toBeFocused();await select.selectOption('day');await expect(select).toHaveValue('day');
     await page.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');await page.getByLabel('验证器动态码',{exact:true}).fill('123456');await page.getByRole('button',{name:'登录',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');assert.deepEqual(bodies.map(body=>body.sessionDuration),[{mode:'fixed',seconds:86400},{mode:'fixed',seconds:86400}]);assert.equal(bodies[0].rememberMe,true);assert.equal(bodies[1].trustDevice,false);
     await page.goto(origin+'/login?reauthenticate=1',{waitUntil:'networkidle'});await select.selectOption('custom');await page.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');await page.getByLabel('登录时长',{exact:true}).fill('0');await page.getByRole('button',{name:'登录',exact:true}).click();assert.equal(bodies.length,2);await expect(page.getByLabel('登录时长',{exact:true})).toBeFocused();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
    }finally{await context.close();}
   });
   await t.test('deadline locks without unmounting the draft; reauthentication restores it and keeps return query',async()=>{
-   const context=await browser!.newContext(),page=await context.newPage();let expires=Date.now()+2500,posts=0;
+   const context=await browser!.newContext(),page=await context.newPage();let expires=Date.now()+60000,posts=0;
    try{await page.route('**/api/platform/**',route=>{if(route.request().method()==='POST')posts++;return route.fulfill(new URL(route.request().url()).pathname.endsWith('/get-session')?{json:active('fixed',expires)}:{status:404});});
-    await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'networkidle'});const draft=page.getByLabel('未发送草稿');await expect(draft).toBeVisible();await draft.fill('Synthetic unsent draft');await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});assert.equal(await draft.inputValue(),'Synthetic unsent draft');await expect(draft).toBeHidden();
-    const login=page.getByRole('link',{name:'重新登录',exact:true});await expect(login).toHaveAttribute('target','_blank');assert.ok((await login.getAttribute('href'))!.includes(encodeURIComponent('/personal?page=tasks&create=todo')));expires=Date.now()+60000;await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();await expect(draft).toBeVisible();assert.equal(await draft.inputValue(),'Synthetic unsent draft');assert.equal(posts,0);
+    await page.clock.install();
+    await page.goto(origin+'/personal?page=tasks&create=todo',{waitUntil:'domcontentloaded'});const draft=page.getByLabel('未发送草稿');await expect(draft).toBeVisible({timeout:30000});await draft.fill('Synthetic unsent draft');await page.clock.fastForward(61000);await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});assert.equal(await draft.inputValue(),'Synthetic unsent draft');await expect(draft).toBeHidden();
+    const login=page.getByRole('link',{name:'重新登录',exact:true});await expect(login).toHaveAttribute('target','_blank');assert.ok((await login.getAttribute('href'))!.includes(encodeURIComponent('/personal?page=tasks&create=todo')));expires=Date.now()+120000;await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();await expect(draft).toBeVisible();assert.equal(await draft.inputValue(),'Synthetic unsent draft');assert.equal(posts,0);
    }finally{await context.close();}
   });
   await t.test('existing device reopens directly; rolling renewal uses one explicitPOST and device revocation uses opaque ID',async()=>{
@@ -66,7 +71,8 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      };
      return route.fulfill({json:data[path]??{}});
     });
-    await page.goto(journal,{waitUntil:'networkidle'});
+    await page.goto(journal,{waitUntil:'domcontentloaded',timeout:90000});
+    await page.getByText('管理日记',{exact:true}).click();
     await page.getByRole('button',{name:'新增日记',exact:true}).click();
     const draft=page.getByRole('textbox',{name:'正文',exact:true});
     await page.getByRole('textbox',{name:'标题',exact:true}).fill('Synthetic unsaved title');
@@ -86,7 +92,7 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
      await expect(retry).toBeVisible();
      await expect(page).toHaveURL(journal);
      await expect(draft).toBeHidden();
-     await expect(page.getByRole('heading',{name:'日记',exact:true,level:1})).toBeHidden();
+     await expect(page.getByRole('heading',{name:'记录',exact:true,level:1})).toBeHidden();
      failure=null;
      await retry.click();
      await expect(draft).toBeVisible();
@@ -103,7 +109,8 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     assert.equal(unverifiedJournalReads,0);
     failure=null;
     await context.addCookies([{name:'fixture-ready',value:'1',url:origin}]);
-    await page.goto(journal,{waitUntil:'networkidle'});
+    await page.goto(journal,{waitUntil:'domcontentloaded',timeout:90000});
+    await expect(page.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
     await page.getByRole('button',{name:'退出登录',exact:true}).click();
     await expect(page).toHaveURL(origin+'/login');
     assert.deepEqual(commands,['POST /api/platform/auth/sign-out']);

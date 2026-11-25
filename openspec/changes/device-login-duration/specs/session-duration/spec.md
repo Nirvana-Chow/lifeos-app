@@ -3,7 +3,7 @@
 ## ADDED Requirements
 
 ### Requirement: Device-selected server session lifetime
-The system SHALL default to a fixed 1800-second session. It SHALL accept a fixed duration from 60 seconds to 365 days, and a rolling mode with a 400-day browser ceiling. Session fields SHALL be server-only and fail closed on invalid policy. Fixed sessions SHALL expire without GET or POST extension.
+With device login duration enabled, the system SHALL default new sessions to a fixed 30 days (2,592,000 seconds) and retain 30 minutes as an explicit temporary choice. It SHALL accept a fixed duration from 60 seconds to 365 days, and a rolling mode with a 400-day browser ceiling. Session fields SHALL be server-only and fail closed on invalid policy. Fixed sessions SHALL expire without GET or POST extension.
 
 #### Scenario: Reopen a remembered device
 - GIVEN a valid persistent native cookie and unrevoked server session

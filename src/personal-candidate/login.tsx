@@ -3,9 +3,9 @@ import {useEffect,useState,type FormEvent} from 'react';
 import s from './login.module.css';
 import type {LoginCapability} from '../platform/page-access';
 import {SessionDurationPicker} from '../session-duration/picker';
-import type {SessionDuration} from '../session-duration/policy';
+import {defaultDeviceSessionSeconds,type SessionDuration} from '../session-duration/policy';
 import {submitLogin} from './login-flow';
-export function LoginPage({capability,oauthQuery,returnTo}:{capability:LoginCapability;oauthQuery?:string;returnTo?:string}){const enabled=capability.enabled,ownerAlias=capability.mode==='personal'?capability.ownerAlias:undefined,[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[challenge,setChallenge]=useState(false),[backup,setBackup]=useState(false),[unknown,setUnknown]=useState(false),[duration,setDuration]=useState<SessionDuration>({mode:'fixed',seconds:1800});
+export function LoginPage({capability,oauthQuery,returnTo}:{capability:LoginCapability;oauthQuery?:string;returnTo?:string}){const enabled=capability.enabled,ownerAlias=capability.mode==='personal'?capability.ownerAlias:undefined,[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[challenge,setChallenge]=useState(false),[backup,setBackup]=useState(false),[unknown,setUnknown]=useState(false),[duration,setDuration]=useState<SessionDuration>({mode:'fixed',seconds:defaultDeviceSessionSeconds});
  useEffect(()=>{setHydrated(true);},[]);
  async function login(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(!enabled||!hydrated||busy||unknown)return;

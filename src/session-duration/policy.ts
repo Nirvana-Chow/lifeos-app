@@ -1,11 +1,12 @@
 /** Session limits are server policy, never a client-provided expiry timestamp. */
 export const temporarySessionSeconds=1800;
+export const defaultDeviceSessionSeconds=30*86400;
 export const maximumFixedSessionSeconds=365*86400;
 export const rollingSessionSeconds=400*86400;
 export type SessionDuration={mode:'fixed';seconds:number}|{mode:'rolling'};
 export type StoredSessionDuration={mode:'fixed'|'rolling';seconds:number};
 export function parseSessionDuration(value:unknown):StoredSessionDuration{
- if(value===undefined)return{mode:'fixed',seconds:temporarySessionSeconds};
+ if(value===undefined)return{mode:'fixed',seconds:defaultDeviceSessionSeconds};
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('INVALID_SESSION_DURATION');
  const input=value as Record<string,unknown>,keys=Object.keys(input);
  if(input.mode==='rolling'&&keys.length===1)return{mode:'rolling',seconds:rollingSessionSeconds};

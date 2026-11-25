@@ -120,11 +120,12 @@ test('unverified access starts without private requirements and confirmed logout
   assert.equal(classificationRenders,authenticated===false?0:1);
  }
 });
-test('overview metrics are actionable and unknown metrics are disabled',()=>{
+test('overview shows the daily sections and removes the old metrics and duplicate task status',()=>{
  const html=workspace({initialPage:'overview'});
- for(const label of ['待办','今日到期','已逾期','推进中项目'])assert.match(html,new RegExp('<button[^>]*aria-label="'+label+'：[^" ]+"'));
+ for(const label of ['未完待办','近期日程','最近思考'])assert.match(html,new RegExp('aria-label="'+label+'"'));
+ assert.doesNotMatch(html,/aria-label="任务指标"|aria-label="生活维度"|<h2>任务状态<\/h2>/);
  const unknown=workspace({initialPage:'overview',state:{status:'unknown'}});
- assert.equal((unknown.match(/<button[^>]*aria-label="(?:待办|今日到期|已逾期|推进中项目)：未知"[^>]*disabled/g)||[]).length,4);
+ assert.match(unknown,/未完待办暂不可用/);
 });
 
 test('private Header exposes a single appearance action before opening settings',()=>{
