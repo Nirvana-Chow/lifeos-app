@@ -48,6 +48,9 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   const anonymous=await fetch(origin+'/personal/people',{redirect:'manual'});
   assert.equal(anonymous.status,307);
   assert.equal(anonymous.headers.get('location'),'/login');
+  const calendarAnonymous=await fetch(origin+'/personal/schedule?record=00000000-0000-4000-8000-000000000000',{redirect:'manual'});
+  assert.equal(calendarAnonymous.status,307);
+  assert.equal(calendarAnonymous.headers.get('location'),'/login');
  }
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());const evidence=join(tmpdir(),'lifeos-record-browser-evidence-20261105');await mkdir(evidence,{recursive:true});
  const recordModules = new Map<string, readonly RecordModule[]>([
@@ -61,6 +64,8 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,calendarEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
   let writable=true,calendarEnabled=true,incompleteOverview=false,overviewUnavailable=false;
+  let detailFault: 'denied'|'temporary'|null=null;
+  let detailFaultId:string|null=null;
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
   const calendar=new PersonalCalendarService(service,{...config,enabled:true,writable:true});
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
@@ -81,6 +86,9 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   }
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(url.pathname==='/api/platform/status'&&(type==='person'||type==='media'))return route.fulfill({status:200,json:{}});if(!url.pathname.startsWith('/api/platform/personal/'))return route.continue();const headers=new Headers(request.headers());headers.set('host',url.host);if(request.method()==='GET')reads.push(url.pathname);else writes.push(request.method());
    if(url.pathname==='/api/platform/personal/status')return route.fulfill({status:200,json:{...config,calendarEnabled,scope:'personal-manual-candidate',storageVerified:true,writable}});
+   if(detailFault&&request.method()==='GET'&&url.pathname==='/api/platform/personal/calendar/'+detailFaultId){
+    return route.fulfill({status:detailFault==='denied'?403:503,json:{error:{message:detailFault==='denied'?'Synthetic detail denied':'Synthetic detail temporarily unavailable'}}});
+   }
    try{
     const body=request.postData(), inbound=new Request(url,{method:request.method(),headers,...(body?{body}:{})});
     const response=url.pathname.startsWith('/api/platform/personal/calendar')
@@ -265,13 +273,21 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    const host=overview.getByRole('listitem').filter({hasText:'合成关系乙'});
    const decoy=overview.getByRole('listitem').filter({hasText:'合成关系甲'});
    await expect(decoy.getByText('关联日程（0）',{exact:true})).toBeVisible();
-   await host.getByText('关联日程（1）',{exact:true}).click();
+   const visitSummary=host.getByText('关联日程（1）',{exact:true});
+   await visitSummary.focus();
+   await expect(visitSummary).toBeFocused();
+   await page.keyboard.press('Enter');
    const visitLink=host.getByRole('link',{name:visitTitle});
    await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
    await expect(host.getByText('2031-05-03',{exact:true})).toBeVisible();
-   await visitLink.click();
+   const beforeOpening=writes.length;
+   await visitLink.focus();
+   await expect(visitLink).toBeFocused();
+   await page.keyboard.press('Enter');
    const visitEditor=page.getByRole('dialog',{name:'编辑日程'});
    await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
+   await expect.poll(()=>visitEditor.evaluate(dialog=>dialog.contains(document.activeElement))).toEqual(true);
+   assert.equal(writes.length,beforeOpening);
    await visitEditor.getByLabel('开始日期',{exact:true}).fill('2031-06-05');
    await visitEditor.getByLabel('结束日期（不含）',{exact:true}).fill('2031-06-06');
    await visitEditor.getByRole('button',{name:'保存日程',exact:true}).click();
@@ -285,6 +301,34 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await host.getByText('关联日程（1）',{exact:true}).click();
    await expect(host.getByText('2031-06-05',{exact:true})).toBeVisible();
    await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
+   detailFaultId=visit.id;
+   detailFault='denied';
+   const directPath='/personal/schedule?record='+visit.id;
+   const protectedWrites=writes.length;
+   await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
+   await expect(page.getByText('Synthetic detail denied',{exact:true})).toBeVisible();
+   await expect(visitEditor).toHaveCount(0);
+   assert.equal(writes.length,protectedWrites);
+   detailFault='temporary';
+   await page.reload({waitUntil:'domcontentloaded'});
+   await expect(page.getByText('Synthetic detail temporarily unavailable',{exact:true})).toBeVisible();
+   await expect(visitEditor).toHaveCount(0);
+   detailFault=null;
+   await page.getByRole('button',{name:'重新读取',exact:true}).click();
+   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
+   assert.equal(writes.length,protectedWrites);
+   await page.keyboard.press('Escape');
+   await expect(visitEditor).toHaveCount(0);
+   const detailReads=reads.filter(path=>path==='/api/platform/personal/calendar/'+visit.id).length;
+   await Promise.all([
+    page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/calendar'&&response.status()===200),
+    page.getByRole('button',{name:'重新读取',exact:true}).click(),
+   ]);
+   await expect(visitEditor).toHaveCount(0);
+   assert.equal(reads.filter(path=>path==='/api/platform/personal/calendar/'+visit.id).length,detailReads);
+   await page.goto(origin+'/personal/people',{waitUntil:'domcontentloaded'});
+   await expect(host.getByText('关联日程（1）',{exact:true})).toBeVisible();
+   if(!await host.locator('details').filter({hasText:'关联日程'}).evaluate(element=>element.hasAttribute('open')))await host.getByText('关联日程（1）',{exact:true}).click();
    incompleteOverview=true;
    await page.getByRole('button',{name:'刷新',exact:true}).click();
    await expect(host.getByText('关联日程暂时无法完整核对。',{exact:true})).toBeVisible();
