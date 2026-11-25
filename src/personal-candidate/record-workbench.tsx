@@ -62,7 +62,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [status,setStatus]=useState<Status|null>(null),[entries,setEntries]=useState<PublicEntry[]>([]),[options,setOptions]=useState<Record<string,PublicEntry[]>>(emptyOptions),[search,setSearch]=useState(''),[metric,setMetric]=useState<HealthMetric>('weight'),[view,setView]=useState<RecordView>(()=>initialRecordView(type,careerSection)),[resumeId,setResumeId]=useState('');
  const [relatedJournals,setRelatedJournals]=useState<RelatedJournals|null>(null),[linkedProfile,setLinkedProfile]=useState(linkedPersonId);
  const [mediaKind,setMediaKind]=useState<MediaBrowseFilter>('all');
- const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+ const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string;fromNovelShelf?:boolean}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
  const currentDraft=()=>editorRef.current??(type==='journal'?draftCache.current?.editor:null);
@@ -145,7 +145,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  async function open(entry:PublicEntry){if(!leave()||!current.current)return;const binding=keyOf(current.current),token=generation.current;setBusy(true);setError('');try{const data=await json(type+'/'+entry.id),row=ownerRecord(data.entry,type,current.current.spaceId),versions=await json(type+'/'+entry.id+'/history');const after=readStatus(await json('status'));if(token!==generation.current||!current.current||binding!==keyOf(after)||binding!==keyOf(current.current))return;const fields=recordFields(row,type);setEditor({entry:row,fields,initial:JSON.stringify(fields)});setHistory((versions.items??[]).map((item:unknown)=>ownerRecord(item,type,after.spaceId)));}catch(e){if(token===generation.current)setError(e instanceof Error?e.message:'读取未完成。');}finally{if(token===generation.current)setBusy(false);}}
  async function save(){
   const active=session.current,token=generation.current;
-  if(!editor||status?.writable!==true||!active||blocked||verified===false)return;
+  if(!editor||status?.writable!==true||!active||blocked||verified===false||novelTopicRequired)return;
   setError('');setNotice('');
   try{
    const fields=normalizePersonalFields(type,editor.fields);
@@ -177,7 +177,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
     fields.personal=personal;
    }
   }
-  setEditor({entry:null,fields,initial:JSON.stringify(fields)});
+  setEditor({entry:null,fields,initial:JSON.stringify(fields),fromNovelShelf:type==='media'&&mediaKind==='novel'});
   setHistory([]);
   setNotice('');
  }
@@ -242,6 +242,9 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const table=useTable({features:dataGridFeatures,data:tableRows,columns,getRowId:entry=>entry.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(tableRows.length,1)}},autoResetPageIndex:false});
  const careerRecord=type==='career'&&editor?.entry?{id:editor.entry.id,sourceId:editor.entry.source.id,revision:editor.entry.revision,fields:recordFields(editor.entry,'career') as CareerPersonalFields}:null;
  const fields=editor?.fields,links=fields?.personal?.type==='journal'?fields.personal.links:emptyLinks();
+ const media=fields?.personal;
+ const novelTopicRequired=editor?.fromNovelShelf===true&&
+  (media?.type!=='media'||!matchesMediaBrowse(media,'novel',options.topic));
  const setFields=(fields:RecordFields)=>setEditor(old=>old?{...old,fields}:old);
  function peoplePins(values:PersonalReference[]){return <label>关联人物<select multiple value={values.map(value=>JSON.stringify(value))} onChange={event=>setFields({...fields!,personal:{type:'journal',links:{...links,people:[...event.target.selectedOptions].map(option=>JSON.parse(option.value))}}})}>{values.filter(value=>!options.person.some(entry=>entry.id===value.id&&entry.source.id===value.sourceId&&entry.revision===value.revision)).map(value=><option key={value.id} value={JSON.stringify(value)}>保留原人物引用（版本 {value.revision}）</option>)}{options.person.map(entry=><option key={entry.id} value={JSON.stringify({id:entry.id,sourceId:entry.source.id,revision:entry.revision})}>{recordFields(entry,'person').title}</option>)}</select></label>;}
  const toolbar=<div className={s.toolbar}><Input aria-label={'搜索'+title} placeholder={'搜索'+title} value={search} onChange={e=>{setLinkedProfile(undefined);setSearch(e.target.value);}}/><span className={s.count}>{status?(type==='media'?tableRows.length:sectionEntries.length)+' 条':'正在读取'}</span>
@@ -286,11 +289,14 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   <label>{type==='journal'?'正文':'备注'}<textarea ref={type==='journal'?journalBody:undefined} aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
   {type==='person'&&<PersonFields value={fields.personal as PersonPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='health'&&<><label>记录类型<select value={(fields.personal as HealthPersonal).healthKind} disabled={!!editor?.entry} onChange={event=>{const next=emptyHealthFields(event.target.value as HealthPersonal['healthKind'],zone());setFields({...fields,personal:next.personal});}}>{Object.entries(healthKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthFields value={fields.personal as HealthPersonal} lockKind={!!editor?.entry} onChange={personal=>setFields({...fields,personal})}/></>}
+  {novelTopicRequired&&<p role="status" className={s.description}>{options.topic.some(isNovelTopic)
+   ?'请将作品类型设为书籍，并在「作品来源与关联」选择一个网文／小说主题后保存。'
+   :'当前没有可用的网文／小说主题。有明确的关联主题后才能从这个书架保存。'}</p>}
   {type==='media'&&<MediaFields value={fields.personal as MediaPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='career'&&<CareerFields value={fields.personal as CareerPersonal} options={options} kinds={careerSection==='career'?careerKinds.filter(kind=>kind!=='resume'):undefined} lockKind={!!editor?.entry||careerSection==='resume'} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='portfolio'&&<><label>持有类别<select aria-label="持有类别" disabled={!!editor?.entry} value={(fields.personal as PersonalPortfolio).portfolioKind} onChange={event=>setFields({...fields,personal:emptyPortfolioPersonal(event.target.value as PortfolioKind)})}>{portfolioKinds.map(kind=><option key={kind} value={kind}>{portfolioKindLabels[kind]}</option>)}</select></label><PortfolioFields value={fields.personal as PersonalPortfolio} options={options} onChange={personal=>setFields({...fields,personal})}/></>}
   {type==='journal'&&<div className={s.relations}><RelationFields value={links} options={options} onChange={next=>setFields({...fields,personal:{type:'journal',links:{...next,people:links.people}} as JournalPersonal})}/>{peoplePins(links.people)}</div>}
-  <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit">保存</Button></div></fieldset></form>}
+  <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit" disabled={novelTopicRequired}>保存</Button></div></fieldset></form>}
   {type==='journal'&&<>
    {error&&<p role="alert" className={s.error}>{error}</p>}
    {mutation?.error&&<p role="alert">{mutation.error}</p>}
