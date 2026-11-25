@@ -86,7 +86,7 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
   {routine?<>
    <dl className={s.routine} aria-label="日记回顾">
     <div><dt>计划</dt><dd>{routine.plan||'这篇日记没有填写计划。'}</dd></div>
-    <div><dt>发生</dt><dd>{routine.happened||'这篇日记没有填写发生事项。'}</dd></div>
+    <div><dt>发生（日记里写下的）</dt><dd>{routine.happened||'这篇日记没有填写发生事项。'}</dd></div>
     <div><dt>总结</dt><dd>{routine.summary||'这篇日记没有手写总结。'}</dd></div>
    </dl>
    <details><summary>查看当前原文</summary><p className={s.body}>{detail.current.text}</p></details>
@@ -109,7 +109,7 @@ export function JournalHistoryPanel({onBeforeOpen,renderEditor,activityLink}:{on
    {busy&&<p role="status">正在核对日记与服务器日期…</p>}
    {error&&<p role="alert" className={s.error}>{error}</p>}
    {renderEditor?.(()=>void load(),history?.today)}
-   <details className={s.disclosure} open={showHappened} onToggle={event=>setShowHappened(event.currentTarget.open)}><summary>查看当天发生的记录</summary>
+   <details className={s.disclosure} open={showHappened} onToggle={event=>setShowHappened(event.currentTarget.open)}><summary>查看日记里写下的发生事项</summary>
     {showHappened&&<>
     <p className={s.meta}>仅显示本人写在当天日记「发生」段落里的内容。</p>
     {!history?<p className={s.meta}>当天日记暂未核对。</p>:todayHappened.length>0?<ul className={s.titles}>{todayHappened.map(({row,happened})=><li key={row.id}>

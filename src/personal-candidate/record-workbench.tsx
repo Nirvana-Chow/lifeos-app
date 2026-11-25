@@ -281,7 +281,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    onClick={()=>{
     if(fields.text.length>0)return;
     setFields({...fields,text:journalRoutineTemplate});
-    requestAnimationFrame(()=>{const body=journalBody.current;if(body){body.focus();const firstLine=journalRoutineTemplate.indexOf('\n')+1;body.setSelectionRange(firstLine,firstLine);}});
+    requestAnimationFrame(()=>{const body=journalBody.current;if(body){body.focus();const firstLine=journalRoutineTemplate.indexOf('\n\n')+1;body.setSelectionRange(firstLine,firstLine);}});
    }}>使用「计划／发生／总结」提纲</Button>}
   <label>{type==='journal'?'正文':'备注'}<textarea ref={type==='journal'?journalBody:undefined} aria-label={type==='journal'?'正文':'备注'} required={type==='journal'} rows={type==='journal'?8:3} maxLength={16384} value={fields.text} onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
   {type==='person'&&<PersonFields value={fields.personal as PersonPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}

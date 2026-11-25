@@ -105,6 +105,7 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  const editor=page.getByRole('dialog',{name:'新增日记',exact:true});
  const title='Synthetic hand-written journal',original='Synthetic original body\nSecond line stays intact.';
  await expect(editor.getByLabel('记录日期')).not.toHaveValue('');
+ await expect(editor.getByLabel('正文',{exact:true})).toHaveValue('');
  await editor.getByLabel('标题',{exact:true}).fill(title);
  await editor.getByLabel('正文',{exact:true}).fill(original);
  await expect(editor.getByRole('button',{name:'使用「计划／发生／总结」提纲',exact:true})).toBeDisabled();
@@ -140,19 +141,21 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await journal.getByRole('button',{name:title,exact:true}).click();
  const edit=page.getByRole('dialog',{name:'编辑日记',exact:true});
  await expect(edit.getByLabel('正文',{exact:true})).toHaveValue(original);
- await edit.getByLabel('正文',{exact:true}).fill('Synthetic updated body');
+ const legacyText='## 计划\nLegacy plan\n## 发生\nLegacy unmarked section\n## 总结\nLegacy summary';
+ await edit.getByLabel('正文',{exact:true}).fill(legacyText);
  await edit.getByRole('button',{name:'保存',exact:true}).click();
  await expect(edit).toBeHidden();
  await journal.getByRole('link',{name:title,exact:true}).click();
- await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Synthetic updated body');
+ await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Legacy unmarked section');
+ await expect(journal.getByText('查看当前原文',{exact:true})).toHaveCount(0);
  await journal.getByText('最初保存的原文',{exact:true}).click();
  await expect(journal.getByRole('article',{name:'日记原文'})).toContainText('Second line stays intact.');
  assert.equal(commands.length,3);assert.equal(commands[2].method,'PATCH');assert.equal(repo.rows.size,1);
 
  const routineTitle='Synthetic routine journal';
  const plan='Synthetic plan for later',happened='Synthetic recorded occurrence',summary='Synthetic hand-written summary';
- const planOnly='## 计划\n'+plan+'\n\n## 发生\n\n## 总结\n';
- const routine='## 计划\n'+plan+'\n\n## 发生\n'+happened+'\n\n## 总结\n'+summary;
+ const planOnly=journalRoutineTemplate.replace('## 计划\n','## 计划\n'+plan+'\n');
+ const routine=planOnly.replace('## 发生\n','## 发生\n'+happened+'\n')+summary;
  await write.click();
  await editor.getByLabel('标题',{exact:true}).fill(routineTitle);
  await editor.getByRole('button',{name:'使用「计划／发生／总结」提纲',exact:true}).click();
@@ -165,11 +168,12 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await editor.getByRole('button',{name:'保存',exact:true}).click();
  await expect(editor).toBeHidden();
  await expect(journal.getByRole('link',{name:routineTitle,exact:true})).toBeVisible({timeout:15000});
- const occurrenceToggle=journal.getByText('查看当天发生的记录',{exact:true});
+ const occurrenceToggle=journal.getByText('查看日记里写下的发生事项',{exact:true});
  const occurrence=occurrenceToggle.locator('..');
  await occurrenceToggle.click();
  await expect(occurrence).toContainText('当天日记中暂无已填写的「发生」段落。');
  await expect(occurrence).not.toContainText(plan);
+ await expect(occurrence).not.toContainText('Legacy unmarked section');
  await page.setViewportSize({width:1365,height:900});
  await journal.getByRole('button',{name:routineTitle,exact:true}).click();
  await edit.getByLabel('正文',{exact:true}).fill(routine);
