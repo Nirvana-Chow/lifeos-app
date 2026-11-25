@@ -93,6 +93,14 @@ test('owner overview uses verified requirement delivery evidence and opens the c
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  await expect(page.locator('[data-requirements-page]')).toBeVisible();
+ await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
+ await expect(page.getByRole('heading',{name:'项目',level:1,exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'设置',exact:true}).click();
+ const product=page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'产品',exact:true});
+ await product.getByRole('button',{name:'需求池',exact:true}).click();
+ await expect(page).toHaveURL(/\/personal\?page=requirements$/);
+ await expect(page.locator('[data-requirements-page]')).toBeVisible();
+
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});
  await expect(card).toHaveCount(0);
