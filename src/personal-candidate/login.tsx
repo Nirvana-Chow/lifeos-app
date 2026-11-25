@@ -1,12 +1,29 @@
 'use client';
-import {useEffect,useState,type FormEvent} from 'react';
+import {useEffect,useRef,useState,type FormEvent} from 'react';
 import s from './login.module.css';
 import type {LoginCapability} from '../platform/page-access';
 import {SessionDurationPicker} from '../session-duration/picker';
 import {defaultDeviceSessionSeconds,type SessionDuration} from '../session-duration/policy';
 import {submitLogin} from './login-flow';
 export function LoginPage({capability,oauthQuery,returnTo,onResume}:{capability:LoginCapability;oauthQuery?:string;returnTo?:string;onResume?:()=>void}){const enabled=capability.enabled,ownerAlias=capability.mode==='personal'?capability.ownerAlias:undefined,[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[hydrated,setHydrated]=useState(false),[challenge,setChallenge]=useState(false),[backup,setBackup]=useState(false),[unknown,setUnknown]=useState(false),[continuation,setContinuation]=useState<string|null>(null),[duration,setDuration]=useState<SessionDuration>({mode:'fixed',seconds:defaultDeviceSessionSeconds});
+ const formRef=useRef<HTMLFormElement>(null),embedded=onResume!==undefined;
  useEffect(()=>{setHydrated(true);},[]);
+ useEffect(()=>{
+  if(!embedded)return;
+  const clearCredentials=()=>{
+   for(const name of ['password','code']){
+    const input=formRef.current?.elements.namedItem(name);
+    if(input instanceof HTMLInputElement)input.value='';
+   }
+  };
+  const conceal=()=>{if(document.visibilityState==='hidden')clearCredentials();};
+  document.addEventListener('visibilitychange',conceal);
+  window.addEventListener('pagehide',clearCredentials);
+  return()=>{
+   document.removeEventListener('visibilitychange',conceal);
+   window.removeEventListener('pagehide',clearCredentials);
+  };
+ },[embedded]);
  async function login(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(!enabled||!hydrated||busy||unknown)return;
   const form=event.currentTarget,data=new FormData(form);setBusy(true);setMessage('');
@@ -28,7 +45,7 @@ export function LoginPage({capability,oauthQuery,returnTo,onResume}:{capability:
    {capability.mode==='synthetic'&&<p className={s.hint}>仅使用虚构测试身份，不输入本人密码或私人资料。</p>}
    {message&&<p className={s.message} role="status">{message}</p>}
    {continuation?<a className={s.link} href={continuation} target="_blank" rel="noopener">完成安全验证</a>:enabled?<>
-    <form method="post" action="/login" onSubmit={login}><fieldset disabled={!hydrated||busy||unknown}>
+    <form ref={formRef} method="post" action="/login" onSubmit={login}><fieldset disabled={!hydrated||busy||unknown}>
      <label>{ownerAlias?'账号':'邮箱'}<input name="email" type={ownerAlias?'text':'email'} defaultValue={ownerAlias??''} required={!challenge} readOnly={challenge} autoCapitalize="none" spellCheck={false} autoComplete="username"/></label>
      <label>密码<input name="password" type="password" required={!challenge} disabled={challenge} autoComplete="current-password"/></label>
      <label>{backup?'备用恢复码':'验证器动态码'}<input key={backup?'backup':'totp'} name="code" type="text" required={challenge} inputMode={backup?'text':'numeric'} pattern={backup?undefined:'[0-9]{6}'} minLength={backup?undefined:6} maxLength={backup?128:6} autoComplete={backup?'off':'one-time-code'} autoCapitalize="none" spellCheck={false}/></label>

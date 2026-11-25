@@ -204,10 +204,14 @@ test('native backup HTTP200 with an enabled but unverified factor still needs ca
 test('every private business alias uses the native owner MFA principal gate before module rendering',async()=>{
  const {readFileSync}=await import('node:fs'),ts=(await import('typescript')).default,map=await import('../src/workbench/private-navigation.ts');
  const f=await fixture();let cookie='',config=f.config,rendered=0;
+ const {personalLoginHref}=await import('../src/session-duration/client.ts');
+ const recordProps={searchParams:Promise.resolve({})};
  const jsx=(type:unknown,props:unknown)=>{rendered++;return{type,props};};
  const imports:Record<string,unknown>={
   '../../../src/personal-candidate/record-page':{PersonalRecordPage:'record-page'},'../../../src/calendar-candidate/personal-page':{PersonalCalendarPage:'calendar-page'},'../../../src/personal-finance/page':{PersonalFinancePage:'finance-page'},
   '../../../src/personal-journal/page':{JournalRecordPage:'journal-page'},
+  '../../../src/session-duration/guard':{OwnerPageReadUnavailable:'owner-unavailable'},
+  '../../../src/session-duration/client':{personalLoginHref},
   '../../../src/personal-people/journal-links':{personRecordId},
   '../../../src/personal-search/page':{PersonalSearchPage:'search-page'},
   'react/jsx-runtime':{jsx,jsxs:jsx},'next/headers':{headers:async()=>new Headers(cookie?{cookie}:{})},
@@ -218,13 +222,13 @@ test('every private business alias uses the native owner MFA principal gate befo
  };
  const m={exports:{} as {default:(props:unknown)=>Promise<unknown>}};
  new Function('require','module','exports',ts.transpileModule(readFileSync('app/personal/[...section]/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText)((name:string)=>{assert.ok(name in imports,name);return imports[name];},m,m.exports);
- const recordPages=['journal','media','career','portfolio'].map(type=>{const page={exports:{} as {default:()=>Promise<unknown>}};new Function('require','module','exports',ts.transpileModule(readFileSync('app/personal/'+type+'/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText)((name:string)=>{assert.ok(name in imports,name);return imports[name];},page,page.exports);return page;});
+ const recordPages=['journal','media','career','portfolio'].map(type=>{const page={exports:{} as {default:(props:typeof recordProps)=>Promise<unknown>}};new Function('require','module','exports',ts.transpileModule(readFileSync('app/personal/'+type+'/page.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText)((name:string)=>{assert.ok(name in imports,name);return imports[name];},page,page.exports);return page;});
  const aliases=map.privateNavigation.filter(item=>!item.href.includes('?')&&item.href!=='/personal'),props=(href:string)=>({params:Promise.resolve({section:href.slice('/personal/'.length).split('/')}),searchParams:Promise.resolve({mode:'synthetic-review',owner:'forged'})});
- const denied=async()=>{rendered=0;for(const item of aliases)await assert.rejects(m.exports.default(props(item.href)),/REDIRECT \/login/);for(const page of recordPages)await assert.rejects(page.exports.default(),/REDIRECT \/login/);assert.equal(rendered,0,'denied principals must never construct module elements');};
+ const denied=async()=>{rendered=0;for(const item of aliases)await assert.rejects(m.exports.default(props(item.href)),/REDIRECT \/login/);for(const page of recordPages)await assert.rejects(page.exports.default(recordProps),/REDIRECT \/login/);assert.equal(rendered,0,'denied principals must never construct module elements');};
  await denied();cookie='lifeos-platform-candidate.session_token=forged';await denied();
  const signed=await f.login();assert.equal(signed.status,200);cookie=cookies(signed);await denied();
  const passwordCookie=cookie,enrolled=await enrollSyntheticOwnerMfa(f.auth,f.config.ownerId,password,(path,body,value)=>f.send(path,body,value),cookie);cookie=enrolled.cookie;
- for(const item of aliases)await assert.doesNotReject(m.exports.default(props(item.href)));for(const page of recordPages)await assert.doesNotReject(page.exports.default());assert.ok(rendered>0);
+ for(const item of aliases)await assert.doesNotReject(m.exports.default(props(item.href)));for(const page of recordPages)await assert.doesNotReject(page.exports.default(recordProps));assert.ok(rendered>0);
  const readyCookie=cookie;cookie=passwordCookie;await denied();cookie=readyCookie;
  for(const override of [{ownerId:'another-owner'},{ownerEmail:'another-owner@example.invalid'}]){config={...f.config,...override};await denied();}config=f.config;
  const verified=f.db.platform_two_factor[0].verified;f.db.platform_two_factor[0].verified=false;await denied();f.db.platform_two_factor[0].verified=verified;

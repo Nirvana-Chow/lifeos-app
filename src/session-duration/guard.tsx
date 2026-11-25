@@ -26,15 +26,25 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
  const native=capability.sessionDuration===true;
 
  useEffect(()=>{
-  let mounted=true,request:AbortController|undefined,timer:ReturnType<typeof setTimeout>|undefined;
+  let mounted=true,request:AbortController|undefined,timer:ReturnType<typeof setTimeout>|undefined,deadline:ReturnType<typeof setTimeout>|undefined;
   let recoveryPending=false;
   const conceal=()=>{
    request?.abort();
    request=undefined;
    clearTimeout(timer);
+   clearTimeout(deadline);
    document.documentElement.style.visibility='hidden';
    setPhase('checking');
   };
+  function armDeadline(expiresAt:number){
+   const remaining=expiresAt-Date.now();
+   if(remaining>0){
+    deadline=setTimeout(()=>armDeadline(expiresAt),Math.min(remaining,2147483647));
+    return;
+   }
+   conceal();
+   void check();
+  }
   async function check(afterLogin=false){
    if(!mounted||document.visibilityState==='hidden'||request&&!afterLogin)return;
    if(afterLogin){
@@ -55,15 +65,17 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
    }
    if(!mounted||request!==controller||controller.signal.aborted)return;
    request=undefined;
+   clearTimeout(deadline);
+   const expiresAt=status.kind==='active'&&'expiresAt' in status&&typeof status.expiresAt==='number'?status.expiresAt:null;
+   if(expiresAt!==null&&expiresAt<=Date.now())status={kind:'locked'};
    document.documentElement.style.visibility=status.kind==='active'?'':'hidden';
    setPhase(status.kind);
    if(status.kind==='active'){
     setAuthenticating(false);
     if(recoveryPending){recoveryPending=false;window.dispatchEvent(new Event('lifeos-owner-session-restored'));}
    }
-   const delay=status.kind==='active'&&'expiresAt' in status&&typeof status.expiresAt==='number'
-    ?Math.max(0,Math.min(60000,status.expiresAt-Date.now())):60000;
-   timer=setTimeout(()=>void check(),delay);
+   if(status.kind==='active'&&expiresAt!==null)armDeadline(expiresAt);
+   timer=setTimeout(()=>void check(),60000);
   }
 
   recheck.current=afterLogin=>void check(afterLogin);
@@ -77,6 +89,7 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
    mounted=false;
    request?.abort();
    clearTimeout(timer);
+   clearTimeout(deadline);
    recheck.current=()=>{};
    for(const event of ['focus','pageshow','online'])window.removeEventListener(event,foreground);
    window.removeEventListener('pagehide',conceal);
@@ -91,9 +104,10 @@ export function DeviceSessionGuard({children,capability}:{children:ReactNode;cap
     <OwnerPageVerification.Provider value={phase==='active'}>{children}</OwnerPageVerification.Provider>
    </OwnerSessionRecheck.Provider>
   </div>
-  {phase==='locked'&&authenticating?<div style={{visibility:'visible'}}>
+  {authenticating&&<div hidden={phase!=='locked'} inert={phase!=='locked'} style={{visibility:'visible'}}>
    <LoginPage capability={capability} returnTo={returnTo} onResume={()=>{setAuthenticating(false);recheck.current(true);}}/>
-  </div>:phase!=='active'&&<main data-lifeos-surface="auth" className={s.lock} aria-live="polite" style={{visibility:'visible'}}><section>
+  </div>}
+  {phase!=='active'&&(phase!=='locked'||!authenticating)&&<main data-lifeos-surface="auth" className={s.lock} aria-live="polite" style={{visibility:'visible'}}><section>
    {phase==='checking'&&<h1>正在核对登录状态…</h1>}
    {phase==='unavailable'&&<><h1>暂时无法核对登录状态</h1><p>私人页面已隐藏，未发送的草稿仍保留在本页。</p><button type="button" onClick={()=>recheck.current()}>重新核对</button></>}
    {phase==='locked'&&<><h1>登录已到期或需要重新验证</h1><p>重新登录后可继续编辑，未发送的草稿仍保留在本页。</p>

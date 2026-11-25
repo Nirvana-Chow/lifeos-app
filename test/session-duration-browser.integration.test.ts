@@ -33,12 +33,16 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
    const context=await browser!.newContext(),page=await context.newPage();
    const destination=origin+'/personal?page=tasks&create=todo';
    let expires=Date.now()+60000,unavailable=false,ownerReady=true;
+   let pendingDeviceRead:Promise<void>|undefined,heldDeviceReads=0;
    const posts:string[]=[];
    try{
-    await page.route('**/api/platform/**',route=>{
+    await page.route('**/api/platform/**',async route=>{
      const req=route.request(),path=new URL(req.url()).pathname;
      if(req.method()==='POST')posts.push(path);
-     if(path.endsWith('/get-session'))return route.fulfill(unavailable?{status:503}:{json:active('fixed',expires)});
+     if(path.endsWith('/get-session')){
+      if(pendingDeviceRead){heldDeviceReads++;await pendingDeviceRead;}
+      return route.fulfill(unavailable?{status:503}:{json:active('fixed',expires)});
+     }
      if(path==='/api/platform/status')return route.fulfill(ownerReady?{json:{}}:{status:401});
      if(path.endsWith('/sign-in/email'))return route.fulfill({json:{twoFactorRedirect:true}});
      if(path.endsWith('/two-factor/verify-totp')){
@@ -70,12 +74,38 @@ test('OPT-IN real login page and mounted expiry guard preserve device choice, ke
     await expect(draft).toBeVisible();
     assert.deepEqual(posts,[]);
 
-    await page.clock.fastForward(61000);
+    const beforeDeadline=expires-(await page.evaluate(()=>Date.now()))-500;
+    assert.ok(beforeDeadline>0);
+    await page.clock.fastForward(beforeDeadline);
+    let releaseDeviceRead=()=>{};
+    pendingDeviceRead=new Promise<void>(resolve=>{releaseDeviceRead=resolve;});
+    try{
+     await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+     await expect.poll(()=>heldDeviceReads).toBeGreaterThan(0);
+     await page.clock.fastForward(600);
+     await expect(draft).toBeHidden({timeout:1200});
+    }finally{pendingDeviceRead=undefined;releaseDeviceRead();}
     await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible({timeout:10000});
     await expect(draft).toBeHidden();
     await page.getByRole('button',{name:'重新登录',exact:true}).click();
-    await page.getByLabel('密码',{exact:true}).fill('Synthetic-browser-password');
-    await page.getByLabel('验证器动态码',{exact:true}).fill('123456');
+    await page.getByLabel('这台设备保持登录').selectOption('day');
+    const password=page.getByLabel('密码',{exact:true}),code=page.getByLabel('验证器动态码',{exact:true});
+    await password.fill('Synthetic-browser-password');
+    await page.getByRole('button',{name:'登录',exact:true}).click();
+    await expect(password).toBeDisabled();
+    await code.fill('654321');
+    const visibility=(state:'hidden'|'visible')=>page.evaluate(value=>{
+     Object.defineProperty(document,'visibilityState',{configurable:true,value});
+     document.dispatchEvent(new Event('visibilitychange'));
+    },state);
+    await visibility('hidden');
+    await expect(code).toBeHidden();
+    await visibility('visible');
+    await expect(code).toBeVisible();
+    await expect(password).toBeDisabled();
+    await expect(code).toHaveValue('');
+    await expect(page.getByLabel('这台设备保持登录')).toHaveValue('day');
+    await code.fill('123456');
     await page.getByRole('button',{name:'登录',exact:true}).click();
     await expect(draft).toBeVisible();
     await expect(draft).toHaveValue('Synthetic unsent draft');
