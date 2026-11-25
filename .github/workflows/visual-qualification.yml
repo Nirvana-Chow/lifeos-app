@@ -843,14 +843,6 @@ jobs:
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-390-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-light.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-chat-430-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-1365-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-360-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-390-dark.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-light.png
-            ${{ runner.temp }}/owner-personal-browser-screenshots/private-settings-430-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-light.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-1365-dark.png
             ${{ runner.temp }}/owner-personal-browser-screenshots/private-outputs-dialog-360-light.png
