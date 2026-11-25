@@ -191,7 +191,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
     setEditor(latest=>latest?.entry?.id===saved.id?{
      entry:saved,fields:latest.fields===editor.fields?savedFields:latest.fields,initial:JSON.stringify(savedFields),
     }:latest);
-    setHistory(versions=>[saved,...versions.filter(version=>version.revision!==saved.revision)]);
+    // Keep the same 50-entry window as the history endpoint.
+    setHistory(versions=>[saved,...versions.filter(version=>version.revision!==saved.revision)].slice(0,50));
     setEntries(rows=>rows.map(row=>row.id===observed.id?observed:row));
     onJournalSaved?.();
     return;
