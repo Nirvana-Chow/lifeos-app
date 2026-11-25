@@ -14,6 +14,8 @@
 
 ## Qualification boundary
 
+Revalidation follow-up (LO-SEC-001 / LO-AUTH-001, same 2.2, 2.3 and 4.2): distinguish an explicitly rejected or expired session from a temporary read failure. While unverified, conceal the private page and keep its mounted draft. After a temporary failure, allow another read in the same page. Keep explicit sign-out, MFA, session lifetimes, renewal eligibility and deployment gates intact.
+
 Root reviewed117d8c91 and its test/comment-only successors (C0/I0/M0). Shared a106/af225 received independent source review. Candidate f98378e normally merges current main02a with those changes: full public tests2341 pass/95 opt-in skips, types pass; the exact final private15 composition passes full production build and same-artifact44 platform/8 OAuth/10 device and closed-boundary checks. The unchanged Notes consumers add5 same-artifact checks. See [verification](../../../docs/verification/2026-11-14-device-login-duration.md).
 
 Private PR746 merged the independently reviewed three source overlays, preserving the existing alias; it does not adopt or deploy them. The final15 composition includes the shared exact optional flag loader and fixed SQL body alternatives. Chrome4/0fail verifies actual login/OAuth pages, the official signed-query verifier and native MFA handlers, with isolated memory data and a synthetic OAuth provider port. Actual PostgreSQL191118 remains public Auth qualification; new shared readiness PostgreSQL qualification is separately tracked by its owner. Proposed0024 is never applied automatically. Source approval, private source merge and public merge each remain distinct from production account/session activation and owner acceptance.
