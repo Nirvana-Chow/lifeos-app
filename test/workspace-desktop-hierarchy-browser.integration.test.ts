@@ -231,7 +231,13 @@ test('OPT-IN exact private navigation oracle accepts only the enabled four-link 
   let body=await response.text();if(['/api/platform/personal/status','/api/platform/status'].includes(new URL(request.url()).pathname)){const value=JSON.parse(body);assert.equal(value.storageReviewEnabled,true);statusReads++;if(!advertised){delete value.storageReviewEnabled;body=JSON.stringify(value);}}
   return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body});
  });
- const open=async(width=1365)=>{await page.setViewportSize({width,height:844});await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:70000});if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();};
+ const open=async(width=1365)=>{
+  await page.setViewportSize({width,height:844});
+  const status=page.waitForResponse(response=>['/api/platform/status','/api/platform/personal/status'].includes(new URL(response.url()).pathname));
+  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
+  await status;
+  if(width===390)await page.getByRole('button',{name:'打开导航',exact:true}).click();
+ };
  for(const width of [1365,390]){await open(width);await assertPrivateFixtureNavigation(page);t.diagnostic('original navigation oracle passed '+width);}
  for(const change of ['extra','href','missing','order','role','storage-href','storage-missing','unadvertised','closed']){
   enabled=change!=='closed';advertised=change!=='unadvertised';await open();
