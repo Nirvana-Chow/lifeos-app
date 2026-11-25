@@ -6,7 +6,7 @@ import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect} from '@playwright/test';
-import {journalFixture,journalStatus} from './helpers/journal-history.ts';
+import {journalFixture,journalStatus,journalWithTopic,topicFixture} from './helpers/journal-history.ts';
 
 test('OPT-IN canonical journal calendar filters verified periods, preserves drafts and clears stale private reads',{
  skip:process.env.RUN_JOURNAL_CALENDAR_BROWSER!=='1'&&'Requires the allocated isolated synthetic Next/Chromium slot',timeout:240_000,
@@ -28,7 +28,9 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
  for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'America/Los_Angeles'});
   const original=journalFixture(1,'2025-11-13'),current={...original,revision:2,draft:{...original.draft,text:'Synthetic current revision'}},today=journalFixture(2,'2026-11-13'),undated=journalFixture(3,null);
-  let items=[current,today,undated,journalFixture(4,'2026-12-28'),journalFixture(5,'2027-01-01'),...Array.from({length:21},(_,i)=>journalFixture(10+i,'2026-11-13'))];
+  const topic=topicFixture(101,'随手记');
+  const memo=journalWithTopic(journalFixture(70,'2025-11-13','Exact existing memo text'),topic);
+  let items=[current,today,undated,memo,journalFixture(4,'2025-12-29'),journalFixture(5,'2026-01-01'),journalFixture(71,'2026-11-14','Future record not counted'),...Array.from({length:21},(_,i)=>journalFixture(10+i,'2026-11-13'))];
   let authorized=true,wrongScope=false,detail=current,delayed=false;
   let release:(()=>void)|undefined;const held:Promise<void>[]=[];
   const external:string[]=[],writes:string[]=[],errors:string[]=[],originalReads:string[]=[];
@@ -44,10 +46,13 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
    }
    if(url.pathname==='/api/platform/personal/journal/'+current.id)originalReads.push(url.pathname);
    const values:Record<string,unknown>={
-    '/api/platform/personal/status':{...journalStatus,writable:true,...wrongScope?{spaceId:'another-synthetic-space'}:{}},
+    '/api/platform/personal/status':{...journalStatus,writable:true,allowedTypes:['journal','topic'],...wrongScope?{spaceId:'another-synthetic-space'}:{}},
     '/api/platform/personal/journal/snapshot':snapshot,
+    '/api/platform/personal/topic/snapshot':{scope:'full-current-snapshot',items:[topic],total:1,truncated:false},
     '/api/platform/personal/overview':{items:[]},
     ['/api/platform/personal/journal/'+current.id]:{entry:detail},
+    ['/api/platform/personal/journal/'+memo.id]:{entry:memo},
+    ['/api/platform/personal/journal/'+memo.id+'/history']:{items:[memo],scope:'bounded-record-history',truncated:false},
     ['/api/platform/personal/journal/'+current.id+'/history']:{items:[detail,original],scope:'bounded-record-history',truncated:false},
    };
    return route.fulfill({status:200,json:values[url.pathname]??{}});
@@ -57,7 +62,7 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   const memos=page.getByRole('region',{name:'Memos',exact:true});
   const journal=page.getByRole('region',{name:'日记',exact:true});
   const periods=page.getByRole('region',{name:'周期回顾',exact:true});
-  await expect(memos.getByText('随手记未接入。',{exact:true})).toBeVisible();
+  await expect(memos.getByRole('link',{name:'Synthetic diary 70',exact:true})).toBeVisible({timeout:30000});
   await expect(memos.getByRole('textbox')).toHaveCount(0);
   await expect(journal.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible({timeout:30000});
   const positions=await page.getByRole('heading',{name:/^(Memos|日记|周期回顾)$/}).evaluateAll(headings=>headings.map(heading=>heading.getBoundingClientRect().top));
@@ -69,36 +74,38 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   await journal.getByText('其余 19 条当天日记',{exact:true}).click();
   await expect(calendar).toHaveCount(0);
   await expect(journal.getByRole('button',{name:'新增日记',exact:true})).toBeHidden();
-  await periods.getByRole('button',{name:'周记',exact:true}).click();
+  await periods.getByRole('button',{name:'周',exact:true}).click();
   await expect(calendar.getByLabel('资料周期')).toHaveValue('week');
+  await expect(periods.getByRole('group',{name:'时间维度'}).getByRole('button')).toHaveText(['日','周','月','季度','年']);
   await calendar.getByLabel('参考日期').fill('2027-01-01');
   await calendar.getByLabel('资料周期').selectOption('year');
-  await expect(periods.getByRole('button',{name:'周记',exact:true})).toHaveAttribute('aria-pressed','false');
-  await expect(periods.getByRole('button',{name:'年记',exact:true})).toHaveAttribute('aria-pressed','true');
-  await periods.getByRole('button',{name:'周记',exact:true}).click();
-  await periods.getByRole('button',{name:'年记',exact:true}).click();
+  await expect(periods.getByRole('button',{name:'周',exact:true})).toHaveAttribute('aria-pressed','false');
+  await expect(periods.getByRole('button',{name:'年',exact:true})).toHaveAttribute('aria-pressed','true');
+  await periods.getByRole('button',{name:'周',exact:true}).click();
+  await periods.getByRole('button',{name:'年',exact:true}).click();
   await expect(calendar.getByLabel('资料周期')).toHaveValue('year');
   await expect(calendar.getByLabel('参考日期')).toHaveValue('2027-01-01');
-  await periods.getByRole('button',{name:'日记日历',exact:true}).click();
+  await periods.getByRole('button',{name:'月',exact:true}).click();
   await calendar.getByLabel('参考日期').fill('2026-11-13');
   await expect(calendar.getByRole('heading',{name:'日记日历',exact:true})).toBeVisible();
   await expect(calendar.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
   await expect(calendar.getByText('显示 20 / 22 条日记',{exact:true})).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
-  const day=calendar.getByRole('button',{name:'2026-11-13，22 条日记',exact:true});
+  await expect(calendar.getByRole('button',{name:'2026-11-14，未到日期',exact:true})).toHaveText('14');
+  const day=calendar.getByRole('button',{name:'2026-11-13，22 条记录',exact:true});
   await day.focus();await page.keyboard.press('Enter');await expect(calendar.getByLabel('资料周期')).toHaveValue('day');
   await expect(calendar.getByText(/已保存 22 条，分布在 1 个记录日期/)).toBeVisible();
   await calendar.getByRole('button',{name:'显示更多日记',exact:true}).click();
   await expect(calendar.getByText('显示 22 / 22 条日记',{exact:true})).toBeVisible();
   await calendar.getByRole('button',{name:'下个月',exact:true}).click();
   await expect(calendar.getByLabel('参考日期')).toHaveValue('2026-12-13');
-  await calendar.getByLabel('参考日期').fill('2027-01-01');await calendar.getByLabel('资料周期').selectOption('week');
-  await expect(calendar.getByText('2026-12-28 至 2027-01-03（含首尾日）',{exact:true})).toBeVisible();
+  await calendar.getByLabel('参考日期').fill('2026-01-01');await calendar.getByLabel('资料周期').selectOption('week');
+  await expect(calendar.getByText('2025-12-29 至 2026-01-04（含首尾日）',{exact:true})).toBeVisible();
   await expect(calendar.getByText(/已保存 2 条，分布在 2 个记录日期/)).toBeVisible();
   await calendar.getByLabel('资料周期').selectOption('quarter');
-  await expect(calendar.getByText('2027-01-01 至 2027-03-31（含首尾日）',{exact:true})).toBeVisible();
+  await expect(calendar.getByText('2026-01-01 至 2026-03-31（含首尾日）',{exact:true})).toBeVisible();
   await calendar.getByLabel('资料周期').selectOption('year');
-  await expect(calendar.getByText('2027-01-01 至 2027-12-31（含首尾日）',{exact:true})).toBeVisible();
+  await expect(calendar.getByText('2026-01-01 至 2026-12-31（含首尾日）',{exact:true})).toBeVisible();
   await expect(calendar.getByRole('region',{name:'日期未知的日记'}).getByRole('link',{name:'Synthetic diary 3',exact:true})).toBeVisible();
   await calendar.getByLabel('参考日期').fill('2025-11-13');await calendar.getByLabel('资料周期').selectOption('day');
   const coverageLink=calendar.getByRole('link',{name:'Synthetic diary 1',exact:true});
@@ -107,6 +114,10 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   // A current editor draft stays mounted when local read filters change. The modal deliberately
   // blocks normal pointer access to the background, so dispatch only this filter's native event.
   await journal.getByText('历史上的今天',{exact:true}).click();
+  await expect(journal.getByRole('region',{name:'历史上的今天'}).getByRole('link',{name:'Synthetic diary 70',exact:true})).toBeVisible();
+  await memos.getByRole('link',{name:'Synthetic diary 70',exact:true}).click();
+  await expect(memos.getByRole('article',{name:'随手记原文'})).toContainText('Exact existing memo text');
+  await expect(journal.getByRole('article',{name:'日记原文'})).toHaveCount(0);
   await journal.getByText('管理日记',{exact:true}).click();
   await page.getByRole('button',{name:'新增日记',exact:true}).click();
   await page.getByRole('textbox',{name:'标题',exact:true}).fill('Synthetic unsaved title');

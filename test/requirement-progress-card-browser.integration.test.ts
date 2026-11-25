@@ -63,7 +63,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
     workflow:{state,purpose:'',nextStep:''}}};
  });
  const config={ownerId:'overview-owner',ownerEmail:'fixture@example.test',spaceId:'overview-space',baseURL:origin,
-  databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal'],calendarEnabled:true,requirementsEnabled:true} as const;
+  databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  let writable=true, mode:'ok'|'truncated'|'wrong-space'|'denied'='ok', reads=0;
@@ -78,7 +78,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   return body.entry.id as string;
  }
  const day=dateInCalendarZone(new Date().toISOString(),'Asia/Shanghai'),tomorrow=shiftCalendarDate(day,1);
- const journalId=await seed('journal',{title:'合成日记近期',text:'合成日记正文不展示',occurredOn:day},'overview-journal');
+ const topicId=await seed('topic',{title:'思考',text:'',occurredOn:null,personal:{type:'topic'}},'overview-topic');
+ const topic=[...repo.rows.values()].find(row=>row.id===topicId)!;
+ const journalId=await seed('journal',{title:'合成思考近期',text:'合成思考正文不展示',occurredOn:day,personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-journal');
+ await seed('journal',{title:'合成正式日记',text:'未标记的正式日记',occurredOn:day},'overview-formal-diary');
  await seed('calendar',{title:'合成明日日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:tomorrow,endDate:shiftCalendarDate(tomorrow,1)}}},'overview-calendar');
  await seed('calendar',{title:'合成已过期日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
@@ -124,10 +128,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByText('合成已过期日程')).toHaveCount(0);
  await expect(schedule.getByText('Apple 日历尚未连接')).toBeVisible();
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
- await expect(thoughts.getByRole('link',{name:'合成日记近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
+ await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
- await expect(thoughts.getByText('Memos 尚未接入')).toBeVisible();
- await expect(thoughts.getByText('合成日记正文不展示')).toHaveCount(0);
+ await expect(thoughts.getByText('合成正式日记')).toHaveCount(0);
+ await expect(thoughts.getByText('合成思考正文不展示')).toHaveCount(0);
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
  for(const width of [1440,390]){
@@ -154,11 +158,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
  await expect(tasks.getByText('暂无未完待办')).toBeVisible();
  await expect(schedule.getByText('未来 7 天暂无已读取的日程')).toBeVisible();
- await expect(thoughts.getByText('暂无日记')).toBeVisible();
+ await expect(thoughts.getByText('暂无已核对的随手记或思考')).toBeVisible();
  readsDisabled=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
  await expect(schedule.getByText('近期日程暂不可用')).toBeVisible();
- await expect(thoughts.getByText('日记暂不可用')).toBeVisible();
+ await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});

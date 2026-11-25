@@ -113,7 +113,7 @@ const isVerifiedMilestone = item => item.verified === true && !!item.evidence?.t
 
 export function projectDay(source, category, date) {
   const state = source.coverage.get(date) ?? source.defaultState ?? 'unknown';
-  const observed = (category === 'diary' || category === 'development') && state === 'observed';
+  const observed = state === 'observed';
   if (state !== 'complete' && !observed) return { state, count: null, level: state, entries: [] };
 
   if (category === 'development') {

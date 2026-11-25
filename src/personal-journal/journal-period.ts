@@ -37,6 +37,6 @@ export function journalMonthDays(date:string,rows:readonly JournalHistoryRow[]){
  })};
 }
 export function projectJournalPeriod(history:JournalHistory,date:string,period:JournalPeriod){
- const range=journalPeriodRange(date,period),rows=history.rows.filter(row=>row.occurredOn!==null&&row.occurredOn>=range.from&&row.occurredOn<=range.to).toSorted((a,b)=>b.occurredOn!.localeCompare(a.occurredOn!)||b.id.localeCompare(a.id));
+ const range=journalPeriodRange(date,period),rows=history.rows.filter(row=>row.occurredOn!==null&&row.occurredOn>=range.from&&row.occurredOn<=range.to&&row.occurredOn<=history.today).toSorted((a,b)=>b.occurredOn!.localeCompare(a.occurredOn!)||b.id.localeCompare(a.id));
  return{range,rows,recordedDays:new Set(rows.map(row=>row.occurredOn)).size,undated:history.rows.filter(row=>row.occurredOn===null)};
 }
