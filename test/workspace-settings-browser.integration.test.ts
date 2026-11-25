@@ -413,6 +413,11 @@ test('OPT-IN Settings header theme keyboard, aligned content and guarded desktop
    assert.equal(await page.evaluate(()=>localStorage.getItem('lifeos-ui-theme')),'system');
    await page.goto('about:blank');
    await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'domcontentloaded'});
+   await expect(page).toHaveURL(origin+'/personal?page=settings');
+   const settingsIndex=main.getByRole('list',{name:'可用设置',exact:true});
+   await expect(settingsIndex).toBeVisible();
+   await expect(password).toHaveCount(0);
+   await settingsIndex.getByRole('button',{name:'安全与密码',exact:true}).click();
    await expect(page).toHaveURL(security);
    await expect(password).toBeVisible();
    await expect(theme).toHaveAttribute('data-theme-preference','system');
