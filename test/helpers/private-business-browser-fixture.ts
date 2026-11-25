@@ -641,7 +641,7 @@ async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture[
 type PresentationStage='personal'|'navigation'|'heading'|'theme'|'interaction'|'measure-ready'|'measure-dom'|'overflow'|'palette'|'header'|'title'|'typography'|'hit-targets'|'contrast'|'dialog'|'keyboard'|'capture-receipts'|'capture-dom'|'capture-scope'|'capture-content'|'capture-image'|'capture-manifest'|'close-dialog'|'mobile-navigation'|'settings'|'receipts';
 type PresentationMark=(stage:PresentationStage,metrics?:readonly number[])=>void;
 const presentationCodes=['PRIVATE_PRESENTATION_STRUCTURE','PRIVATE_HEADER_GEOMETRY','CONTRAST_UNSUPPORTED_COLOR','CONTRAST_UNSUPPORTED_EFFECT','CONTRAST_BACKGROUND_UNRESOLVED','PRIVATE_CAPTURE_DENIED','PRIVATE_CAPTURE_SOURCE_DENIED','PRIVATE_SNAPSHOT_DENIED','SYNTHETIC_CAPTURE_DENIED'] as const;
-// A same-shape synthetic filing footer exercises private overlay geometry without
+// A same-shape synthetic filing footer exercises private scroll geometry without
 // copying filing identity or adding personal content to public screenshot artifacts.
 async function verifyWorkspaceViewport(f:PrivateFixture){
  const {page,entries}=f;
@@ -658,28 +658,27 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
    const link=document.createElement('a');link.href='#synthetic-filing';link.textContent='合成备案页脚';footer.append(link);document.body.append(footer);
    const probe=document.createElement('div');probe.dataset.syntheticScrollProbe='';
    const spacer=document.createElement('div');spacer.style.height='1600px';spacer.setAttribute('aria-hidden','true');
-   const end=document.createElement('button');end.type='button';end.textContent='合成末端操作';probe.append(spacer,end);document.querySelector('.lo-main')!.append(probe);
+   const end=document.createElement('button');end.type='button';end.textContent='合成末端操作';probe.append(spacer,end);document.querySelector('.lo-filing-slot')!.before(probe);
    window.dispatchEvent(new Event('resize'));
   });
   const geometry=()=>page.evaluate(()=>{
    const rect=(selector:string)=>document.querySelector(selector)!.getBoundingClientRect().toJSON();
    const main=document.querySelector('.lo-main')!;
    return {height:innerHeight,document:document.documentElement.scrollHeight,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth,scrollY,
-    mainClient:main.clientHeight,mainScroll:main.scrollHeight,footer:rect('.lifeos-filing-footer'),bottom:rect('.lo-sidebar-bottom'),sidebar:rect('.lo-sidebar')};
+    mainClient:main.clientHeight,mainScroll:main.scrollHeight,mainLeft:main.getBoundingClientRect().left+parseFloat(getComputedStyle(main).paddingLeft),footer:rect('.lifeos-filing-footer'),bottom:rect('.lo-sidebar-bottom'),sidebar:rect('.lo-sidebar')};
   });
   try{
    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-   const start=await geometry();assert.equal(start.document,start.height);assert.equal(start.overflowX,false);assert.ok(start.mainScroll>start.mainClient);
+   const start=await geometry();assert.equal(start.document,start.height);assert.equal(start.overflowX,false);assert.ok(start.mainScroll>start.mainClient);assert.ok(start.footer.top>=start.height);
    await page.locator('.lo-main').evaluate(main=>{main.scrollTop=main.scrollHeight;window.scrollTo(0,999);});
-   const end=await geometry();assert.equal(end.scrollY,0);assert.equal(end.document,end.height);assert.ok(Math.abs(end.footer.bottom-end.height)<=1);
+   const end=await geometry();assert.equal(end.scrollY,0);assert.equal(end.document,end.height);assert.ok(end.footer.bottom<=end.height+1);assert.ok(Math.abs(end.footer.left-end.mainLeft)<=1);
    const last=await page.getByRole('button',{name:'合成末端操作',exact:true}).boundingBox();assert.ok(last&&last.y+last.height<=end.footer.top-8,'footer leaves content controls reachable');
    if(width===1365){
-    assert.deepEqual(end.bottom,start.bottom,'content scroll does not move sidebar actions');assert.ok(end.bottom.bottom<=end.height);assert.ok(Math.abs(end.sidebar.right-end.footer.left)<=1);
-    await page.getByRole('button',{name:'收起侧栏',exact:true}).click();const collapsed=await geometry();assert.equal(collapsed.sidebar.width,72);assert.ok(Math.abs(collapsed.footer.left-collapsed.sidebar.right)<=1);
+    assert.deepEqual(end.bottom,start.bottom,'content scroll does not move sidebar actions');assert.ok(end.bottom.bottom<=end.height);
+    await page.getByRole('button',{name:'收起侧栏',exact:true}).click();const collapsed=await geometry();assert.equal(collapsed.sidebar.width,72);assert.ok(Math.abs(collapsed.footer.left-collapsed.mainLeft)<=1);
     await page.getByRole('button',{name:'展开侧栏',exact:true}).click();
     for(const height of [300,240]){await page.setViewportSize({width,height});const short=await geometry();assert.equal(short.document,height);assert.ok(short.bottom.bottom<=height,'short viewport retains settings and collapse');}
    }else{
-    assert.equal(end.footer.left,0);
     const menu=page.getByRole('button',{name:'打开导航',exact:true});
     const usesDrawer=await menu.isVisible();
     const navigation=usesDrawer?page.locator('.lo-mobile-sidebar'):page.locator('aside.lo-sidebar');
@@ -701,7 +700,7 @@ async function verifyWorkspaceViewport(f:PrivateFixture){
     await settings.click();await expect(page).toHaveURL(privateOrigin+'/personal?page=settings');await expect(page.locator('[data-settings-page]')).toBeVisible();
    }
    await expect(page.getByRole('button',{name:'帮助',exact:true,includeHidden:true})).toHaveCount(0);
-   // Settings now occupies the main content pane; the footer remains outside it.
+   // Settings controls retain their existing reachability.
    if(width===1365)await page.getByRole('button',{name:'设置',exact:true}).click();
    const settingsPage=page.locator('[data-settings-page]');
    await expect(settingsPage).toBeVisible();
