@@ -106,7 +106,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  for(const [module,items] of [
   ['兴趣学习',records],
   ['财务',[['财务','/personal/finance']]],
-  ['项目',[['项目'],['领域']]],
+  ['项目',[['项目'],['领域'],['开发项目','/personal/development-projects']]],
  ] as const){
   await moduleSwitch.getByRole('button',{name:module,exact:true}).click();
   await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName(module);
