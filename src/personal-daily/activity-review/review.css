@@ -147,3 +147,28 @@ h2 { font-size: 17px; font-weight: 680; }
 .original-record { display: inline-block; margin-block-start: 6px; color: var(--strong); font-size: 13px; }
 
 .back-to-journal { color: var(--strong); font-size: 14px; }
+
+/* The live activity view uses the workbench header and available content width. */
+.activity-embedded { container: activity / inline-size; min-inline-size: 0; }
+.activity-embedded .topbar { background: transparent; border: 0; }
+.activity-embedded .topbar-inner { justify-content: flex-end; min-block-size: 0; padding-inline: 0; }
+.activity-embedded .location, .activity-embedded .page-heading h1 { display: none; }
+.activity-embedded .mapping-state, .activity-embedded main { padding-inline: 0; }
+
+@container activity (max-width: 820px) {
+  .activity-embedded :is(.page-heading, .panel-toolbar, .toolbar-controls, .calendar-footer, .detail-header) {
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .activity-embedded :is(.dimensions, .legend, .period-stages) { flex-wrap: wrap; }
+  .activity-embedded :is(.calendar-panel, .day-panel, .guide) { padding: 12px; }
+  .activity-embedded main { padding-block-start: 12px; }
+  .activity-embedded .detail-layout,
+  .activity-embedded .chart-body:is([data-period="week"], [data-period="month"], [data-period="quarter"]) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .activity-embedded .chart-scroll { overflow-x: auto; }
+  .activity-embedded .chart-body[data-period="year"] .graph { min-inline-size: 740px; }
+}
