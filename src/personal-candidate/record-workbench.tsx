@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import {useEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {useTable,type ColumnDef} from '@tanstack/react-table';
 import {DataGrid,DataGridContainer,dataGridFeatures} from '../ui-review/reui/data-grid';
 import {DataGridTableVirtual} from '../ui-review/reui/data-grid-table-virtual';
@@ -69,14 +69,28 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
  const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
  const autosaveTimer=useRef<number|undefined>(undefined),verifiedRef=useRef(verified);
+ const journalSelection=useRef<{field:HTMLTextAreaElement;entryId:string;start:number;end:number;direction:'forward'|'backward'|'none'}|null>(null);
  verifiedRef.current=verified;
  const journalRevisionChanged=type==='journal'&&!!editor?.entry&&
   entries.some(row=>row.id===editor.entry?.id&&row.revision>(editor.entry?.revision??0));
  function cancelAutosaveTimer(){window.clearTimeout(autosaveTimer.current);autosaveTimer.current=undefined;}
- function resetJournalAutosave(){cancelAutosaveTimer();setJournalAutosave(false);setJournalComposing(false);setJournalSaveNotice('');}
+ function resetJournalAutosave(){cancelAutosaveTimer();journalSelection.current=null;setJournalAutosave(false);setJournalComposing(false);setJournalSaveNotice('');}
  const currentDraft=()=>editorRef.current??(type==='journal'?draftCache.current?.editor:null);
  const activeDraft=currentDraft();
  const dirty=!!activeDraft&&JSON.stringify(activeDraft.fields)!==activeDraft.initial,blocked=busy||mutation?.phase==='saving'||mutation?.phase==='uncertain';
+ useLayoutEffect(()=>{
+  const selection=journalSelection.current;
+  if(!selection||blocked)return;
+  journalSelection.current=null;
+  const {field,entryId,start,end,direction}=selection;
+  const focused=document.activeElement;
+  // Radix can park focus on the dialog while its fieldset is disabled.
+  const focusParked=focused===document.body||focused===field.closest('[role="dialog"]');
+  if(verified!==true||document.visibilityState!=='visible'||editor?.entry?.id!==entryId||
+   journalBody.current!==field||field.matches(':disabled')||(!focusParked&&focused!==field))return;
+  field.focus({preventScroll:true});
+  field.setSelectionRange(start,end,direction);
+ },[blocked,editor,verified]);
  function leave(){
   const draft=currentDraft();
   const allowed=!busyRef.current&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));
@@ -170,6 +184,10 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   if(autosave&&(!editor.entry||verifiedRef.current!==true||!current.current?.writable||
    editorRef.current!==editor||document.visibilityState!=='visible'||busyRef.current||
    ['saving','uncertain','rejected'].includes(active.getSnapshot().phase)))return;
+  const body=journalBody.current;
+  const selection=autosave&&editor.entry&&body&&document.activeElement===body
+   ?{field:body,entryId:editor.entry.id,start:body.selectionStart,end:body.selectionEnd,direction:body.selectionDirection}
+   :null;
   setError('');setNotice('');setJournalSaveNotice('');
   try{
    const fields=normalizePersonalFields(type,editor.fields);
@@ -187,6 +205,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    if(autosave){
     const saved=result.saved,observed=result.observed??saved;
     if(newer)resetJournalAutosave();
+    else journalSelection.current=selection;
     setJournalSaveNotice(newer?'本次自动保存已确认。另有较新版本，请重新打开核对。':'正文已自动保存');
     const savedFields=recordFields(saved,'journal');
     setEditor(latest=>latest?.entry?.id===saved.id?{

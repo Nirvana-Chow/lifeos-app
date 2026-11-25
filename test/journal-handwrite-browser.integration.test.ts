@@ -242,8 +242,14 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await pause();
  assert.equal(commands.length,5);
  await body.fill('Synthetic committed composition');
+ await body.evaluate(node=>(node as HTMLTextAreaElement).setSelectionRange(4,12,'backward'));
  await body.dispatchEvent('compositionend');
  await expect(edit.getByRole('status',{name:''}).filter({hasText:'正文已自动保存'})).toBeVisible();
+ await expect(body).toBeFocused();
+ assert.deepEqual(await body.evaluate(node=>{
+  const input=node as HTMLTextAreaElement;
+  return [input.selectionStart,input.selectionEnd,input.selectionDirection];
+ }),[4,12,'backward']);
  assert.equal(commands.length,6);
  const bodyWrite=commands[5];
  assert.equal(bodyWrite.method,'PATCH');
