@@ -9,6 +9,8 @@ import {chromium,expect} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
 import {emptyMediaPersonal} from '../src/personal-media/domain.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
+import {PersonalCalendarService} from '../src/calendar-candidate/personal-service.ts';
+import {handlePersonalCalendar} from '../src/calendar-candidate/personal-http.ts';
 import {emptyPersonPersonal} from '../src/personal-people/model.ts';
 import {makePersonalCommand} from '../src/personal-candidate/client.ts';
 import type {RecordModule} from '../src/personal-candidate/record-model.ts';
@@ -29,7 +31,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  await writeFile(join(peopleRoute,'page.tsx'),routeSource.replace(principalImport,
   "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
  ));
- for(const name of ['journal','media']){
+ for(const name of ['journal','media','schedule']){
   const route=join(root,'app/personal',name);
   await mkdir(route,{recursive:true});
   const routeSource=await readFile(join(source,'app/personal',name,'page.tsx'),'utf8');
@@ -57,9 +59,10 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  const modules = recordModules.get(process.env.RECORD_BROWSER_MODULE ?? '') ?? ['journal','person','health','media','career','portfolio'] as const;
  for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
-  const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
-  let writable=true;
+  const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,calendarEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
+  let writable=true,calendarEnabled=true,incompleteOverview=false,overviewUnavailable=false;
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
+  const calendar=new PersonalCalendarService(service,{...config,enabled:true,writable:true});
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
   if(type==='media'){
    const topic=(await service.mutate(config.ownerId,'topic',null,{spaceId:config.spaceId,confirmed:true,fields:{
@@ -77,8 +80,21 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    }
   }
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(url.pathname==='/api/platform/status'&&(type==='person'||type==='media'))return route.fulfill({status:200,json:{}});if(!url.pathname.startsWith('/api/platform/personal/'))return route.continue();const headers=new Headers(request.headers());headers.set('host',url.host);if(request.method()==='GET')reads.push(url.pathname);else writes.push(request.method());
-   if(url.pathname.endsWith('/status'))return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable}});
-   try{const body=request.postData(),response=await handlePersonalRequest(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});assert.ok(response);return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
+   if(url.pathname==='/api/platform/personal/status')return route.fulfill({status:200,json:{...config,calendarEnabled,scope:'personal-manual-candidate',storageVerified:true,writable}});
+   try{
+    const body=request.postData(), inbound=new Request(url,{method:request.method(),headers,...(body?{body}:{})});
+    const response=url.pathname.startsWith('/api/platform/personal/calendar')
+     ?await handlePersonalCalendar(inbound,{ownerId:config.ownerId,baseURL:origin,service:calendar})
+     :await handlePersonalRequest(inbound,config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});
+    assert.ok(response);
+    if(overviewUnavailable&&url.pathname==='/api/platform/personal/overview'){
+     return route.fulfill({status:503,json:{error:{message:'Synthetic overview unavailable'}}});
+    }
+    if(incompleteOverview&&url.pathname==='/api/platform/personal/overview'){
+     return route.fulfill({status:200,json:{...await response.json(),truncated:true}});
+    }
+    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+   }catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
   });
   if(type==='health'){
    const pending=makePersonalCommand({ownerId:config.ownerId,spaceId:config.spaceId},'journal',null,{title:'Pending synthetic journal',text:'Previously confirmed internal fixture',occurredOn:null},'cross-module-pending-journal',true);
@@ -237,12 +253,62 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await back.click();
    await expect(page.getByRole('region',{name:'人物概览'}).getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
+   const visitTitle='Synthetic visit with confirmed person';
+   const visit=(await calendar.mutate(config.ownerId,null,{spaceId:config.spaceId,confirmed:true,fields:{
+    title:visitTitle,text:'Synthetic calendar original',occurredOn:null,
+    personal:{type:'calendar',schemaVersion:1,calendarKind:'event',schedule:{kind:'all-day',startDate:'2031-05-03',endDate:'2031-05-04'},
+      links:{project:null,domain:null,people:[{id:people[1].entry.id,sourceId:people[1].entry.source.id,revision:people[1].entry.revision}]}}
+   }},'person-overview-calendar-visit')).entry;
+   await page.getByRole('button',{name:'人物列表',exact:true}).click();
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await page.getByRole('button',{name:'人物概览',exact:true}).click();
+   const host=overview.getByRole('listitem').filter({hasText:'合成关系乙'});
+   const decoy=overview.getByRole('listitem').filter({hasText:'合成关系甲'});
+   await expect(decoy.getByText('关联日程（0）',{exact:true})).toBeVisible();
+   await host.getByText('关联日程（1）',{exact:true}).click();
+   const visitLink=host.getByRole('link',{name:visitTitle});
+   await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
+   await expect(host.getByText('2031-05-03',{exact:true})).toBeVisible();
+   await visitLink.click();
+   const visitEditor=page.getByRole('dialog',{name:'编辑日程'});
+   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
+   await visitEditor.getByLabel('开始日期',{exact:true}).fill('2031-06-05');
+   await visitEditor.getByLabel('结束日期（不含）',{exact:true}).fill('2031-06-06');
+   await visitEditor.getByRole('button',{name:'保存日程',exact:true}).click();
+   await expect(page.getByText('已保存并读回日程。',{exact:true})).toBeVisible();
+   const moved=await calendar.get(config.ownerId,visit.id);
+   assert.equal(moved.revision,visit.revision+1);
+   assert.deepEqual(moved.fields.personal.links.people,visit.fields.personal.links.people);
+   await page.goBack();
+   await expect(overview).toBeVisible();
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await host.getByText('关联日程（1）',{exact:true}).click();
+   await expect(host.getByText('2031-06-05',{exact:true})).toBeVisible();
+   await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
+   incompleteOverview=true;
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(host.getByText('关联日程暂时无法完整核对。',{exact:true})).toBeVisible();
+   await expect(visitLink).toHaveCount(0);
+   incompleteOverview=false;overviewUnavailable=true;
+   const refresh=page.getByRole('button',{name:'刷新',exact:true});
+   await Promise.all([
+    page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/overview'&&response.status()===503),
+    refresh.click(),
+   ]);
+   await expect(refresh).toBeEnabled();
+   await expect(host.getByText('关联日程暂时无法完整核对。',{exact:true})).toBeVisible();
+   await expect(host.getByRole('heading',{name:namesake,exact:true})).toBeVisible();
+   await expect(visitLink).toHaveCount(0);
+   overviewUnavailable=false;calendarEnabled=false;
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(host.getByText('个人日程来源未开放。',{exact:true})).toBeVisible();
+   await expect(visitLink).toHaveCount(0);
    writable=false;
    await page.getByRole('button',{name:'刷新',exact:true}).click();
    await expect(page.locator('summary').filter({hasText:'更多操作'})).toHaveCount(0);
    await expect(page.getByRole('button',{name:'新增人物',exact:true})).toHaveCount(0);
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
-   assert.deepEqual(writes,['POST','PATCH']);
+   assert.deepEqual(writes,['POST','PATCH','PATCH']);
 
    await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
    const account=page.getByRole('button',{name:'账号与更多操作',exact:true});
