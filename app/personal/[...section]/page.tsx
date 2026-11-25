@@ -1,4 +1,5 @@
 import {PersonalSearchPage} from '../../../src/personal-search/page';
+import {personRecordId} from '../../../src/personal-people/journal-links';
 import {PersonalRecordPage} from '../../../src/personal-candidate/record-page';
 import {PersonalCalendarPage} from '../../../src/calendar-candidate/personal-page';
 import {PersonalFinancePage} from '../../../src/personal-finance/page';
@@ -14,7 +15,7 @@ import {PrivacyBoundary} from '../../../src/personal-candidate/privacy';
 
 export const dynamic='force-dynamic';
 export const metadata={title:'LifeOS · 私人工作台',robots:{index:false,follow:false}};
-export default async function Page({params,searchParams}:{params:Promise<{section:string[]}>;searchParams:Promise<{q?:string;type?:string;id?:string}>}){
+export default async function Page({params,searchParams}:{params:Promise<{section:string[]}>;searchParams:Promise<{q?:string;type?:string;id?:string;record?:string}>}){
  let principal=null;
  try{principal=await readPlatformPagePrincipal(await headers());}catch{}
  if(!principal)redirect('/login');
@@ -22,7 +23,8 @@ export default async function Page({params,searchParams}:{params:Promise<{sectio
  if(!module)notFound();
  if(module.id==='search'){const q=await searchParams;return <PrivacyBoundary><PersonalSearchPage query={q.q} type={q.type} id={q.id}/></PrivacyBoundary>;}
  if(module.id==='schedule')return <PrivacyBoundary><PersonalCalendarPage/></PrivacyBoundary>;
- if(module.id==='health'||module.id==='people'||module.id==='journal')return <PrivacyBoundary><PersonalRecordPage type={module.id==='people'?'person':module.id}/></PrivacyBoundary>;
+ if(module.id==='people')return <PrivacyBoundary><PersonalRecordPage type="person" linkedPersonId={personRecordId((await searchParams).record)??undefined}/></PrivacyBoundary>;
+ if(module.id==='health'||module.id==='journal')return <PrivacyBoundary><PersonalRecordPage type={module.id}/></PrivacyBoundary>;
  if(module.id==='finance')return <PrivacyBoundary><PersonalFinancePage/></PrivacyBoundary>;
  if(module.id==='database'){
   const unavailablePage={title:'数据库与数据',message:'数据管理入口已收起。'};
