@@ -7,6 +7,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
 import {personalLoginHref} from '../src/session-duration/client.ts';
 import{readWorkspacePage,readWorkspaceLocation}from'../src/workbench/private-navigation.ts';
+import {validateId} from '../src/platform/domain.ts';
 function page(path:string,authenticated=true,backendAvailable=true){
  const module={exports:{} as {default:(props?:unknown)=>Promise<React.ReactNode>}};
  const source=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
@@ -20,8 +21,9 @@ function page(path:string,authenticated=true,backendAvailable=true){
   if(name==='next/navigation')return {redirect:(url:string)=>{throw Error('REDIRECT '+url);}};
   if(name.endsWith('/runtime'))return {readPlatformPasswordCapability:async()=>false,readPlatformPagePrincipal:async()=>{if(!backendAvailable)throw Error('synthetic owner read failure');return authenticated?{ownerId:'synthetic-owner'}:null;}};
   if(name.endsWith('/live-workspace'))return {LivePersonalWorkspace:(props:Record<string,unknown>)=>React.createElement('div',{'data-page':props.initialPage,'data-modal':props.initialModal,'data-panel':props.initialSettingsPanel,'data-id':props.initialTaskId,'data-create':String(props.initialCreateTask??false)})};
+  if(name.endsWith('/focused-workspace'))return {FocusedPersonalWorkspace:(props:{initialType:string;initialId?:string})=>React.createElement('div',{'data-focused':props.initialType,'data-id':props.initialId})};
   if(name.endsWith('/workspace'))return {PersonalWorkspace:()=>React.createElement('div',{'data-legacy':'true'})};
-  if(name.endsWith('/domain'))return {validateId:(id:string)=>id};
+  if(name.endsWith('/domain'))return {validateId};
   if(name.endsWith('/workbench/navigation'))return {findModule:()=>({id:'todos'})};
   if(name.endsWith('/workbench/settings'))return {};
   if(name.endsWith('/connected-modules'))return {ConnectedModule:()=>null};
@@ -39,7 +41,18 @@ test('todo deep link retains malformed or empty IDs and only absent ID creates',
   const html=renderToStaticMarkup(await route({searchParams:Promise.resolve({type:'todo',id})}));assert.match(html,/data-page="tasks"/);assert.match(html,/data-create="false"/);assert.ok(html.includes('data-id="'+id+'"'));
  }
  assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({type:'todo'})})),/data-create="true"/);
- assert.match(renderToStaticMarkup(await route({searchParams:Promise.resolve({type:'journal'})})),/data-legacy="true"/);
+});
+test('older journal and project editor URLs keep their focused workspace and validated ID',async()=>{
+ const route=page('app/personal/edit/page.tsx');
+ const id='11111111-1111-4111-8111-111111111111';
+ for(const type of ['journal','project']){
+  const valid=renderToStaticMarkup(await route({searchParams:Promise.resolve({type,id})}));
+  assert.ok(valid.includes('data-focused="'+type+'"'));
+  assert.ok(valid.includes('data-id="'+id+'"'));
+  const malformed=renderToStaticMarkup(await route({searchParams:Promise.resolve({type,id:'bad/id'})}));
+  assert.ok(malformed.includes('data-focused="'+type+'"'));
+  assert.doesNotMatch(malformed,/data-id=/);
+ }
 });
 test('both personal entries deny anonymous before constructing any workspace',async()=>{
  for(const path of ['app/personal/page.tsx','app/personal/edit/page.tsx'])await assert.rejects(page(path,false)({searchParams:Promise.resolve({type:'todo'})}),/REDIRECT \/login/);
