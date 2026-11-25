@@ -179,9 +179,15 @@ test('OPT-IN records and development retain date, evidence and owner guards at t
   await expect(title).toHaveCount(0);
   authorized = false;
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
-  await expect(page.getByRole('heading', { name: 'Fixture login' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录已到期或需要重新验证' })).toBeVisible();
+  await expect(page).toHaveURL(origin + '/personal/activity?date=2026-11-24');
   await expect(title).toHaveCount(0);
   assert.equal(snapshotRequests, before);
+  authorized = true;
+  await page.getByRole('button', { name: '已完成登录，继续编辑' }).click();
+  await expect(title).toBeVisible();
+  await expect(page.getByLabel('跳到日期')).toHaveValue('2026-11-24');
+  await expect(page).toHaveURL(origin + '/personal/activity?date=2026-11-24');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);
 });
