@@ -115,7 +115,7 @@ test('keyboard roundtrips stay in-page for a workspace last stop and a standalon
 test('private capture registry pins every family route and the exact uploaded filenames',()=>{
  assert.equal(fixture.privateCaptureCases.length,88);
  const expected=new Set(fixture.privateCaptureCases.map(row=>row.name));assert.equal(expected.size,88);
- const workflow=readFileSync('.github/workflows/ci.yml','utf8');
+ const workflow=readFileSync('.github/workflows/visual-qualification.yml','utf8');
  const uploaded=Array.from(workflow.matchAll(/owner-personal-browser-screenshots\/(\S+\.png)/g),m=>m[1]);
  const allPaths=Array.from(workflow.matchAll(/(owner-(?:personal|recovery)-browser-screenshots\/\S+\.png)/g),m=>m[1]);
  assert.deepEqual(allPaths.sort(),expectedSyntheticCaptures.map(row=>row.directory+'/'+row.name).sort());
