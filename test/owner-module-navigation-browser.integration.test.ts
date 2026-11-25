@@ -127,7 +127,7 @@ test('OPT-IN owner module links and actual-source notice preserve unknown-close 
    await sidebarSettings.click();
    await expect(page.getByRole('heading',{level:1,name:'设置'})).toBeVisible();
   }
-  await page.goto(origin+'/personal?connected=1&page=settings&panel=security',{waitUntil:'networkidle'});
+  await page.goto(origin+'/personal?connected=1&page=settings&panel=security',{waitUntil:'domcontentloaded',timeout:45_000});
   await expect(page.locator('aside').getByRole('button',{name:'安全与密码'})).toHaveAttribute('aria-current','page');
   await expect(page.getByRole('heading',{level:2,name:'安全与密码'})).toBeVisible();
  }
