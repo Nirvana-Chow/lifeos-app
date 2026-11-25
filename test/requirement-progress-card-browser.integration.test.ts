@@ -18,9 +18,10 @@ test('owner overview uses verified requirement delivery evidence and opens the c
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
  await writeFile(join(root,'app','personal','page.tsx'),`import {LifeOSWorkspace} from '../../src/ui-review/workspace';
+ import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
  export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;page?:string}>}){
-  const query=await searchParams;const owner=!query.guest;
-  return <LifeOSWorkspace syncUrl initialPage={query.page==='projects'?'projects':'overview'} state={{status:'ready',data:{tasks:[],projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
+  const query=await searchParams;const owner=!query.guest;const location=readWorkspaceLocation(query);
+  return <LifeOSWorkspace syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:[],projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
   access={{authenticated:owner,writable:false,loginAllowed:true}} viewPreferenceScope={owner?JSON.stringify(['overview-owner','overview-space']):null}/>;
  }`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
