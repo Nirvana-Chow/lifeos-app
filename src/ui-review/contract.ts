@@ -124,6 +124,7 @@ export type LifeOSWorkspaceProps = {
 
 /** Shared ordinary-grid boundary; the existing controller remains the only business writer. */
 export type TaskGridProps = {
+  flatProjects?: boolean;
   viewPreferenceScope?: string | null;
   draftMemory?: TaskCellDraftMemory;
   tasks: readonly TaskRow[];

@@ -5,6 +5,7 @@ import { useTable, type ColumnDef, type HeaderContext } from '@tanstack/react-ta
 import type { AreaRow, ProjectRow, TaskRow } from './contract';
 import { DataGrid, DataGridContainer, dataGridFeatures } from './reui/data-grid';
 import { DataGridTableVirtual } from './reui/data-grid-table-virtual';
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import { Button } from './ui/button';
 import styles from './category-grid.module.css';
 
@@ -19,7 +20,6 @@ type CategoryGridProps = {
   onNavigate?: (href: string) => boolean | void;
 };
 type CategoryRow = AreaRow & {
-  area?: ProjectRow['area'];
   stage?: string | null;
   nextStep?: string | null;
   referenceChanged?: boolean;
@@ -62,13 +62,13 @@ export function CategoryGrid({kind, areas, projects, tasks, coverage, writable, 
   }, [isProject, areas, projects, tasks, coverage]);
   const columns = useMemo<ColumnDef<typeof dataGridFeatures, CategoryRow>[]>(() => {
     const specs = isProject
-      ? [['title', '项目', 250], ['area', '领域', 160], ['stage', '阶段', 130], ['nextStep', '下一步', 260], ['pending', '未完待办', 120], ['actions', '操作', 200]] as const
+      ? [['title', '项目', 250], ['stage', '阶段', 130], ['nextStep', '下一步', 260], ['pending', '未完待办', 120], ['actions', '操作', 200]] as const
       : [['title', '领域', 270], ['projects', '项目数', 130], ['pending', '未完待办', 130], ['actions', '操作', 200]] as const;
     return specs.map(([id, title, size]) => ({
       id, size, minSize: id === 'actions' ? 190 : 100,
-      accessorFn: row => id === 'area' ? row.area?.title ?? '—' : id === 'stage' ? stageLabels[row.stage ?? ''] ?? '未设置' : id === 'actions' ? '' : row[id as 'title' | 'nextStep' | 'pending' | 'projects'],
+      accessorFn: row => id === 'stage' ? stageLabels[row.stage ?? ''] ?? '未设置' : id === 'actions' ? '' : row[id as 'title' | 'nextStep' | 'pending' | 'projects'],
       enableSorting: id !== 'actions',
-      filterFn: (row, columnId, value: string) => id === 'area' ? row.original.area?.id === value : id === 'stage' ? row.original.stage === value : String(row.getValue(columnId) ?? '').toLocaleLowerCase().includes(value.trim().toLocaleLowerCase()),
+      filterFn: (row, columnId, value: string) => id === 'stage' ? row.original.stage === value : String(row.getValue(columnId) ?? '').toLocaleLowerCase().includes(value.trim().toLocaleLowerCase()),
       header: CategoryHeader,
       meta: {headerTitle: title, cellClassName: styles.cell},
       cell: ({row, getValue}) => {
@@ -80,7 +80,9 @@ export function CategoryGrid({kind, areas, projects, tasks, coverage, writable, 
           </div>;
         }
         return <span className={styles.value} title={id === 'nextStep' ? row.original.nextStep ?? undefined : undefined}>
-          {String(getValue() ?? '—') || '—'}
+          {id === 'title' && isProject
+            ? <a href={projectDetailHref(row.original.id)} aria-label={`查看项目：${row.original.title}`}>{row.original.title}</a>
+            : String(getValue() ?? '—') || '—'}
           {id === 'title' && row.original.referenceChanged && <span className={styles.changed} role="img" aria-label="关联待核对" title="关联记录已变化，请核对">!</span>}
         </span>;
       },
@@ -96,9 +98,6 @@ export function CategoryGrid({kind, areas, projects, tasks, coverage, writable, 
     <div className={styles.toolbar}>
       <label className={styles.field}>搜索{label}<input value={String(table.getColumn('title')?.getFilterValue() ?? '')} onChange={event => table.getColumn('title')?.setFilterValue(event.target.value)} placeholder={`按${label}标题搜索`} type="search" /></label>
       {isProject && <>
-        <label className={styles.field}>领域<select value={String(table.getColumn('area')?.getFilterValue() ?? '')} onChange={event => table.getColumn('area')?.setFilterValue(event.target.value || undefined)}>
-          <option value="">全部领域</option>{areas.map(area => <option value={area.id} key={area.id}>{area.title}</option>)}
-        </select></label>
         <label className={styles.field}>阶段<select value={String(table.getColumn('stage')?.getFilterValue() ?? '')} onChange={event => table.getColumn('stage')?.setFilterValue(event.target.value || undefined)}>
           <option value="">全部阶段</option>{Object.entries(stageLabels).map(([value, title]) => <option value={value} key={value}>{title}</option>)}
         </select></label>

@@ -5,6 +5,7 @@ import { useTable, tableFeatures, columnGroupingFeature, createGroupedRowModel, 
 import type { TaskGridProps, TaskRow } from './contract';
 import type { TaskCellDraft, TaskCellField } from '../personal-candidate/task-cell-draft';
 import { taskStatusLabels } from '../personal-candidate/task-editor-state';
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import { mountTaskGridEditor } from '../personal-candidate/task-grid-editor';
 import { DataGrid, DataGridContainer, dataGridFeatures } from './reui/data-grid';
 import { DataGridTableVirtual } from './reui/data-grid-table-virtual';
@@ -190,6 +191,11 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
       }}
     ><span aria-hidden="true">{task.status === 'done' ? '✓' : '○'}</span></Button>;
   }
+  if (column.id === 'project') {
+    const project = row.original.project;
+    return project ? <a className={styles.open} data-cell-interactive href={projectDetailHref(project.id)}
+      aria-label={`查看项目：${project.title}`}>{project.title}</a> : <span className={styles.cell}>—</span>;
+  }
   if (!editableFields.includes(column.id as TaskCellField)) {
     return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
       aria-label={column.id === 'detail' ? `打开任务：${row.original.title}` : `${columnLabels[column.id]}：${String(getValue())}，打开任务：${row.original.title}`}
@@ -199,7 +205,13 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
     return <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError} />;
   }
   const value = column.id === 'status' ? taskStatusLabels[row.original.status] : String(getValue());
-  return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>{value || '—'}</span>;
+  return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>
+    <span className={styles.cellText}>{value || '—'}</span>
+    {column.id === 'title' && <button type="button" className={styles.titleDetails} data-cell-interactive
+      aria-label={`查看待办详情：${row.original.title}`} disabled={latest.current.blocked}
+      onClick={event => latest.current.onOpen(row.original, event.currentTarget)}
+      onDoubleClick={event => event.stopPropagation()}>↗</button>}
+  </span>;
 }
 
 function TaskGridColumnHeader({ column }: HeaderContext<typeof taskGridFeatures, TaskRow, unknown>) {
@@ -223,13 +235,14 @@ export function TaskGrid(props: TaskGridProps) {
   const [error, setError] = useState<string | null>(null);
   const [layoutState,setLayoutState]=useState<{scope:string|null;value:GridLayout}>({scope:null,value:defaultLayout()});
   const [rowEstimate,setRowEstimate]=useState(52);
-  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
+  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?(props.flatProjects?36:40):52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[props.flatProjects]);
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const [groupingState,setGroupingState]=useState<{scope:string|null;value:TaskGrouping}>({scope:null,value:'none'});
-  const grouping=groupingState.scope===scope?groupingState.value:'none';
+  const grouping=groupingState.scope===scope&&(!props.flatProjects||groupingState.value!=='area')?groupingState.value:'none';
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
-  const visibility=useMemo<Record<string,boolean>>(()=>({project:props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility}),[props.tasks,layout.visibility]);
+  const configurableOrder=props.flatProjects?layout.order.filter(id=>id!=='area'):layout.order;
+  const visibility=useMemo<Record<string,boolean>>(()=>({project:props.flatProjects||props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility,...(props.flatProjects?{area:false}:{})}),[props.tasks,layout.visibility,props.flatProjects]);
   useEffect(()=>{setLayoutState({scope,value:readLayout(scope)});setColumnsOpen(false);setLayoutNotice('');},[scope]);
   function changeLayout(value:GridLayout){
    setLayoutState({scope,value});
@@ -321,14 +334,14 @@ export function TaskGrid(props: TaskGridProps) {
 
   return (
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
-    <div ref={host} className={styles.root} aria-label="待办表格" data-task-grid="reui">
+    <div ref={host} className={styles.root} data-flat-projects={props.flatProjects||undefined} aria-label="待办表格" data-task-grid="reui">
       <div className={styles.columnToolbar}>
-       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option><option value="area">按领域</option></select></label>
+       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option>{!props.flatProjects&&<option value="area">按领域</option>}</select></label>
        <Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
-       {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器；无关联的项目/领域默认收起，可勾选显示。</p>{layout.order.map((id,index)=><div className={styles.columnSetting} key={id}>
+       {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器。</p>{configurableOrder.map((id,index)=><div className={styles.columnSetting} key={id}>
         <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
-        <Button variant="ghost" disabled={props.blocked||!!edit||index===0} aria-label={`向前移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index-1],order[index]]=[order[index],order[index-1]];changeLayout({...layout,order});}}>↑</Button>
-        <Button variant="ghost" disabled={props.blocked||!!edit||index===layout.order.length-1} aria-label={`向后移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order];[order[index+1],order[index]]=[order[index],order[index+1]];changeLayout({...layout,order});}}>↓</Button>
+        <Button variant="ghost" disabled={props.blocked||!!edit||index===0} aria-label={`向前移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order],current=order.indexOf(id),neighbor=order.indexOf(configurableOrder[index-1]);[order[neighbor],order[current]]=[order[current],order[neighbor]];changeLayout({...layout,order});}}>↑</Button>
+        <Button variant="ghost" disabled={props.blocked||!!edit||index===configurableOrder.length-1} aria-label={`向后移动${columnLabels[id]}列`} onClick={()=>{const order=[...layout.order],current=order.indexOf(id),neighbor=order.indexOf(configurableOrder[index+1]);[order[neighbor],order[current]]=[order[current],order[neighbor]];changeLayout({...layout,order});}}>↓</Button>
        </div>)}<Button variant="outline" onClick={()=>changeLayout(defaultLayout())}>恢复默认列</Button>{layoutNotice&&<p role="status">{layoutNotice}</p>}</div>}
       </div>
       <DataGridContainer>

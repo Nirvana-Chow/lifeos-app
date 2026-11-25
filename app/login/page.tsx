@@ -1,9 +1,11 @@
+import {lifeOSInstallMetadata} from '../../src/ui-review/install-metadata';
 import {safeSessionReturn} from '../../src/session-duration/client';
 import {LoginPage} from '../../src/personal-candidate/login';
 import {readPlatformLoginCapability,readPlatformPagePrincipal} from '../../src/platform/runtime';
 import {headers} from 'next/headers';import {redirect} from 'next/navigation';
 import {readOAuthPageState} from '../../src/business-mcp-oauth/page-state';
 export const dynamic='force-dynamic';
+export const metadata=lifeOSInstallMetadata;
 export default async function Page({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
  const search=await searchParams,state=Object.keys(search).length?await readOAuthPageState(await headers(),search):null;
  if(search.reauthenticate!=='1'&&state?.owner==='ready')redirect('/personal/oauth/continue?oauth_query='+encodeURIComponent(state.query));

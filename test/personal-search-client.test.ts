@@ -11,3 +11,36 @@ test('owner search projects meaningful excerpts, unknown dates and stable record
 test('partial snapshots and missing title fail truthfully instead of returning empty results',async()=>{assert.ok(mod);const f=await fixture();for(const mutate of [(v:any)=>({...v,scope:'bounded-window'}),(v:any)=>({...v,coverage:{...v.coverage,matched:99}}),(v:any)=>({...v,items:[{...v.items[0],draft:{...v.items[0].draft,title:undefined}}]})])await assert.rejects(mod.loadPersonalSearch('',null,undefined,async(input,init)=>{const response=await f.fetcher(input,init);return String(input).includes('/search?')?Response.json(mutate(await response.json())):response;}),/完整|核对/);});
 test('auth loss during the original read or final identity check never returns earlier search results',async()=>{assert.ok(mod);const f=await fixture();await assert.rejects(mod.loadPersonalSearch('needle',{type:'todo',id:f.entry.id},undefined,async(input,init)=>String(input).includes('/todo/')?Response.json({error:{code:'AUTH_REQUIRED'}},{status:401}):f.fetcher(input,init)),{kind:'auth'});let statuses=0;await assert.rejects(mod.loadPersonalSearch('needle',null,undefined,async(input,init)=>{if(String(input).endsWith('/status')&&++statuses===2)return Response.json({scope:'personal-manual-candidate',ownerId:'different-owner',spaceId:config.spaceId,storageVerified:true});return f.fetcher(input,init);}),{kind:'auth'});});
 test('empty coverage differs from no match; stale detail is unavailable, and body absence is not metadata',async()=>{assert.ok(mod);assert.ok(model);const f=await fixture();for(const scanned of [0,3]){const value=await mod.loadPersonalSearch('none',null,undefined,async(input,init)=>String(input).includes('/search?')?Response.json({scope:'full-current-snapshot',query:'none',items:[],coverage:{types:['todo'],scanned,matched:0}}):f.fetcher(input,init));assert.equal(value.coverage.scanned,scanned);assert.equal(value.rows.length,0);}const value=await mod.loadPersonalSearch('needle',{type:'todo',id:f.entry.id},undefined,async(input,init)=>String(input).includes('/todo/')?Response.json({error:{code:'NOT_FOUND'}},{status:404}):f.fetcher(input,init));assert.equal(value.detail,null);assert.equal(value.detailUnavailable,true);const empty=model.searchRow({...f.entry,draft:{title:'Only title',notes:'',dueOn:'2026-11-13',status:'open'}},config.spaceId,'only');assert.equal(empty.excerpt,'');assert.equal(empty.date,'2026-11-13');});
+
+test('date-filtered client preserves URL context and rejects a mismatched or out-of-range response', async () => {
+ assert.ok(mod);
+ assert.ok(model);
+ const f = await fixture();
+ const range = {from: '2025-12-31', to: '2026-01-01'};
+ const selection = {type: 'todo', id: f.entry.id} as const;
+ const fetcher = async (input: RequestInfo|URL, init?: RequestInit) => {
+  const response = await f.fetcher(input,init);
+  if (!String(input).includes('/search?')) return response;
+  const params = new URL(String(input),config.baseURL).searchParams;
+  assert.equal(params.get('from'),range.from);
+  assert.equal(params.get('to'),range.to);
+  const value = await response.json();
+  value.items[0].draft.dueOn = range.from;
+  return Response.json({...value,...range});
+ };
+ const data = await mod.loadPersonalSearch('needle',selection,undefined,fetcher,range);
+ assert.equal(data.rows[0].date,range.from);
+ assert.equal(data.detail?.id,selection.id);
+ assert.equal(model.searchHref('needle',selection,range),'/personal/search?q=needle&from=2025-12-31&to=2026-01-01&type=todo&id='+selection.id);
+ assert.equal(model.searchHref('needle',undefined,range),'/personal/search?q=needle&from=2025-12-31&to=2026-01-01');
+ for (const fault of ['range','date']) {
+  await assert.rejects(mod.loadPersonalSearch('needle',null,undefined,async (input,init) => {
+   const response = await fetcher(input,init);
+   if (!String(input).includes('/search?')) return response;
+   const value = await response.json();
+   if (fault === 'range') value.to = '2026-01-02';
+   else value.items[0].draft.dueOn = null;
+   return Response.json(value);
+  },range),{kind:'unavailable'});
+ }
+});

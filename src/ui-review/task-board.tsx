@@ -1,6 +1,7 @@
 'use client';
 
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
+import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import {GripVertical} from 'lucide-react';
 import type {TaskRow,TaskStatus,LifeOSWorkspaceProps} from './contract';
 import {taskStatusLabels} from '../personal-candidate/task-editor-state';
@@ -23,9 +24,9 @@ function groupTasks(tasks:readonly TaskRow[],arrangement:Arrangement):Record<str
  return Object.fromEntries(arrangement.columns.map(status=>{const ranks=new Map((arrangement.cards[status]??[]).map((id,index)=>[id,index]));return [status,tasks.filter(task=>task.status===status).toSorted((a,b)=>(ranks.get(a.id)??Infinity)-(ranks.get(b.id)??Infinity))];}));
 }
 /** Native ReUI manages drag preview only. The host remains the sole authoritative status writer. */
-export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,onSetTaskStatus,renderCard}:{
+export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,flatProjects=false,onSetTaskStatus,renderCard}:{
  tasks:readonly TaskRow[];writable:boolean;blocked:boolean;pendingTaskIds?:readonly string[];scope?:string|null;
- onSetTaskStatus?:LifeOSWorkspaceProps['onSetTaskStatus'];renderCard:(task:TaskRow)=>ReactNode;
+ flatProjects?:boolean;onSetTaskStatus?:LifeOSWorkspaceProps['onSetTaskStatus'];renderCard:(task:TaskRow)=>ReactNode;
 }){
  const [arrangementState,setArrangementState]=useState<{scope:string|null;value:Arrangement}>({scope:null,value:defaults()});
  const arrangement=arrangementState.scope===scope?arrangementState.value:defaults();
@@ -64,8 +65,8 @@ export function TaskBoard({tasks,writable,blocked,pendingTaskIds=[],scope=null,o
      <div className="lo-board-card-tools"><KanbanItemHandle asChild><Button variant="ghost" className="lo-card-drag" aria-label={`拖动：${task.title}`} disabled={blocked||!writable||pendingTaskIds.includes(task.id)}><GripVertical size={16} aria-hidden="true"/></Button></KanbanItemHandle><label className="lo-board-move">移动到<select aria-label="移动到" value={task.status} disabled={blocked||!writable||!onSetTaskStatus||pendingTaskIds.includes(task.id)} onChange={event=>move(task,event.target.value as TaskStatus)}>{statuses.map(status=><option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select></label></div>
      {renderCard(task)}
      <dl className={styles.classification} aria-label="待办分类">
-      <div><dt>项目</dt><dd data-unassociated={!task.project||undefined}>{task.project?.title??'未关联项目'}</dd></div>
-      <div><dt>领域</dt><dd data-unassociated={!task.area||undefined}>{task.area?.title??'未关联领域'}</dd></div>
+      <div><dt>项目</dt><dd data-unassociated={!task.project||undefined}>{task.project?<a href={projectDetailHref(task.project.id)}>{task.project.title}</a>:'未关联项目'}</dd></div>
+      {!flatProjects&&<div><dt>领域</dt><dd data-unassociated={!task.area||undefined}>{task.area?.title??'未关联领域'}</dd></div>}
      </dl>
     </KanbanItem>)}{!items.length&&<div className="lo-board-empty">暂无待办</div>}</KanbanColumnContent>
    </KanbanColumn>)}</KanbanBoard>
