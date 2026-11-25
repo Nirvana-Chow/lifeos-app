@@ -65,7 +65,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  const nav=menu.getByRole('navigation',{name:'主导航',exact:true});
  const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
  const records=[['做饭','/personal/cooking']] as const;
- await openMenu();
+ await readyMenu();
  await expect(switcher.getByRole('button')).toHaveText(['日常','生活与关系','项目']);
  await assertWorkspaceModule(nav,'日常',planning);
  await nav.getByRole('link',{name:'日程',exact:true}).click();
@@ -105,12 +105,17 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  }
  await page.goto(origin+'/personal/requirements/updates',{waitUntil:'domcontentloaded'});
  await expect(page).toHaveURL(origin+'/personal/requirements/updates');await expect(page.getByText('本版本更新提醒已关闭。',{exact:true})).toBeVisible();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
- await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'domcontentloaded'});await openMenu();const settings=page.getByRole('navigation',{name:'设置分类'});await expect(settings.getByRole('group',{name:'资料与工具'}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
+ await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'domcontentloaded'});await readyMenu();const settings=page.getByRole('navigation',{name:'设置分类'});await expect(settings.getByRole('group',{name:'资料与工具'}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await settings.getByRole('link',{name:'存储审核',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/storage-review');await expect(page.getByRole('heading',{name:'存储审核',exact:true,level:1})).toBeVisible();await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');await expect(page.locator('#open-server')).toBeEnabled();await page.getByRole('link',{name:'← LifeOS 主站',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
- enabled=false;await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await openMenu();
+ enabled=false;await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await readyMenu();
  await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]);
- await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'domcontentloaded'});await openMenu();for(const label of ['阶段路线图','反馈 Inbox','更新记录'])await expect(settings.getByRole('link',{name:label,exact:true})).toHaveCount(0);
- storageAvailable=false;await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await page.reload({waitUntil:'domcontentloaded'});await openMenu();
+ await page.goto(origin+'/personal?page=settings&panel=general',{waitUntil:'domcontentloaded'});await readyMenu();for(const label of ['阶段路线图','反馈 Inbox','更新记录'])await expect(settings.getByRole('link',{name:label,exact:true})).toHaveCount(0);
+ storageAvailable=false;
+ await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
+ const closedStatus=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/personal/status'));
+ await page.reload({waitUntil:'domcontentloaded'});
+ await closedStatus;
+ await openMenu();
  await expect(switcher.getByRole('button')).toHaveText(['日常','项目']);
  await assertWorkspaceModule(nav,'日常',[['总览'],['待办']]);
  storageAvailable=true;enabled=true;
