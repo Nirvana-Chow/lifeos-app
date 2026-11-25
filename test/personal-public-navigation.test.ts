@@ -93,7 +93,7 @@ test('collapsed personal navigation keeps available tooltips and hides journal a
  const render=()=>{cursor=0;return workspace.LifeOSWorkspace({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null}});};
  let tree=render();
  find(tree,n=>n.props['aria-label']==='收起侧栏')!.props.onClick();tree=render();
- for(const label of ['事项','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
+ for(const label of ['待办','总览','设置'])assert.equal(find(tree,n=>n.type==='button'&&n.props['aria-label']===label)?.props.title,label);
  for(const path of ['schedule','journal'] as const)assert.equal(find(tree,n=>n.type==='a'&&n.props.href===privateNavigation.privateHrefs[path]),undefined);
 });
 

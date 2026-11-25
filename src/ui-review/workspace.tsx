@@ -30,6 +30,8 @@ import {
   KeyRound,
   Tags,
   ClipboardList,
+  Folders,
+  Layers,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -75,10 +77,12 @@ import {groupWorkspaceModules,overviewDomains} from './workspace-hierarchy';
 
 import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspaceHref} from '../workbench/private-navigation';
 
-const navItems = [
-  { id: "overview", label: "总览", icon: LayoutDashboard },
-  { id: "tasks", label: "事项", icon: CheckSquare2 },
-] as const;
+const workspacePageNavigation = {
+ overview:{label:'总览',icon:LayoutDashboard},
+ tasks:{label:'待办',icon:CheckSquare2},
+ projects:{label:'项目',icon:Folders},
+ areas:{label:'领域',icon:Layers},
+} as const;
 const viewItems = [
   { id: "list", label: "列表", icon: List },
   { id: "table", label: "表格", icon: Table2 },
@@ -166,20 +170,23 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const locationState=useRef({page,settingsOpen,settingsPanel,classificationPlanId});
   locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
-  const settingsSection=page==='settings'||page==='requirements';
-  const settingsLabels:Record<SettingsPanel,string>={topics:'标签',security:'安全与密码','api-keys':'API 密钥'};
+  const settingsSection=page==='settings'||page==='requirements'||ownerModules.path.startsWith('/personal/requirements/');
   const settingsSubpage=settingsOpen&&(settingsPanel==='security'||settingsPanel==='api-keys');
   const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
   const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
   const [chosenModule,setChosenModule]=useState<string|null>(null);
-  const moduleGroups=groupWorkspaceModules(ownerModules.links).filter((group,index)=>index===0||group.links.length>0);
-  const pathModule=moduleGroups.find(group=>group.links.some(link=>link.href===ownerModules.path))?.label;
-  const activeModule=moduleGroups.find(group=>group.label===chosenModule)?.label??pathModule??moduleGroups[0]?.label;
-  const visibleModuleGroups=moduleGroups.filter(group=>group.label===activeModule);
+  const moduleGroups=groupWorkspaceModules(ownerModules.links);
+  const selectedModule=moduleGroups.find(group=>group.id===chosenModule);
+  const settingsNavigationActive=settingsSection&&!selectedModule;
+  const routeModule=moduleGroups.find(group=>group.links.some(link=>
+    ownerModules.path===link.href||ownerModules.path.startsWith(link.href+'/'),
+  ));
+  const pageModule=page==='projects'||page==='areas'?'projects':'daily';
+  const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id===pageModule);
   const moduleSwitch=(compact=false)=>(
     <nav aria-label="切换模块" className={compact?workspaceStyles.mobileModules:workspaceStyles.headerModules}>
-      {moduleGroups.map(group=><Button key={group.label} variant="ghost" aria-pressed={group.label===activeModule} data-workspace-nav
-        onClick={()=>chooseModule(group.label)}>{group.label}</Button>)}
+      {moduleGroups.map(group=><Button key={group.id} variant="ghost" aria-pressed={group.id===activeModule?.id} data-workspace-nav
+        onClick={()=>chooseModule(group.id)}>{group.label}</Button>)}
     </nav>
   );
   const domains=state.status==='ready'?overviewDomains(state.data.areas,state.data.projects):[];
@@ -371,7 +378,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   function settingsAllowed() {
     return !restoringHistory.current&&(!classificationPlanId||props.classificationCloseGuard?.current?.()!==false)&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
   }
-  function openSettings() {return navigate('settings');}
+  function openSettings() {
+    if(!contentPage&&settingsOpen&&settingsPanel===defaultSettingsPanel&&selectedModule){chooseModule(null);return true;}
+    return navigate('settings');
+  }
   function traverseHistory(direction:'back'|'forward') {
     // Native workspace history has its own guarded popstate and restoration.
     // Content-only routes must check before Next can commit a SPA traversal.
@@ -450,15 +460,16 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       task.status === "done" ? "open" : "done",
     );
   }
+  const availableSettings = ([
+    {id:'security',label:'安全与密码',icon:ShieldCheck},
+    {id:'api-keys',label:'API 密钥',icon:KeyRound},
+    {id:'topics',label:'标签',icon:Tags},
+  ] as const).filter(item=>item.id==='topics'?access.allowedTypes?.includes('topic'):props.availableSettingsPanels?.includes(item.id));
   const settingsNavigation = (
     <nav className={`lo-nav ${workspaceStyles.settingsNavigation}`} aria-label="设置分类">
       <div role="group" aria-label="偏好与账号" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>偏好与账号</span>
-        {([
-          {id:'security',label:'安全与密码',icon:ShieldCheck},
-          {id:'api-keys',label:'API 密钥',icon:KeyRound},
-          {id:'topics',label:'标签',icon:Tags},
-        ] as const).filter(item=>item.id==='topics'?access.allowedTypes?.includes('topic'):props.availableSettingsPanels?.includes(item.id)).map(({id,label,icon:Icon})=>{
+        {availableSettings.map(({id,label,icon:Icon})=>{
           const current=settingsOpen&&settingsPanel===id;
           return <Button variant="ghost" data-workspace-nav key={id} aria-label={label} title={collapsed?label:undefined}
             className={current?'is-current':undefined} aria-current={current?'page':undefined}
@@ -484,34 +495,28 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   );
   const navigation = (
     <>
-      {settingsSection?settingsNavigation:<nav className="lo-nav" aria-label="主导航">
-        {visibleModuleGroups.map(group=><div key={group.label} role="group" aria-label={group.label} className={workspaceStyles.navigationGroup}>
-        <span className={workspaceStyles.navigationLabel}>{group.label}</span>
-        {group.label===moduleGroups[0]?.label&&navItems.map(({ id, label, icon: Icon }) => (
-          <Button
-            variant="ghost"
-            key={id}
-            className={!unavailablePage && !contentPage && (page === id || id === "tasks" && ["projects","areas","inbox"].includes(page)) ? "is-current" : ""}
-            title={collapsed ? label : undefined}
-            aria-label={label}
-            aria-current={!unavailablePage && !contentPage && (page === id || id === "tasks" && ["projects","areas","inbox"].includes(page)) ? "page" : undefined}
-            data-workspace-nav
-            onClick={() => navigate(id)}
-          >
-            <Icon size={19} />
-            <span>{label}</span>
-          </Button>
-        ))}
-        <OwnerModuleLinks links={group.links} path={ownerModules.path} collapsed={collapsed}/>
-        </div>)}
+      {settingsNavigationActive?settingsNavigation:<nav className="lo-nav" aria-label="主导航">
+        {activeModule&&<div role="group" aria-label={activeModule.label} className={workspaceStyles.navigationGroup}>
+          <span className={workspaceStyles.navigationLabel}>{activeModule.label}</span>
+          {activeModule.pages.map(id=>{
+            const {label,icon:Icon}=workspacePageNavigation[id];
+            const current=!unavailablePage&&!contentPage&&(page===id||id==='tasks'&&page==='inbox');
+            return <Button variant="ghost" key={id} className={current?'is-current':undefined}
+              title={collapsed?label:undefined} aria-label={label} aria-current={current?'page':undefined}
+              data-workspace-nav onClick={()=>navigate(id)}>
+              <Icon size={19} aria-hidden="true"/><span>{label}</span>
+            </Button>;
+          })}
+          <OwnerModuleLinks links={activeModule.links} path={ownerModules.path} collapsed={collapsed}/>
+        </div>}
       </nav>}
       <div className="lo-sidebar-bottom">
         <Button
           variant="ghost"
           aria-label="设置"
           title={collapsed ? "设置" : undefined}
-          className={settingsSection ? "is-current" : ""}
-          aria-current={settingsSection?"page":undefined}
+          className={settingsNavigationActive ? "is-current" : ""}
+          aria-current={settingsNavigationActive?"page":undefined}
           data-workspace-nav
           onClick={() => openSettings()}
         >
@@ -688,6 +693,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         </Button>
         {moduleSwitch()}
         <div className="lo-header-actions">
+          <Button variant="ghost" size="icon" className="lo-icon-button" aria-label="打开设置" title="设置"
+            data-workspace-nav onClick={()=>openSettings()}><Settings size={19} aria-hidden="true"/></Button>
           <ThemeSwitch allowSystem={settingsSection}/>
           {access.authenticated === true && access.writable === false && (
             <Badge variant="outline">只读</Badge>
@@ -1036,6 +1043,13 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             )}
           {settingsOpen&&<section data-settings-page className={workspaceStyles.settingsPage}>
             <div className={`lo-settings-panel ${workspaceStyles.settingsPanel}`} data-settings-panel={settingsPanel}>
+              {settingsPanel===defaultSettingsPanel&&availableSettings.length>0&&<ul className={workspaceStyles.settingsIndex} aria-label="可用设置">
+                {availableSettings.map(({id,label,icon:Icon})=><li key={id}>
+                  <Button variant="ghost" data-workspace-nav onClick={()=>selectSettingsPanel(id)}>
+                    <Icon size={19} aria-hidden="true"/><span>{label}</span><ChevronRight size={16} aria-hidden="true"/>
+                  </Button>
+                </li>)}
+              </ul>}
               {access.authenticated === false && access.loginAllowed === true && props.onLogin && (
                 <Button variant="outline" onClick={props.onLogin}>
                   <LogIn size={17} />
