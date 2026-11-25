@@ -145,7 +145,14 @@ async function editTask(page:Page,value:string){
  await readyTaskDetail(page,value);
  await readyEditor(page,value);
 }
-async function workspaceReady(page:Page){await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();await expect(page.locator('.lo-shell')).toBeVisible();}
+async function workspaceReady(page:Page){
+ await expect(page.locator('.lo-shell')).toBeVisible();
+ if((new URL(page.url()).searchParams.get('page')??'overview')==='overview'){
+  const tasks=page.getByRole('region',{name:'未完待办',exact:true});
+  await expect(tasks.getByRole('button',{name:'查看全部未完待办'})).toBeEnabled();
+  await expect(tasks.getByText('未完待办暂不可用',{exact:true})).toBeHidden();
+ }else await expect(page.getByRole('button',{name:'新建待办',exact:true})).toBeEnabled();
+}
 async function json(page:Pick<Page,'evaluate'>,path:string){
  const result=await page.evaluate(async path=>{const r=await fetch(path,{credentials:'same-origin',cache:'no-store'});return {ok:r.ok,body:await r.json()};},path);
  assert.equal(result.ok,true,'personal authenticated readback');return result.body;
@@ -333,7 +340,8 @@ export async function verifyPersonalWorkspace(page:Page){
  try{
  await workspaceReady(page);const initial=await overview(page);assert.equal(initial.total,0);assert.deepEqual(initial.items,[]);
  phase='workspace-capabilities';const access=await json(page,'/api/platform/personal/status');assert.equal(access.writable,true);assert.equal(access.storageReviewEnabled,true);assert.deepEqual(access.allowedTypes,['todo','journal','project','domain','topic']);
- phase='cancel-empty';await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
+ phase='cancel-empty';await page.getByRole('button',{name:'查看全部未完待办',exact:true}).click();
+ await page.getByRole('button',{name:'新建待办',exact:true}).click();await readyEditor(page,'');await taskRelations(page);
  for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
  phase='create-domain';await page.goto(new URL('/personal?page=areas',page.url()).href,{waitUntil:'domcontentloaded'});await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');

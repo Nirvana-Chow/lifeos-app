@@ -772,14 +772,17 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <div className={workspaceStyles.breadcrumbTrail}>
               {!isOverview&&<><Button variant="ghost" aria-label="返回总览" data-workspace-nav onClick={()=>navigate('overview')}>总览</Button><ChevronRight aria-hidden="true" size={14}/></>}
               {settingsSubpage&&<><Button variant="ghost" aria-label="返回设置" data-workspace-nav onClick={()=>navigate('settings')}>设置</Button><ChevronRight aria-hidden="true" size={14}/></>}
-              <span aria-current="page">{breadcrumbTitle}</span>
+              {isOverview
+                ? <h1 className={workspaceStyles.breadcrumbCurrent} aria-current="page" tabIndex={-1}>{breadcrumbTitle}</h1>
+                : <span className={workspaceStyles.breadcrumbCurrent} aria-current="page">{breadcrumbTitle}</span>}
+              {isOverview&&access.authenticated===true&&access.writable===false&&<Badge variant="outline" className="lo-mobile-read-only">只读</Badge>}
             </div>
             <div className={workspaceStyles.historyButtons}>
               <Button variant="ghost" data-workspace-nav aria-label="后退" disabled={!historyControls.back} onClick={()=>traverseHistory('back')}><ArrowLeft size={16}/></Button>
               <Button variant="ghost" data-workspace-nav aria-label="前进" disabled={!historyControls.forward} onClick={()=>traverseHistory('forward')}><ArrowRight size={16}/></Button>
             </div>
           </nav>
-          <div className="lo-page-heading">
+          {!isOverview&&<div className="lo-page-heading">
             <div className="lo-heading-title">
               <h1 tabIndex={-1}>{title}</h1>
               {access.authenticated===true&&access.writable===false&&<Badge variant="outline" className="lo-mobile-read-only">只读</Badge>}
@@ -807,7 +810,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   <RefreshCw size={17} />
                 </Button>
               )}
-              {(page === "overview" || page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
+              {(page === "tasks" || page === "inbox") && !unavailablePage && !contentPage &&
                 state.status === "ready" && mayWrite(access) && access.allowedTypes?.includes("todo") && props.onCreateTask && (
                   <Button className="lo-primary" disabled={!canWrite} onClick={() => props.onCreateTask?.()}>
                     <Plus size={17} />
@@ -815,7 +818,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
                   </Button>
               )}
             </div>
-          </div>
+          </div>}
           {contentPage ? contentPage.content : unavailablePage ? (
             <p className="lo-unavailable" role="status">{unavailablePage.message}</p>
           ) : <>

@@ -52,7 +52,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(page.locator('header')).toHaveCSS('background-image','none');
  await expect(page.getByRole('button',{name:'LifeOS 总览',exact:true}).locator('svg path')).toHaveCount(1);
  const todoCard=page.getByRole('region',{name:'未完待办',exact:true});
- const overviewCards=['需求进度','未完待办','近期日程','最近思考'].map(name=>page.getByRole('region',{name,exact:true}));
+ const overviewCards=['未完待办','近期日程','最近思考','需求进度'].map(name=>page.getByRole('region',{name,exact:true}));
  for(const card of overviewCards)await expect(card).toBeVisible();
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
@@ -78,8 +78,10 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await page.setViewportSize({width,height:900});
   const bounds=await Promise.all(overviewCards.map(card=>card.boundingBox()));
   assert.ok(bounds.every(bound=>bound&&bound.width>0&&bound.height>0));
-  const [schedule,thoughts]=bounds.slice(2);
-  assert.ok(schedule&&thoughts&& (width===390?thoughts.y>schedule.y:thoughts.y===schedule.y));
+  const [tasks,schedule,thoughts,progress]=bounds;
+  assert.ok(tasks&&schedule&&thoughts&&progress);
+  assert.ok(width===390?schedule.y>tasks.y:schedule.y===tasks.y);
+  assert.ok(thoughts.y>schedule.y&&progress.y>thoughts.y);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   const shell=page.locator('.lo-shell');
   if(width===390){

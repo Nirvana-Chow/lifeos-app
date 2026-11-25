@@ -1,12 +1,31 @@
 .overview { display: grid; gap: 16px; }
-.overview > section { margin: 0; }
+.overview > section, .previews > section { min-width: 0; margin: 0; }
 .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .tasks :global(.lo-task-project), .tasks :global(.lo-task-status) { display: none; }
 .rows { margin: 0; padding: 0 16px; list-style: none; }
-.rows li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding: 10px 0; overflow-wrap: anywhere; }
+.rows li, .thoughtHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.rows li { padding: 10px 0; }
+.thoughts li { display: grid; gap: 4px; }
+.thoughtHeading a { font-weight: 550; }
+.excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.55;
+}
 .rows li + li { border-top: 1px solid var(--border); }
 .rows time, .date, .note { color: var(--muted-foreground); font-size: 13px; }
 .note { margin: 0; padding: 10px 16px; }
 @media (max-width: 767px) {
   .previews { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (min-width: 768px) {
+  :global(html[data-lifeos-workspace-layout="mobile"]) .previews { grid-template-columns: minmax(0, 1fr); }
 }
