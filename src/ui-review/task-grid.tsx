@@ -350,7 +350,7 @@ export function TaskGrid(props: TaskGridProps) {
           onCellEditRequest={request => {
             if (editableFields.includes(request.columnId as TaskCellField)) open(request.rowId, request.columnId as TaskCellField, request.initialText);
           }}
-          i18n={{ labels: { empty: '没有符合条件的待办', loading: '正在加载表格…', allRowsLoaded: '已显示全部待办' } }}
+          i18n={{ labels: { empty: props.emptyMessage ?? '没有符合条件的待办', loading: '正在加载表格…', allRowsLoaded: '已显示全部待办' } }}
           tableLayout={{ headerSticky: true, width: 'fixed', columnsResizable: true, columnsResizeMode: 'onEnd', cellSelection: true, cellSelectionMode: 'single', cellEditMode: 'dblclick', cellFillHandle: false }}
           tableClassNames={{ base: styles.table, headerRow: styles.header, bodyRow: styles.row }}>
           <DataGridTableVirtual height="100%" estimateSize={rowEstimate} overscan={10} scrollToRowIndex={restoreIndex >= 0 ? restoreIndex : undefined} />
