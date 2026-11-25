@@ -103,7 +103,9 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   if(emptySources&&path.endsWith('/personal/calendar')){result.entries=[];result.total=0;}
   return route.fulfill({status:response.status,json:result});
  });
+ const firstSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/requirements/snapshot')&&response.ok(),{timeout:45000});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
+ await firstSnapshot;
  const card=page.getByRole('region',{name:'需求进度',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
  for(const [label,value] of [['未开始','1'],['进行中','2'],['待上线验收','1'],['已上线','1'],['其中受阻','1'],['待核实','1']]){

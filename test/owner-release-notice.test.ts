@@ -25,7 +25,7 @@ test('an ordinary or rejected reminder renders no automatic announcement',()=>{
  assert.equal(render('idle').tree,null);assert.equal(render('rejected').tree,null);
 });
 
-test('workspace settings navigation hides support routes until owner scope and both capabilities are verified',()=>{
+test('workspace settings navigation keeps the three legacy routes outside the default menu',()=>{
  const source=readFileSync(new URL('../src/ui-review/workspace.tsx',import.meta.url),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const scope=JSON.stringify(['owner','space']);
@@ -57,5 +57,5 @@ test('workspace settings navigation hides support routes until owner scope and b
  }
  for(const closed of [null,{}, {...status,storageVerified:false},{...status,requirementsEnabled:false},{...status,requirementSupportEnabled:false}])assert.deepEqual(settings(closed),[]);
  assert.deepEqual(settings(status,JSON.stringify(['foreign-owner','space'])),[]);
- assert.deepEqual(settings(status),['/personal/requirements/roadmap','/personal/requirements/feedback','/personal/requirements/updates']);
+ assert.deepEqual(settings(status),[]);
 });

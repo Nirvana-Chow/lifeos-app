@@ -176,7 +176,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
   await assertWorkspaceModule(nav,'兴趣学习',records);
   await moduleSwitch.getByRole('button',{name:'项目',exact:true}).focus();
   await page.keyboard.press('Enter');
-  await assertWorkspaceModule(nav,'项目',[['项目'],['领域']]);
+  await assertWorkspaceModule(nav,'项目',[['项目'],['领域'],['开发项目','/personal/development-projects']]);
   const projectNavigation=nav.getByRole('button',{name:'项目',exact:true});
   await projectNavigation.evaluate(button=>button.scrollIntoView({inline:'end',block:'nearest'}));
   const points=await projectNavigation.evaluate(button=>{
