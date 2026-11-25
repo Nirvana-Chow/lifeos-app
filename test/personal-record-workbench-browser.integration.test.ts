@@ -275,7 +275,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await t.test('novel shelf save with '+topicTitles.length+' matching topics',async()=>{
     const page=await browser.newPage({extraHTTPHeaders:{'x-fixture-owner':'confirmed'}});
     try{
-     const config:PersonalConfig={ownerId:'novel-fixture-owner',ownerEmail:'novel@example.invalid',spaceId:'novel-fixture-space',databaseName:'lifeos_platform_test_local',allowedTypes:['topic'],approval:'personal-manual-v1',baseURL:origin,mediaEnabled:true};
+     const config:PersonalConfig={ownerId:'novel-fixture-owner',ownerEmail:'novel@example.invalid',spaceId:'novel-fixture-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,mediaEnabled:true};
      const repo=new MemoryPort();
      repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
      const service=new PersonalService(repo,config);
@@ -287,6 +287,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
      await page.route('**/api/platform/**',async route=>{
       const request=route.request(),url=new URL(request.url());
       if(url.pathname==='/api/platform/status')return route.fulfill({json:{}});
+      if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
       if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
       const headers=new Headers(request.headers());headers.set('host',url.host);
       const body=request.postData();
