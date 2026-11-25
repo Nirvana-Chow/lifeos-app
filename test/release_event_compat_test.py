@@ -14,6 +14,7 @@ from scripts.release_eligibility import FULL_JOBS, RELEASE_JOBS
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_SHA = '428b974cd4981edc3967c8beb8a3dad014206c31'
+PREVIOUS_UNIFIED_SHA = '5ef5d0e47b5788193b11f32a3e3bf12fe492dcec'
 UNIFIED_SHA = 'e' * 40  # Fixture identity, using the candidate workflow bytes.
 REPO = {'id': compat.REPOSITORY_ID, 'full_name': compat.REPOSITORY}
 WORKFLOW_IDS = {compat.CI: 101, compat.LEGACY_QUALIFICATION: 102}  # Synthetic IDs.
@@ -80,7 +81,7 @@ def run_evidence(path, contract, run_id, attempt=1):
     return compat.RunEvidence(run, payload(jobs, 'jobs'), payload(artifacts, 'artifacts'))
 
 
-def fixture(mode='unified', profile='full', visual=True, attempt=1, wake=None, source=None, workflow_ids=None, release_run_id=4101,
+def fixture(mode='unified', profile='full', visual=False, attempt=1, wake=None, source=None, workflow_ids=None, release_run_id=4101,
             routine_source_only=True):
     sha = source or (UNIFIED_SHA if mode == 'unified' else LEGACY_SHA)
     workflow_ids = WORKFLOW_IDS if workflow_ids is None else workflow_ids
@@ -111,20 +112,21 @@ class CompatTest(unittest.TestCase):
         for profile in ('routine', 'full'):
             for visual in (False, True):
                 with self.subTest(profile=profile, visual=visual):
-                    data = fixture(profile=profile, visual=visual, attempt=2)
+                    source = PREVIOUS_UNIFIED_SHA if visual else UNIFIED_SHA
+                    data = fixture(profile=profile, visual=visual, attempt=2, source=source)
                     claims = []
                     def claim(key):
                         claims.append(key)
                         return True
 
                     result = compat.claim_completion(**data, try_claim=claim)
-                    self.assertEqual(result, compat.Eligibility(UNIFIED_SHA, 4101, 2, 'unified'))
-                    self.assertEqual(claims, [(REPO['id'], UNIFIED_SHA)])
+                    self.assertEqual(result, compat.Eligibility(source, 4101, 2, 'unified'))
+                    self.assertEqual(claims, [(REPO['id'], source)])
 
     def test_source_only_routine_and_prior_pin_enforce_their_own_job_sets(self):
         current = fixture(profile='routine')
         self.assertEqual(compat.claim_completion(**current, try_claim=lambda _: True).sha, current['contract'].sha)
-        previous = fixture(profile='routine', routine_source_only=False,
+        previous = fixture(profile='routine', routine_source_only=False, visual=True,
                            source='66d714a1cfdec1cb4a4f9c85d60195f8b0d88c03')
         self.assertEqual(compat.claim_completion(**previous, try_claim=lambda _: True).sha, previous['contract'].sha)
         jobs = previous['release'].jobs
@@ -132,7 +134,7 @@ class CompatTest(unittest.TestCase):
         jobs['total_count'] -= 1
         self.assert_rejected(previous, 'JOBS_UNCONFIRMED')
 
-        unexpected = fixture(profile='routine', routine_source_only=False)
+        unexpected = fixture(profile='routine', routine_source_only=False, visual=True)
         current['release'].jobs['jobs'][:] = unexpected['release'].jobs['jobs']
         current['release'].jobs['total_count'] = unexpected['release'].jobs['total_count']
         self.assert_rejected(current, 'JOBS_UNCONFIRMED')
@@ -279,6 +281,8 @@ class CompatTest(unittest.TestCase):
         rendered = workflow.split('\n  rendered:\n', 1)[1].split('\n  eligibility:\n', 1)[0]
         self.assertIn("\n    if: needs.policy.outputs.profile == 'full'\n", rendered)
         self.assertIn("name: " + compat.IMAGE_STEP + "\n        if: needs.policy.outputs.profile == 'full'", rendered)
+        for marker in ('Verify additional UI cases actually ran', compat.CAPTURE_GUARD, compat.CAPTURE_STEP):
+            self.assertIn(f"name: {marker}\n        if: needs.policy.outputs.profile != 'full'\n        run: exit 1", rendered)
 
 
 if __name__ == '__main__':

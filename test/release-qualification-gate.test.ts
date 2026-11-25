@@ -16,49 +16,40 @@ function fixture(){
  const context=(after:string)=>({sha:after,event:'push',headBranch:'main',payload:{before,after,ref:'refs/heads/main',deleted:false,forced:false,repository:repo}});
  return {directory,git,put,commit,before,context,close:()=>rmSync(directory,{recursive:true,force:true})};
 }
-test('the two exact OAuth metadata routes are legal without scheduling a metadata-only visual run',()=>{
- const paths=['app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts','app/.well-known/oauth-protected-resource/[[...resource]]/route.ts'];
- for(const path of paths)assert.equal(gate.visualPathsApply([path]),false,path);
- assert.equal(gate.visualPathsApply(paths),false);
- assert.equal(gate.visualPathsApply([...paths,'src/business-mcp-oauth/panel.tsx']),true);
-});
-
-test('actual metadata-only push is nonvisual and OAuth UI in the same push requires visual evidence',()=>{
+test('exact OAuth metadata and UI paths both preserve push provenance',()=>{
  const f=fixture();try{
   f.put('app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts','synthetic metadata');
   f.put('app/.well-known/oauth-protected-resource/[[...resource]]/route.ts','synthetic metadata');
-  const metadata=f.commit();assert.deepEqual(gate.readVisualScope(f.context(metadata),f.directory),{required:false,reason:'push-paths-not-matched'});
-  f.put('src/business-mcp-oauth/panel.tsx','synthetic UI');const ui=f.commit();assert.deepEqual(gate.readVisualScope(f.context(ui),f.directory),{required:true,reason:'push-paths-match'});
+  const metadata=f.commit();gate.verifyReleaseScope(f.context(metadata),f.directory);
+  f.put('src/business-mcp-oauth/panel.tsx','synthetic UI');const ui=f.commit();gate.verifyReleaseScope(f.context(ui),f.directory);
  }finally{f.close();}
 });
 
-test('release control changes do not request the visual matrix',()=>{
+test('release control changes preserve push provenance',()=>{
  const f=fixture();try{
   f.put('scripts/release-qualification.ts','synthetic gate fix');f.put('.github/workflows/ci.yml','synthetic workflow fix');
-  const head=f.commit();assert.deepEqual(gate.readVisualScope(f.context(head),f.directory),{required:false,reason:'push-paths-not-matched'});
+  const head=f.commit();gate.verifyReleaseScope(f.context(head),f.directory);
  }finally{f.close();}
 });
 test('real pushed Git scope includes added deleted and earlier multicommit UI changes',()=>{
  const f=fixture();try{
-  f.put('src/cooking/detail.tsx','add UI');f.commit();f.put('docs/readme.md','latest docs');const head=f.commit();assert.equal(gate.readVisualScope(f.context(head),f.directory).required,true);
-  const before=head;f.git('rm','src/cooking/detail.tsx');const after=f.commit();const context=f.context(after);context.payload.before=before;assert.equal(gate.readVisualScope(context,f.directory).required,true);
+  f.put('src/cooking/detail.tsx','add UI');f.commit();f.put('docs/readme.md','latest docs');const head=f.commit();gate.verifyReleaseScope(f.context(head),f.directory);
+  const before=head;f.git('rm','src/cooking/detail.tsx');const after=f.commit();const context=f.context(after);context.payload.before=before;gate.verifyReleaseScope(context,f.directory);
  }finally{f.close();}
 });
-test('real docs-only push is not visual; rename unknown context and excessive paths fail closed',()=>{
+test('renames, unknown events and excessive paths fail closed',()=>{
  const f=fixture();try{
-  f.put('docs/readme.md','docs');let head=f.commit();assert.equal(gate.readVisualScope(f.context(head),f.directory).required,false);
-  const renameBefore=head;f.git('mv','docs/readme.md','docs/renamed.md');head=f.commit();const rename=f.context(head);rename.payload.before=renameBefore;assert.throws(()=>gate.readVisualScope(rename,f.directory),/VISUAL_SCOPE_UNCONFIRMED/);
-  for(const change of [{before:'0'.repeat(40)},{after:'b'.repeat(40)},{forced:true},{ref:'refs/heads/elsewhere'}]){const context=f.context(head);Object.assign(context.payload,change);assert.throws(()=>gate.readVisualScope(context,f.directory),/VISUAL_SCOPE_UNCONFIRMED/);}
+  f.put('docs/readme.md','docs');let head=f.commit();gate.verifyReleaseScope(f.context(head),f.directory);
+  const renameBefore=head;f.git('mv','docs/readme.md','docs/renamed.md');head=f.commit();const rename=f.context(head);rename.payload.before=renameBefore;assert.throws(()=>gate.verifyReleaseScope(rename,f.directory),/RELEASE_SCOPE_UNCONFIRMED/);
+  for(const change of [{before:'0'.repeat(40)},{after:'b'.repeat(40)},{forced:true},{ref:'refs/heads/elsewhere'}]){const context=f.context(head);Object.assign(context.payload,change);assert.throws(()=>gate.verifyReleaseScope(context,f.directory),/RELEASE_SCOPE_UNCONFIRMED/);}
  }finally{f.close();}
- const many=fixture();try{for(let i=0;i<301;i++)many.put(`docs/${i}.md`,'large push');const head=many.commit();assert.throws(()=>gate.readVisualScope(many.context(head),many.directory),/VISUAL_SCOPE_UNCONFIRMED/);}finally{many.close();}
+ const many=fixture();try{for(let i=0;i<301;i++)many.put(`docs/${i}.md`,'large push');const head=many.commit();assert.throws(()=>gate.verifyReleaseScope(many.context(head),many.directory),/RELEASE_SCOPE_UNCONFIRMED/);}finally{many.close();}
 });
-test('native glob ambiguity on hidden path segments is unconfirmed, never irrelevant',()=>{
- for(const path of ['components/.hidden.tsx','src/.hidden/view.tsx','components/.github/view.tsx','../src/view.tsx','/src/view.tsx','src\\view.tsx',
-  'app/.well-known/other/route.ts','app/.well-known/oauth-authorization-server/route.ts','app/.well-known/oauth-authorization-server/[[...issuer]]/page.tsx',
-  'app/.well-known/oauth-authorization-server/[[...issuer]]/route.ts/extra','app/.well-known/oauth-protected-resource/[...resource]/route.ts',
-  'app/.well-known/oauth-protected-resource/[[...resource]]/route.tsx','app/.well-known/.hidden/route.ts','app/.well-known/oauth-protected-resource/[[...resource]]//route.ts',
-  'app/.well-known/oauth-protected-resource/../[[...resource]]/route.ts','App/.well-known/oauth-protected-resource/[[...resource]]/route.ts',
- ])assert.throws(()=>gate.visualPathsApply([path]),/VISUAL_SCOPE_UNCONFIRMED/);
+test('unexpected hidden paths fail closed',()=>{
+ const f=fixture();try{
+  f.put('src/.hidden/view.tsx','synthetic');const head=f.commit();
+  assert.throws(()=>gate.verifyReleaseScope(f.context(head),f.directory),/RELEASE_SCOPE_UNCONFIRMED/);
+ }finally{f.close();}
 });
 
 const workflowPath='.github/workflows/ci.yml';
@@ -73,19 +64,18 @@ const jobSections=Object.fromEntries([...workflow.split('jobs:\n')[1]!.matchAll(
 const capture='Upload only named synthetic images and their finite manifest';
 const captureGuard='Verify finite synthetic capture manifest and PNGs';
 const attemptUrl=(runId:number,attempt:number)=>`/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`;
-function attempt(profile:'routine'|'full',ui:boolean,{sha:source=sha,runId=51,attempt=1,audit=profile==='full'}={}){
+function attempt(profile:'routine'|'full',{sha:source=sha,runId=51,attempt=1,audit=profile==='full'}={}){
  const identity={sha:source,runId,attempt},key=`${source}:${runId}:${attempt}`,suffix=key.replaceAll(':','-');
  const full=profile==='full';
- const visual=full&&ui;
  const results={'policy':'success','checks':'success','platform':full?'success':'skipped',
   'recovery-pg':full?'success':'skipped','rendered':full?'success':'skipped'};
  const needs=Object.fromEntries(Object.entries(results).map(([name,result])=>[name,{result,outputs:{} as Record<string,string>}]));
- needs.policy.outputs={identity:key,profile,visual:String(visual),ui:String(ui),audit:String(audit)};
- if(full)needs.rendered.outputs={identity:key,'build-id':'synthetic_build','compiled-id':'601',...(visual?{'capture-id':'602'}:{})};
+ needs.policy.outputs={identity:key,profile,audit:String(audit)};
+ if(full)needs.rendered.outputs={identity:key,'build-id':'synthetic_build','compiled-id':'601'};
  const ran=(condition?:string)=>{
   if(!condition)return true;
-  const predicates=condition.split(/ (?:&&|\|\|) /).map(part=>part.includes('outputs.visual')?visual:part.includes('outputs.ui')?ui:part.includes('outputs.audit')?audit:full);
-  return condition.includes(' || ')?predicates.some(Boolean):predicates.every(Boolean);
+  if(condition.includes("!= 'full'"))return !full;
+  return condition.includes('outputs.audit')?audit:full;
  };
  const url=`https://github.com/${repo.full_name}/actions/runs/${runId}`;
  const jobs=Object.entries(jobSections).map(([name,section],i)=>{
@@ -98,21 +88,20 @@ function attempt(profile:'routine'|'full',ui:boolean,{sha:source=sha,runId=51,at
  const rendered=jobs.find(job=>job.name===jobSections.rendered.name)!;
  const artifact=(id:number,name:string)=>({id,name,expired:false,size_in_bytes:100,digest:'sha256:'+'c'.repeat(64),
   workflow_run:{id:runId,repository_id:repo.id,head_repository_id:repo.id,head_branch:'main',head_sha:source}});
- const compiled=artifact(601,'lifeos-compiled-'+suffix),images=artifact(602,'synthetic-rendered-'+suffix);
+ const compiled=artifact(601,'lifeos-compiled-'+suffix);
  const calls:string[]=[];
  const api=async (path:string)=>{
   calls.push(path);
   if(path===attemptUrl(runId,attempt))return response;
   if(path==='/actions/artifacts/601')return compiled;
-  if(path==='/actions/artifacts/602')return images;
   throw Error('Unexpected evidence request '+path);
  };
- return {identity,needs,response,jobs,rendered,compiled,images,api,calls,verify:()=>gate.verifyAttempt(identity,ui,needs,api)};
+ return {identity,needs,response,jobs,rendered,compiled,api,calls,verify:()=>gate.verifyAttempt(identity,needs,api)};
 }
-for(const profile of ['routine','full'] as const)for(const ui of [false,true])test(`exact-attempt producers close profile=${profile}, UI=${ui}`,async()=>{
- const a=attempt(profile,ui),visual=profile==='full'&&ui;
- assert.deepEqual(await a.verify(),{sourceSha:sha,runId:51,runAttempt:1,profile,visual:visual?'verified':'not-scheduled'});
- assert.deepEqual(a.calls,[attemptUrl(51,1),...(profile==='full'?['/actions/artifacts/601']:[]),...(visual?['/actions/artifacts/602']:[])]);
+for(const profile of ['routine','full'] as const)test(`exact-attempt producers close profile=${profile}`,async()=>{
+ const a=attempt(profile);
+ assert.deepEqual(await a.verify(),{sourceSha:sha,runId:51,runAttempt:1,profile,visual:'not-scheduled'});
+ assert.deepEqual(a.calls,[attemptUrl(51,1),...(profile==='full'?['/actions/artifacts/601']:[])]);
 });
 
 const failures:[string,(value:ReturnType<typeof attempt>)=>void][]=[
@@ -133,28 +122,27 @@ const failures:[string,(value:ReturnType<typeof attempt>)=>void][]=[
  ['two jobs with the same ID',a=>{a.jobs[0].id=a.jobs[1].id;}],
  ['missing capture guard',a=>{a.rendered.steps=a.rendered.steps.filter(step=>step.name!==captureGuard);}],
  ['duplicate capture guard',a=>{a.rendered.steps.push({...a.rendered.steps.find(step=>step.name===captureGuard)!});}],
- ['skipped capture guard',a=>{a.rendered.steps.find(step=>step.name===captureGuard)!.conclusion='skipped';}],
+ ['successful capture guard',a=>{a.rendered.steps.find(step=>step.name===captureGuard)!.conclusion='success';}],
  ['failed capture guard',a=>{a.rendered.steps.find(step=>step.name===captureGuard)!.conclusion='failure';}],
  ['pending capture guard',a=>{a.rendered.steps.find(step=>step.name===captureGuard)!.status='in_progress';}],
- ['skipped named upload',a=>{a.rendered.steps.find(step=>step.name===capture)!.conclusion='skipped';}],
+ ['successful named upload',a=>{a.rendered.steps.find(step=>step.name===capture)!.conclusion='success';}],
  ['required security case absent',a=>{const p=a.jobs.find(job=>job.name===jobSections.platform.name)!;p.steps=p.steps.filter(step=>!step.name.startsWith('Qualify native MFA'));}],
  ['dependency audit required but absent',a=>{const j=a.jobs.find(job=>job.name===jobSections.policy.name)!;j.steps=j.steps.filter(step=>!step.name.includes('security audit'));}],
- ['missing screenshot artifact ID',a=>{delete a.needs.rendered.outputs['capture-id'];}],
+ ['unexpected screenshot artifact ID',a=>{a.needs.rendered.outputs['capture-id']='602';}],
  ['missing compiled artifact ID',a=>{delete a.needs.rendered.outputs['compiled-id'];}],
- ['expired screenshot archive',a=>{a.images.expired=true;}],
- ['wrong screenshot digest',a=>{a.images.digest='';}],
- ['artifact from the wrong attempt',a=>{a.images.name=a.images.name.replace(/-2$/,'-1');}],
- ['artifact from another SHA',a=>{a.images.workflow_run.head_sha='b'.repeat(40);}],
- ['artifact from another run',a=>{a.images.workflow_run.id=52;}],
- ['artifact from another repository',a=>{a.images.workflow_run.head_repository_id=1;}],
- ['UI scope falsely reported as skipped',a=>{a.needs.policy.outputs.visual='false';}],
+ ['expired compiled archive',a=>{a.compiled.expired=true;}],
+ ['wrong compiled digest',a=>{a.compiled.digest='';}],
+ ['artifact from the wrong attempt',a=>{a.compiled.name=a.compiled.name.replace(/-2$/,'-1');}],
+ ['artifact from another SHA',a=>{a.compiled.workflow_run.head_sha='b'.repeat(40);}],
+ ['artifact from another run',a=>{a.compiled.workflow_run.id=52;}],
+ ['artifact from another repository',a=>{a.compiled.workflow_run.head_repository_id=1;}],
 ];
 for(const [name,mutate] of failures)test('rejects '+name,async()=>{
- const a=attempt('full',true,{attempt:2});mutate(a);await assert.rejects(a.verify());
+ const a=attempt('full',{attempt:2});mutate(a);await assert.rejects(a.verify());
 });
 
 test('only expected skips are accepted and a full rerun can supply all fresh producers',async()=>{
- const a=attempt('routine',false);
+ const a=attempt('routine');
  const optional=a.jobs.findIndex(job=>job.name===jobSections.platform.name);
  a.jobs.splice(optional,1);a.response.total_count--;
  await a.verify();
@@ -162,11 +150,11 @@ test('only expected skips are accepted and a full rerun can supply all fresh pro
  a.needs.platform.result='skipped';
  a.jobs.splice(a.jobs.indexOf(a.rendered),1);a.response.total_count--;
  await a.verify();
- await attempt('full',true,{attempt:2}).verify();
+ await attempt('full',{attempt:2}).verify();
 });
 
 test('routine UI has no hosted build or browser qualification',async()=>{
- const a=attempt('routine',true);
+ const a=attempt('routine');
  await a.verify();
  a.needs.rendered.result='success';
  await assert.rejects(a.verify(),/DAG_SCOPE_UNCONFIRMED/);
@@ -181,35 +169,24 @@ test('audit follows dependency edits or the existing manual qualification entry'
  assert.equal(gate.dependencyAuditRequired({...ordinary,profile:'full',changedPaths:['src/platform/auth.ts']},'push'),false);
  assert.equal(gate.dependencyAuditRequired({...ordinary,profile:'full',changedPaths:['package-lock.json']},'push'),true);
  assert.equal(gate.dependencyAuditRequired({...ordinary,changedPaths:[]},'workflow_dispatch'),true);
- await attempt('full',false,{audit:false}).verify();
+ await attempt('full',{audit:false}).verify();
 });
 
-test('visual scope matches key UI and fixture paths',()=>{
- for(const path of ['app/page.tsx','app/nested/theme.css','components/button.ts','src/cooking/detail.tsx','src/cooking/log-workbench.module.css',
-  'test/cooking-browser.integration.test.ts','test/helpers/personal-synthetic-bootstrap.ts','test/helpers/task-grid-performance-fixture.ts',
-  'test/helpers/auth-theme-fixture-lifecycle.ts','scripts/synthetic-rendered-qualification.ts',
-  'scripts/client-bundle-evidence.mjs','src/workbench/theme.ts','scripts/ci/prepare-runner-cjk-fonts.sh','test/ci-cjk-fonts.test.ts'])
-  assert.equal(gate.visualPathsApply([path]),true,path);
- for(const path of ['docs/readme.md','src/platform/auth.ts','db/001.sql','test/ordinary.test.ts','scripts/attach-vtable-benchmark.py','scripts/release-qualification.ts',workflowPath])
-  assert.equal(gate.visualPathsApply([path]),false,path);
-});
-
-test('dispatch accepts explicit UI opt-in and rejects unsupported scope',()=>{
+test('dispatch verifies main identity and rejects unsupported events',()=>{
  const context={sha,event:'workflow_dispatch',headBranch:'main',payload:{}};
- assert.equal(gate.readVisualScope(context).required,false);
- assert.equal(gate.readVisualScope({...context,payload:{inputs:{visual:'true'}}}).required,true);
- assert.throws(()=>gate.readVisualScope({...context,payload:{inputs:{visual:'unknown'}}}),/VISUAL_SCOPE_UNCONFIRMED/);
- assert.throws(()=>gate.readVisualScope({...context,event:'unknown'}),/VISUAL_SCOPE_UNCONFIRMED/);
+ gate.verifyReleaseScope(context);
+ assert.throws(()=>gate.verifyReleaseScope({...context,headBranch:'elsewhere'}),/RELEASE_SCOPE_UNCONFIRMED/);
+ assert.throws(()=>gate.verifyReleaseScope({...context,event:'unknown'}),/RELEASE_SCOPE_UNCONFIRMED/);
 });
 
-test('real CLI classifies first as full and final gate rejects missing exact-attempt browser evidence',()=>{
+test('real CLI classifies first as full with browser disabled and retains exact-attempt build evidence',()=>{
  const f=fixture();
  try {
   f.put('src/screen.tsx','synthetic UI');
   const head=f.commit(),eventFile=join(f.directory,'event.json'),preload=join(f.directory,'preload.mjs'),output=join(f.directory,'output');
   writeFileSync(eventFile,JSON.stringify(f.context(head).payload));
-  const a=attempt('full',true,{sha:head});
-  const responses={[attemptUrl(51,1)]:a.response,'/actions/artifacts/601':a.compiled,'/actions/artifacts/602':a.images};
+  const a=attempt('full',{sha:head});
+  const responses={[attemptUrl(51,1)]:a.response,'/actions/artifacts/601':a.compiled};
   const run=(mode:string,fixtureResponses:unknown,resolvedWorkflow=workflowPath)=>{
    writeFileSync(preload,`const rows=${JSON.stringify(fixtureResponses)};globalThis.fetch=async url=>{const suffix=url.replace('https://api.github.com/repos/${repo.full_name}','');return {ok:Object.hasOwn(rows,suffix),text:async()=>JSON.stringify(rows[suffix])};};`);
    return spawnSync(process.execPath,['--import',preload,new URL('../scripts/release-qualification.ts',import.meta.url).pathname,mode],{
@@ -221,10 +198,10 @@ test('real CLI classifies first as full and final gate rejects missing exact-att
   };
   const classifyResult=run('--classify',{});
   assert.equal(classifyResult.status,0,classifyResult.stderr);
-  assert.match(readFileSync(output,'utf8'),/^profile=full\nui=true\nvisual=true\naudit=true\nidentity=/);
+  assert.match(readFileSync(output,'utf8'),/^profile=full\naudit=true\nidentity=/);
   const good=run('--verify',responses);
   assert.equal(good.status,0,good.stderr);
-  assert.equal(JSON.parse(good.stdout).visual,'verified');
+  assert.equal(JSON.parse(good.stdout).visual,'not-scheduled');
   assert.match(run('--verify',responses,'.github/workflows/other.yml').stderr,/SOURCE_IDENTITY_UNCONFIRMED/);
   a.rendered.status='in_progress';
   const rejected=run('--verify',responses);
