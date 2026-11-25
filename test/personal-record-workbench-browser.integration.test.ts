@@ -38,6 +38,14 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
   ));
  }
+ const topicEditor=join(root,'app/personal/edit');
+ await mkdir(topicEditor,{recursive:true});
+ const editorSource=await readFile(join(source,'app/personal/edit/page.tsx'),'utf8');
+ const editorImport="import {readPlatformPagePrincipal,readPlatformPasswordCapability} from '../../../src/platform/runtime';";
+ assert.ok(editorSource.includes(editorImport));
+ await writeFile(join(topicEditor,'page.tsx'),editorSource.replace(editorImport,
+  "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null; const readPlatformPasswordCapability=async()=>false;"
+ ));
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture failed to start')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.stdout.on('data',chunk=>{log+=String(chunk);const match=log.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
@@ -261,6 +269,105 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    assert.equal(signOutRequests,1);
   }else await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
   await page.close();
+ }
+ if(modules.includes('media')){
+  for(const topicTitles of [[],['网文'],['网文','小说']]){
+   await t.test('novel shelf save with '+topicTitles.length+' matching topics',async()=>{
+    const page=await browser.newPage({extraHTTPHeaders:{'x-fixture-owner':'confirmed'}});
+    try{
+     const config:PersonalConfig={ownerId:'novel-fixture-owner',ownerEmail:'novel@example.invalid',spaceId:'novel-fixture-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,mediaEnabled:true};
+     const repo=new MemoryPort();
+     repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
+     const service=new PersonalService(repo,config);
+     const topics=await Promise.all(topicTitles.map(async(title,index)=>
+      (await service.mutate(config.ownerId,'topic',null,{spaceId:config.spaceId,confirmed:true,fields:{title,text:'Synthetic topic',occurredOn:null,personal:{type:'topic'}}},'novel-topic-'+index)).entry,
+     ));
+     const posts:{key:string|null;body:string}[]=[],writes:string[]=[];
+     let loseResponse=topics.length===2;
+     await page.route('**/api/platform/**',async route=>{
+      const request=route.request(),url=new URL(request.url());
+      if(url.pathname==='/api/platform/status')return route.fulfill({json:{}});
+      if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
+      if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
+      const headers=new Headers(request.headers());headers.set('host',url.host);
+      const body=request.postData();
+      if(request.method()!=='GET')writes.push(request.method());
+      const mediaWrite=request.method()==='POST'&&url.pathname==='/api/platform/personal/media';
+      if(mediaWrite)posts.push({key:headers.get('idempotency-key'),body:body??''});
+      const response=await handlePersonalRequest(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});
+      assert.ok(response);
+      if(mediaWrite&&loseResponse){
+       loseResponse=false;
+       assert.equal(response.status,201);
+       return route.abort('failed');
+      }
+      return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+     });
+     const title='Synthetic novel create '+topics.length;
+     const savedRows=async()=>(await service.currentSnapshot(config.ownerId)).filter(entry=>'title' in entry.draft&&entry.draft.title===title);
+     await page.goto(origin+'/personal/media',{waitUntil:'domcontentloaded',timeout:60000});
+     const filter=page.getByRole('combobox',{name:'筛选作品',exact:true});
+     await filter.selectOption('novel');
+     await page.getByRole('button',{name:'新增书影音',exact:true}).click();
+     const dialog=page.getByRole('dialog',{name:'新增书影音',exact:true});
+     await dialog.getByLabel('标题',{exact:true}).fill(title);
+     const save=dialog.getByRole('button',{name:'保存',exact:true});
+     if(topics.length===0){
+      await expect(dialog.getByRole('status')).toContainText('当前没有可用的网文／小说主题');
+      const manageTopics=dialog.getByRole('link',{name:'打开主题录入',exact:true});
+      await expect(manageTopics).toHaveAttribute('href','/personal/edit?type=topic');
+      await expect(save).toBeDisabled();
+      const pendingKey='lifeos.personal.pending.v1:'+config.ownerId+':'+config.spaceId;
+      const pending=await dialog.locator('form').evaluate((form,key)=>{
+       (form as HTMLFormElement).requestSubmit();
+       return localStorage.getItem(key);
+      },pendingKey);
+      assert.equal(pending,null);
+      expect(posts).toHaveLength(0);
+      assert.deepEqual(await savedRows(),[]);
+      page.once('dialog',dialog=>dialog.accept());
+      await manageTopics.click();
+      await expect(page.getByRole('heading',{name:'新建主题',exact:true})).toBeVisible();
+      assert.deepEqual(writes,[]);
+      return;
+     }
+     const selected=topics.at(-1)!;
+     const pin={id:selected.id,sourceId:selected.source.id,revision:selected.revision};
+     if(topics.length===2){
+      await dialog.getByText('作品来源与关联',{exact:true}).click();
+      const relation=dialog.getByRole('combobox',{name:'关联主题',exact:true});
+      await expect(relation).toHaveValue('');
+      await expect(dialog.getByRole('status')).toContainText('选择一个网文／小说主题后保存');
+      await expect(save).toBeDisabled();
+      expect(posts).toHaveLength(0);
+      await relation.selectOption(JSON.stringify(pin));
+     }
+     await expect(save).toBeEnabled();
+     await save.click();
+     if(topics.length===2){
+      await expect.poll(async()=>(await savedRows()).length).toBe(1);
+      const [first]=await savedRows();
+      await page.reload({waitUntil:'domcontentloaded'});
+      await page.getByRole('button',{name:'继续上次保存（书影音）',exact:true}).click();
+      await expect(page.locator('[data-record-notice]')).toHaveText('上次的书影音已保存');
+      assert.equal(posts.length,2);
+      assert.ok(posts[0].key);
+      assert.deepEqual(posts[1],posts[0]);
+      assert.deepEqual(await savedRows(),[first]);
+      await filter.selectOption('novel');
+     }else{
+      await expect(page.locator('[data-record-notice]')).toHaveText('已保存');
+      assert.equal(posts.length,1);
+     }
+     await page.getByRole('button',{name:'刷新',exact:true}).click();
+     await expect(page.getByRole('button',{name:'打开作品：'+title,exact:true})).toHaveCount(1);
+     const [saved]=await savedRows();
+     const personal=saved&&'personal' in saved.draft?saved.draft.personal:null;
+     assert.ok(personal&&'type' in personal&&personal.type==='media');
+     assert.deepEqual(personal.links.topics,[pin]);
+    }finally{await page.close();}
+   });
+  }
  }
  assert.ok(!/Failed to compile|Module not found/.test(log));
 });

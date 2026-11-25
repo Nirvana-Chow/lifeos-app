@@ -338,5 +338,18 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await expect(autosave).toBeEnabled();
  await expect(autosave).toHaveAttribute('aria-pressed','false');
  await expect(body).toHaveValue('Synthetic newer text before receipt readback');
+
+ // Closing an opted-in editor before debounce must neither change this record nor arm the next editor.
+ await autosave.click();
+ await body.fill('Synthetic unsent text discarded on close');
+ page.once('dialog',dialog=>dialog.accept());
+ await page.keyboard.press('Escape');
+ await expect(edit).toBeHidden();
+ await journal.getByRole('button',{name:routineTitle,exact:true}).click();
+ await expect(body).toHaveValue(routine);
+ await expect(autosave).toHaveAttribute('aria-pressed','false');
+ await pause();
+ assert.equal(commands.length,11);
+ assert.equal(repo.rows.get(savedRow.id)?.revision,8);
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
 });

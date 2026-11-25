@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {useTable,type ColumnDef} from '@tanstack/react-table';
 import {DataGrid,DataGridContainer,dataGridFeatures} from '../ui-review/reui/data-grid';
@@ -63,7 +64,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [status,setStatus]=useState<Status|null>(null),[entries,setEntries]=useState<PublicEntry[]>([]),[options,setOptions]=useState<Record<string,PublicEntry[]>>(emptyOptions),[search,setSearch]=useState(''),[metric,setMetric]=useState<HealthMetric>('weight'),[view,setView]=useState<RecordView>(()=>initialRecordView(type,careerSection)),[resumeId,setResumeId]=useState('');
  const [relatedJournals,setRelatedJournals]=useState<RelatedJournals|null>(null),[linkedProfile,setLinkedProfile]=useState(linkedPersonId);
  const [mediaKind,setMediaKind]=useState<MediaBrowseFilter>('all');
- const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+ const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string;fromNovelShelf?:boolean}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
  const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
@@ -164,7 +165,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  async function save(mode:'manual'|'autosave'='manual'){
   cancelAutosaveTimer();
   const active=session.current,token=generation.current;
-  if(!editor||status?.writable!==true||!active||blocked||verified===false)return;
+  if(!editor||status?.writable!==true||!active||blocked||verified===false||novelTopicRequired)return;
   const autosave=mode==='autosave';
   if(autosave&&(!editor.entry||verifiedRef.current!==true||!current.current?.writable||
    editorRef.current!==editor||document.visibilityState!=='visible'||busyRef.current||
@@ -235,7 +236,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
     fields.personal=personal;
    }
   }
-  setEditor({entry:null,fields,initial:JSON.stringify(fields)});
+  setEditor({entry:null,fields,initial:JSON.stringify(fields),fromNovelShelf:type==='media'&&mediaKind==='novel'});
   setHistory([]);
   setNotice('');
  }
@@ -300,6 +301,9 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const table=useTable({features:dataGridFeatures,data:tableRows,columns,getRowId:entry=>entry.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(tableRows.length,1)}},autoResetPageIndex:false});
  const careerRecord=type==='career'&&editor?.entry?{id:editor.entry.id,sourceId:editor.entry.source.id,revision:editor.entry.revision,fields:recordFields(editor.entry,'career') as CareerPersonalFields}:null;
  const fields=editor?.fields,links=fields?.personal?.type==='journal'?fields.personal.links:emptyLinks();
+ const media=fields?.personal;
+ const novelTopicRequired=editor?.fromNovelShelf===true&&
+  (media?.type!=='media'||!matchesMediaBrowse(media,'novel',options.topic));
  const setFields=(fields:RecordFields)=>{
   if(type==='journal'){cancelAutosaveTimer();setJournalSaveNotice('');}
   setEditor(old=>old?{...old,fields}:old);
@@ -355,11 +359,17 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    onChange={event=>setFields({...fields,text:event.target.value})}/></label><label>记录日期<input type="date" value={fields.occurredOn??''} onChange={event=>setFields({...fields,occurredOn:event.target.value||null})}/></label>
   {type==='person'&&<PersonFields value={fields.personal as PersonPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='health'&&<><label>记录类型<select value={(fields.personal as HealthPersonal).healthKind} disabled={!!editor?.entry} onChange={event=>{const next=emptyHealthFields(event.target.value as HealthPersonal['healthKind'],zone());setFields({...fields,personal:next.personal});}}>{Object.entries(healthKindLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthFields value={fields.personal as HealthPersonal} lockKind={!!editor?.entry} onChange={personal=>setFields({...fields,personal})}/></>}
+  {novelTopicRequired&&<p role="status" className={s.description}>{options.topic.some(isNovelTopic)
+   ?'请将作品类型设为书籍，并在「作品来源与关联」选择一个网文／小说主题后保存。'
+   :<>当前没有可用的网文／小说主题。{status?.allowedTypes.includes('topic')
+    ?<>请先<Link className="underline underline-offset-2" href="/personal/edit?type=topic" prefetch={false}
+      onNavigate={navigationGuard?undefined:event=>{if(!leave())event.preventDefault();}}>打开主题录入</Link>核对或登记已确认的主题，再返回书架新增。</>
+    :'标签可用后，请刷新书架再新增。'}</>}</p>}
   {type==='media'&&<MediaFields value={fields.personal as MediaPersonal} options={options} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='career'&&<CareerFields value={fields.personal as CareerPersonal} options={options} kinds={careerSection==='career'?careerKinds.filter(kind=>kind!=='resume'):undefined} lockKind={!!editor?.entry||careerSection==='resume'} onChange={personal=>setFields({...fields,personal})}/>}
   {type==='portfolio'&&<><label>持有类别<select aria-label="持有类别" disabled={!!editor?.entry} value={(fields.personal as PersonalPortfolio).portfolioKind} onChange={event=>setFields({...fields,personal:emptyPortfolioPersonal(event.target.value as PortfolioKind)})}>{portfolioKinds.map(kind=><option key={kind} value={kind}>{portfolioKindLabels[kind]}</option>)}</select></label><PortfolioFields value={fields.personal as PersonalPortfolio} options={options} onChange={personal=>setFields({...fields,personal})}/></>}
   {type==='journal'&&<div className={s.relations}><RelationFields value={links} options={options} onChange={next=>setFields({...fields,personal:{type:'journal',links:{...next,people:links.people}} as JournalPersonal})}/>{peoplePins(links.people)}</div>}
-  <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit">保存</Button></div></fieldset></form>}
+  <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit" disabled={novelTopicRequired}>保存</Button></div></fieldset></form>}
   {type==='journal'&&<>
    {journalSaveNotice&&<p role="status">{journalSaveNotice}</p>}
    {error&&<p role="alert" className={s.error}>{error}</p>}
