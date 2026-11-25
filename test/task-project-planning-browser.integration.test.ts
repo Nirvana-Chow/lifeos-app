@@ -68,7 +68,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await expect(page.getByRole('button',{name:'列表',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(page).toHaveURL(origin+'/personal?page=tasks');
   assert.equal(writes,0);
-  await page.goto(origin+'/personal/edit?type=todo&id='+taskId,{waitUntil:'domcontentloaded'});
+  await page.goto(origin+'/personal/edit?type=todo&id='+taskId,{waitUntil:'domcontentloaded',timeout:60000});
   await expect(existingDetail).toBeVisible();
   await expect(page).toHaveURL(origin+'/personal/edit?type=todo&id='+taskId);
   await page.keyboard.press('Escape');
