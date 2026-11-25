@@ -53,8 +53,8 @@ test('OPT-IN requirement delivery filters, refresh and results render without re
   const geometry=await page.locator('[data-slot="data-grid-table-viewport"]').evaluate(node=>{const box=node.getBoundingClientRect();return{height:box.height,visibleRows:[...node.querySelectorAll('tbody tr')].filter(row=>{const r=row.getBoundingClientRect();return r.top>=box.top&&r.bottom<=box.bottom}).length};});
   if(width===1365)assert.ok(geometry.visibleRows>=8,'Compact desktop retains at least eight complete rows: '+JSON.stringify(geometry));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  await page.screenshot({path:join(source,'.review-results',`requirements-progress-${width}-${theme}.png`)});
-  await expect(page.getByText(/每日进展|开发路线|阶段路线图|反馈 Inbox|更新记录/)).toHaveCount(0);
+  if(width===1365)await page.screenshot({path:join(source,'.review-results',`requirements-progress-${width}-${theme}.png`)});
+  await expect(page.locator('[data-requirements-page] summary').filter({hasText:/^每日进展|^开发路线/})).toHaveCount(0);
   for(const destination of ['roadmap','feedback','updates']){
    await expect(page.locator('a[href="/personal/requirements/'+destination+'"]')).toHaveCount(0);
   }

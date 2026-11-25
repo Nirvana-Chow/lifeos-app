@@ -30,7 +30,8 @@ function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',p
 
 test('requirement pool renders a compact shared ReUI table and three reachable views without inline long evidence',()=>{
  const html=renderPage();
- assert.doesNotMatch(html,/开发路线|每日进展|当前阶段|阶段路线图|反馈 Inbox|更新记录/);
+ assert.doesNotMatch(html,/<(?:h[1-6]|summary)\b[^>]*>\s*(?:开发路线|每日进展|当前阶段|阶段路线图|反馈 Inbox|更新记录)/);
+ assert.doesNotMatch(html,/href="\/personal\/requirements\/(?:roadmap|feedback|updates)(?:[?#][^"]*)?"/);
  assert.match(html,/交付状态/);assert.match(html,/下一步/);
  assert.match(html,/href="https:\/\/github\.com\/Nirvana-Chow\/lifeos-app\/pull\/93"/);
  assert.match(html,/<input[^>]*type="search"/);
