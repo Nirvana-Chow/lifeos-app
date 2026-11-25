@@ -67,7 +67,7 @@ test('development summary returns counts only, rechecks ownership after reading,
   reads++;
   return {...snapshot,items:[...items,unlinked],total:items.length+1};
  }} as unknown as RequirementsService;
- const guards={assertOwner:async()=>{checks++;if(disallowAfter&&reads>=2)throw new PlatformError(403,'OWNER_ONLY','Owner changed');},
+ const guards={storageVerified:true,assertOwner:async()=>{checks++;if(disallowAfter&&reads>=2)throw new PlatformError(403,'OWNER_ONLY','Owner changed');},
   assertWritable:async()=>{throw Error('Unexpected write permission check');}};
  const call=(req:Request)=>handleRequirementsRequest(req,owner,service,guards);
  const response=await call(request());

@@ -5,7 +5,7 @@ import type {RequirementsService} from './service.ts';
 import {requirementId} from './domain.ts';
 import {readLifeOSDevelopmentProgress} from '../ui-review/development-project-progress.ts';
 const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
-export async function handleRequirementsRequest(request:Request,owner:string,service:RequirementsService,guards:PersonalHTTPGuards):Promise<Response|null>{
+export async function handleRequirementsRequest(request:Request,owner:string,service:RequirementsService,guards:PersonalHTTPGuards & {storageVerified:boolean}):Promise<Response|null>{
  const url=new URL(request.url),match=/^\/api\/platform\/personal\/requirements(?:\/([^/]+))?(?:\/(history))?\/?$/.exec(url.pathname);
  if(!match)return null;
  if(service.config.requirementsEnabled!==true)return respond({error:{code:'REQUIREMENTS_DISABLED',message:'需求持久化尚未开放。'}},404);
@@ -20,6 +20,7 @@ export async function handleRequirementsRequest(request:Request,owner:string,ser
  if(history){if(!id)throw new PlatformError(404,'NOT_FOUND','无此需求历史。');if([...url.searchParams.keys()].some(k=>k!=='limit')||url.searchParams.getAll('limit').length>1)throw new PlatformError(400,'INVALID_QUERY','读取参数无效。');const raw=url.searchParams.get('limit'),limit=raw===null?50:/^[1-9]\d{0,2}$/.test(raw)?Number(raw):NaN;const result=await service.history(owner,id,limit);await guard();return respond(result);}
  if(url.search)throw new PlatformError(400,'INVALID_QUERY','需求操作不支持额外查询参数。');
  if(progress){
+  if(!guards.storageVerified)throw new PlatformError(503,'PERSONAL_STORAGE_UNAVAILABLE','本人记录存储尚未核验。');
   const result=readLifeOSDevelopmentProgress(await service.snapshot(owner));
   await guard();
   return respond(result);
