@@ -559,7 +559,8 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
    const r=route.request(),u=new URL(r.url());if(u.origin!==origin)return route.abort();
    if(r.method()==='POST'&&u.pathname==='/__nextjs_original-stack-frames')return route.continue();
    if(!['GET','HEAD'].includes(r.method())){writes++;return route.fulfill({status:405});}
-   if(u.pathname.startsWith('/api/platform/personal/'))personalReads++;
+   // Overview widgets verify the owner independently. Count the workspace controller's availability and data reads.
+   if(u.pathname.endsWith('/personal/availability')||u.pathname.endsWith('/personal/overview'))personalReads++;
    if(u.pathname.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']}});
    if(u.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(u.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:u.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
