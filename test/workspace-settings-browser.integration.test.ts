@@ -286,8 +286,7 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
   ['身体基础',[['健康','/personal/health']]],
   ['兴趣学习',[['书影音','/personal/media'],['做饭','/personal/cooking']]],
   ['生活与关系',[['人物','/personal/people']]],
-  ['职业成长',[['职业与简历','/personal/career']]],
-  ['项目',[['项目'],['领域']]],
+  ['职业成长',[['职业','/personal/career'],['简历','/personal/resume']]],
  ] as const;
  await page.goto(origin+'/personal',{waitUntil:'load'});
  await expect.poll(()=>overviewReads).toBeGreaterThan(0);
@@ -333,10 +332,11 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  }
  await header.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal');
- await modules.getByRole('button',{name:'项目',exact:true}).click();
- await nav.getByRole('button',{name:'项目',exact:true}).click();
+ await modules.getByRole('button',{name:'日常',exact:true}).click();
+ await nav.getByRole('button',{name:'待办',exact:true}).click();
+ await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal?page=projects');
- await expect(modules.getByRole('button',{name:'项目',exact:true})).toHaveAttribute('aria-pressed','true');
+ await expect(modules.getByRole('button',{name:'日常',exact:true})).toHaveAttribute('aria-pressed','true');
  await modules.getByRole('button',{name:'日常',exact:true}).click();
  await expect(account).toBeInViewport({ratio:1});
  await expect(breadcrumb.getByText('标签',{exact:true})).toHaveCount(0);

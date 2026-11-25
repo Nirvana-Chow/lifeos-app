@@ -51,12 +51,14 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   resultHref:'https://lifeos.nirvanachow.com/personal?page=projects',
   verificationHref:`https://github.com/Nirvana-Chow/lifeos-app/blob/${sha}/docs/verification/fixture.md`};
  const specs=[
-  ['planned',[]],['in_progress',[]],['planned',[merged]],['done',[merged,production]],['blocked',[]],['done',[]],
+  ['planned',[]],['in_progress',[]],['planned',[merged]],['done',[merged,production]],['blocked',[]],['done',[]],['awaiting_review',[merged,production]],
  ] as const;
  const items=specs.map(([state,evidence],index)=>{
   const id=`11111111-1111-4111-8111-${String(index+1).padStart(12,'0')}`;
   const title='Synthetic private requirement '+index;
-  const requirement:Requirement={...baseline.requirements[0],id,title,status:'not_started',
+  const accepted=index===5||index===6;
+  const requirement:Requirement={...baseline.requirements[0],id,title,status:accepted?'accepted':'not_started',
+   acceptance:accepted?{by:'user',baselineVersion:baseline.baselineVersion,ref:'synthetic-user-acceptance'}:undefined,
    roadmap:undefined,evidence:[...evidence]};
   return {id,revision:1,sourceId:id,baselineBinding:null,baselineConflict:false,requirement,
    fields:{title,body:'',phaseId:baseline.roadmap!.phases[0].id,priority:'P2',plannedStartOn:null,plannedEndOn:null,
@@ -66,7 +68,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
  const repo=new MemoryPort();
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
- let writable=true, mode:'ok'|'truncated'|'wrong-space'|'denied'='ok', reads=0;
+ let writable=true, mode:'ok'|'truncated'|'wrong-space'|'denied'|'empty'='ok', reads=0;
  const handler=createPersonalPlatformHandler({config,repository:repo,storageVerified:true,
   sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{if(!writable)throw Error('read only');}});
  async function seed(path:string,fields:unknown,key:string){
@@ -97,7 +99,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   if(path.endsWith('/requirements/snapshot')){
    reads++;
    if(mode==='denied')return route.fulfill({status:403,json:{}});
-   return route.fulfill({json:{scope:'full-current-requirements-snapshot',items,total:items.length,
+   return route.fulfill({json:{scope:'full-current-requirements-snapshot',items:mode==='empty'?[]:items,total:mode==='empty'?0:items.length,
     truncated:mode==='truncated',observedAt:'2026-11-25T00:00:00Z',baseline}});
   }
   if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/snapshot')))return route.fulfill({status:503,json:{}});
@@ -113,9 +115,11 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await firstSnapshot;
  const card=page.getByRole('region',{name:'需求进度',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
- for(const [label,value] of [['未开始','1'],['进行中','2'],['待上线验收','1'],['已上线','1'],['其中受阻','1'],['待核实','1']]){
+ for(const [label,value] of [['计划','2'],['推进中','1'],['工程审查','1'],['受阻','1'],['标记开发完成','2'],['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
   await expect(count(label)).toHaveText(value);
  }
+ await expect(card.locator('dl[aria-label="推进状态"]')).toHaveCount(1);
+ await expect(card.locator('dl[aria-label="交付证据"]')).toHaveCount(1);
  await expect(card.locator('time')).toHaveAttribute('datetime','2026-11-25T00:00:00Z');
  await expect(card.locator('time')).toContainText('08:00');
  await expect(card.getByText('Synthetic private requirement',{exact:false})).toHaveCount(0);
@@ -174,6 +178,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
    await expect(excerpt).toHaveCount(0);
   }
  }
+ mode='empty';
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await expect(card.getByText('暂无需求。',{exact:true})).toBeVisible();
+ await expect(card.locator('dd')).toHaveCount(0);
  mode='ok';
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
@@ -191,7 +199,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
- await expect(page.getByRole('heading',{name:'项目',level:1,exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'个人项目',level:1,exact:true})).toBeVisible();
  await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'兴趣学习',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'设置',exact:true}).click();
  const product=page.getByRole('navigation',{name:'设置分类'}).getByRole('group',{name:'产品',exact:true});

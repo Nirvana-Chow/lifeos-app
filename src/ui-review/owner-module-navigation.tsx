@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {FileDown,FolderCheck,FolderGit2,Search,CalendarDays,NotebookPen,HeartPulse,Users,Wallet,BookOpen,ChefHat,BriefcaseBusiness,Landmark,Map as MapIcon,MessageSquare,History} from 'lucide-react';
+import {FileDown,FolderCheck,FolderGit2,Search,CalendarDays,NotebookPen,HeartPulse,Users,Wallet,BookOpen,ChefHat,BriefcaseBusiness,FileText,Landmark,Map as MapIcon,MessageSquare,History} from 'lucide-react';
 import {ownerModules,verifiedModuleScope,type OwnerModuleLink} from './owner-modules';
 import {supportJSON} from './requirement-support-hooks';
-const icons={'file-handoffs':FileDown,'storage-review':FolderCheck,'development-projects':FolderGit2,search:Search,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
+const icons={'file-handoffs':FileDown,'storage-review':FolderCheck,'development-projects':FolderGit2,search:Search,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,resume:FileText,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
 /** Status composes existing owner capabilities; it grants no write authority. */
 export function useOwnerModules(enabled:boolean,scope:string|null){
  const [value,setValue]=useState<unknown>(null),[path,setPath]=useState('');

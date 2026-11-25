@@ -67,7 +67,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
  const records=[['做饭','/personal/cooking']] as const;
  await readyMenu();
- await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习','项目']);
+ await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习']);
  await assertWorkspaceModule(nav,'日常',planning);
  await nav.getByRole('link',{name:'日程',exact:true}).click();
  await expect(page).toHaveURL(origin+'/personal/schedule');
@@ -115,7 +115,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  const unavailableStatus=page.waitForResponse(response=>response.url()===origin+'/api/platform/personal/status');
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
  await unavailableStatus;await openMenu();
- await expect(switcher.getByRole('button')).toHaveText(['日常','项目']);
+ await expect(switcher.getByRole('button')).toHaveText(['日常']);
  await assertWorkspaceModule(nav,'日常',[['总览'],['待办']]);
  storageAvailable=true;enabled=true;
  for(const width of [1365,390]){

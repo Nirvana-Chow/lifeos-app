@@ -1,59 +1,62 @@
 'use client';
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {workspaceHref} from '../workbench/private-navigation';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
-import {readLifeOSDevelopmentProgress} from './development-project-progress';
-import {verifiedModuleScope} from './owner-modules';
+import type {readLifeOSDevelopmentProgress} from './development-project-progress';
 import {deliveryLabels, formatDeliveryTime} from './requirements-delivery';
 import {Button} from './ui/button';
 import styles from './requirement-progress-card.module.css';
 
-async function readPersonal(path: string, signal: AbortSignal) {
-  const response = await fetch('/api/platform/personal/' + path, {credentials:'same-origin', cache:'no-store', signal});
-  if (!response.ok) throw Error('读取失败。');
-  return response.json();
-}
-
 export function DevelopmentProjects() {
-  return useOwnerPageVerification() === true ? <VerifiedDevelopmentProjects /> : null;
-}
-
-function VerifiedDevelopmentProjects() {
+  const verified = useOwnerPageVerification();
   const [progress, setProgress] = useState<ReturnType<typeof readLifeOSDevelopmentProgress> | null>(null);
   const [loading, setLoading] = useState(true);
+  const request = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    let request: AbortController | undefined;
-    async function refresh() {
-      request?.abort();
-      request = new AbortController();
-      const {signal} = request;
+    const hide = () => {
+      request.current?.abort();
+      request.current = null;
       setProgress(null);
       setLoading(true);
+    };
+    const visibility = () => { if (document.visibilityState === 'hidden') hide(); };
+    window.addEventListener('pagehide', hide);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      request.current?.abort();
+      request.current = null;
+      window.removeEventListener('pagehide', hide);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Initial pageshow can temporarily recheck the privacy boundary. The same
+    // document shares its pending read until it is hidden or leaves the route.
+    if (verified !== true || request.current || document.visibilityState === 'hidden') return;
+    const controller = new AbortController();
+    request.current = controller;
+    const {signal} = controller;
+    async function load() {
       try {
-        const status = await readPersonal('status', signal);
-        const scope = verifiedModuleScope(status);
-        if (!scope || status.requirementsEnabled !== true) return;
-        const snapshot = await readPersonal('requirements/snapshot', signal);
-        const result = readLifeOSDevelopmentProgress(snapshot);
-        const after = await readPersonal('status', signal);
-        if (!signal.aborted && verifiedModuleScope(after) === scope && after.requirementsEnabled === true) {
-          setProgress(result);
-        }
+        const response = await fetch('/api/platform/personal/requirements/development-progress', {
+          credentials:'same-origin', cache:'no-store', signal,
+        });
+        if (!response.ok) return;
+        const result = await response.json() as NonNullable<typeof progress>;
+        if (!signal.aborted) setProgress(result);
       } catch {
-        // Failed and partial reads retain an unavailable state.
+        // Failed reads leave progress unavailable.
       } finally {
         if (!signal.aborted) setLoading(false);
       }
     }
-    void refresh();
-    window.addEventListener('focus', refresh);
-    return () => {
-      request?.abort();
-      window.removeEventListener('focus', refresh);
-    };
-  }, []);
+    queueMicrotask(() => { if (!signal.aborted) void load(); });
+  }, [verified]);
+
+  if (verified !== true) return null;
 
   return <section className={`lo-panel ${styles.card}`} aria-label="LifeOS 网站需求进度">
     <header className="lo-panel-heading">

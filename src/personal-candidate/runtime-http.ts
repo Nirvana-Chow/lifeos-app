@@ -98,7 +98,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    if(supportResponse)return supportResponse;
    const storageReviewResponse=await handleStorageReviewRequest(request,{ownerId:options.config.ownerId,baseURL:options.config.baseURL,service:storageReview,assertOwner,assertWritable:options.assertWritable});
    if(storageReviewResponse)return storageReviewResponse;
-   const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable});
+   const requirementResponse=await handleRequirementsRequest(request,options.config.ownerId,service.requirements,{assertOwner,assertWritable:options.assertWritable,storageVerified:options.storageVerified});
    if(requirementResponse)return requirementResponse;
    if(/^\/api\/platform\/personal\/(media|career|portfolio|cooking)(?:\/|$)/.test(url.pathname)&&!options.storageVerified)throw new PlatformError(503,'PERSONAL_STORAGE_UNAVAILABLE','本人记录存储尚未核验。');
    const response=await handlePersonalRequest(request,options.config.ownerId,options.config.baseURL,service,{assertOwner,assertWritable:options.assertWritable});

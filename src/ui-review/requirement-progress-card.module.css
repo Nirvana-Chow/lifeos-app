@@ -2,6 +2,12 @@
   margin-bottom: 18px;
 }
 
+.dimension {
+  margin: 8px 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
 .counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
