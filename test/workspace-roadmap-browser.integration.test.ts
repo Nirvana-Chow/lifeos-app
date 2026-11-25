@@ -137,7 +137,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   const settings=page.locator('[data-settings-page]');
   const categories=page.getByRole('navigation',{name:'设置分类',exact:true});
   await expect(settings).toBeVisible();
-  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
   await expect(page.getByRole('dialog',{name:'设置',exact:true})).toHaveCount(0);
   await categories.getByRole('button',{name:'标签',exact:true}).click();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
@@ -148,7 +148,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
   await page.keyboard.press('Escape');await expect(settings).toBeVisible();
   await expect(page).toHaveURL(origin+'/personal?page=settings&panel=topics');
   await page.getByRole('button',{name:'后退',exact:true}).click();
-  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=general');
+  await expect(page).toHaveURL(origin+'/personal?page=settings&panel=security');
   await page.getByRole('button',{name:'后退',exact:true}).click();
   await expect(settings).toHaveCount(0);await expect(page).toHaveURL(origin+'/personal?page=areas');
   await nav('设置');await expect(settings).toBeVisible();
