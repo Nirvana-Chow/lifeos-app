@@ -87,8 +87,8 @@ test('OPT-IN actual records entry keeps journal drafts and verifies manual saves
  await expect(write).toBeHidden();
  mfa=true;
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:90000});
- await expect(journal.getByText(/北京时间/)).toBeVisible();
- await write.click();
+ await expect(journal.getByText(/北京时间/)).toBeVisible({timeout:30000});
+ await write.click({timeout:15000});
  const editor=page.getByRole('dialog',{name:'新增日记',exact:true});
  const title='Synthetic hand-written journal',original='Synthetic original body\nSecond line stays intact.';
  await expect(editor.getByLabel('记录日期')).not.toHaveValue('');

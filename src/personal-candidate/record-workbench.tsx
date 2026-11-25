@@ -68,7 +68,64 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  function leave(){const draft=currentDraft();return !busyRef.current&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));}
  useEffect(()=>{if(navigationGuard)navigationGuard.current=leave;return()=>{if(navigationGuard)navigationGuard.current=null;};});
  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dirty||blocked){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty,blocked]);
- async function refresh(){const token=++generation.current;setBusy(true);setError('');try{const next=readStatus(await json('status'));const enabled=recordModuleEnabled(type,next);if(!enabled)throw Error('此模块尚未开放。');const data=await json(type+'/snapshot');if(data.truncated!==false||data.total!==data.items?.length||!Array.isArray(data.items))throw Error('完整记录未读取完成。');const rows=data.items.map((entry:unknown)=>ownerRecord(entry,type,next.spaceId));const references=await json('overview?today='+new Date().toISOString().slice(0,10));const after=readStatus(await json('status'));if(!recordModuleEnabled(type,after))throw Error('此模块尚未开放。');if(token!==generation.current)return;if(keyOf(next)!==keyOf(after)){if(type==='journal'){discardJournalDraft();hide();setError('本人空间已变化，请重新核对。');}return;}if(type==='journal'&&draftCache.current?.scope!==keyOf(after))draftCache.current=null;if(current.current&&keyOf(current.current)!==keyOf(after)){setEditor(null);setHistory([]);setResumeId('');session.current?.invalidateBinding();session.current=null;}current.current=after;setStatus(after);setEntries(rows);if(type==='person')setRelatedJournals(projectRelatedJournals(references,projectPeopleEntries(rows,after.spaceId),after.spaceId));const refs=emptyOptions();for(const entry of references.items??[]){const kind=entry.draft?.personal?.type;if(kind in refs)refs[kind].push(entry);}if(type==='career'||type==='portfolio')refs[type]=rows;setOptions(refs);if(!session.current&&draftCache.current?.scope===keyOf(after)){setEditor(draftCache.current.editor);setHistory(draftCache.current.history);draftCache.current=null;}if(!session.current){const binding={ownerId:after.ownerId,spaceId:after.spaceId};const nextSession=new PersonalMutationSession({binding,storage:localStorage,verifyReadback:true,assertBinding:()=>!!current.current&&keyOf(current.current)===keyOf(binding)});session.current=nextSession;nextSession.subscribe(()=>{if(session.current===nextSession)setMutation(nextSession.getSnapshot());});setMutation(nextSession.getSnapshot());}}catch(e){if(token===generation.current){const retained=draftCache.current;hide();if(type!=='journal')draftCache.current=retained;setError(e instanceof Error?e.message:'读取未完成。');}}finally{if(token===generation.current)setBusy(false);}}
+ async function refresh(){
+  const token=++generation.current;
+  setBusy(true);setError('');
+  try{
+   const next=readStatus(await json('status'));
+   if(!recordModuleEnabled(type,next))throw Error('此模块尚未开放。');
+   const data=await json(type+'/snapshot');
+   if(!Array.isArray(data.items)||data.truncated!==false||data.total!==data.items.length)throw Error('完整记录未读取完成。');
+   const rows=data.items.map((entry:unknown)=>ownerRecord(entry,type,next.spaceId));
+   const references=await json('overview?today='+new Date().toISOString().slice(0,10));
+   const after=readStatus(await json('status'));
+   if(!recordModuleEnabled(type,after))throw Error('此模块尚未开放。');
+   if(token!==generation.current)return;
+   const scope=keyOf(after);
+   if(keyOf(next)!==scope){
+    if(type==='journal'){discardJournalDraft();hide();setError('本人空间已变化，请重新核对。');}
+    return;
+   }
+   if(type==='journal'&&draftCache.current?.scope!==scope)draftCache.current=null;
+   if(current.current&&keyOf(current.current)!==scope){
+    setEditor(null);setHistory([]);setResumeId('');session.current?.invalidateBinding();session.current=null;
+   }
+   current.current=after;setStatus(after);setEntries(rows);
+   if(type==='person')setRelatedJournals(projectRelatedJournals(references,projectPeopleEntries(rows,after.spaceId),after.spaceId));
+   const refs=emptyOptions();
+   for(const entry of references.items??[]){
+    const kind=entry.draft?.personal?.type;
+    if(kind in refs)refs[kind].push(entry);
+   }
+   if(type==='career'||type==='portfolio')refs[type]=rows;
+   setOptions(refs);
+   if(!session.current&&draftCache.current?.scope===scope){
+    setEditor(draftCache.current.editor);setHistory(draftCache.current.history);draftCache.current=null;
+   }
+   if(!session.current){
+    const binding={ownerId:after.ownerId,spaceId:after.spaceId};
+    const nextSession=new PersonalMutationSession({
+     binding,storage:localStorage,verifyReadback:true,
+     onAuthorizationLost:type==='journal'?recheckJournalAuthorization:undefined,
+     assertBinding:()=>!!current.current&&keyOf(current.current)===scope,
+    });
+    session.current=nextSession;
+    nextSession.subscribe(()=>{if(session.current===nextSession)setMutation(nextSession.getSnapshot());});
+    setMutation(nextSession.getSnapshot());
+   }
+  }catch(e){
+   if(token!==generation.current)return;
+   const retained=draftCache.current;
+   hide();
+   if(type!=='journal')draftCache.current=retained;
+   setError(e instanceof Error?e.message:'读取未完成。');
+  }finally{if(token===generation.current)setBusy(false);}
+ }
+ function recheckJournalAuthorization(){
+  hide();
+  setError('本人身份或写入权限须重新核对。');
+  window.dispatchEvent(new Event('focus'));
+ }
  function discardJournalDraft(){draftCache.current=null;editorRef.current=null;setEditor(null);}
  function hide(){
   if(current.current&&editorRef.current)draftCache.current={scope:keyOf(current.current),editor:editorRef.current,history:[]};
@@ -133,12 +190,15 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  }
  async function retry(){
   const active=session.current,pending=mutation?.pending,token=generation.current;
-  if(!active||!pending||status?.writable!==true||verified===false||busy||!status.allowedTypes.includes(pending.type))return;
-  await active.retry(type==='journal');
+  if(!active||!pending||!mayRetry(pending.type))return;
+  await active.retry(pending.type==='journal');
   if(active!==session.current||token!==generation.current||active.getSnapshot().phase!=='saved')return;
   discardJournalDraft();setHistory([]);setNotice('上次的'+recordLabels[pending.type]+'已保存');
   if(pending.type==='journal')onJournalSaved?.();
   await refresh();
+ }
+ function mayRetry(pendingType:PersonalType){
+  return status?.writable===true&&verified!==false&&!busy&&(pendingType!=='journal'||status.allowedTypes.includes('journal'));
  }
  const sectionEntries=useMemo(()=>careerSection?entries.filter(entry=>{
   const record=recordFields(entry,'career').personal;
@@ -192,11 +252,11 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    create();
   }}>新增人物</Button></details>:<Button disabled={!status?.writable||blocked||(type==='media'&&(mediaKind==='music'||mediaKind==='photography'))} onClick={()=>create()}>新增{title}</Button>}</div>;
  const recovery=mutation?.phase==='uncertain'&&<div className={s.recovery}>
-  {mutation.pending?<Button type="button" variant="outline" disabled={busy||status?.writable!==true||!status.allowedTypes.includes(mutation.pending.type)}
+  {mutation.pending?<Button type="button" variant="outline" disabled={!mayRetry(mutation.pending.type)}
    onClick={()=>void retry()}>继续上次保存（{recordLabels[mutation.pending.type]}）</Button>:<p>保留的请求无法核对，请保留当前页面。</p>}
  </div>;
  const feedback=<>
-  {error&&<p role="alert" className={s.error}>{error}</p>}{notice&&<p role="status" data-record-notice>{notice}</p>}
+  {error&&!(type==='journal'&&editor)&&<p role="alert" className={s.error}>{error}</p>}{notice&&<p role="status" data-record-notice>{notice}</p>}
   {!(type==='journal'&&editor)&&<>{mutation?.error&&<p role="alert">{mutation.error}</p>}{recovery}</>}
  </>;
  const records=<>
@@ -221,6 +281,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   {type==='journal'&&<div className={s.relations}><RelationFields value={links} options={options} onChange={next=>setFields({...fields,personal:{type:'journal',links:{...next,people:links.people}} as JournalPersonal})}/>{peoplePins(links.people)}</div>}
   <div className={s.actions}><Button type="button" variant="outline" onClick={()=>{if(leave())setEditor(null);}}>取消</Button><Button type="submit">保存</Button></div></fieldset></form>}
   {type==='journal'&&<>
+   {error&&<p role="alert" className={s.error}>{error}</p>}
    {mutation?.error&&<p role="alert">{mutation.error}</p>}
    {mutation?.phase==='saving'&&<div className={s.recovery}><p role="status">正在等候保存回执。</p><Button type="button" variant="outline" onClick={()=>session.current?.cancel()}>停止等待并保留原请求</Button></div>}
    {recovery}
