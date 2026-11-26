@@ -130,3 +130,24 @@ RUN_REUI_ALERT_BROWSER_TESTS=1 LIFEOS_TEST_CHROMIUM_PATH=/usr/bin/chromium \
 - 需求池合成用户从相同入口运行改前与改后测试，覆盖 1365px 和 390px、详情编辑、独立读回、空结果、失败和不完整快照。两组同尺寸截图像素差均为 0。
 - 候选需求多视图合成浏览器测试 30 项通过，含 1920px、1365px、390px 的浅色和深色以及 390×400。文件交接和原密钥页合成浏览器测试在 390px 通过，涵盖文件校验、权限、键盘和恢复。
 - 验证范围是共享控件候选及其受测消费者。其他业务入口的浏览器覆盖、生产版本回读和本人验收仍在各自交付阶段。
+
+## 单一评审候选
+
+对照从共同基线 `c304d733df8e8640fa5b3de71923c99f5d37f213` 出发。内容来自 [#228](https://github.com/Nirvana-Chow/lifeos-app/pull/228) 的 `1470e0c8dd0282c2aa434faf0101c4812963f2b3)、[#229](https://github.com/Nirvana-Chow/lifeos-app/pull/229) 的 `b25ff435ad211f158c7625a5f974109a168f8c07)、[#230](https://github.com/Nirvana-Chow/lifeos-app/pull/230) 的 `6e1339922913da745da8f12c5b7c1bb5e4db4724`。保留一份 `src/business-reui/frame.tsx` 和一份 `src/ui-review/reui/alert.tsx`，两者逐字等于固定候选。#229 的最终补充只调整通知文字，组合时已保留同等归属。九条上游路径、九条落地路径及 SHA-256 已独立核对，使用同一份 MIT 全文。合成阶段补上了待办网格源测试对 Badge 的渲染占位映射，原行为断言继续运行。
+
+远端 `main` 的 `1cba0e7b18d0abd977b71cde162f27691126999d` 含 #222 的文章、词汇学习、文件索引和项目报告变更。该合并提交及其功能不属于 ReUI 评审基线。公开请求未能独立返回正式运行提交，因而这份对照只证明所列源码和合成浏览器呈现。#219、#225、#227 均留在各自评审范围。
+
+### 覆盖盘点
+
+| 状态 | 入口与控件 |
+| --- | --- |
+| 已改 | 总览三栏采用共同 Frame，日程与随手记不可用提示采用 Alert，已有 Apple 日历状态使用 Badge。待办网格状态、看板列计数、记录保存回执和媒体状态使用共同 Badge。做饭、履历、财务、健康动作库、媒体、人物和开发项目的分组采用共同 Frame。 |
+| 本就适用 | 待办、记录以及日程、财务等有直接 ReUI Data Grid 引用的入口仍沿用既有实现和编辑合同。既有 ReUI Kanban 继续负责拖放。Button、Input、Dialog 和 Card 仍按实际来源记为共享 shadcn/Radix。 |
+| 官方无直接等价 | 财务资金流、总览与训练图表、领域关系图以及原生文件选择、独立存储审查文档和身份流程自带业务语义，沿用各自现有实现。 |
+| 仍待逐入口验收 | 共享设置和导航目前保有原路由与控件。搜索、日程和账户等仍有其他原生控件和候选调用点。尚未对文章、学习、文件索引、项目报告以及每个模块的所有状态做 ReUI 覆盖复验。 |
+
+下一项建议选固定官方 [DataGridColumnVisibility](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/reui/data-grid/data-grid-column-visibility.tsx)，让 390px 待办的列显示选择在现有列设置内以键盘可操作的菜单展开。沿用当前 TanStack 可见性状态、工作区隔离和本地保存，保留标题列与完成列、列顺序、恢复默认和编辑期间禁用。这项选择留在后续评审。
+
+合成浏览器从实际 `/personal` 和 `/personal/cooking` 入口渲染。前后使用同一份合成待办、随手记、日程和菜谱数据。1365px 与 390px 均留存原生 PNG，日程与随手记来源不可用状态也留存同宽对照。总览变化集中在分组边框、间距、徽标和原状态提示的呈现。手机总览的双层边框在截图中可见，做饭页的主要交互可见位置保持接近。
+
+组合候选通过 47 项定向 Node 测试、完整 webpack 生产构建和编译产物检查（Build ID `W-Epz83LlXUj74qo-yDqK`）。看板完整交互仍待验证，#230 的既有夹具记录了候选与原基线相同的列数预期差异。

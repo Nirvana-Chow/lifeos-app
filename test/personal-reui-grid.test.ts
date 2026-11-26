@@ -35,6 +35,7 @@ function harness(storage = new Map<string,string>()) {
     './reui/data-grid-table-virtual': { DataGridTableVirtual: 'virtual' },
     './reui/data-grid-cell-selection': { DataGridCellSelection: 'selection' },
     './ui/button': { Button: 'button' },
+    './ui/badge': { Badge: 'badge' },
     '../personal-candidate/editor': { clonePersonalJSON },
     '../personal-candidate/task-editor-state': { taskStatusLabels },
     '../personal-candidate/project-detail-href': { projectDetailHref },
