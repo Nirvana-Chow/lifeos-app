@@ -29,9 +29,7 @@
 
 .pickPanel {
   padding: clamp(12px, 3vw, 24px);
-  border: 1px solid var(--border);
-  border-radius: var(--lo-radius-surface);
-  background: var(--muted);
+  overflow: visible;
 }
 
 .sectionHead,

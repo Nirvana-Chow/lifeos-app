@@ -5,6 +5,25 @@
   "licenseSourceSha256": "09592ffefa6512b68dd7aa9031bc50d5d39cfcc9da08288f5eb1f9d236baca66",
   "files": [
     {
+      "source": "registry-reui/bases/radix/reui/alert.tsx",
+      "sourceSha256": "feebd86218ef90c8a6d98056ba52db7529859a20fe79ff3e9c179c1794f9148c",
+      "target": "src/ui-review/reui/alert.tsx",
+      "adaptations": [
+        "Use the shared class-merging helper and existing LifeOS surface, border, danger and radius tokens. Expose the default and destructive variants.",
+        "Leave role, live-region attributes, focus and dismissal with the caller. Keep the original title, description and action composition, with wrapping for narrow screens."
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/badge.tsx",
+      "sourceSha256": "0426324c5fc92f6885988e32796395747b1baad955ae09f8f1e7ca8bc2e86237",
+      "target": "src/ui-review/reui/badge.tsx",
+      "adaptations": [
+        "Use the existing class-merging helper and locked Radix Slot and class-variance-authority dependencies.",
+        "Preserve the existing LifeOS Badge variants, wrapping, focus styles, data-variant and shared theme rules. Omit upstream size, radius and color variants that require registry styles or tokens LifeOS does not use.",
+        "Retain the original shared import path through src/ui-review/ui/badge.tsx. Compatibility classes derive from the previously vendored shadcn/ui Badge and retain its MIT attribution."
+      ]
+    },
+    {
       "source": "registry-reui/bases/radix/reui/data-grid/data-grid.tsx",
       "sourceSha256": "718d349e005537ee45a65826d6768deedc4479f9f5b9b9afa7e8052509de9be4",
       "target": "src/ui-review/reui/data-grid.tsx",
@@ -61,6 +80,16 @@
       "adaptations": [
         "Attribution header and local cn import only. Native mouse/touch/keyboard sensors, cancel and commit hooks are retained.",
         "Consumer restores authoritative status after drag; native commit is never treated as a persistence receipt. Exact MIT @dnd-kit/core 6.3.1, sortable 10.0.0, utilities 3.2.2."
+      ]
+    },
+    {
+      "source": "registry-reui/bases/radix/reui/frame.tsx",
+      "sourceSha256": "a3dfa1188eadfea05acf19ab223a302fdb5b4d2577e7f696600f755769d2cdfc",
+      "target": "src/business-reui/frame.tsx",
+      "adaptations": [
+        "Local attribution and existing cn helper.",
+        "Use existing LifeOS semantic color and surface-radius tokens in place of ReUI registry presets.",
+        "Use the existing Radix Slot for asChild on Frame to retain native sections, articles and list items."
       ]
     }
   ]
