@@ -17,7 +17,7 @@ export type Requirement = {
  status: 'not_started' | 'in_progress' | 'awaiting_acceptance' | 'accepted';
  delivery: 'current' | 'backlog'; sourceRefs: string[]; acceptanceCriteria: string[];
  evidence: {scope: string; ref: string; resultHref?: string; verificationHref?: string; at?: string}[]; blockedBy: string[];
- acceptance?: {by: 'user'; baselineVersion: string; ref: string};
+ acceptance?: {by: 'user'; baselineVersion: string; ref: string; at?: string};
  roadmap?: RequirementRoadmap;
 };
 export type RequirementBaseline = {

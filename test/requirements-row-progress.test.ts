@@ -22,8 +22,8 @@ function fixture(state?: NonNullable<RequirementItem['fields']['workflow']>['sta
 }
 
 function progress(row: RequirementItem) {
- const delivery=requirementDelivery(row.requirement,row.fields.workflow,row.fields.body);
- return {...requirementRowProgress(row,delivery,observedAt),complete:requirementIsComplete(row.requirement,delivery)};
+ const delivery=requirementDelivery(row.requirement,row.fields.workflow,row.fields.body,observedAt);
+ return {...requirementRowProgress(row,delivery,observedAt),complete:requirementIsComplete(row.requirement,delivery,observedAt)};
 }
 
 test('registered work, review and blocked states do not imply worker activity or delivery',()=>{
@@ -46,6 +46,23 @@ test('merge and verified delivery supply the result while existing owner accepta
  row.requirement.status='accepted';
  row.requirement.acceptance={by:'user',baselineVersion:'fixture',ref:'synthetic-owner-review'};
  assert.equal(progress(row).state,'已完成');
+ assert.equal(progress(row).complete,true);
+});
+
+test('future delivery and personal acceptance receipts cannot advance the observed snapshot',()=>{
+ const row=fixture('done');
+ const future='2026-11-26T08:00:01Z';
+ row.requirement.status='accepted';
+ row.requirement.acceptance={by:'user',baselineVersion:'fixture',ref:'synthetic-owner-review'};
+ row.requirement.evidence=[{...merged,at:future},{...live,at:future}];
+ assert.deepEqual(progress(row),{state:'待核实上线',latest:undefined,complete:false});
+ row.requirement.evidence=[merged,{...live,at:future}];
+ assert.deepEqual(progress(row),{state:'待上线',latest:{label:'查看合并结果',href:commit,at:mergedAt},complete:false});
+ row.requirement.evidence=[merged,live];
+ row.requirement.acceptance.at=future;
+ assert.equal(progress(row).state,'已上线，待验收');
+ assert.equal(progress(row).complete,false);
+ row.requirement.acceptance.at=observedAt;
  assert.equal(progress(row).complete,true);
 });
 

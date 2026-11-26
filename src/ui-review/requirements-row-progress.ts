@@ -7,9 +7,9 @@ type ProgressEvidence = {label: string; at?: string; href?: string};
 export function requirementRowProgress(row: RequirementItem, delivery: RequirementDelivery | undefined, observedAt: string) {
  const {requirement:item} = row;
  const workflow = row.baselineConflict ? undefined : row.fields.workflow?.state;
- const engineering = requirementDelivery(item);
+ const engineering = requirementDelivery(item,undefined,undefined,observedAt);
  let state = '推进未记录';
- if (requirementIsComplete(item, delivery)) state = '已完成';
+ if (requirementIsComplete(item, delivery, observedAt)) state = '已完成';
  else if (workflow === 'blocked') state = '有阻塞';
  else if (engineering.state === 'live') state = '已上线，待验收';
  else if (engineering.state === 'merged') state = '待上线';
@@ -22,7 +22,7 @@ export function requirementRowProgress(row: RequirementItem, delivery: Requireme
  else if (engineering.state === 'not_implemented') state = '待开发';
 
  const through = Date.parse(observedAt);
- const proofTime = engineering.time && Date.parse(engineering.time.at) <= through ? engineering.time : undefined;
+ const proofTime = engineering.time;
  const followUp = row.sourceId && row.revision > 0 && !row.baselineConflict
   ? savedProgressEntries(row.fields.body).find(entry => Date.parse(entry.at) <= through)
   : undefined;

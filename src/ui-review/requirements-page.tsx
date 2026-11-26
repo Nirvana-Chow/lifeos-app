@@ -9,6 +9,7 @@ import {requirementDepartureAllowed} from '../requirements-candidate/navigation'
 import type {RequirementFields} from '../requirements-candidate/domain';
 import type {RequirementItem,RequirementsSnapshot} from '../requirements-candidate/service';
 import {deliveryLabels,formatDeliveryTime,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
+import {savedProgressEntries} from './requirements-progress';
 import {requirementRowProgress} from './requirements-row-progress';
 import {Button} from './ui/button';
 import styles from './requirements-page.module.css';
@@ -31,6 +32,9 @@ function updateVerifiedSnapshot(snapshot:RequirementsSnapshot|null,entry:Require
     (previous.sourceId!==null&&previous.sourceId!==entry.sourceId))return null;
  const a=previous.baselineBinding,b=entry.baselineBinding;
  if((a===null)!==(b===null)||a&&b&&(a.baselineVersion!==b.baselineVersion||a.itemVersion!==b.itemVersion||a.digest!==b.digest))return null;
+ // A one-row read cannot move the time boundary for the rest of the pool.
+ const latestFollowUp=savedProgressEntries(entry.fields.body)[0];
+ if(latestFollowUp&&!(Date.parse(latestFollowUp.at)<=Date.parse(snapshot.observedAt)))return null;
  return {...snapshot,items:snapshot.items.map(item=>item.id===entry.id?entry:item)};
 }
 
@@ -123,20 +127,21 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:pool?pool.items.map(item=>item.requirement):publicOnly?baseline.requirements:[]}),[displayed,pool,publicOnly]);
  const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
  const workflow=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields.workflow])??[]),[pool]);
- const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id),planning.get(item.id)?.body)])),[visible,workflow,planning]);
+ const observedAt=pool?(pool.observedAt??''):undefined;
+ const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id),planning.get(item.id)?.body,observedAt)])),[visible,workflow,planning,observedAt]);
  const summary=useMemo(()=>{
   if(!pool)return null;
   const completed:RequirementItem[]=[],pending:RequirementItem[]=[];
   for(const item of pool.items){
-   const complete=requirementIsComplete(item.requirement,delivery.get(item.id));
+   const complete=requirementIsComplete(item.requirement,delivery.get(item.id),observedAt);
    (complete?completed:pending).push(item);
   }
-  return {all:pool.items,completed,pending,observedAt:pool.observedAt};
- },[pool,delivery]);
+  return {all:pool.items,completed,pending,observedAt:observedAt??''};
+ },[pool,delivery,observedAt]);
  const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>{
   const evidence=delivery.get(item.id);
-  return requirementIsComplete(item,evidence)===(range==='completed')&&(progressFilter==='all'||evidence?.state===progressFilter);
- }),[visible,filters,range,progressFilter,delivery]);
+  return requirementIsComplete(item,evidence,observedAt)===(range==='completed')&&(progressFilter==='all'||evidence?.state===progressFilter);
+ }),[visible,filters,range,progressFilter,delivery,observedAt]);
  const open=useCallback((item:Requirement,trigger:HTMLButtonElement)=>{
   if(!mayDepart())return;dirty.current=false;opener.current=trigger;setExpanded(false);setSelected(item);setCreating(false);setEditorItem(null);
   const epoch=++detailGeneration.current;
@@ -205,6 +210,7 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
     </Button>)}
    </div>}
    <div className={styles.summaryActions}>{toggleManagement}</div>
+   {summary?.all.length?<p className={styles.summaryActivityNote}>执行活动未核实</p>:null}
   </div>}
   {availability||mutation.error?<p className={styles.notice} role="status">{availability||mutation.error}</p>:null}
   {!showManagement&&availability===readError&&<div className={styles.summaryActions}><Button type="button" variant="outline" onClick={()=>{void reload();}}>刷新需求</Button></div>}
@@ -216,7 +222,7 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
      const {state,latest}=requirementRowProgress(row,delivery.get(item.id),summary.observedAt);
      return <li key={item.id}>
       <Button type="button" variant="ghost" onClick={event=>open(item,event.currentTarget)}>{item.title}</Button>
-      <p className={styles.summaryRowState}><strong>{state}</strong><span>执行活动未核实</span></p>
+      <p className={styles.summaryRowState}><strong>{state}</strong></p>
       <p className={styles.summaryRowEvidence}>最近进展：
        {latest?.href?<a href={latest.href} target="_blank" rel="noreferrer">{latest.label}</a>:latest?.label??'暂无可核实的跟进'}
        {latest?.at&&<time dateTime={latest.at} title="北京时间">{formatDeliveryTime(latest.at)}</time>}
@@ -227,6 +233,6 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    </div>}
   </div>
  </section>}
-  <RequirementDetail concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={selected?delivery.get(selected.id):undefined} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;closeDetail();}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
+  <RequirementDetail observedAt={observedAt} concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={selected?delivery.get(selected.id):undefined} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;closeDetail();}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
  </>;
 }
