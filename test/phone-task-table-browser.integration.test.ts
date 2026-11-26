@@ -5,15 +5,22 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
 import {chromium,devices,expect,type Browser,type BrowserServer} from '@playwright/test';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {MemoryPort} from './helpers/platform.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
 test('OPT-IN phone task table reads long titles, status and due date and edits without native clone',{
  skip:process.env.RUN_PHONE_TASK_TABLE_BROWSER_TESTS!=='1'&&'Requires an isolated Next fixture and native Chromium',timeout:180_000,
 },async()=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-phone-task-table-'));
+ const owner={id:'synthetic-expand-owner',email:'phone-task@example.invalid'};
+ const sessionCookie='lifeos-phone-task-fixture';
+ const hasSession=(headers:Headers)=>headers.get('cookie')?.split(';').some(part=>part.trim()===sessionCookie+'=owner')===true;
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browserServer:BrowserServer|undefined,browser:Browser|undefined;
  try{
   await mkdir(join(root,'app/personal'),{recursive:true});
+  await mkdir(join(root,'app/login'),{recursive:true});
+  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>合成登录</h1>}');
   await Promise.all([
    cp(join(source,'src'),join(root,'src'),{recursive:true}),
    ...['layout.tsx','globals.css','theme.css','personal/page.tsx','personal/layout.tsx','personal/error.tsx'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
@@ -22,7 +29,8 @@ test('OPT-IN phone task table reads long titles, status and due date and edits w
   ]);
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),`
-export const readPlatformPagePrincipal=async()=>({id:'synthetic-expand-owner'});
+export const readPlatformPagePrincipal=async(headers:Headers)=>
+ headers.get('cookie')?.split(';').some(part=>part.trim()==='${sessionCookie}=owner')?{userId:'${owner.id}'}:null;
 export const readPlatformPasswordCapability=async()=>false;
 export const readPlatformLoginCapability=async()=>({sessionDuration:false});
 `);
@@ -43,16 +51,24 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});
   browserProcess=trackAuthThemeProcess(browserServer.process());
   browser=await chromium.connect(browserServer.wsEndpoint());
+  const platformStatus='/api/platform/status';
   const title='合成长中文待办：整理周末项目资料、核对全部待处理内容并写下下一步安排';
-  const id='11111111-1111-4111-8111-111111111111',spaceId='synthetic-expand-space',ownerId='synthetic-expand-owner';
+  const id='11111111-1111-4111-8111-111111111111',spaceId='synthetic-expand-space',ownerId=owner.id;
+  const handlePlatform=createPersonalPlatformHandler({
+   config:{ownerId,ownerEmail:owner.email,spaceId,baseURL:origin,databaseName:'lifeos_platform_test_local',
+    allowedTypes:['todo'],approval:'personal-manual-v1',transport:'ssh-loopback'},
+   repository:new MemoryPort(),storageVerified:true,assertWritable:async()=>{},
+   sessions:{read:async headers=>hasSession(headers)?{userId:ownerId,email:owner.email}:null},
+  });
   const at='2030-11-01T00:00:00Z';
   const initial={title,notes:'合成原备注',dueOn:'2030-11-03',status:'in_progress',plannedStartOn:'2030-11-01',plannedEndOn:'2030-11-02'};
   const geometry:unknown[]=[];
   const failures:unknown[]=[];
   for(const width of [390,430,1365]){
    const page=await browser.newPage(width===1365?{viewport:{width,height:900}}:{...devices['iPhone 13'],viewport:{width,height:844}});
+   await page.context().addCookies([{name:sessionCookie,value:'owner',url:origin,httpOnly:true,sameSite:'Lax',expires:Date.now()/1000+600}]);
    const errors:string[]=[],writes:unknown[]=[],readbacks:number[]=[];
-   let snapshotReads=0;
+   let snapshotReads=0,legacyStatusMissing=false;
    page.on('pageerror',error=>{errors.push(error.stack??error.message);console.log('PHONE_TASK_PAGE_ERROR '+(error.stack??error.message));});
    if(process.env.PHONE_TASK_TABLE_NO_CLONE==='1'){
     await page.addInitScript(()=>Object.defineProperty(window,'structuredClone',{configurable:true,value:undefined}));
@@ -63,6 +79,16 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
     if(url.origin!==origin)return route.abort();
     if(!path.startsWith('/api/'))return route.continue();
+    const headers=new Headers(await request.allHeaders());
+    if(path===platformStatus||path==='/api/platform/personal/status'){
+     if(path===platformStatus&&legacyStatusMissing)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
+     headers.set('host',url.host);
+     const response=await handlePlatform(new Request(url,{method:request.method(),headers}));
+     return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+    }
+    if(path.startsWith('/api/platform/personal/')&&!hasSession(headers)){
+     return route.fulfill({status:401,json:{error:{code:'LOGIN_REQUIRED'}}});
+    }
     if(path.endsWith('/personal/todo/'+id)){
      if(request.method()==='PATCH'){
       const body=request.postDataJSON();
@@ -83,7 +109,6 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
      snapshotReads++;
      return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:1,items:[task],today,observedAt:at,access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}}});
     }
-    if(path.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
     return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
    });
    await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:60000});
@@ -207,16 +232,53 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     await filter.fill('合成不存在');await expect(grid.getByText('没有符合条件的待办')).toBeVisible();
     await filter.fill('合成长中文');await expect(row).toBeVisible();
     if(width===390){
-     const toDesktop=page.getByRole('button',{name:'切换到桌面版'});
-     await toDesktop.click();
-     await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
-     await expect(filter).toHaveValue('合成长中文');
-     await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('table-row');
-     await page.reload({waitUntil:'domcontentloaded'});
-     await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
-     await expect(grid).toBeVisible();
-     await page.getByRole('button',{name:'切换到手机版'}).click();
-     await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('grid');
+    const toDesktop=page.getByRole('button',{name:'切换到桌面版'});
+    await toDesktop.click();
+    await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
+    await expect(filter).toHaveValue('合成长中文');
+    await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('table-row');
+    await page.reload({waitUntil:'domcontentloaded'});
+    await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
+    await expect(grid).toBeVisible();
+    await page.getByRole('button',{name:'切换到手机版'}).click();
+    await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('grid');
+
+    // The native pageshow can precede hydration. Drive the same registered
+    // listener explicitly so the recheck is exercised on every test run.
+    const statuses:number[]=[];
+    const recheck=async(status:number,trigger:()=>Promise<unknown>)=>{
+     const [response]=await Promise.all([
+      page.waitForResponse(value=>value.url()===origin+platformStatus&&value.request().method()==='GET'),
+      trigger(),
+     ]);
+     assert.equal(response.status(),status);
+     statuses.push(response.status());
+    };
+    const pageshow=()=>page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow')));
+    await recheck(200,pageshow);
+    await expect(grid).toBeVisible();
+    await expect(grid.getByText(task.draft.title,{exact:true})).toBeVisible();
+
+    legacyStatusMissing=true;
+    await recheck(404,pageshow);
+    await expect(page.getByText('暂时无法核对登录状态。私人页面已隐藏。',{exact:true})).toBeVisible();
+    await expect(grid).toBeHidden();
+    await expect(page.getByText(task.draft.title,{exact:true})).toBeHidden();
+    await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','mobile');
+
+    legacyStatusMissing=false;
+    await recheck(200,()=>page.getByRole('button',{name:'重新核对',exact:true}).click());
+    await expect(grid.getByText(task.draft.title,{exact:true})).toBeVisible();
+
+    await page.context().clearCookies({name:sessionCookie});
+    await recheck(401,pageshow);
+    await expect(page).toHaveURL(origin+'/login');
+    await expect(page.getByRole('heading',{name:'合成登录',exact:true})).toBeVisible();
+    await expect(grid).toHaveCount(0);
+    await expect(page.getByText(task.draft.title,{exact:true})).toHaveCount(0);
+    assert.equal(task.revision,4);
+    assert.equal(writes.length,3,'Rechecks must not write or replay a task');
+    console.log('PHONE_TASK_SESSION_RECHECK '+JSON.stringify({width,statuses,revision:task.revision,writes:writes.length}));
     }
    }
    await page.close();
