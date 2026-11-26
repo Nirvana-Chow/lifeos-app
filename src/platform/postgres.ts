@@ -1,3 +1,4 @@
+import {queryRecentMemos} from '../personal-journal/recent-memos-postgres.ts';
 import {assertPostgresExecutionLease} from '../requirement-events/transaction.ts';
 import {projectPostgresExecution,admitPostgresExecution} from '../requirement-events/admission-postgres.ts';
 import {readExecutionCommand} from '../requirement-events/command-postgres.ts';
@@ -85,6 +86,7 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   },true);
  }
  async readCurrentSnapshot(owner:string):Promise<StoredEntry[]>{return this.scoped(owner,async c=>(await c.query(select+' WHERE r.owner_id=$1 ORDER BY r.id LIMIT 10001',[owner])).rows.map(decode),true);}
+ async readRecentMemos(owner:string,space:string,canReadTopics:boolean){return this.scoped(owner,client=>queryRecentMemos(client,owner,space,canReadTopics),true);}
  async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly TaskWorkspaceType[]):Promise<StoredEntry[]>{
   return this.scoped(owner,async client=>(await client.query(select+`
    WHERE r.owner_id=$1 AND s.original->>'spaceId'=$2 AND s.original->>'type'=ANY($3::text[])
