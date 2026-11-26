@@ -1,6 +1,6 @@
 import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {normalizeAgentScopes,agentScopes} from './scopes.ts';
-import {requiresExplicitArticlePermission,type OperationScope} from './personal-operation-registry.ts';
+import {requiresExplicitArticlePermission,requiresExplicitLearningPermission,type OperationScope} from './personal-operation-registry.ts';
 import {decodeAgentPermissions} from './scopes.ts';
 import {filePermissionSchema,type FilePermission} from '../file-handoff/permission-contracts.ts';
 
@@ -21,7 +21,7 @@ export function policyOperationScopes(operation:PolicyOperation):readonly string
 }
 /** Grant authorization closes legacy todo writes to read+write without changing advertisements or SQL operation claims. */
 export function policyAuthorizationScopes(operation:PolicyOperation):readonly string[]|null {
- if(requiresExplicitArticlePermission(operation.id,operation.requiredScopes))return null;
+ if(requiresExplicitArticlePermission(operation.id,operation.requiredScopes)||requiresExplicitLearningPermission(operation.id,operation.requiredScopes))return null;
  const scopes=policyOperationScopes(operation);
  return scopes?.length===1&&scopes[0]==='todo:write'?['todo:read','todo:write']:scopes;
 }
@@ -44,6 +44,11 @@ export function resolveBusinessPolicyGrant(row:PolicyGrantRow,options:PolicyReso
 
 /** New effective scopes can only originate from reviewed, explicitly allowed server operations. */
 export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[];oauthFence?:unknown;fileHandoff?:FilePermission}):readonly OperationScope[]{
+ if(grant.scopes.some(scope=>scope.startsWith('learning:'))){
+  if(grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff||grant.allowedOperationIds||
+     grant.scopes[0]!=='learning:read'||(grant.scopes.length!==1&&(grant.scopes.length!==2||grant.scopes[1]!=='learning:write')))throw Error('Invalid learning grant');
+  return Object.freeze([...grant.scopes]) as readonly OperationScope[];
+ }
  if(grant.scopes.some(scope=>scope.startsWith('article:'))){
   if(grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff||
      grant.scopes[0]!=='article:read'||(grant.scopes.length!==1&&(grant.scopes.length!==2||grant.scopes[1]!=='article:write')))throw Error('Invalid article grant');

@@ -80,7 +80,7 @@ export class PostgresLearningRepository implements LearningRepository {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
         [JSON.stringify(['lifeos-learning-v1',...args])]);
       await this.writeFence?.(client,binding);
-      return run({
+      const result = await run({
         ...this.reader(client,args),
         receipt: async key => {
           const row = (await client.query(`SELECT digest,card_id,review_id FROM lifeos_platform.learning_command
@@ -109,6 +109,8 @@ export class PostgresLearningRepository implements LearningRepository {
           [...args,key,digest,receipt.cardId,receipt.kind === 'review' ? receipt.id : null]);
         },
       });
+      await this.writeFence?.(client,binding);
+      return result;
     });
   }
 

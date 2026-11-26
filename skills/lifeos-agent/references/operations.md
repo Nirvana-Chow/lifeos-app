@@ -61,6 +61,11 @@ Read [the credential-runtime guide](credential-runtime.md) for server MCP versus
 | `snapshotFeedback` | `GET` | `/v1/feedback/snapshot` | `feedback:read` | Read the complete owner feedback snapshot with explicit source channels and revisions. |
 | `getFeedback` | `GET` | `/v1/feedback/{id}` | `feedback:read` | Read one owner feedback record to verify the result and its revision. |
 | `createFeedback` | `POST` | `/v1/feedback` | `feedback:read, feedback:write` | Create feedback with the server-owned agent-feedback channel and an idempotency key; this does not approve or convert a requirement. |
+| `snapshotLearningCards` | `GET` | `/v1/learning/cards` | `learning:read` | List current vocabulary cards with durable review history and due times. |
+| `getLearningCard` | `GET` | `/v1/learning/cards/{id}` | `learning:read` | Read one vocabulary card and its latest verified review projection. |
+| `getLearningReview` | `GET` | `/v1/learning/cards/{id}/reviews/{reviewId}` | `learning:read` | Read an exact independent review event and its card projection. |
+| `createLearningCard` | `POST` | `/v1/learning/cards` | `learning:read, learning:write` | Create one explicitly confirmed vocabulary card using an idempotency key. |
+| `appendLearningReview` | `POST` | `/v1/learning/cards/{id}/reviews` | `learning:read, learning:write` | Append one explicitly confirmed rating against the current revision and previous event; retain the original request and key for retry. |
 | `snapshotStorageReviews` | `GET` | `/v1/storage-reviews/snapshot` | `storage-review:read` | Read the complete owner storage-review singleton (zero or one) with checklist, decisions, source identity and revision. No filesystem access. |
 | `getStorageReview` | `GET` | `/v1/storage-reviews/{id}` | `storage-review:read` | Read the exact storage-review record ID returned by the snapshot or receipt, including all saved owner decisions. |
 | `createStorageReview` | `POST` | `/v1/storage-reviews` | `storage-review:read, storage-review:write` | Upload an explicitly supplied private checklist once through the reviewed writer using fields.checklist and an idempotency key. No scan or file action. |

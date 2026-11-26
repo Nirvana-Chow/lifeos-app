@@ -2,7 +2,7 @@ import type {AgentScope} from './scopes.ts';
 
 export const personalRecordTypes=['journal','calendar','health','person','finance','media','career','portfolio','cooking','article'] as const;
 export type AgentRecordType=typeof personalRecordTypes[number];
-export type BusinessScope=`${AgentRecordType|'feedback'|'storage-review'|'file-handoff'}:${'read'|'write'}`;
+export type BusinessScope=`${AgentRecordType|'feedback'|'storage-review'|'file-handoff'|'learning'}:${'read'|'write'}`;
 export type OperationScope=AgentScope|BusinessScope;
 const title=(type:string)=>type[0].toUpperCase()+type.slice(1);
 /** Only reviewed server code supplies these IDs, scopes and paths. */
@@ -23,3 +23,16 @@ export const feedbackOperations=[
  {id:'getFeedback',method:'GET',path:'/v1/feedback/{id}',module:'feedback',policyClass:'personal-business-data',mcpExposure:'business-json' as const,requiredScopes:['feedback:read'] as readonly OperationScope[],description:'Read one owner feedback record to verify the result and its revision.'},
  {id:'createFeedback',method:'POST',path:'/v1/feedback',module:'feedback',policyClass:'personal-business-data',mcpExposure:'business-json' as const,requiredScopes:['feedback:read','feedback:write'] as readonly OperationScope[],description:'Create feedback with the server-owned agent-feedback channel and an idempotency key; this does not approve or convert a requirement.'},
 ] as const;
+
+export const learningOperations=[
+ {id:'snapshotLearningCards',method:'GET',path:'/v1/learning/cards',description:'List current vocabulary cards with durable review history and due times.',requiredScopes:['learning:read']},
+ {id:'getLearningCard',method:'GET',path:'/v1/learning/cards/{id}',description:'Read one vocabulary card and its latest verified review projection.',requiredScopes:['learning:read']},
+ {id:'getLearningReview',method:'GET',path:'/v1/learning/cards/{id}/reviews/{reviewId}',description:'Read an exact independent review event and its card projection.',requiredScopes:['learning:read']},
+ {id:'createLearningCard',method:'POST',path:'/v1/learning/cards',description:'Create one explicitly confirmed vocabulary card using an idempotency key.',requiredScopes:['learning:read','learning:write']},
+ {id:'appendLearningReview',method:'POST',path:'/v1/learning/cards/{id}/reviews',description:'Append one explicitly confirmed rating against the current revision and previous event; retain the original request and key for retry.',requiredScopes:['learning:read','learning:write']},
+].map(op=>({...op,requiredScopes:op.requiredScopes as readonly OperationScope[],module:'learning' as const,
+ policyClass:'personal-business-data',mcpExposure:'native' as const}));
+
+export function requiresExplicitLearningPermission(id:string|undefined,scopes:readonly string[]):boolean{
+ return scopes.some(scope=>scope.startsWith('learning:'))||learningOperations.some(op=>op.id===id);
+}

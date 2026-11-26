@@ -39,10 +39,13 @@ test('registry annotations do not alter existing Agent API or SDK wire definitio
  const registry=(capabilities as unknown as {agentOperationRegistry?:readonly Candidate[]}).agentOperationRegistry;
  assert.ok(registry);
  const articles=registry.filter(op=>op.module==='article');
- assert.equal(registry.length-articles.length,68);
+ const learning=registry.filter(op=>op.module==='learning');
+ assert.equal(registry.length-articles.length-learning.length,68);
  assert.deepEqual(articles.map(op=>op.id),['snapshotArticle','getArticle','createArticle','updateArticle']);
  assert.ok(articles.every(op=>op.mcpExposure==='native'));
- for(const op of articles){
+ assert.deepEqual(learning.map(op=>op.id),['snapshotLearningCards','getLearningCard','getLearningReview','createLearningCard','appendLearningReview']);
+ assert.ok(learning.every(op=>op.mcpExposure==='native'));
+ for(const op of [...articles,...learning]){
   assert.equal(isBusinessMcpOperation(op.id),false);
   assert.equal(isOAuthBusinessOperation(op.id,true),false);
  }

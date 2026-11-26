@@ -111,6 +111,14 @@ Use these operations only after exact v2 discovery; the three native module gate
 `portfolio` metadata has `type:'portfolio'`, `schemaVersion:1`, explicit currency, project/domain/topic links and `portfolioKind`: account, asset or investment. Accounts preserve account type and `{balanceMinor,asOf}`; assets preserve asset type and `{valuationMinor,valuationOn,account}`; investments preserve symbol/name, decimal-string quantity, exact `{costMinor,valuationMinor,asOf}` and optional account/asset pins. Amounts are exact integer minor-unit strings; null means unknown and zero remains zero. Monetary values need their actual as-of/valuation date. Keep currencies separate; do not guess exchange rates, current prices, balances or return. Portfolio account references must point to portfolio account records, and asset references to portfolio asset records; the shared transaction verifies subtype, owner, source ID and current revision after locking. These are manual dated account/asset/investment records, separate from finance transactions; no bank/broker connection, trading, payment, automatic valuation or reconciliation is enabled.
 
 
+## Vocabulary cards and reviews
+
+Discover through `GET /v2/capabilities` using the same dedicated learning credential that will read or write. An existing broad, Article, or OAuth grant does not imply learning access. This is a scoped REST contract.
+
+When advertised and explicitly confirmed, create a card with `POST /v1/learning/cards` and body `{confirmed:true,front,back}`. Read it with `GET /v1/learning/cards/{id}`; an unreviewed card has no due time. To review, fetch the current card revision and latest review ID. Obtain the user's explicit `again` or `recalled` rating, then send `POST /v1/learning/cards/{id}/reviews` with `{confirmed:true,cardRevision,previousId,rating}`. Use `previousId: null` only when no prior review exists.
+
+Keep the original body and idempotency key before either POST. Independently verify the returned card and event IDs through the card or exact review GET and check the rating, revision and due projection. If the result is unknown, reverify the same credential and retry the exact original body/key. When the server definitively reports a revision conflict, reread and get confirmation before a new command. A vocabulary card is independent from saved articles and resource collections.
+
 ## Private articles
 
 For Private Article REST operations, use only the operations advertised by live v2 discovery for the current dedicated Article credential. If absent, use the owner website or stop for separately approved provisioning. A read credential can discover `snapshotArticle` and `getArticle`. An explicitly write-enabled Article credential can additionally discover `createArticle` and `updateArticle`. General business credentials, server MCP and OAuth do not confer Article permissions.
