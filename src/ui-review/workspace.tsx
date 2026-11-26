@@ -210,8 +210,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
-    [filtersOpen, setFiltersOpen] = useState(false);
-  const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
+    [storedFiltersOpen, setFiltersOpen] = useState(false);
+  const [storedFilter, setFilter] = useState<TaskFilter>(defaultFilter);
+  const [storedTopicQuery,setTopicQuery]=useState('');
+  const [filterScope,setFilterScope]=useState<string|null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null,
@@ -221,6 +223,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
   const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
+  const currentFilterScope=routePath==='/personal/journal'?ownerModules.scope:verifiedPrivateScope??null;
+  const scopeRevoked=routePath==='/personal'&&access.authenticated===false;
+  if(routePath&&(currentFilterScope||scopeRevoked)&&currentFilterScope!==filterScope){
+    setFilterScope(currentFilterScope);
+    setFilter(defaultFilter);
+    setFiltersOpen(false);
+    setTopicQuery('');
+    setDetailId(null);
+  }
+  // A route transition can temporarily lack a verified task frame. Keep the
+  // previous filters in memory but display them only for the verified binding.
+  const showStoredFilters=!routePath||!!currentFilterScope&&currentFilterScope===filterScope;
+  const filter=showStoredFilters?storedFilter:defaultFilter;
+  const filtersOpen=showStoredFilters&&storedFiltersOpen;
+  const topicQuery=showStoredFilters?storedTopicQuery:'';
+
   const [retainedPrivateScope, setRetainedPrivateScope] = useState<string | null>(null);
   if (access.authenticated === false && retainedPrivateScope !== null) setRetainedPrivateScope(null);
   if (verifiedPrivateScope && verifiedPrivateScope !== retainedPrivateScope) setRetainedPrivateScope(verifiedPrivateScope);
@@ -307,9 +325,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const pendingIds = new Set(props.pendingTaskIds ?? []);
   const canWrite = mayWrite(access) && !props.saving && !props.uncertain;
   const [undoNow,setUndoNow]=useState(0);
-  const [topicQuery,setTopicQuery]=useState("");
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
-  const detail = data?.tasks.find((task) => task.id === detailId) ?? null;
+  const detail = (showStoredFilters ? data?.tasks.find((task) => task.id === detailId) : null) ?? null;
   const filterActive =
     !!filter.query ||
     !!filter.areaId ||

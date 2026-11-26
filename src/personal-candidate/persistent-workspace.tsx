@@ -33,7 +33,7 @@ function WorkspaceRoutes({path,children}:Options&{path:WorkspaceRoutePath}){
  const router=useRouter(),query=useSearchParams();
  const location=readWorkspaceLocation(path==='/personal'?Object.fromEntries(query):{});
  const [store]=useState(createTaskFrame);
- const [route]=useState(()=>({journalGuard:{current:null as (()=>boolean)|null},publishTaskFrame:store.publish}));
+ const [route]=useState(()=>({activeContentGuard:{current:null as (()=>boolean)|null},publishTaskFrame:store.publish}));
  return <WorkspaceRouteContext.Provider value={route}>
   <PersistentFrame path={path} store={store} location={location}
    push={href=>router.push(href,{scroll:false})}>
@@ -47,18 +47,18 @@ function PersistentFrame({path,store,location,push,children}:Options&{
  path:WorkspaceRoutePath;store:Frame;location:ReturnType<typeof readWorkspaceLocation>;push:(href:string)=>void;
 }){
  const task=useSyncExternalStore(store.subscribe,store.read,emptyFrame);
- const journal=useContext(WorkspaceRouteContext);
+ const route=useContext(WorkspaceRouteContext);
  const verified=useOwnerPageVerification();
  const isJournal=path==='/personal/journal';
  return <PersonalWorkspaceView {...(isJournal||!task?{
-  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true,writable:null,loginAllowed:true},
+  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true?true:null,writable:null,loginAllowed:true},
  }:task)}
   initialPage={location.page} initialModal={location.page==='settings'?'settings':location.modal}
   initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
   unifiedRoute={{path,push}}
   {...(isJournal?{
    contentPage:{wide:true,title:'记录',content:children},
-   onBeforeNavigate:()=>journal?.journalGuard.current?.()!==false,
+   onBeforeNavigate:()=>route?.activeContentGuard.current?.()!==false,
   }:{})}
  />;
 }
