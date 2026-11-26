@@ -105,6 +105,7 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
   const multiStep=!before&&width===430;
   await page.goto(origin+(multiStep?'/personal':taskPath),{waitUntil:'domcontentloaded',timeout:60000});
   if(multiStep){
+   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
    await mobileMenu.click();
    await page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('button',{name:'待办',exact:true}).click();
    await expect(page).toHaveURL(origin+taskPath);
