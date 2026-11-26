@@ -71,6 +71,7 @@ import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
 import {DailyOverview} from './daily-overview';
+import overviewStyles from './daily-overview.module.css';
 import taskEditorStyles from "../personal-candidate/task-editor.module.css";
 import workspaceStyles from './workspace.module.css';
 import {groupWorkspaceModules} from './workspace-hierarchy';
@@ -891,7 +892,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     >
       {page!=='requirements'&&ownerModules.links.some(link=>link.id==='updates')&&ownerModules.scope&&props.viewPreferenceScope===ownerModules.scope&&!contentPage&&!unavailablePage&&<OwnerReleaseNotice scope={ownerModules.scope}/>}
       <a className="lo-skip" href="#personal-main">跳到主要内容</a>
-      <header className="lo-header">
+      <header className={isOverview ? `lo-header ${overviewStyles.overviewHeader}` : "lo-header"}>
         <Button
           variant="ghost"
           className="lo-mobile-menu"

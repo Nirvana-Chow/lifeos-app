@@ -68,11 +68,11 @@ function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string
   return !scope ? {state:'unavailable'} : result?.scope===scope ? result.state : {state:'loading'};
 }
 
-function OverviewPanel({title,action,children}: {title:string;action?:ReactNode;children:ReactNode}) {
-  return <Frame asChild className="border-transparent bg-transparent">
+function OverviewPanel({title,action,children,primary=false}: {title:string;action?:ReactNode;children:ReactNode;primary?:boolean}) {
+  return <Frame asChild variant="ghost" className={primary ? s.taskPanel : s.supportPanel}>
     <section aria-label={title}>
-      <FramePanel className="p-0">
-        <div className="lo-panel-heading"><h2>{title}</h2>{action}</div>
+      <FramePanel className={s.panelBody}>
+        <div className={s.panelHeading}><h2>{title}</h2>{action}</div>
         {children}
       </FramePanel>
     </section>
@@ -88,34 +88,32 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
   const tasks = showTasks && state.status === 'ready' ? filterTasks(state.data.tasks, metricTaskFilter('pending')) : null;
   const partial = state.status === 'ready' && state.data.coverage === 'partial';
   return <div className={s.overview}>
-    <div className={s.previews}>
-      <OverviewPanel title="未完待办" action={<Button variant="ghost" aria-label="查看全部未完待办" data-workspace-nav onClick={onTasks}>查看全部<ArrowUpRight size={18} aria-hidden="true"/></Button>}>
+    <OverviewPanel primary title="未完待办" action={<Button className={s.primaryAction} aria-label="查看全部未完待办" data-workspace-nav onClick={onTasks}>查看全部<ArrowUpRight size={18} aria-hidden="true"/></Button>}>
         {tasks?.length ? <div className={`lo-overview-task-list ${s.tasks}`}>{tasks.slice(0,6).map(renderTask)}</div>
           : <p className="lo-empty-compact">{!tasks || partial ? '未完待办暂不可用' : '暂无未完待办'}</p>}
         {partial && tasks?.length ? <p className={s.note}>仅显示已读取的待办</p> : null}
-      </OverviewPanel>
+    </OverviewPanel>
+    <div className={s.support}>
       <OverviewPanel title="近期日程" action={scheduleHref && <Button variant="ghost" asChild><a href={scheduleHref}>查看日程</a></Button>}>
         {calendar.state === 'ready' ? <>
           {calendar.value.rows.length ? <ul className={s.rows}>{calendar.value.rows.map(row=><li key={row.id}><span>{row.title}</span><time dateTime={row.day}>{row.day} · {row.label}</time></li>)}</ul>
             : <p className="lo-empty-compact">未来 7 天暂无已读取的日程</p>}
           {calendar.value.appleMissing && <p className={s.note}><Badge variant="secondary">Apple 日历尚未连接</Badge></p>}
         </> : calendar.state === 'loading' ? <p className="lo-empty-compact" role="status">正在读取日程…</p>
-          : <Alert role="status" className="mx-4 my-2 w-auto"><AlertDescription>近期日程暂不可用</AlertDescription></Alert>}
+          : <Alert role="status" className={s.sourceNotice}><AlertDescription>近期日程暂不可用</AlertDescription></Alert>}
+      </OverviewPanel>
+      <OverviewPanel title="最近思考" action={journalHref && <Button variant="ghost" asChild><a href={journalHref}>查看记录</a></Button>}>
+      {memos.state === 'ready' ? memos.value.rows.length ? <ul className={`${s.rows} ${s.thoughts}`}>{memos.value.rows.map(row=><li key={row.id}>
+        <a className={s.thoughtTitle} href={row.href}>{row.title}</a>
+        {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
+        <div className={s.timestamps}>
+          {row.recordedAt ? <time dateTime={row.recordedAt}>录入 {dateInCalendarZone(row.recordedAt,shanghai)} {clock.format(new Date(row.recordedAt))}</time> : <span className={s.date}>录入时间未知</span>}
+          {row.occurredOn ? <time dateTime={row.occurredOn}>发生 {row.occurredOn}</time> : <span className={s.date}>发生日期未记录</span>}
+        </div>
+      </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : memos.state === 'loading' ? <p className="lo-empty-compact" role="status">正在读取随手记…</p>
+        : <Alert role="status" className={s.sourceNotice}><AlertDescription>随手记暂不可用</AlertDescription></Alert>}
       </OverviewPanel>
     </div>
-    <OverviewPanel title="最近思考" action={journalHref && <Button variant="ghost" asChild><a href={journalHref}>查看记录</a></Button>}>
-      {memos.state === 'ready' ? memos.value.rows.length ? <ul className={`${s.rows} ${s.thoughts}`}>{memos.value.rows.map(row=><li key={row.id}>
-        <div className={s.thoughtHeading}>
-          <a href={row.href}>{row.title}</a>
-          <div className={s.timestamps}>
-            {row.recordedAt ? <time dateTime={row.recordedAt}>录入 {dateInCalendarZone(row.recordedAt,shanghai)} {clock.format(new Date(row.recordedAt))}</time> : <span className={s.date}>录入时间未知</span>}
-            {row.occurredOn ? <time dateTime={row.occurredOn}>发生 {row.occurredOn}</time> : <span className={s.date}>发生日期未记录</span>}
-          </div>
-        </div>
-        {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
-      </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : memos.state === 'loading' ? <p className="lo-empty-compact" role="status">正在读取随手记…</p>
-        : <Alert role="status" className="mx-4 my-2 w-auto"><AlertDescription>随手记暂不可用</AlertDescription></Alert>}
-    </OverviewPanel>
     {scope && <RequirementProgressCard scope={scope} onOpen={onRequirements}/>}
   </div>;
 }
