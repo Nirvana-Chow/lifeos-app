@@ -43,18 +43,21 @@ const dateFormat = new Intl.DateTimeFormat('zh-CN',{
 });
 export function formatDeliveryTime(at:string){return dateFormat.format(new Date(at));}
 
-function evidenceTime(at:string|undefined,label:DeliveryTime['label']):DeliveryTime|undefined {
- if (!at || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(at)) return;
+export function isRequirementEvidenceTime(at:unknown):at is string {
+ if (typeof at!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(at)) return false;
  const date = new Date(at);
- if (!Number.isFinite(date.valueOf()) || date.toISOString()!==at.replace(/(?<!\.\d{3})Z$/,'.000Z')) return;
- return {at,label};
+ return Number.isFinite(date.valueOf()) && date.toISOString()===at.replace(/(?<!\.\d{3})Z$/,'.000Z');
+}
+
+function evidenceTime(at:string|undefined,label:DeliveryTime['label']):DeliveryTime|undefined {
+ return isRequirementEvidenceTime(at)?{at,label}:undefined;
 }
 
 // Undated receipts retain their existing meaning. An explicit date must be
 // valid and no later than the server observation bound to this display.
 export function requirementEvidenceObserved(at:string|undefined, observedAt?:string):boolean {
  return observedAt===undefined || at===undefined ||
-  Boolean(evidenceTime(at,'上线核验') && Date.parse(at)<=Date.parse(observedAt));
+  (isRequirementEvidenceTime(at) && Date.parse(at)<=Date.parse(observedAt));
 }
 
 // Delivery evidence is read from the engineering baseline. Private descriptions,

@@ -8,7 +8,7 @@ import {RequirementMutationSession,makeRequirementCommand,readRequirementItem,re
 import {requirementDepartureAllowed} from '../requirements-candidate/navigation';
 import type {RequirementFields} from '../requirements-candidate/domain';
 import type {RequirementItem,RequirementsSnapshot} from '../requirements-candidate/service';
-import {deliveryLabels,formatDeliveryTime,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
+import {deliveryLabels,formatDeliveryTime,isRequirementEvidenceTime,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
 import {savedProgressEntries} from './requirements-progress';
 import {requirementRowProgress} from './requirements-row-progress';
 import {Button} from './ui/button';
@@ -52,6 +52,8 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const [selected,setSelected]=useState<Requirement|null>(null);
  const [expanded,setExpanded]=useState(false);
  const [pool,setPool]=useState<RequirementsSnapshot|null>(null),[binding,setBinding]=useState<RequirementBinding|null>(null),[writable,setWritable]=useState(false),[availability,setAvailability]=useState('正在读取需求…'),[publicOnly,setPublicOnly]=useState(false);
+ // Keep only the verified time when an authorized refresh cannot replace the list.
+ const [detailObservation,setDetailObservation]=useState<(RequirementBinding&{at:string})|null>(null);
  const verifiedSnapshot=useRef<RequirementsSnapshot|null>(null);
  const pendingObservation=useRef<{entry:RequirementItem;created:boolean;detail:number}|null>(null);
  const [checkingSave,setCheckingSave]=useState(false);
@@ -64,11 +66,12 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const closeDetail=useCallback(()=>{
   detailGeneration.current++;dirty.current=false;setSelected(null);setEditorItem(null);setCreating(false);setDetailLoading(false);
  },[]);
- const closePrivate=useCallback((allowPublic:boolean,message:string)=>{generation.current++;closeDetail();activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;setCheckingSave(false);sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setPublicOnly(allowPublic);setWritable(false);setAvailability(message);},[closeDetail]);
+ const closePrivate=useCallback((allowPublic:boolean,message:string)=>{generation.current++;closeDetail();activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;setCheckingSave(false);sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setDetailObservation(null);setPublicOnly(allowPublic);setWritable(false);setAvailability(message);},[closeDetail]);
  const reload=useCallback(async(afterSave=false)=>{
   const epoch=++generation.current;
   const previous=verifiedSnapshot.current;
   verifiedSnapshot.current=null;
+  let sameScopeConfirmed=false;
   try{
    const status=await fetch('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store'});
    if(epoch!==generation.current)return;
@@ -81,6 +84,7 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    const bound=activeBinding.current;
    if((scope&&JSON.stringify([next.ownerId,next.spaceId])!==scope)||(bound&&(bound.ownerId!==next.ownerId||bound.spaceId!==next.spaceId))){closePrivate(false,'当前本人身份或空间已变化，请重新打开需求池。');return;}
    if(value.requirementsEnabled!==true){closePrivate(true,'当前仅可查看公开需求。');return;}
+   sameScopeConfirmed=!!bound;
    if(value.writable!==true)setWritable(false);
    const observation=pendingObservation.current;
    let snapshot=bound&&afterSave&&observation&&!observation.created?updateVerifiedSnapshot(previous,observation.entry):null;
@@ -92,6 +96,7 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
     snapshot=readRequirementsSnapshot(await result.json());
     if(epoch!==generation.current)return;
    }
+   if(!isRequirementEvidenceTime(snapshot.observedAt))throw Error();
    if(activeBinding.current?.ownerId!==next.ownerId||activeBinding.current?.spaceId!==next.spaceId){
     sessionRef.current?.invalidateBinding();activeBinding.current=next;
     const storage={getItem:(key:string)=>window.localStorage.getItem(key),setItem:(key:string,text:string)=>window.localStorage.setItem(key,text),removeItem:(key:string)=>window.localStorage.removeItem(key)};
@@ -110,10 +115,15 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
     }
    }
    verifiedSnapshot.current=snapshot;
+   setDetailObservation({...next,at:snapshot.observedAt});
    setBinding(next);setPool(snapshot);setPublicOnly(false);setWritable(value.writable===true);setAvailability(value.writable===true?'':'当前仅可查看需求。');
-  }catch{if(epoch===generation.current){setPool(null);setWritable(false);setCheckingSave(false);setAvailability(readError);}}
+  }catch{
+   if(epoch!==generation.current)return;
+   if(!sameScopeConfirmed)setDetailObservation(null);
+   setPool(null);setWritable(false);setCheckingSave(false);setAvailability(readError);
+  }
  },[closeDetail,closePrivate,scope]);
- useEffect(()=>{if(concealed){setPool(null);setWritable(false);setDetailLoading(false);setCheckingSave(false);return;}void reload();const focus=()=>{void reload();};window.addEventListener('focus',focus);return()=>{generation.current++;detailGeneration.current++;activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;sessionRef.current?.invalidateBinding();window.removeEventListener('focus',focus);};},[concealed,reload]);
+ useEffect(()=>{if(concealed){setPool(null);setDetailObservation(null);setWritable(false);setDetailLoading(false);setCheckingSave(false);return;}void reload();const focus=()=>{void reload();};window.addEventListener('focus',focus);return()=>{generation.current++;detailGeneration.current++;activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;sessionRef.current?.invalidateBinding();window.removeEventListener('focus',focus);};},[concealed,reload]);
  useEffect(()=>{if(!navigationGuard)return;navigationGuard.current=mayDepart;return()=>{if(navigationGuard.current===mayDepart)navigationGuard.current=null;};},[navigationGuard,mayDepart]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current||currentPhase.current==='saving'||currentPhase.current==='uncertain'){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
  useEffect(()=>{
@@ -127,7 +137,13 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const displayed=pool?.baseline??baseline,visible=useMemo(()=>({...displayed,requirements:pool?pool.items.map(item=>item.requirement):publicOnly?baseline.requirements:[]}),[displayed,pool,publicOnly]);
  const planning=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields])??[]),[pool]);
  const workflow=useMemo(()=>new Map(pool?.items.map(item=>[item.id,item.fields.workflow])??[]),[pool]);
- const observedAt=pool?(pool.observedAt??''):undefined;
+ const observedAt=pool?.observedAt;
+ const detailObservedAt=!concealed&&binding&&detailObservation&&
+  binding.ownerId===detailObservation.ownerId&&binding.spaceId===detailObservation.spaceId&&
+  (!scope||JSON.stringify([binding.ownerId,binding.spaceId])===scope)?detailObservation.at:null;
+ const detailDelivery=selected&&detailObservedAt!==null
+  ?requirementDelivery(selected,editorItem?.fields.workflow,editorItem?.fields.body,detailObservedAt)
+  :undefined;
  const delivery=useMemo(()=>new Map(visible.requirements.map(item=>[item.id,requirementDelivery(item,workflow.get(item.id),planning.get(item.id)?.body,observedAt)])),[visible,workflow,planning,observedAt]);
  const summary=useMemo(()=>{
   if(!pool)return null;
@@ -233,6 +249,6 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    </div>}
   </div>
  </section>}
-  <RequirementDetail observedAt={observedAt} concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={selected?delivery.get(selected.id):undefined} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;closeDetail();}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
+  <RequirementDetail observedAt={detailObservedAt} concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={detailDelivery} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;closeDetail();}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
  </>;
 }
