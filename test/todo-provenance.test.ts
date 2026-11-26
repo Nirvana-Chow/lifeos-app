@@ -90,20 +90,35 @@ test('real HTTP owner and Agent routes preserve independent channel, expression,
  assert.match(capabilities.operations.find((op:{id:string})=>op.id==='createTodo').description,/explicit expression/);
 });
 
-test('derived tasks resolve only the original inbox ID, source and pinned revision',async()=>{
+test('legacy derived tasks retain one exact inbox pin through correction and repeat confirmation',async()=>{
  const repo=new MemoryPort(),service=new DraftService(repo),owner='source-fixture-owner';
  const inbox=await service.mutate(owner,'inbox',null,{title:'原始材料',text:'初始原件正文',occurredOn:null,disposition:'pending'},'source-inbox-command');
- const derived=await service.createTodoFromInbox(owner,inbox.entry.id,{expectedRevision:1},'source-derived-command');
+ const id=inbox.entry.id;
+ await service.mutate(owner,'inbox',id,{expectedRevision:1,text:'派生时的原件正文'},'source-inbox-before-derive');
+ const command={expectedRevision:2},key='source-derived-command';
+ const derived=await service.createTodoFromInbox(owner,id,command,key);
  const pin=pinnedInboxOrigin(derived.entry.source.original,derived.entry.inboxId)!;
- assert.deepEqual(pin,{id:inbox.entry.id,sourceId:inbox.entry.source.id,revision:1});
+ assert.deepEqual(pin,{id,sourceId:inbox.entry.source.id,revision:2});
  assert.deepEqual(captureLabels(derived.entry.source.original),{channel:'未知',expression:'未知'});
- const history=await service.history(owner,'inbox',inbox.entry.id);
+ assert.equal(repo.historyRows.filter(row=>row.id===derived.entry.id).length,1);
+
+ const corrected=await service.mutate(owner,'inbox',id,{expectedRevision:3,text:'派生后的更新正文'},'source-inbox-after-derive');
+ assert.equal(corrected.entry.revision,4);
+ assert.deepEqual(corrected.entry.source,inbox.entry.source);
  const client=new TasksClient(async input=>{
-  assert.equal(input,'/api/platform/inbox/'+inbox.entry.id+'/history');
-  return Response.json({history});
+  assert.equal(input,'/api/platform/inbox/'+id+'/history');
+  return Response.json({history:await service.history(owner,'inbox',id)});
  });
- assert.equal(await client.originalInbox(pin),'初始原件正文');
+ assert.equal(await client.originalInbox(pin),'派生时的原件正文');
  await assert.rejects(client.originalInbox({...pin,sourceId:derived.entry.source.id}));
- const retry=await service.createTodoFromInbox(owner,inbox.entry.id,{expectedRevision:1},'source-derived-command');
- assert.deepEqual(retry.entry.source,derived.entry.source);
+ await assert.rejects(client.originalInbox({...pin,revision:5}));
+ await assert.rejects(service.history('synthetic-foreign-owner','inbox',id),{status:404});
+ const writes=repo.events.length;
+ const retry=await service.createTodoFromInbox(owner,id,command,key);
+ assert.equal(retry.duplicate,true);
+ assert.deepEqual(retry.entry,derived.entry);
+ await assert.rejects(service.createTodoFromInbox(owner,id,{expectedRevision:4},'source-derived-new-key'),{code:'INBOX_ALREADY_LINKED'});
+ assert.equal(repo.events.length,writes);
+ assert.equal(repo.historyRows.filter(row=>row.id===derived.entry.id).length,1);
+ assert.deepEqual((await service.get(owner,'todo',derived.entry.id)).source,derived.entry.source);
 });
