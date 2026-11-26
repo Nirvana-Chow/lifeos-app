@@ -412,9 +412,14 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const previousFallback=fallbackRouteFocus.current;
       if(previousFallback&&document.activeElement!==previousFallback&&document.activeElement!==document.body)return;
       const {control,link}=position;
-      const target=link?mainRegion.current?.closest('.lo-shell')?.querySelector<HTMLElement>(
-        `${link.region} a[href="${CSS.escape(link.href)}"]`
-      ):control;
+      const authorized=link&&navigationHrefs.split('\n').includes(link.href)&&
+        (routePath!=='/personal'||state.status==='ready'&&verifiedPrivateScope===ownerModules.scope);
+      let target=link?null:control;
+      if(authorized){
+        target=mainRegion.current?.closest('.lo-shell')?.querySelector<HTMLElement>(
+          `${link.region} a[href="${CSS.escape(link.href)}"]`
+        )??null;
+      }
       if(target?.isConnected&&target.getClientRects().length){target.focus({preventScroll:true});return;}
       const heading=mainRegion.current?.querySelector<HTMLElement>('h1')??null;
       heading?.focus({preventScroll:true});
@@ -424,7 +429,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       }
     });
     return()=>cancelAnimationFrame(frame);
-  },[routePath,state.status,page,navigationHrefs]);
+  },[routePath,state.status,page,navigationHrefs,verifiedPrivateScope,ownerModules.scope]);
   useLayoutEffect(()=>{
     if(!restoreRouteScroll.current)return;
     const main=mainRegion.current;
