@@ -96,7 +96,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
    spaceId,storageVerified:true,writable,
    requirementsEnabled:true,careerEnabled:true,allowedTypes:['todo','career','project','domain']}});
   if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable}});
-  if(path.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+  if(path.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
   return route.fulfill({json:{scope:'isolated-synthetic-review'}});
  });
  const card=page.getByRole('region',{name:'LifeOS 网站需求进度',exact:true});

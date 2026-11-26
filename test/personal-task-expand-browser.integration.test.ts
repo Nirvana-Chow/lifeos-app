@@ -56,7 +56,17 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    id,kind:'todo',revision:1,draft:fields,createdAt:at,updatedAt:at,syncState:'draft',externalStatus:null,
    source:{id,system:'website',externalId:id,version:1,asOf:at,original:{marker:'personal-manual-v1',spaceId,type:'todo',input:{spaceId,confirmed:true,fields}}},
   };
-  let heldReads=0,statusReads=0;
+  const appleId='77777777-7777-4777-8777-777777777777',reminderTitle='合成苹果提醒事项';
+  const reminderFields={...fields,title:reminderTitle,notes:''};
+  const reminder={
+   ...task,id:appleId,draft:reminderFields,
+   source:{...task.source,id:appleId,externalId:appleId,original:{
+    marker:'personal-apple-reminders-v1',spaceId,type:'todo',sourceRef:'apple-reminder:'+appleId,sourceDigest:'a'.repeat(64),
+    source:{id:appleId,listID:'88888888-8888-4888-8888-888888888888',capturedAt:at,isCompleted:false,dueDate:null,dueDateIsAllDay:null,completionDate:null,original:{title:reminderTitle},notesIncluded:false,sourceTimes:{}},
+    initialDraft:reminderFields,
+   }},
+  };
+  let heldReads=0,statusReads=0,workspaceReads=0,wideReads=0;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),path=url.pathname;
    if(url.origin!==origin)return route.abort();
@@ -68,7 +78,11 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     if(holdStatus){heldReads++;await heldStatus;if(page.isClosed())return;}
     return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
    }
-   if(path.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:1,items:[task],today:url.searchParams.get('today'),observedAt:at}});
+   if(path.endsWith('/personal/overview')){wideReads++;return route.fulfill({status:500});}
+   if(path.endsWith('/personal/todo/workspace-snapshot')){
+    workspaceReads++;
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
+   }
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
   });
   await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:60_000});
@@ -84,6 +98,10 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    await page.keyboard.press('Escape');
    await expect(details).toHaveCount(0);
   }
+  await page.getByRole('button',{name:'展开详情：'+reminderTitle,exact:true}).tap();
+  await expect(details.getByLabel('标题',{exact:true})).toHaveValue(reminderTitle);
+  await page.keyboard.press('Escape');
+  await expect(details).toHaveCount(0);
   await expand.tap();
   holdStatus=true;
   await page.evaluate(()=>{
@@ -106,6 +124,8 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expand.tap();
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
   await expect(boundary).toHaveCount(0);
+  assert.equal(wideReads,0);
+  assert.equal(workspaceReads,2,'only initial load and the successful manual retry read the workspace');
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{

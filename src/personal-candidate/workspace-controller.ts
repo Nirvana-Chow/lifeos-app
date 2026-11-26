@@ -20,7 +20,7 @@ export class PersonalWorkspaceController{
  private refreshRead:AbortController|null=null;
  private undo:{id:string;revision:number;status:WorkspaceTask['status'];deadline:number}|null=null;
  private pending:{command:PersonalCommand;base:PublicEntry|null;generation:number;session:PersonalMutationSession;priorStatus?:WorkspaceTask['status']}|null=null;
- private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number;readTimeoutMs?:number};
+ private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number;readTimeoutMs?:number;taskWorkspace?:boolean};
  constructor(options:PersonalWorkspaceController['options']){this.options=options;}
  getSnapshot=()=>this.value;subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
  private emit(patch:Partial<ControllerSnapshot>){this.value={...this.value,...patch};this.listeners.forEach(f=>f());}
@@ -88,11 +88,13 @@ export class PersonalWorkspaceController{
    }
    this.emit({access:{authenticated:true,writable:status.writable===true,loginAllowed:this.value.access.loginAllowed,allowedTypes:[...status.allowedTypes] as PersonalType[],displayName:'本人空间'}});this.readMutation();
    failure='待办数据未能读取，请重试。';
-   const today=this.options.today(),v=await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today),read.signal);
+   const today=this.options.today(),taskWorkspace=this.options.taskWorkspace===true;
+   const path=taskWorkspace?'/api/platform/personal/todo/workspace-snapshot':'/api/platform/personal/overview';
+   const v=await this.json(path+'?today='+encodeURIComponent(today),read.signal);
    if(token!==this.generation)return;
    if(!v.response.ok){
     const code=errorCode(v.body);
-    if((v.response.status===503&&code==='PERSONAL_SNAPSHOT_UNAVAILABLE')||(v.response.status===409&&code==='DATA_READER_INCOMPATIBLE')){
+    if((v.response.status===503&&(code==='PERSONAL_SNAPSHOT_UNAVAILABLE'||(taskWorkspace&&code==='TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE')))||(v.response.status===409&&code==='DATA_READER_INCOMPATIBLE')){
      const message=code==='DATA_READER_INCOMPATIBLE'?'当前版本无法读取部分记录。请更新页面后重试。':'暂时无法读取完整待办列表，请重试。';
      unavailable(message);
      if(linkedTaskId)await this.readLinkedTask(linkedTaskId,next.spaceId,today,token,message,read.signal);
@@ -101,7 +103,7 @@ export class PersonalWorkspaceController{
     unavailable(v.response.status===401?'登录已失效，请重新登录。':v.response.status===403?'当前账号没有读取待办的权限。':failure,v.response.status);return;
    }
    failure='待办快照未能核验，请重新读取。';
-   const checked=workspaceData(v.body,next.spaceId,today);
+   const checked=workspaceData(v.body,next.spaceId,today,taskWorkspace?'task-workspace-current-snapshot':'full-current-snapshot');
    this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
   }catch{if(token===this.generation)unavailable(timedOut?'本人空间读取超时，请重试。':failure);}
   finally{
@@ -145,7 +147,7 @@ export class PersonalWorkspaceController{
   if(this.value.state.status!=='ready')return null;const e=this.entries.find(e=>e.id===task.id&&e.kind==='todo'&&e.revision===task.revision);return e?clonePersonalJSON(e):null;
  }
  getClassificationEntries():readonly PublicEntry[]|null{
-  return this.value.state.status==='ready'&&this.value.state.data.coverage==='complete'?this.entries:null;
+  return !this.options.taskWorkspace&&this.value.state.status==='ready'&&this.value.state.data.coverage==='complete'?this.entries:null;
  }
  getRelationOptions():Record<string,PublicEntry[]>{
   const result:Record<string,PublicEntry[]>={domain:[],project:[],topic:[]};if(this.value.state.status!=='ready'||!this.binding)return result;
