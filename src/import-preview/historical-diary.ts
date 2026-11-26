@@ -1,14 +1,15 @@
 import {createHash} from 'node:crypto';
 import type {PreviewStatus} from './preview.ts';
+import {diaryJournalTextLimit,diarySourceToken,readDiarySource,type DiarySource} from './historical-diary-source.ts';
+export type {DiarySource} from './historical-diary-source.ts';
 
 export const diaryPackageFormat = 'lifeos.historical-diary.synthetic.v1';
 const mapper = 'historical-diary-v1';
 
 export type DiaryScope = Readonly<{ownerId:string;spaceId:string}>;
-export type DiarySource = Readonly<{originalId:string;sourcePath:string;sourceVersion:string;date:string;body:string}>;
 export type ImportedDiary = Readonly<{id:string;sourceNamespace:string;source:DiarySource;date:string;body:string;sourceDigest:string}>;
 type DiaryPreviewRow = {index:number;id:string;originalId:string;sourcePath:string;sourceVersion:string;date:string;
-  sourceDigest:string;status:PreviewStatus;reason:'new'|'same-source'|'repeated-row'|'changed-source'};
+  sourceDigest:string;status:PreviewStatus;reason:'new'|'same-source'|'repeated-row'|'changed-source'|'journal-body-limit'};
 export type DiaryPreview = {mapper:typeof mapper;packageDigest:string;planDigest:string;items:DiaryPreviewRow[];
   counts:Record<PreviewStatus,number>;writesPerformed:0;importAvailable:false};
 export type DiaryCommand = Readonly<{key:string;planDigest:string;selected:readonly string[]}>;
@@ -36,7 +37,7 @@ export interface DiaryStore {
 export type AuthorizeDiary = (scope:DiaryScope,source:{namespace:string;packageDigest:string},action:'preview'|'apply'|'reconcile')=>Promise<void>;
 
 const digest = (value:unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const token = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+export const diarySourceDigest=(namespace:string,source:DiarySource)=>digest([namespace,source]);
 const scopeId = /^[A-Za-z0-9_-]{8,80}$/;
 const hexDigest = /^[a-f0-9]{64}$/;
 const diaryId = /^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-a[a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -59,37 +60,21 @@ function match(value:unknown,pattern:RegExp):string {
   return value;
 }
 
-function sourceOf(input:unknown):DiarySource {
-  const row=object(input,['originalId','sourcePath','sourceVersion','date','body']);
-  const originalId=match(row.originalId,token),sourceVersion=match(row.sourceVersion,token);
-  const sourcePath=match(row.sourcePath,/^[^\\\x00-\x1f\x7f]{1,400}\.md$/i);
-  if (sourcePath.includes(':') || sourcePath.split('/').some(part=>part===''||part==='.'||part==='..'||part.startsWith('.'))) {
-    throw new Error('DIARY_INVALID_SOURCE_PATH');
-  }
-  const date=match(row.date,/^[1-9]\d{3}-\d{2}-\d{2}$/);
-  const instant=new Date(date+'T00:00:00.000Z');
-  if (!Number.isFinite(instant.valueOf()) || instant.toISOString().slice(0,10)!==date) throw new Error('DIARY_INVALID_DATE');
-  const body=row.body;
-  if (typeof body!=='string' || !body.trim() || body.includes('\0') || Buffer.byteLength(body)>32_768) {
-    throw new Error('DIARY_INVALID_BODY');
-  }
-  return {originalId,sourcePath,sourceVersion,date,body};
-}
 
 function packageOf(input:unknown,scope:DiaryScope) {
   const binding=[match(scope.ownerId,scopeId),match(scope.spaceId,scopeId)];
   const envelope=object(input,['format','sourceNamespace','entries']);
   if (envelope.format!==diaryPackageFormat || !Array.isArray(envelope.entries) ||
       envelope.entries.length===0 || envelope.entries.length>25) throw new Error('DIARY_INVALID_PACKAGE');
-  const namespace=match(envelope.sourceNamespace,token);
-  const sources=Array.from(envelope.entries,sourceOf);
+  const namespace=match(envelope.sourceNamespace,diarySourceToken);
+  const sources=Array.from(envelope.entries,readDiarySource);
   if (sources.reduce((size,row)=>size+Buffer.byteLength(row.body),0)>120_000) {
     throw new Error('DIARY_PACKAGE_TOO_LARGE');
   }
   const packageDigest=digest([diaryPackageFormat,mapper,namespace,sources]);
   const records=sources.map(source=>({
     id:stableRecordId(binding,namespace,source.originalId),
-    sourceNamespace:namespace,source,date:source.date,body:source.body,sourceDigest:digest([namespace,source]),
+    sourceNamespace:namespace,source,date:source.date,body:source.body,sourceDigest:diarySourceDigest(namespace,source),
   }));
   return {binding,authority:{namespace,packageDigest},packageDigest,records};
 }
@@ -98,7 +83,7 @@ type DiaryPackage = ReturnType<typeof packageOf>;
 function sameRecord(current:ImportedDiary,expected:ImportedDiary) {
   try {
     return current.id===expected.id && current.sourceNamespace===expected.sourceNamespace && current.date===expected.date && current.body===expected.body &&
-      current.sourceDigest===expected.sourceDigest && digest(sourceOf(current.source))===digest(expected.source);
+      current.sourceDigest===expected.sourceDigest && digest(readDiarySource(current.source))===digest(expected.source);
   } catch {
     return false;
   }
@@ -119,8 +104,8 @@ async function plan(batch:DiaryPackage,reader:DiaryReader):Promise<DiaryPreview>
   const items=batch.records.map((record,index):DiaryPreviewRow=>{
     const prior=existing.get(record.id);
     const conflict=variants.get(record.id)!.size>1 || (prior!==null && prior!==undefined && !sameRecord(prior,record));
-    const reason=conflict?'changed-source':prior?'same-source':seen.has(record.id)?'repeated-row':'new';
-    const status=reason==='changed-source'?'conflict':reason==='new'?'candidate':'duplicate';
+    const reason=conflict?'changed-source':record.body.length>diaryJournalTextLimit?'journal-body-limit':prior?'same-source':seen.has(record.id)?'repeated-row':'new';
+    const status=reason==='changed-source'?'conflict':reason==='journal-body-limit'?'invalid':reason==='new'?'candidate':'duplicate';
     seen.add(record.id);
     counts[status]++;
     const {originalId,sourcePath,sourceVersion,date}=record.source;
