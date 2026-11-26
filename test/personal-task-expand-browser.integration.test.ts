@@ -16,12 +16,14 @@ test('OPT-IN mobile Expand survives missing native clone and recovers after a st
  const heldSnapshot=new Promise<void>(resolve=>releaseSnapshot=resolve);
  try{
   await mkdir(join(root,'app/personal'),{recursive:true});
+  await mkdir(join(root,'app/login'),{recursive:true});
   await Promise.all([
    cp(join(source,'src'),join(root,'src'),{recursive:true}),
    ...['layout.tsx','globals.css','theme.css','personal/page.tsx','personal/layout.tsx','personal/error.tsx'].map(file=>cp(join(source,'app',file),join(root,'app',file))),
    cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
    symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
   ]);
+  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>Synthetic login</h1>}');
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false,reactStrictMode:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),`
 export const readPlatformPagePrincipal=async()=>({id:'synthetic-expand-owner'});
@@ -67,11 +69,13 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    }},
   };
   let heldReads=0,workspaceReads=0,wideReads=0,earlyStandaloneStatus=0;
+  let ownerStatus=200,snapshotStatus=200,snapshotSpaceId=spaceId;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),path=url.pathname;
    if(url.origin!==origin)return route.abort();
    if(!path.startsWith('/api/'))return route.continue();
    if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405});}
+   if(path==='/api/platform/status')return route.fulfill({status:ownerStatus,json:{}});
    if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/personal/status')){
     if(workspaceReads===0)earlyStandaloneStatus++;
@@ -82,17 +86,20 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     workspaceReads++;
     assert.equal(url.searchParams.get('include'),'access');
     if(holdSnapshot){heldReads++;await heldSnapshot;if(page.isClosed())return;}
-    return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:true,allowedTypes:['todo']},truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
+    if(snapshotStatus!==200)return route.fulfill({status:snapshotStatus,json:{error:{code:snapshotStatus===503?'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE':'DENIED'}}});
+    const items=snapshotSpaceId===spaceId?[task,reminder]:[];
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId:snapshotSpaceId,storageVerified:true,writable:true,allowedTypes:['todo']},truncated:false,total:items.length,items,today:url.searchParams.get('today'),observedAt:at}});
    }
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
   });
-  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:60_000});
+  await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:60_000});
   const workspace=page.locator('[data-workspace-state]');
   const expand=page.getByRole('button',{name:'展开详情：'+title,exact:true});
   const details=page.getByRole('dialog',{name:'待办详情',exact:true});
   const boundary=page.getByRole('heading',{name:'本人工作台暂不可用',exact:true});
   assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  await page.getByRole('button',{name:'列表',exact:true}).tap();
   const initialReads=workspaceReads;
   assert.equal(initialReads,1,'cold entry reads the narrow workspace once');
   assert.equal(earlyStandaloneStatus,0,'the task workspace does not wait for a separate status request');
@@ -136,6 +143,39 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(boundary).toHaveCount(0);
   assert.equal(wideReads,0);
   assert.equal(workspaceReads,attempts+1,'explicit retry requests one snapshot');
+  const retryOwner=page.getByRole('button',{name:'重新核对',exact:true});
+  async function failBothReads(){
+   ownerStatus=snapshotStatus=503;
+   await returnToForeground();
+   await expect(retryOwner).toBeVisible();
+   await expect(workspace).toHaveAttribute('data-workspace-state','error');
+   await expect(expand).toBeHidden();
+   ownerStatus=snapshotStatus=200;
+  }
+  await failBothReads();
+  const failedReads=workspaceReads;
+  await retryOwner.tap();
+  await expect(expand).toBeVisible();
+  await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  await expect(page.getByRole('button',{name:'重新读取',exact:true})).toHaveCount(0);
+  assert.equal(workspaceReads,failedReads+1,'one successful owner recheck requests one fresh snapshot');
+  await failBothReads();
+  snapshotSpaceId='synthetic-recovered-other-space';
+  await retryOwner.tap();
+  await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  await expect(expand).toHaveCount(0);
+  for(const denied of [401,403]){
+   await failBothReads();
+   snapshotStatus=denied;
+   await retryOwner.tap();
+   await expect(workspace).toHaveAttribute('data-workspace-state','forbidden');
+   await expect(expand).toHaveCount(0);
+  }
+  snapshotStatus=200;
+  ownerStatus=401;
+  await returnToForeground();
+  await expect(page).toHaveURL(origin+'/login');
+  await expect(expand).toHaveCount(0);
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{

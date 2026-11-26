@@ -2,13 +2,19 @@
 import {createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {checkOwnerPageAccess} from '../session-duration/client';
 import {flushSync} from 'react-dom';
-const OwnerPageVerification=createContext<boolean|null>(null);
-export function useOwnerPageVerification(){return useContext(OwnerPageVerification);}
+type OwnerAccessPhase='active'|'checking'|'unavailable'|'recovered';
+const OwnerPageVerification=createContext<OwnerAccessPhase|null>(null);
+export function useOwnerPageVerification(){
+ const phase=useContext(OwnerPageVerification);
+ return phase===null?null:phase==='active'||phase==='recovered';
+}
+export function useOwnerPageRecovery(){return useContext(OwnerPageVerification)==='recovered';}
 
 /** Conceal cached children before background/back navigation; reveal only after
  * a fresh server owner check. No client supplied identity is trusted. */
 export function PrivacyBoundary({children}:{children:ReactNode}){
- const[phase,setPhase]=useState<'active'|'checking'|'unavailable'>('active');
+ const[phase,setPhase]=useState<OwnerAccessPhase>('active');
+ const verified=phase==='active'||phase==='recovered';
  const retry=useRef<(()=>void)|null>(null);
  useEffect(()=>{
   let alive=true,generation=0;
@@ -17,7 +23,7 @@ export function PrivacyBoundary({children}:{children:ReactNode}){
    setPhase('checking');
    document.documentElement.style.visibility='hidden';
   };
-  const check=async()=>{
+  const check=async(recover=false)=>{
    if(document.visibilityState==='hidden')return;
    const token=++generation;
    setPhase('checking');
@@ -26,11 +32,11 @@ export function PrivacyBoundary({children}:{children:ReactNode}){
    if(result==='locked'){window.location.replace('/login');return;}
    if(result==='unavailable'){setPhase('unavailable');return;}
    document.documentElement.style.visibility='';
-   setPhase('active');
+   setPhase(recover?'recovered':'active');
   };
   const pageShow=()=>void check();
   const visibility=()=>{if(document.visibilityState==='hidden')hide();else pageShow();};
-  retry.current=pageShow;
+  retry.current=()=>void check(true);
   window.addEventListener('pagehide',hide);
   window.addEventListener('pageshow',pageShow);
   document.addEventListener('visibilitychange',visibility);
@@ -43,10 +49,10 @@ export function PrivacyBoundary({children}:{children:ReactNode}){
    document.documentElement.style.visibility='';
   };
  },[]);
- return <><div hidden={phase!=='active'} inert={phase!=='active'}>
-   <OwnerPageVerification.Provider value={phase==='active'}>{children}</OwnerPageVerification.Provider>
+ return <><div hidden={!verified} inert={!verified}>
+   <OwnerPageVerification.Provider value={phase}>{children}</OwnerPageVerification.Provider>
   </div>
-  {phase!=='active'&&<section style={{visibility:'visible'}}>
+  {!verified&&<section style={{visibility:'visible'}}>
    <p role="status">{phase==='checking'?'正在重新核对私人空间…':'暂时无法核对登录状态。私人页面已隐藏。'}</p>
    {phase==='unavailable'&&<button type="button" onClick={()=>retry.current?.()}>重新核对</button>}
   </section>}
