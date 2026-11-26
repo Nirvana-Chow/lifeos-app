@@ -8,7 +8,8 @@ import {RequirementMutationSession,makeRequirementCommand,readRequirementItem,re
 import {requirementDepartureAllowed} from '../requirements-candidate/navigation';
 import type {RequirementFields} from '../requirements-candidate/domain';
 import type {RequirementItem,RequirementsSnapshot} from '../requirements-candidate/service';
-import {deliveryLabels,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
+import {deliveryLabels,formatDeliveryTime,requirementDelivery,requirementIsComplete,type DeliveryState} from './requirements-delivery';
+import {requirementRowProgress} from './requirements-row-progress';
 import {Button} from './ui/button';
 import styles from './requirements-page.module.css';
 
@@ -130,7 +131,7 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    const complete=requirementIsComplete(item.requirement,delivery.get(item.id));
    (complete?completed:pending).push(item);
   }
-  return {all:pool.items,completed,pending};
+  return {all:pool.items,completed,pending,observedAt:pool.observedAt};
  },[pool,delivery]);
  const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>{
   const evidence=delivery.get(item.id);
@@ -210,7 +211,18 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
   {mutation.phase==='uncertain'?<div className={styles.recovery} role="status"><span>有未确认的需求保存，请保留原请求。</span><button type="button" onClick={recover} disabled={!mutation.pending}>查看原请求</button><button type="button" disabled={!mutation.pending||!writable} onClick={()=>{void session?.retry();}}>重试原请求并回读</button></div>:null}
   {showManagement?<div className={styles.view}>{view==='table'?<RequirementsTable rows={rows} grouping={grouping} phases={phases} planning={planning} workflow={workflow} delivery={delivery} onOpen={open}/>:view==='board'?<RequirementsBoard rows={rows} phases={phases} progressMode="delivery" workflow={workflow} delivery={delivery} onOpen={open}/>:<RequirementsGantt rows={rows} phases={phases} planning={planning} workflow={workflow} onOpen={open} onShowTable={()=>chooseView('table')}/>}</div>:
    summary&&<div className={styles.summaryList}>
-    {summary[summaryRange].length?<ul aria-label="需求清单">{summary[summaryRange].map(({requirement:item})=><li key={item.id}><Button type="button" variant="ghost" onClick={event=>open(item,event.currentTarget)}>{item.title}</Button></li>)}</ul>:
+    {summary[summaryRange].length?<ul aria-label="需求清单">{summary[summaryRange].map(row=>{
+     const item=row.requirement;
+     const {state,latest}=requirementRowProgress(row,delivery.get(item.id),summary.observedAt);
+     return <li key={item.id}>
+      <Button type="button" variant="ghost" onClick={event=>open(item,event.currentTarget)}>{item.title}</Button>
+      <p className={styles.summaryRowState}><strong>{state}</strong><span>执行活动未核实</span></p>
+      <p className={styles.summaryRowEvidence}>最近进展：
+       {latest?.href?<a href={latest.href} target="_blank" rel="noreferrer">{latest.label}</a>:latest?.label??'暂无可核实的跟进'}
+       {latest?.at&&<time dateTime={latest.at} title="北京时间">{formatDeliveryTime(latest.at)}</time>}
+      </p>
+     </li>;
+    })}</ul>:
      <p className={styles.notice}>{summaryRange==='all'?'暂无需求。':summaryRange==='completed'?'暂无已完成需求。':'暂无未完成需求。'}</p>}
    </div>}
   </div>
