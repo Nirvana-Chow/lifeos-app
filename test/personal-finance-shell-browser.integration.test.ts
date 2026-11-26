@@ -102,7 +102,13 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
   const taskRows=page.locator('.lo-list-rows');
   const firstRecord=page.getByRole('button',{name:'查看流水：2030-11-26 支出 29.01元',exact:true});
   const chart=page.getByRole('img',{name:'记录收支流向图'});
-  await page.goto(origin+taskPath,{waitUntil:'domcontentloaded',timeout:60000});
+  const multiStep=!before&&width===430;
+  await page.goto(origin+(multiStep?'/personal':taskPath),{waitUntil:'domcontentloaded',timeout:60000});
+  if(multiStep){
+   await mobileMenu.click();
+   await page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('button',{name:'待办',exact:true}).click();
+   await expect(page).toHaveURL(origin+taskPath);
+  }
   await expect(taskHeading).toBeVisible();
   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
   await page.getByRole('button',{name:'列表',exact:true}).click();
@@ -151,6 +157,7 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
   const notes=details.getByLabel('摘要 / 备注',{exact:true});
   await notes.fill('合成未保存财务草稿');
   if(!before){
+   const editor=await notes.elementHandle();
    for(const accept of [false,true]){
     const nextDialog=page.waitForEvent('dialog');
     await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
@@ -162,6 +169,8 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
      await prompt.dismiss();
      await expect(page).toHaveURL(origin+financePath);
      await expect(notes).toHaveValue('合成未保存财务草稿');
+     assert.equal(await notes.evaluate((node,previous)=>node===previous,editor),true);
+     assert.deepEqual(writes,[]);
     }
    }
    await expect(page).toHaveURL(origin+taskPath);
@@ -174,6 +183,27 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
    await expect(page).toHaveURL(origin+financePath);
    await expect(firstRecord).toBeVisible();
    await expect(details).toHaveCount(0);
+   if(multiStep){
+    await firstRecord.click();
+    await notes.fill('合成跨两步草稿');
+    const field=await notes.elementHandle();
+    for(const allow of [false,true]){
+     const confirmation=page.waitForEvent('dialog');
+     await page.evaluate(()=>history.go(-2));
+     const dialog=await confirmation;
+     if(allow)await dialog.accept();
+     else{
+      await dialog.dismiss();
+      await expect(page).toHaveURL(origin+financePath);
+      await expect(notes).toHaveValue('合成跨两步草稿');
+      assert.equal(await notes.evaluate((node,old)=>node===old,field),true);
+     }
+    }
+    await expect(page).toHaveURL(origin+'/personal');
+    await page.evaluate(()=>history.go(2));
+    await expect(page).toHaveURL(origin+financePath);
+    await expect(firstRecord).toBeVisible();
+   }
    assert.deepEqual(await sameNodes(),enteredSameNodes);
    assert.deepEqual(documents,['/personal']);
   }else {
