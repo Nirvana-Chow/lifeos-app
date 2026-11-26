@@ -1,6 +1,7 @@
 'use client';
 import type {ChangeEvent,FormEvent} from 'react';
 import type {PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
+import {taskStatusLabels} from '../personal-candidate/task-editor-state';
 import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import {searchHref,searchTypeLabels,type SearchSelection,type SearchRow} from './model.ts';
@@ -25,6 +26,7 @@ function readDraft(form:HTMLFormElement):SearchDraft{
 function Identity({row,compact=false}:{row:SearchRow;compact?:boolean}){
  return <div className={s.metadata}>
   <span>{searchTypeLabels[row.type]} · {row.dateLabel}：{row.date??'日期未知'}</span>
+  {row.todoStatus==='cancelled'&&<span>{taskStatusLabels.cancelled}</span>}
   {!compact&&<><span>{row.sourceLabel} · 版本 {row.revision}</span><span>记录 ID：{row.id}</span><span>来源 ID：{row.sourceId}</span></>}
  </div>;
 }
