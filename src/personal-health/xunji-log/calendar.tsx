@@ -59,21 +59,33 @@ export function TrainingCalendar({records,onOpenRecord}:TrainingCalendarProps) {
 
   return <section className={s.root} aria-label="运动日历与记录">
     <header className={s.header}><h2>运动日历</h2>{data.years.length > 0 && <label>查看范围<select value={currentRange} onChange={event => {setRange(event.target.value);setDrill(null);}}><option value="recent">最近90天</option>{data.years.map(year => <option key={year} value={year}>{year} 年</option>)}</select></label>}</header>
-    <p className={s.hint}>已读 {data.n_sessions} 条完成记录 · {data.n_days} 个有日期的运动日 · {data.planned.length} 条计划单独保留{data.undated.length ? ` · ${data.undated.length} 条完成记录日期未知` : ''}。</p>
+    <p className={s.hint}>已读 {data.n_sessions} 条完成记录 · {data.n_days} 个有日期的运动日{data.undated.length ? ` · ${data.undated.length} 条完成记录日期未知` : ''}。</p>
+    <p className={s.hint}>空白日期的实际活动未知。Apple 健康与训记自动同步未接入。</p>
     <TrainingAnalyticsPanel />
-    {!data.n_sessions ? <p className={s.empty}>暂无已完成的运动记录。飞盘、跑步、力量训练等都可记录；已有计划不会当作完成。</p> : <>
+    {!data.n_sessions ? <p className={s.empty}>暂无已读完成记录。</p> : <>
       {dateRange ? <div className={s.panel}>
         <div className={s.metrics} aria-label="日历指标">{availableMetrics.map(m => <Button key={m} type="button" variant={currentMetric === m ? 'secondary' : 'ghost'} size="sm" aria-pressed={currentMetric === m} onClick={() => setMetric(m)}>{trainingMetricLabels[m]}</Button>)}</div>
         <h3>运动热力图 · {metricLabel}</h3>
-        <p className={s.hint}>{dateRange.start} 至 {dateRange.end}{currentRange === 'recent' ? '（截至最新已读日期）' : ''}。空白日期只表示无已读记录；灰色实块表示有记录但此指标未知，缺失不补零。距离按原单位分别查看。</p>
+        <p className={s.hint}>{dateRange.start} 至 {dateRange.end}{currentRange === 'recent' ? '（截至最新已读日期）' : ''}。灰色实块的指标未知。</p>
         <Chart height={height} onEvents={{click:onHeatmapClick}} option={option}/>
         {selectedDay && <div className={s.dayRecords} role="group" aria-label={selectedDay.date+' 的运动记录'}><div className={s.header}><h3>{selectedDay.date} · {selectedDay.records.length} 条记录</h3><Button type="button" variant="ghost" size="sm" onClick={() => setDrill(null)}>收起当日记录</Button></div>{selectedDay.records.map(row => <Button type="button" key={row.id} variant="outline" className={s.dayRecord} onClick={() => onOpenRecord(row.id)}><span>{row.title}</span><small>{recordMetrics(row)}</small></Button>)}</div>}
       </div> : <p className={s.empty}>已完成记录的日期尚未填写，补充日期后可查看日历。</p>}
       <div className={s.panel}>
-        <h3>最近已读运动</h3><p className={s.hint}>当前范围内最近30条记录；点击名称打开原记录。计划不计入这张表。</p>
+        <h3>最近已读运动</h3><p className={s.hint}>当前范围内最近 30 条完成记录。</p>
         <div className={s.tableWrap}><table className={s.table}><thead><tr><th scope="col">日期</th><th scope="col">运动与原始记录</th></tr></thead><tbody>{recent.map(row => <tr key={row.id}><td>{row.date ?? '日期未知'}</td><td><Button type="button" variant="link" className={s.recordButton} onClick={() => onOpenRecord(row.id)}>{row.title}</Button><p className={s.hint}>{recordMetrics(row)}</p></td></tr>)}</tbody></table></div>
         {!recent.length && <p className={s.empty}>当前范围内无已读完成记录。</p>}
       </div>
     </>}
+    <section className={s.panel} aria-labelledby="training-plans-heading">
+      <h3 id="training-plans-heading">运动计划</h3>
+      <p className={s.hint}>显示所有已读计划。</p>
+      {data.planned.length ? <div className={s.tableWrap}><table className={s.table}>
+        <thead><tr><th scope="col">计划日期</th><th scope="col">计划与原始记录</th></tr></thead>
+        <tbody>{data.planned.map(row => <tr key={row.id}>
+          <td>{row.date ?? '日期未知'}</td>
+          <td><Button type="button" variant="link" className={s.recordButton} onClick={() => onOpenRecord(row.id)}>{row.title}</Button><p className={s.hint}>{recordMetrics(row)}</p></td>
+        </tr>)}</tbody>
+      </table></div> : <p className={s.empty}>当前无已读运动计划。</p>}
+    </section>
   </section>;
 }
