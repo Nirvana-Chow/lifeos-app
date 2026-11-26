@@ -64,11 +64,13 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await expect(page.getByRole('region',{name:'菜谱建议'})).toBeHidden();
  await expect(page.locator('img[src^="/_next/static/media/"]')).toHaveCount(0);
  assert.deepEqual(photoReads,[]);
- if(process.env.LIFEOS_COOKING_EVIDENCE_DIR){
-  const folder=resolve(process.env.LIFEOS_COOKING_EVIDENCE_DIR);
-  await mkdir(folder,{recursive:true});
-  await page.screenshot({path:join(folder,'cooking-mobile.png'),fullPage:true});
-  const desktop=await browser.newPage({viewport:{width:1365,height:900},extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+ const evidenceFolder=process.env.LIFEOS_COOKING_EVIDENCE_DIR;
+ if(evidenceFolder){
+  await mkdir(evidenceFolder,{recursive:true});
+  await page.screenshot({path:join(evidenceFolder,'cooking-mobile.png'),fullPage:true});
+ }
+ const desktop=await browser.newPage({viewport:{width:1365,height:900},extraHTTPHeaders:{'x-synthetic-fixture':'cooking'}});
+ try{
   await desktop.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{scope:'personal-manual-candidate',storageVerified:true,cookingEnabled:true,writable:true,ownerId:'synthetic-cooking',spaceId:'synthetic-space'}}));
   await desktop.goto(origin+'/personal/cooking',{timeout:65_000});
   await expect(desktop.getByRole('link',{name:'记录做过的菜'})).toBeVisible();
@@ -76,9 +78,17 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
   await desktop.getByRole('button',{name:'去选菜'}).click();
   const photo=desktop.getByRole('region',{name:'菜谱建议'}).locator('img[src*="2130948c0fd24404-thumb."]');
   await expect.poll(()=>photo.evaluate((element:HTMLImageElement)=>element.naturalWidth)).toBeGreaterThan(0);
-  await desktop.screenshot({path:join(folder,'lifeos-cooking-release-review.png')});
-  await desktop.close();
- }
+  if(evidenceFolder)await desktop.screenshot({path:join(evidenceFolder,'lifeos-cooking-release-review.png')});
+  await desktop.getByRole('group',{name:'菜谱分类'}).getByRole('button',{name:/^水产/}).click();
+  await desktop.getByRole('button',{name:'下一页'}).click();
+  const result=desktop.getByRole('region',{name:'菜谱库'}).getByRole('link').first();
+  const resultName=await result.textContent();
+  await result.click();
+  await desktop.getByRole('link',{name:'返回菜谱',exact:true}).click();
+  await expect(desktop.getByRole('group',{name:'菜谱分类'}).getByRole('button',{name:/^水产/})).toHaveAttribute('aria-pressed','true');
+  await expect(desktop.getByRole('navigation',{name:'菜谱分页'}).getByText(/^第 2 \/ \d+ 页$/)).toBeVisible();
+  await expect(result).toHaveText(resultName!);
+ }finally{await desktop.close();}
  await page.getByRole('button',{name:'打开导航'}).click();
  const menu=page.getByRole('dialog',{name:'LifeOS'}).getByRole('navigation',{name:'主导航'});
  await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
@@ -133,6 +143,37 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await page.getByRole('button',{name:'切换到深色模式'}).click();
  await expect(page.locator('html')).toHaveAttribute('data-lifeos-theme','dark');
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ await page.getByRole('navigation',{name:'菜谱章节'}).getByRole('link',{name:'食材和工具'}).click();
+ await expect(page).toHaveURL(/#cooking-ingredients$/);
+ await page.getByRole('link',{name:'返回菜谱',exact:true}).click();
+ const keyword=page.getByRole('searchbox',{name:'搜索菜名'});
+ await expect(food).toHaveValue('西红柿');
+ await expect(keyword).toHaveValue('西红柿炒鸡蛋');
+ await expect(categories.getByRole('button',{name:/^素菜/})).toHaveAttribute('aria-pressed','true');
+ await expect(page.getByRole('region',{name:'菜谱库'}).getByRole('link')).toHaveCount(1);
+
+ const failedThumb=/2130948c0fd24404-thumb\.[^/]+\.webp$/;
+ const failedDetail=/2130948c0fd24404-detail\.[^/]+\.webp$/;
+ await page.route(failedThumb,route=>route.abort('failed'));
+ await page.route(failedDetail,route=>route.fulfill({contentType:'image/webp',body:'synthetic undecodable image'}));
+ await page.reload();
+ const failedResult=page.getByRole('region',{name:'菜谱库'}).getByRole('link',{name:/西红柿炒鸡蛋/});
+ await failedResult.scrollIntoViewIfNeeded();
+ await expect(failedResult.getByText('暂无成品图',{exact:true})).toBeVisible();
+ await failedResult.click();
+ await page.getByRole('heading',{name:'食材和工具'}).scrollIntoViewIfNeeded();
+ await expect(page.getByText('暂无成品图',{exact:true})).toBeVisible();
+ await expect(tomatoPhoto).toHaveCount(0);
+ await page.goBack();
+ await expect(food).toHaveValue('西红柿');
+ await expect(keyword).toHaveValue('西红柿炒鸡蛋');
+ await expect(failedResult.getByText('暂无成品图',{exact:true})).toBeVisible();
+ if(evidenceFolder){
+  await failedResult.scrollIntoViewIfNeeded();
+  await page.screenshot({path:join(evidenceFolder,'cooking-filter-return-failed-photo-390.png')});
+ }
+ await page.unroute(failedThumb);
+ await page.unroute(failedDetail);
  // World recipes reuse the same ingredient/category/random/detail flow.
  await page.goto(origin+'/personal/cooking');
  await page.getByRole('button',{name:'去选菜'}).click();
@@ -154,7 +195,7 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
  await expect(page.getByText('份量：原文未标注',{exact:true})).toBeVisible();
  await expect(page.getByText(/AI 辅助中文翻译/)).toBeVisible();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
- const worldId=worldPath.split('/').at(-1)!;
+ const worldId=new URL(worldPath,origin).pathname.split('/').at(-1)!;
  assert.equal((await page.request.get(origin+'/personal/cooking/history?recipe='+worldId)).status(),404);
  await page.goto(origin+'/personal/cooking');
  await page.getByRole('button',{name:'去选菜'}).click();
@@ -258,6 +299,14 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
   await expect(page.locator('img[src^="/_next/static/media/"]')).toHaveCount(0);
   await page.getByRole('button',{name:'去选菜'}).click();
   await expect(page.getByRole('region',{name:'菜谱建议'})).toBeVisible();
+  await food.fill('番茄');
+  await categories.getByRole('button',{name:/^素菜/}).click();
+  await keyword.fill('西红柿炒鸡蛋');
+  await page.getByRole('region',{name:'菜谱库'}).getByRole('link',{name:/西红柿炒鸡蛋/}).click();
+  await page.getByRole('link',{name:'返回菜谱',exact:true}).click();
+  await expect(food).toHaveValue('番茄');
+  await expect(keyword).toHaveValue('西红柿炒鸡蛋');
+  await expect(categories.getByRole('button',{name:/^素菜/})).toHaveAttribute('aria-pressed','true');
   assert.equal(await page.evaluate(()=>innerWidth===430&&document.documentElement.scrollWidth<=innerWidth+1),true);
   await page.getByRole('link',{name:'记录做过的菜',exact:true}).click();
   await expect(page.getByLabel('菜名',{exact:true})).toHaveValue('');

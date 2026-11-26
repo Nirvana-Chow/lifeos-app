@@ -32,7 +32,7 @@ function groupLines(lines: string[]) {
   return groups.filter(group => group.entries.length > 0);
 }
 
-export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; categoryLabel: string}) {
+export function CookingRecipe({ recipe, categoryLabel, backHref }: {recipe: Recipe; categoryLabel: string; backHref: string}) {
   const sections = recipe.sections.flatMap(section => {
     const label = sectionNames[section.title as keyof typeof sectionNames];
     const groups = groupLines(section.lines);
@@ -42,7 +42,7 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
   return (
     <article className={styles.recipe}>
       <header className={styles.recipeHeader}>
-        <Link href="/personal/cooking" className={styles.recipeLink}>
+        <Link href={backHref} className={styles.recipeLink}>
           <ArrowLeft aria-hidden="true" size={17} />返回菜谱
         </Link>
         <p className={styles.meta}>{categoryLabel} · 难度 {recipe.difficulty}/5</p>
