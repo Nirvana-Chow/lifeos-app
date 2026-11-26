@@ -8,6 +8,9 @@ import {loadRecentMemos} from '../personal-journal/recent-memos.ts';
 import type {TaskRow, WorkspaceState} from './contract.ts';
 import {RequirementProgressCard} from './requirement-progress-card';
 import {filterTasks, metricTaskFilter} from './selectors.ts';
+import {Frame,FramePanel} from '../business-reui/frame';
+import {Alert,AlertDescription} from './reui/alert';
+import {Badge} from './ui/badge';
 import {Button} from './ui/button';
 import s from './daily-overview.module.css';
 
@@ -66,7 +69,14 @@ function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string
 }
 
 function OverviewPanel({title,action,children}: {title:string;action?:ReactNode;children:ReactNode}) {
-  return <section className="lo-panel" aria-label={title}><div className="lo-panel-heading"><h2>{title}</h2>{action}</div>{children}</section>;
+  return <Frame asChild className="border-transparent bg-transparent">
+    <section aria-label={title}>
+      <FramePanel className="p-0">
+        <div className="lo-panel-heading"><h2>{title}</h2>{action}</div>
+        {children}
+      </FramePanel>
+    </section>
+  </Frame>;
 }
 
 export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,onRequirements,onTasks,renderTask}:{
@@ -88,8 +98,9 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
         {calendar.state === 'ready' ? <>
           {calendar.value.rows.length ? <ul className={s.rows}>{calendar.value.rows.map(row=><li key={row.id}><span>{row.title}</span><time dateTime={row.day}>{row.day} · {row.label}</time></li>)}</ul>
             : <p className="lo-empty-compact">未来 7 天暂无已读取的日程</p>}
-          {calendar.value.appleMissing && <p className={s.note}>Apple 日历尚未连接</p>}
-        </> : <p className="lo-empty-compact" role="status">{calendar.state === 'loading'?'正在读取日程…':'近期日程暂不可用'}</p>}
+          {calendar.value.appleMissing && <p className={s.note}><Badge variant="secondary">Apple 日历尚未连接</Badge></p>}
+        </> : calendar.state === 'loading' ? <p className="lo-empty-compact" role="status">正在读取日程…</p>
+          : <Alert role="status" className="mx-4 my-2 w-auto"><AlertDescription>近期日程暂不可用</AlertDescription></Alert>}
       </OverviewPanel>
     </div>
     <OverviewPanel title="最近思考" action={journalHref && <Button variant="ghost" asChild><a href={journalHref}>查看记录</a></Button>}>
@@ -102,7 +113,8 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
           </div>
         </div>
         {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
-      </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : <p className="lo-empty-compact" role="status">{memos.state === 'loading'?'正在读取随手记…':'随手记暂不可用'}</p>}
+      </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : memos.state === 'loading' ? <p className="lo-empty-compact" role="status">正在读取随手记…</p>
+        : <Alert role="status" className="mx-4 my-2 w-auto"><AlertDescription>随手记暂不可用</AlertDescription></Alert>}
     </OverviewPanel>
     {scope && <RequirementProgressCard scope={scope} onOpen={onRequirements}/>}
   </div>;

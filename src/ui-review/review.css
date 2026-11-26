@@ -662,10 +662,6 @@
   padding: 0 4px;
   color: var(--muted-foreground);
 }
-.lo-board-column > h2 > span {
-  font-size: 14px;
-  font-weight: 400;
-}
 .lo-board-card {
   background: var(--card);
   border: 1px solid var(--border);

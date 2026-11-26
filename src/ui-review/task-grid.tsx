@@ -11,6 +11,7 @@ import { mountTaskGridEditor } from '../personal-candidate/task-grid-editor';
 import { DataGrid, DataGridContainer, dataGridFeatures } from './reui/data-grid';
 import { DataGridTableVirtual } from './reui/data-grid-table-virtual';
 import { DataGridCellSelection, type DataGridCellSelectionApi } from './reui/data-grid-cell-selection';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import styles from './task-grid.module.css';
 
@@ -208,7 +209,8 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
   }
   const value = column.id === 'status' ? taskStatusLabels[row.original.status] : String(getValue());
   return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>
-    <span className={styles.cellText}>{value || '—'}</span>
+    {column.id === 'status' ? <Badge variant="outline"><span className={styles.cellText}>{value}</span></Badge>
+      : <span className={styles.cellText}>{value || '—'}</span>}
     {column.id === 'title' && <button type="button" className={styles.titleDetails} data-cell-interactive
       aria-label={`查看待办详情：${row.original.title}`} disabled={latest.current.blocked}
       onClick={event => latest.current.onOpen(row.original, event.currentTarget)}
