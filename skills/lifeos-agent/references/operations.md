@@ -54,6 +54,10 @@ Read [the credential-runtime guide](credential-runtime.md) for server MCP versus
 | `getCooking` | `GET` | `/v1/records/cooking/{id}` | `cooking:read` | Read one owner cooking record with complete fields and its current revision. |
 | `createCooking` | `POST` | `/v1/records/cooking` | `cooking:read, cooking:write` | Create one cooking record through the native owner writer with complete fields and an idempotency key. |
 | `updateCooking` | `PATCH` | `/v1/records/cooking/{id}` | `cooking:read, cooking:write` | Update one cooking record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
+| `snapshotArticle` | `GET` | `/v1/records/article/snapshot` | `article:read` | Read the complete current article snapshot with source identities, fields and revisions, or fail without a partial inventory. |
+| `getArticle` | `GET` | `/v1/records/article/{id}` | `article:read` | Read one owner article record with complete fields and its current revision. |
+| `createArticle` | `POST` | `/v1/records/article` | `article:read, article:write` | Create one article record through the native owner writer with complete fields and an idempotency key. |
+| `updateArticle` | `PATCH` | `/v1/records/article/{id}` | `article:read, article:write` | Update one article record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving. |
 | `snapshotFeedback` | `GET` | `/v1/feedback/snapshot` | `feedback:read` | Read the complete owner feedback snapshot with explicit source channels and revisions. |
 | `getFeedback` | `GET` | `/v1/feedback/{id}` | `feedback:read` | Read one owner feedback record to verify the result and its revision. |
 | `createFeedback` | `POST` | `/v1/feedback` | `feedback:read, feedback:write` | Create feedback with the server-owned agent-feedback channel and an idempotency key; this does not approve or convert a requirement. |

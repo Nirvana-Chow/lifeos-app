@@ -99,7 +99,7 @@ export function createAgentHandler(options: Options) {
     const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions|notes))?$/.exec(route);
     const fileRoute=/^\/v1\/file-handoffs\/([a-f0-9-]{36})(?:\/(content|acknowledgments))?$/.exec(route);
     const executionRoute=/^\/v1\/requirement-events\/claims\/([a-f0-9-]{36})$/.exec(route);
-    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
+    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking|article)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
     const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
@@ -148,14 +148,15 @@ export function createAgentHandler(options: Options) {
       }
       if(operation.module==='storageReview')return await handleStorageReviewAgent(request,{operation,recordId:storageRoute?.[1],actor,authority,repository:options.repository,config,currentReady:()=>available(operation.id),assertWritable:()=>options.assertWritable(grant)});
       if(isRecordModule(operation.module)){
-        if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
+        if(operation.module==='article'?actor.businessDataPolicy||actor.oauthFence||!actor.scopes.includes('article:read'):actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
         const current=async()=>{try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');};
         const read=async<T>(run:()=>Promise<T>)=>{await current();const result=await run();await current();return result;};
         const guard=async()=>{
           if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
           // OAuth's original transaction fence below rechecks current authority
           // at every receipt/write phase. A second ledger client would self-wait.
-          if(actor.oauthFence){authority.assertActorOrigin(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');}
+          if(operation.module==='article')authority.assertActorOrigin(actor,operation.id);
+          else if(actor.oauthFence){authority.assertActorOrigin(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');}
           else await current();
           await options.assertWritable(grant);
         };

@@ -1,0 +1,55 @@
+.page {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: var(--lo-content-padding, 1.25rem);
+  color: var(--foreground);
+}
+.heading, .actions, .meta, .feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+}
+.heading, .actions { justify-content: space-between; }
+.heading h1, .heading h2 { overflow-wrap: anywhere; }
+.heading h1 { font-size: var(--lo-font-title, 1.5rem); font-weight: 650; }
+.heading h2 { margin: 0; font-size: 1.35rem; font-weight: 650; }
+.columns { display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 1.25rem; }
+.index { border-inline-end: 1px solid var(--border); padding-inline-end: .75rem; min-width: 0; }
+.index ul, .history ul { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.index button { width: 100%; min-height: 44px; justify-content: start; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.index button[aria-pressed='true'] { background: var(--accent); color: var(--accent-foreground); }
+.reader { width: min(100%, 70ch); min-width: 0; display: grid; gap: 1rem; align-content: start; }
+.meta { color: var(--muted-foreground); overflow-wrap: anywhere; }
+.meta a { color: var(--foreground); text-decoration: underline; text-underline-offset: .2em; }
+.prose { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.7; }
+.history { border-block-start: 1px solid var(--border); padding-block-start: .75rem; }
+.history summary { cursor: pointer; }
+.history ul { flex-direction: row; flex-wrap: wrap; gap: .25rem; }
+.dialog { overflow-y: auto; max-height: calc(100dvh - 2rem); }
+.form { display: grid; gap: .75rem; min-width: 0; }
+.form label { display: grid; gap: .3rem; min-width: 0; }
+.form textarea, .form select {
+  min-width: 0;
+  padding: .5rem;
+  border: 1px solid var(--input);
+  border-radius: .375rem;
+  color: var(--foreground);
+  background: var(--background);
+}
+.form textarea { resize: vertical; min-height: 8rem; }
+.form textarea:focus-visible, .form select:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .columns { grid-template-columns: minmax(0, 1fr); }
+  .index { border-inline-end: 0; border-block-end: 1px solid var(--border); padding: 0 0 .75rem; }
+}
+.conflict, .comparison { display: grid; gap: .65rem; min-width: 0; }
+.comparison {
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  padding: .75rem;
+  overflow-wrap: anywhere;
+}
+.comparison h3 { font-weight: 650; }
+.comparison .prose { max-height: 14rem; overflow: auto; }

@@ -6,7 +6,8 @@ import {createMcpHttpHandler} from '../src/mcp-http/handler.ts';
 
 const origin='https://lifeos.nirvanachow.com';
 const excluded=new Set(['discover','discoverV2','commitTodoClassification','previewTodoClassification','claimRequirementExecution','updateRequirementExecution']);
-const catalog58=agentOperations.filter(operation=>!excluded.has(operation.id)&&operation.module!=='fileHandoff');
+const restOnlyArticles=agentOperations.filter(operation=>operation.module==='article');
+const catalog58=agentOperations.filter(operation=>!excluded.has(operation.id)&&operation.module!=='fileHandoff'&&operation.module!=='article');
 // Keep original 53/57-operation compatibility catalogs when notes are not
 // registered/enabled; qualify the new 54/58 catalogs separately.
 const catalog54=catalog58.filter(operation=>operation.module!=='cooking');
@@ -18,7 +19,7 @@ async function fixture(operations:typeof catalog53){
  const handler=createMcpHttpHandler({enabled:true,origin,dispatch:async request=>{
   assert.equal(new URL(request.url).pathname,'/api/platform/agent/v2/capabilities');
   assert.equal(request.method,'GET');requests++;
-  return Response.json({apiVersion:'2',operations:current});
+  return Response.json({apiVersion:'2',operations:[...current,...restOnlyArticles]});
  }});
  const client=new Client({name:'synthetic-compact-catalog',version:'1'},{versionNegotiation:{mode:{pin:'2026-07-28'}}});
  await client.connect(new StreamableHTTPClientTransport(new URL(origin+'/api/platform/mcp'),{requestInit:{headers:{authorization:'Bearer synthetic-compact-catalog'}},fetch:async(input,init)=>{

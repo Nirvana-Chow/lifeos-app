@@ -1,3 +1,4 @@
+import {articleFenceReady,articleGrantScopes} from '../personal-article/agent-permission.ts';
 import {resolveBusinessOAuthToken,readCurrentBusinessOAuthGrant} from '../business-mcp-oauth/runtime.ts';
 import {extendFileGrant} from '../file-handoff/authorization.ts';
 import {readFileHandoffConfig} from '../file-handoff/config.ts';
@@ -42,14 +43,15 @@ function failure(status: 403 | 404 | 503, code: string): Response {
 
 type GrantLookupPool = {query:(sql:string,values:string[])=>Promise<{rows:unknown[]}>};
 /** Read only current non-secret grant fields; never invoke the quota-counting verifier. */
-export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, policyOptions?:()=>Promise<Omit<PolicyResolutionOptions,'now'>>,filesEnabled=false) {
+export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, policyOptions?:()=>Promise<Omit<PolicyResolutionOptions,'now'>>,filesEnabled=false,articlesEnabled=false) {
   const {rows} = await pool.query('SELECT id, "referenceId", metadata, permissions, enabled, "expiresAt" FROM lifeos_agent.apikey WHERE id = $1', [id]);
   if (rows.length !== 1 || !rows[0] || typeof rows[0] !== 'object') return null;
   const row = rows[0] as Record<string,unknown>;
   try {
     const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
     const permissions = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : row.permissions;
-    const scopes = decodeAgentPermissions(permissions);
+    const article = !!metadata&&typeof metadata==='object'&&Object.hasOwn(metadata,'articleAccess');
+    const scopes = article ? articlesEnabled&&row.enabled===true&&row.expiresAt!==null&&articleGrantScopes(metadata,permissions) : decodeAgentPermissions(permissions);
     const expires = row.expiresAt === null ? null : new Date(row.expiresAt as string|Date).valueOf();
     if (row.id !== id || typeof row.referenceId !== 'string' || !row.referenceId || !metadata || typeof metadata !== 'object' ||
         typeof metadata.spaceId !== 'string' || !metadata.spaceId || row.enabled !== true && row.enabled !== null ||
@@ -62,7 +64,7 @@ export async function readCurrentAgentGrant(pool:GrantLookupPool, id:string, pol
     }
     const policy=policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,allowedOperationIds:policyGrant.allowedOperationIds}:{};
     const base={grantId:id,ownerId:row.referenceId,spaceId:metadata.spaceId as string,scopes:(policyGrant?.scopes??scopes) as readonly OperationScope[],...policy,authorizationRevision:classificationDigest({version:'classification-producer-v1',id,ownerId:row.referenceId,spaceId:metadata.spaceId,permissions,enabled:row.enabled,expiresAt:expires===null?null:new Date(expires).toISOString(),...(policyGrant?.businessDataPolicy?{businessDataPolicy:policyGrant.businessDataPolicy,operationIds:policyGrant.allowedOperationIds}:{})})};
-    if(!filesEnabled)return base;
+    if(!filesEnabled||article)return base;
     const permission=(await pool.query('SELECT lifeos_agent.read_file_handoff_permission($1,$2,$3) AS value',[id,row.referenceId,metadata.spaceId])).rows[0] as {value?:unknown}|undefined;
     return extendFileGrant(base,permission?.value,true);
   } catch {return null;}
@@ -247,15 +249,16 @@ async function initialize(platform: PlatformConfig, personal: PersonalConfig, co
         const key = result.key;
         const spaceId = key?.metadata?.spaceId;
         if (!result.valid || !key || typeof spaceId !== 'string') return null;
-        return readCurrentAgentGrant(verifier,key.id,policyOptions,!!fileHandoff);
+        return readCurrentAgentGrant(verifier,key.id,policyOptions,!!fileHandoff,modules.article===true);
       },
-      readCurrentGrant: (id,oauthFence) => oauthFence?readCurrentBusinessOAuthGrant(id,oauthFence,key=>readCurrentAgentGrant(verifier,key,policyOptions,!!fileHandoff)):readCurrentAgentGrant(verifier,id,policyOptions,!!fileHandoff),
+      readCurrentGrant: (id,oauthFence) => oauthFence?readCurrentBusinessOAuthGrant(id,oauthFence,key=>readCurrentAgentGrant(verifier,key,policyOptions,!!fileHandoff)):readCurrentAgentGrant(verifier,id,policyOptions,!!fileHandoff,modules.article===true),
       operationAvailable: async id => {
         if(!agentOperationAvailable(id,personal,fenceReady,modules))return false;
         if(agentCapabilityOperations.find(op=>op.id===id)?.module==='fileHandoff')return !!fileHandoff&&await fileHandoff.ready();
         if(isRequirementEventOperation(id)||id==='streamRequirementEvents')try{await eventReady();}catch{return false;}
         if(agentCapabilityOperations.find(op=>op.id===id)?.module==='requirements')try{await verifyAgentRequirementsReadiness(business);}catch{return false;}
         if(agentCapabilityOperations.find(op=>op.id===id)?.module==='classification')try{await classificationReady();}catch{return false;}
+        if(agentCapabilityOperations.find(op=>op.id===id)?.module==='article')return articleFenceReady(business);
         if(isRecordModule(agentCapabilityOperations.find(op=>op.id===id)?.module??'')||agentCapabilityOperations.find(op=>op.id===id)?.module==='storageReview'){if(!modules.businessDataPolicy)return false;try{const catalog=await readBusinessPolicyCatalog(verifier);return catalog.enabled&&catalog.operations.some(op=>op.id===id&&op.enabled);}catch{return false;}}
         return true;
       },
