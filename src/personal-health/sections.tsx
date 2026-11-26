@@ -44,13 +44,13 @@ function exerciseBrowse(url:URL):ReturnType<typeof initialBrowse> {
 
 const exerciseDetailKey='lifeosExerciseDetail';
 
-export function exerciseHistoryRecord():string|null {
+export function exerciseHistoryRecord(scope:string):string|null {
   const value=window.history.state?.[exerciseDetailKey];
-  return window.location.hash==='#exercise'&&typeof value==='string'?value:null;
+  return window.location.hash==='#exercise'&&value?.scope===scope&&typeof value.id==='string'?value.id:null;
 }
 
-export function pushExerciseHistoryRecord(id:string,url=window.location.href) {
-  window.history.pushState({...window.history.state,[exerciseDetailKey]:id},'',url);
+export function pushExerciseHistoryRecord(id:string,scope:string,url=window.location.href) {
+  window.history.pushState({...window.history.state,[exerciseDetailKey]:{id,scope}},'',url);
 }
 
 function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBrowse>) {

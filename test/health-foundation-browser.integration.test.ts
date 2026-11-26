@@ -91,6 +91,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await context.addCookies([{name:'health-fixture',value:'owner',url:origin}]);
 
   let writable = false;
+  let verifiedSpace = spaceId;
   let healthEnabled = true, denied = false, truncated = false, foreign = false, reads = 0;
   let items = [
     healthRecord(1,'合成睡眠','sleep'),healthRecord(2,'合成健身','strength'),
@@ -103,11 +104,16 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     const request = route.request(), url = new URL(request.url());
     if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405,json:{}});}
     if(url.pathname.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-    if(url.pathname.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId,storageVerified:true,writable,allowedTypes:['todo','journal'],healthEnabled}});
+    if(url.pathname.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:verifiedSpace,storageVerified:true,writable,allowedTypes:['todo','journal'],healthEnabled}});
     if(url.pathname.endsWith('/health/snapshot')){
       reads++;
       if(denied)return route.fulfill({status:403,json:{error:{message:'合成读取拒绝'}}});
-      const snapshot = foreign ? items.map(item=>({...item,source:{...item.source,original:{...item.source.original,spaceId:'synthetic-foreign-space'}}})) : items;
+      const snapshot = foreign || verifiedSpace!==spaceId ? items.map(item=>{
+        const original=item.source.original;
+        return {...item,source:{...item.source,original:{
+          ...original,spaceId:foreign?'synthetic-foreign-space':verifiedSpace,input:{...original.input,spaceId:verifiedSpace},
+        }}};
+      }) : items;
       return route.fulfill({json:{scope:'full-current-snapshot',total:snapshot.length,truncated,items:snapshot,observedAt}});
     }
     if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']},total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
@@ -244,12 +250,25 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     const proof=process.env.LIFEOS_HEALTH_PROOF_DIR;
     if(proof)await page.screenshot({path:join(proof,`exercise-filter-${width}.png`),animations:'disabled'});
     await completed.focus();
+    const detailLocation=page.url();
+    const listScroll=await page.evaluate(()=>window.scrollY);
     await page.keyboard.press('Enter');
     await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
     assert.equal(detailReads.at(-1),items[3].id);
+    if(width===390){
+      const beforeReload=detailReads.length;
+      await page.reload();
+      await expect(page).toHaveURL(detailLocation);
+      await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+      assert.equal(detailReads.length,beforeReload+1);
+      assert.equal(detailReads.at(-1),items[3].id);
+      await expect.poll(()=>dialog.evaluate(node=>node.contains(document.activeElement))).toBe(true);
+    }
     await page.goBack();
+    await expect(page).toHaveURL(detailLocation);
     await expect(dialog).toHaveCount(0);
     await expect(completed).toBeFocused();
+    assert.equal(await page.evaluate(()=>window.scrollY),listScroll);
     await expect(frisbee).toHaveAttribute('aria-pressed','true');
     await expect(exerciseStatus).toHaveValue('completed');
     await page.goForward();
@@ -268,9 +287,35 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(dialog).toHaveCount(0);
     await expect(exerciseStatus).toHaveValue('completed');
 
+    if(width===390){
+      await exerciseStatus.selectOption('planned');
+      const planned=row('合成飞盘计划');
+      await planned.click();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      await page.reload();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      assert.equal(detailReads.at(-1),items[2].id);
+      await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(planned).toBeFocused();
+      await expect(frisbee).toHaveAttribute('aria-pressed','true');
+      await expect(exerciseStatus).toHaveValue('planned');
+      await expect(completed).toHaveCount(0);
+      await page.goForward();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      await page.goBack();
+      await expect(planned).toBeFocused();
+      await expect(exerciseStatus).toHaveValue('planned');
+      await exerciseStatus.selectOption('completed');
+      await expect(completed).toBeVisible();
+      await expect(exerciseStatus).toHaveValue('completed');
+    }
+
+    const beforeSleep=page.url();
     await sleep.click();
     await expect(row('合成睡眠')).toBeVisible();
     await page.goBack();
+    await expect(page).toHaveURL(beforeSleep);
     await expect(completed).toBeVisible();
     await expect(exerciseStatus).toHaveValue('completed');
     await page.goForward();
@@ -281,6 +326,40 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.deepEqual(writes,[]);
   }
+  await row('合成飞盘实绩').click();
+  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+  const previousRecords=items;
+  const missingId=items[3].id;
+  const beforeMissing=detailReads.length;
+  items=items.filter(item=>item.id!==missingId);
+  await page.reload();
+  const missing=page.getByRole('status').filter({hasText:'这条运动记录不在当前已读列表。'});
+  await expect(missing).toBeVisible();
+  await expect(page.getByText('当前筛选下暂无已读记录。',{exact:true})).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(exerciseStatus).toHaveValue('completed');
+  await page.goBack();
+  await expect(missing).toHaveCount(0);
+  await page.goForward();
+  await expect(missing).toBeVisible();
+  assert.equal(detailReads.length,beforeMissing);
+  await page.goBack();
+  items=previousRecords;
+  await row('刷新').click();
+  await expect(row('合成飞盘实绩')).toBeVisible();
+
+  // A fresh valid snapshot in another space may contain the same synthetic ID.
+  // The old history entry still must not open a detail there.
+  await row('合成飞盘实绩').click();
+  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+  const beforeSpaceChange=detailReads.length;
+  verifiedSpace='synthetic-other-health-space';
+  await page.reload();
+  await expect(row('合成飞盘实绩')).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(detailReads.length,beforeSpaceChange);
+  verifiedSpace=spaceId;
+
   items=items.slice(0,-1);
   writable=false;
   await page.goto(exerciseLink);

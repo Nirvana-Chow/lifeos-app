@@ -66,8 +66,9 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
  const health=useHealthBrowse(type==='health',root);
- const exerciseDetail=useRef<{id:string;url:string}|null>(null);
- const exerciseTrigger=useRef<string|null>(null);
+ const exerciseDetail=useRef<{id:string;scope:string;url:string}|null>(null);
+ const exerciseTrigger=useRef<string|null>(null),exerciseClosePending=useRef(false);
+ const [exerciseHistoryUnavailable,setExerciseHistoryUnavailable]=useState(false);
  const compactHealth=type==='health'&&health.compact;
  const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
  const autosaveTimer=useRef<number|undefined>(undefined),verifiedRef=useRef(verified);
@@ -180,50 +181,64 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  function closeExerciseHistory(){
   const detail=exerciseDetail.current;
   exerciseDetail.current=null;
-  if(detail&&exerciseHistoryRecord()===detail.id)window.history.back();
+  if(detail&&exerciseHistoryRecord(detail.scope)===detail.id)window.history.back();
  }
  function closeEditor(){
-  if(!leave())return;
-  if(type==='health'){
-   editorRef.current=null;
-   closeExerciseHistory();
+  const detail=exerciseDetail.current;
+  if(type==='health'&&detail&&exerciseHistoryRecord(detail.scope)===detail.id){
+   // Keep the dialog mounted until Back commits the list entry.
+   if(!blocked&&!exerciseClosePending.current){
+    exerciseClosePending.current=true;
+    window.history.back();
+   }
+   return;
   }
+  if(!leave())return;
+  if(type==='health')editorRef.current=null;
   setEditor(null);
  }
  async function open(entry:PublicEntry,exerciseMode?:'push'|'restore'){
   if(!leave()||!current.current)return;
   const binding=keyOf(current.current),token=generation.current,url=window.location.href;
+  if(exerciseMode)busyRef.current=true;
   setBusy(true);setError('');
   try{
    const data=await json(type+'/'+entry.id),row=ownerRecord(data.entry,type,current.current.spaceId);
    const versions=await json(type+'/'+entry.id+'/history'),after=readStatus(await json('status'));
    if(token!==generation.current||!current.current||binding!==keyOf(after)||binding!==keyOf(current.current))return;
    if(exerciseMode){
-    if(url!==window.location.href||(exerciseMode==='restore'&&exerciseHistoryRecord()!==entry.id))return;
-    if(exerciseMode==='push')pushExerciseHistoryRecord(entry.id);
+    if(url!==window.location.href||(exerciseMode==='restore'&&exerciseHistoryRecord(binding)!==entry.id))return;
+    if(exerciseMode==='push')pushExerciseHistoryRecord(entry.id,binding);
     exerciseTrigger.current=entry.id;
-    exerciseDetail.current={id:entry.id,url};
+    exerciseDetail.current={id:entry.id,scope:binding,url};
    }
    const fields=recordFields(row,type);
    if(type==='journal'&&session.current?.getSnapshot().phase==='rejected')session.current.cancel();
    setEditor({entry:row,fields,initial:JSON.stringify(fields)});
    setHistory((versions.items??[]).map((item:unknown)=>ownerRecord(item,type,after.spaceId)));
   }catch(e){if(token===generation.current)setError(e instanceof Error?e.message:'读取未完成。');}
-  finally{if(token===generation.current)setBusy(false);}
+  finally{
+   if(token===generation.current){
+    if(exerciseMode)busyRef.current=false;
+    setBusy(false);
+   }
+  }
  }
  const onExercisePop=useRef<()=>void>(()=>{});
  onExercisePop.current=()=>{
-  const id=exerciseHistoryRecord(),detail=exerciseDetail.current;
+  exerciseClosePending.current=false;
+  const scope=current.current&&keyOf(current.current);
+  const id=scope?exerciseHistoryRecord(scope):null,detail=exerciseDetail.current;
   if(detail&&detail.id!==id){
-   if(!leave()){pushExerciseHistoryRecord(detail.id,detail.url);return;}
+   if(!leave()){pushExerciseHistoryRecord(detail.id,detail.scope,detail.url);return;}
    exerciseDetail.current=null;
    editorRef.current=null;
    setEditor(null);
   }
-  if(id&&id!==detail?.id){
-   const entry=entries.find(entry=>entry.id===id&&(recordFields(entry,'health') as HealthPersonalFields).personal.healthKind==='training');
-   if(entry)void open(entry,'restore');
-  }
+  const restoring=id!==null&&id!==detail?.id;
+  const entry=restoring?entries.find(entry=>entry.id===id&&(recordFields(entry,'health') as HealthPersonalFields).personal.healthKind==='training'):undefined;
+  setExerciseHistoryUnavailable(restoring&&!entry);
+  if(entry)void open(entry,'restore');
  };
  useEffect(()=>{
   if(type!=='health')return;
@@ -231,6 +246,10 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   window.addEventListener('popstate',sync);
   return()=>window.removeEventListener('popstate',sync);
  },[type]);
+ useEffect(()=>{
+  // A document reload restores the browser entry before the private snapshot is ready.
+  if(type==='health'&&status&&current.current===status)onExercisePop.current();
+ },[type,status,entries]);
  async function save(mode:'manual'|'autosave'='manual'){
   cancelAutosaveTimer();
   const active=session.current,token=generation.current;
@@ -418,6 +437,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    onClick={()=>void retry()}>继续上次保存（{recordLabels[mutation.pending.type]}）</Button>:<p>保留的请求无法核对，请保留当前页面。</p>}
  </div>;
  const feedback=<>
+  {type==='health'&&status&&exerciseHistoryUnavailable&&exerciseHistoryRecord(keyOf(status))&&<p role="status">这条运动记录不在当前已读列表。</p>}
   {error&&!(type==='journal'&&editor)&&<p role="alert" className={s.error}>{error}</p>}{notice&&<p role="status" data-record-notice>{notice}</p>}
   {!(type==='journal'&&editor)&&<>{mutation?.error&&<p role="alert">{mutation.error}</p>}{recovery}</>}
  </>;
