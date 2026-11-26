@@ -8,6 +8,7 @@ import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer,type Page} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {handlePersonalRequest} from '../src/personal-candidate/http.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
 import {emptyMediaPersonal} from '../src/personal-media/domain.ts';
@@ -15,24 +16,27 @@ import {emptyPortfolioPersonal} from '../src/personal-portfolio/model.ts';
 
 const businessPaths={career:'职业',resume:'简历',media:'书影音',portfolio:'账户资产投资'} as const;
 type BusinessPath=keyof typeof businessPaths;
+const adjacentPaths=['articles','learning','files'] as const;
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
 test('OPT-IN the four business records use one authorized shell when explicitly registered',{
- skip:process.env.RUN_BUSINESS_RECORD_HOST_BROWSER_TESTS!=='1'&&'Requires synthetic Next and Chromium',timeout:180_000,
+ skip:process.env.RUN_BUSINESS_RECORD_HOST_BROWSER_TESTS!=='1'&&'Requires synthetic Next and Chromium',timeout:300_000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'), root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-business-record-host-'));
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browser:Browser|undefined,browserServer:BrowserServer|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,server,browserProcess,browser,browserServer}));
- for(const name of Object.keys(businessPaths))await mkdir(join(root,'app/personal',name),{recursive:true});
+ for(const name of [...Object.keys(businessPaths),...adjacentPaths])await mkdir(join(root,'app/personal',name),{recursive:true});
+ await mkdir(join(root,'app/personal/learning/data'),{recursive:true});
  await mkdir(join(root,'app/login'),{recursive:true});
  await Promise.all([
-  ...['layout.tsx','globals.css','theme.css','personal/layout.tsx','personal/page.tsx',...Object.keys(businessPaths).map(name=>'personal/'+name+'/page.tsx')].map(file=>cp(join(source,'app',file),join(root,'app',file))),
+  ...['layout.tsx','globals.css','theme.css','personal/layout.tsx','personal/page.tsx','personal/learning/data/route.ts',...[...Object.keys(businessPaths),...adjacentPaths].map(name=>'personal/'+name+'/page.tsx')].map(file=>cp(join(source,'app',file),join(root,'app',file))),
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),cp(join(source,'src'),join(root,'src'),{recursive:true}),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
  ]);
  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>Synthetic login</h1>}');
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await writeFile(join(root,'src/platform/runtime.ts'),`
+ export const getPlatformLearningRuntime=async()=>null;
  export const readPlatformLoginCapability=async()=>({sessionDuration:true});
  export const readPlatformPasswordCapability=async()=>false;
  export const readPlatformPagePrincipal=async(headers)=>headers.get('cookie')?.includes('synthetic-owner=1')&&!headers.get('cookie')?.includes('synthetic-deny=1')?{id:'synthetic-owner'}:null;
@@ -50,7 +54,7 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
  }
  assert.ok(origin);
  // Compile fixture routes before asserting browser navigation and rendering.
- for(const route of Object.keys(businessPaths)){
+ for(const route of [...Object.keys(businessPaths),...adjacentPaths]){
   const response=await fetch(origin+'/personal/'+route,{headers:{cookie:'synthetic-owner=1'},signal:AbortSignal.timeout(90_000)});
   assert.equal(response.status,200);
   await response.arrayBuffer();
@@ -63,6 +67,9 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   allowedTypes:['todo','journal','project','domain','topic'],careerEnabled:true,mediaEnabled:true,portfolioEnabled:true} as const;
  const repository=new MemoryPort();
  repository.readCurrentSnapshot=async owner=>[...repository.rows.values()].filter(row=>row.ownerId===owner);
+ const index=createPersonalPlatformHandler({config,repository,storageVerified:true,sessions:{
+  read:async headers=>headers.get('cookie')?.includes('synthetic-owner=1')?{userId:config.ownerId,email:config.ownerEmail}:null,
+ },assertWritable:async()=>{throw Error('Fixture is read-only');}});
  const service=new PersonalService(repository,config);
  const seed=(type:'career'|'media'|'portfolio',title:string,personal:unknown,key:string)=>service.mutate(
   config.ownerId,type,null,{spaceId:config.spaceId,confirmed:true,fields:{title,text:'Synthetic record body',occurredOn:null,personal}},'business-host-fixture-'+key);
@@ -85,6 +92,10 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
    if(url.origin!==origin)return route.abort();
    if(request.method()!=='GET'){writes.push(path);return route.fulfill({status:405,json:{}});}
    reads.push(path);
+   if(path==='/api/platform/personal/files'){
+    const response=await index(new Request(url,{headers:{...await request.allHeaders(),host:url.host}}));
+    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+   }
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/auth/get-session'))return route.fulfill({json:{user:{id:config.ownerId},session:{
     mfaVerified:true,sessionDurationMode:'fixed',sessionDurationSeconds:1800,expiresAt:new Date(Date.now()+600000).toISOString()}}});
@@ -208,10 +219,30 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   assert.deepEqual(writes,[]);
   assert.deepEqual(errors,[]);
   console.log('BUSINESS_HOST_ROUTES '+JSON.stringify({width,documents,writes,scrollRestored,detailReads:reads.filter(path=>path.includes(media.id))}));
+  if(width===390){
+   const destination=(route:typeof adjacentPaths[number])=>origin+'/personal/'+route;
+   await page.goto(destination('articles'),{waitUntil:'domcontentloaded'});
+   await page.getByRole('button',{name:'阅读资料',exact:true}).click();
+   await expect(page.getByRole('heading',{name:'阅读资料列表'})).toBeVisible();
+   await page.goto(destination('learning'),{waitUntil:'domcontentloaded'});
+   await expect(page.getByText('词卡暂未开放。',{exact:true})).toBeVisible();
+   await expect(page.getByRole('heading',{name:'新建词卡'})).toHaveCount(0);
+   await page.goto(destination('files'),{waitUntil:'domcontentloaded'});
+   await expect(page.getByText('文件索引尚未接入授权的元数据来源。',{exact:true})).toBeVisible();
+   await page.goBack({waitUntil:'domcontentloaded'});
+   await expect(page).toHaveURL(destination('learning'));
+   await expect(page.getByText('词卡暂未开放。',{exact:true})).toBeVisible();
+   await page.goForward({waitUntil:'domcontentloaded'});
+   await expect(page).toHaveURL(destination('files'));
+   await expect(page.getByText('文件索引尚未接入授权的元数据来源。',{exact:true})).toBeVisible();
+   assert.deepEqual(writes,[]);
+   assert.deepEqual(errors,[]);
+   console.log('ADJACENT_ROUTES '+JSON.stringify({width,legacyArticle:true,learningClosed:true,indexUnconnected:true,backForward:true,writes}));
+  }
   await page.close();
  }
  const anonymous=await browser.newPage();
- for(const name of Object.keys(businessPaths)){
+ for(const name of [...Object.keys(businessPaths),...adjacentPaths]){
   await anonymous.goto(origin+'/personal/'+name);
   await expect(anonymous).toHaveURL(origin+'/login');
   await expect(anonymous.locator('.lo-shell')).toHaveCount(0);
