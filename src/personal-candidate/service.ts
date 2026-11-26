@@ -8,6 +8,7 @@ import {reminderSourceDigest} from '../import-preview/reminders.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {normalizePersonalFields,personalTypes,personalReferences,type ObjectFields} from './business.ts';
 import {preserveOmittedPlanning} from './planning.ts';
+import {validateTodoOriginalLine} from './todo-capture.ts';
 import {createHash,randomUUID} from 'node:crypto';
 import {PlatformError,object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox,type TodoDraft,type InboxDraft} from '../platform/domain.ts';
 import type {PlatformRepository,StoredEntry,PublicEntry,MutationResult,Transaction} from '../platform/contracts.ts';
@@ -15,7 +16,7 @@ import {compareWindowKeys,windowKey} from '../platform/window-domain.ts';
 import type {PersonalConfig,PersonalType} from './config.ts';
 export type PersonalGuard=()=>Promise<void>;
 export type PersonalFields=TodoDraft|ObjectFields|Pick<InboxDraft,'title'|'text'|'occurredOn'>;
-export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number};
+export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number;originalLine?:string};
 export type PersonalPage={items:PublicEntry[];truncated:boolean;scanned:number;limit:number;scope:'bounded-window';total:null};
 const fail=(status:number,code:string,message:string):never=>{throw new PlatformError(status,code,message);};
 const missing=():never=>fail(404,'NOT_FOUND','没有可访问的本人记录。');
@@ -61,10 +62,11 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
- const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);
+ const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:type==='todo'?['originalLine']:[])]);
  if(raw.spaceId!==spaceId||raw.confirmed!==true)return fail(403,'PERSONAL_CONFIRMATION_REQUIRED','需要核对本人空间并明确确认保存。');
  const fields=normalizePersonalFields(type,raw.fields);
- return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{})};
+ return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{}),
+  ...(Object.hasOwn(raw,'originalLine')?{originalLine:validateTodoOriginalLine(raw.originalLine)}:{})};
 }
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;

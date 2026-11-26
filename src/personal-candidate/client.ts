@@ -1,5 +1,6 @@
 import {clonePersonalJSON} from './editor.ts';
 import {preserveOmittedPlanning} from './planning.ts';
+import {validateTodoOriginalLine} from './todo-capture.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {personalTypes,normalizePersonalFields} from './business.ts';
 import {object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox} from '../platform/domain.ts';
@@ -20,14 +21,15 @@ function checked(value:unknown,binding:PersonalBinding):PersonalCommand{
  checkBinding(binding);const raw=object(value,['ownerId','spaceId','type','id','key','method','body']);
  if(raw.ownerId!==binding.ownerId||raw.spaceId!==binding.spaceId||!personalTypes.includes(raw.type as PersonalType)||raw.method!==(raw.id===null?'POST':'PATCH'))throw Error('请求与当前本人身份或空间不符。');
  validateIdempotencyKey(raw.key);if(raw.id!==null)validateId(raw.id);
- const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:[])]);
+ const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:raw.type==='todo'?['originalLine']:[])]);
  if(body.spaceId!==binding.spaceId||body.confirmed!==true)throw Error('请先确认本次本人手动保存。');
  normalizePersonalFields(raw.type as string,body.fields);
  if(raw.id!==null)validateRevision(body.expectedRevision);
+ if(Object.hasOwn(body,'originalLine'))validateTodoOriginalLine(body.originalLine);
  return freeze(clonePersonalJSON(raw) as PersonalCommand);
 }
-export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number):PersonalCommand{
- return checked({...binding,type,id,key,method:id===null?'POST':'PATCH',body:{spaceId:binding.spaceId,confirmed,fields,...(id===null?{}:{expectedRevision})}},binding);
+export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number,originalLine?:string):PersonalCommand{
+ return checked({...binding,type,id,key,method:id===null?'POST':'PATCH',body:{spaceId:binding.spaceId,confirmed,fields,...(id===null?{}:{expectedRevision}),...(originalLine===undefined?{}:{originalLine})}},binding);
 }
 function matches(command:PersonalCommand,value:unknown):value is PublicEntry{
  if(!obj(value)||!obj(value.source)||!obj(value.source.original)||!obj(value.draft)||'ownerId'in value)return false;

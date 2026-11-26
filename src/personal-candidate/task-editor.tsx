@@ -9,6 +9,7 @@ import{clonePersonalJSON,editorFromEntry}from'./editor';
 import type{PersonalRelations,PersonalReference}from'./business';
 import{taskStatusLabels,taskReceiptMatchesSubmission,type TaskTarget,type TaskIdentity}from'./task-editor-state';
 import styles from'./task-editor.module.css';
+import {todoCaptureSource} from './todo-capture';
 const empty:PersonalEditorFields={title:'',text:'',date:'',status:'open'};
 type CloseGuard={current:(()=>boolean)|null};
 type TaskEditorProps={
@@ -98,6 +99,16 @@ export function TaskEditor({
   approvedDocumentLeave.current=true;
  }}>{projectName}</a>:projectName;
  const heading=target.mode==='create'?'新建待办':missing?'待办不可用':'待办详情';
+ const capture=!concealed&&target.mode==='edit'&&entry&&spaceId&&entry.id===target.task.id?todoCaptureSource(entry,spaceId):null;
+ const origin=target.mode==='edit'&&!concealed&&entry&&entry.id===target.task.id?<details className={styles.capture}>
+  <summary>录入原文与初次确认</summary>
+  {capture?<dl>
+   <div><dt>录入原文</dt><dd>{capture.originalLine===''?'空白行':capture.originalLine}</dd></div>
+   <div><dt>初次确认标题</dt><dd>{capture.initial.title}</dd></div>
+   {capture.initial.notes&&<div><dt>初次确认正文</dt><dd>{capture.initial.notes}</dd></div>}
+   <div><dt>初次确认到期日</dt><dd>{capture.initial.dueOn??'未设置'}</dd></div>
+  </dl>:<p>原始输入未记录。</p>}
+ </details>:null;
  const content=missing?<p role="alert">无法读取这条待办，未创建新记录。</p>:viewing?<div className={styles.form}>
    <div className={`${styles.body} ${styles.detail}`}>
     <h3>{shown.title}</h3>
@@ -110,6 +121,7 @@ export function TaskEditor({
      <div><dt>项目</dt><dd>{relatedProject}</dd></div>
      <div><dt>标签</dt><dd>{relation.topics.length?relation.topics.map(topic=>relationName('topic',topic)).join('、'):'未设置'}</dd></div>
     </dl>
+    {origin}
    </div>
   </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
@@ -119,7 +131,7 @@ export function TaskEditor({
     <PlanningInputs className={styles.row} value={{plannedStartOn:fields.plannedStartOn||null,plannedEndOn:fields.plannedEndOn||null}} onChange={(field,value)=>setFields({...fields,[field]:value??''})}/>
     <div className={styles.row}>{(['domain','project'] as const).map(type=><label key={type}>{type==='domain'?'领域':'项目'}<select value={relation[type]?.id??''} onChange={e=>{const entry=relations[type]?.find(v=>v.id===e.target.value);setRelation({[type]:entry?reference(entry):null});}}><option value="">不分类</option>{relation[type]&&!relations[type]?.some(v=>v.id===relation[type]?.id)&&<option value={relation[type]!.id}>原关联（待核对）</option>}{relations[type]?.map(v=><option key={v.id} value={v.id}>{'title'in v.draft?v.draft.title:''}{relation[type]?.id===v.id&&relation[type]?.revision!==v.revision?'（版本已变化，重新选择核对）':''}</option>)}</select></label>)}
      </div>{project&&<p>关联项目 {relatedProject}</p>}{target.mode!=='create'&&<details><summary>标签（可选）</summary><fieldset><legend>标签</legend>{!relations.topic?.length&&<p>暂无可选标签</p>}{relation.topics.filter(t=>!relations.topic?.some(v=>v.id===t.id)).map(t=><label className={styles.topic} key={t.id}><input type="checkbox" checked onChange={e=>{if(!e.target.checked)setRelation({topics:relation.topics.filter(v=>v.id!==t.id)});}}/>不可用标签（取消勾选以移除）</label>)}{relations.topic?.map(v=><label className={styles.topic} key={v.id}><input type="checkbox" checked={relation.topics.some(t=>t.id===v.id)} onChange={e=>setRelation({topics:e.target.checked?[...relation.topics.filter(t=>t.id!==v.id),reference(v)]:relation.topics.filter(t=>t.id!==v.id)})}/>{'title'in v.draft?v.draft.title:''}</label>)}</fieldset></details>}
-   </fieldset></div>
+   </fieldset>{origin}</div>
    {(localError||error)&&<p role="alert">{localError||error}</p>}{uncertain&&<p role="alert">结果尚未确认，请保留输入并重试原请求。</p>}
    <footer className={styles.footer}>{target.mode==='create'&&onBatch&&<button type="button" disabled={busy||dirty||!writable} onClick={onBatch}>多行录入</button>}{uncertain&&<button type="button" disabled={saving} onClick={async()=>{const saved=await onRetry();if(saved&&taskReceiptMatchesSubmission(editTask?{mode:'edit',task:editTask}:target,submitted.current,saved,spaceId))onClose();}}>重试同一请求</button>}{saving&&<button type="button" onClick={onStopWaiting}>停止等待并保留请求</button>}<button type="button" disabled={busy} onClick={close}>{dirty?'取消':'关闭'}</button><button type="submit" disabled={blocked}>{saving||submitting?'正在保存…':'保存待办'}</button></footer>
   </form>;
