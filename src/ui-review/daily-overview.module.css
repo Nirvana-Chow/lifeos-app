@@ -14,14 +14,19 @@
 .overviewHeader :global(.lo-mobile-menu[data-slot="button"]) { color: var(--foreground); }
 
 .overview {
+  --overview-task-tint: light-dark(#eef1f9, #1b2334);
+  --overview-action: light-dark(#4a5e91, #455984);
+  --overview-date-tint: light-dark(#f1ecf8, #30263e);
+  --overview-date-ink: light-dark(#594671, #dfccf3);
+  --overview-thought-mark: light-dark(#efd6a7, #9a753e);
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   align-items: start;
-  gap: 24px;
+  gap: 18px 24px;
 }
 
 .overview > *, .support > * { min-width: 0; }
-.support { display: grid; gap: 16px; }
+.support { display: grid; gap: 12px; }
 
 .taskPanel, .supportPanel {
   padding: 0;
@@ -31,16 +36,16 @@
 
 .taskPanel .panelBody {
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--lo-link) 22%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--overview-action) 14%, var(--border));
   border-radius: var(--lo-radius-surface);
   background: var(--card);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--foreground) 8%, transparent);
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .supportPanel {
-  border-top: 1px solid var(--border);
   border-radius: 0;
 }
+.supportPanel + .supportPanel { border-top: 1px solid var(--border); }
 .supportPanel .panelBody {
   padding: 0;
   border: 0;
@@ -56,26 +61,28 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  padding: 6px 0 2px;
+  padding: 2px 0 0;
 }
 
 .panelHeading h2 {
   margin: 0;
   font-size: max(18px, var(--lo-font-section));
+  font-weight: 650;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .taskPanel .panelHeading {
-  padding: 14px 14px 14px 16px;
+  padding: 8px 12px 8px 14px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--accent) 37%, var(--card));
+  background: var(--overview-task-tint);
 }
-.taskPanel .panelHeading h2 { font-size: 22px; }
+.taskPanel .panelHeading h2 { font-size: 20px; }
 .taskPanel .primaryAction:global([data-slot="button"]) {
-  color: var(--primary-foreground);
-  background: var(--primary);
-  font-weight: 650;
+  color: #fff;
+  background: var(--overview-action);
+  padding-inline: 10px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 .taskPanel .primaryAction:global([data-slot="button"]):hover { filter: brightness(.92); }
@@ -87,12 +94,13 @@
 .tasks :global(.lo-task-project), .tasks :global(.lo-task-status) { display: none; }
 .tasks :global(.lo-overview-task.lo-task-row) {
   grid-template-columns: 44px minmax(0, 1fr) auto 44px;
-  min-height: 54px;
+  min-height: 50px;
+  padding-block: 3px;
 }
 .tasks :global(.lo-task-title),
 .tasks :global(.lo-task-title button) {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 550;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -103,15 +111,15 @@
   text-align: start;
   font-size: 16px;
 }
-.taskPanel :global(.lo-empty-compact) { padding: 14px 16px; }
+.taskPanel :global(.lo-empty-compact) { padding: 10px 14px; }
 .sourceNotice { margin-block: 3px 6px; }
 
 .rows { margin: 0; padding: 0; list-style: none; }
 .rows li {
-  padding: 7px 0;
+  padding: 5px 0;
   overflow-wrap: anywhere;
 }
-.rows li + li { border-top: 1px solid var(--border); }
+.thoughts li + li { border-top: 1px solid var(--border); }
 .rows:not(.thoughts) li {
   display: flex;
   align-items: baseline;
@@ -121,10 +129,26 @@
   font-size: 16px;
 }
 .rows:not(.thoughts) li > span { min-width: 0; font-weight: 550; }
-.rows:not(.thoughts) time { white-space: nowrap; }
+.rows:not(.thoughts) time {
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: var(--overview-date-tint);
+  color: var(--overview-date-ink);
+  white-space: nowrap;
+}
 
-.thoughts li { display: grid; justify-items: start; gap: 4px; }
-.thoughtTitle { font-size: 16px; font-weight: 650; }
+.thoughts li { display: grid; justify-items: start; gap: 3px; }
+.thoughtTitle { font-size: 16px; font-weight: 600; }
+.thoughtTitle::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-inline-end: 7px;
+  border-radius: 50%;
+  background: var(--overview-thought-mark);
+  vertical-align: .12em;
+}
 .thoughtTitle:hover { text-decoration: underline; }
 
 .excerpt {
@@ -162,8 +186,8 @@
 .overview > :global(.lo-panel) > p { padding-inline: 0; }
 
 @media (max-width: 850px) {
-  .overview { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .support { gap: 12px; }
+  .overview { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .support { gap: 8px; }
   .overviewHeader :global(.lo-header-actions) { gap: 0; }
   .overviewHeader :global(.lo-brand[data-slot="button"]) { padding-inline: 3px; }
   .overview > :global(.lo-panel) dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
