@@ -1,4 +1,4 @@
-import {matchesPersonalSearchDate,personalSearchRecordDate,readPersonalSearchDateRange,type PersonalSearchDateRange} from './search-dates.ts';
+import {matchesPersonalSearchDate,personalMonthDayPageSize,personalSearchRecordDate,readPersonalSearchDateRange,readPersonalSearchPage,type PersonalSearchDateRange} from './search-dates.ts';
 import {getRecipe} from '../cooking/catalog.ts';
 import type {CookingRecipePin} from '../cooking/log-domain.ts';
 import {RequirementsService} from '../requirements-candidate/service.ts';
@@ -97,15 +97,20 @@ export class PersonalService{
  async exportSnapshot(owner:string,limit=50){const [entries,history]=await Promise.all([this.page(owner,'current',limit),this.page(owner,'history',limit)]);return{format:'lifeos.personal.manual.export.v1',spaceId:this.config.spaceId,entries:entries.items,history:history.items,truncated:entries.truncated||history.truncated,windows:{entries,history},backupOrRestoreVerified:false};}
  async currentSnapshot(owner:string){this.owner(owner);if(!this.repository.readCurrentSnapshot)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询未配置，不能计算总数。');const rows=await this.repository.readCurrentSnapshot!(owner);if(!Array.isArray(rows)||rows.length>10000||rows.some(r=>!r||r.ownerId!==owner)||new Set(rows.map(r=>r.id)).size!==rows.length)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询超过安全上限或响应无效，未返回部分统计。');return rows.filter(r=>this.matches(r,owner)).map(publicEntry);}
  async overview(owner:string,today:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(today)||Number.isNaN(Date.parse(today+'T00:00:00Z'))||new Date(today+'T00:00:00Z').toISOString().slice(0,10)!==today)fail(400,'INVALID_DATE','需要有效日期。');const items=await this.currentSnapshot(owner),drafts=items.filter(e=>personalEntryType(e,this.config.spaceId)==='todo').map(e=>e.draft as TodoDraft);return{items,scope:'full-current-snapshot' as const,total:items.length,truncated:false,observedAt:new Date().toISOString(),today,counts:{open:drafts.filter(d=>d.status==='open'||d.status==='in_progress').length,done:drafts.filter(d=>d.status==='done').length,cancelled:drafts.filter(d=>d.status==='cancelled').length,overdue:drafts.filter(d=>(d.status==='open'||d.status==='in_progress')&&d.dueOn&&d.dueOn<today).length},projects:items.filter(e=>personalEntryType(e,this.config.spaceId)==='project'),domains:items.filter(e=>personalEntryType(e,this.config.spaceId)==='domain')};}
- async search(owner:string,query:string,dates:PersonalSearchDateRange={}){
+ async search(owner:string,query:string,dates:PersonalSearchDateRange={},requestedPage?:string){
   if(typeof query!=='string'||query.length>240)fail(400,'INVALID_QUERY','搜索内容过长。');
-  const range=readPersonalSearchDateRange(dates.from,dates.to),snapshot=await this.currentSnapshot(owner),q=query.trim().toLowerCase();
+  const range=readPersonalSearchDateRange(dates.from,dates.to,dates.monthDay),page=readPersonalSearchPage(requestedPage,range.monthDay),snapshot=await this.currentSnapshot(owner),q=query.trim().toLowerCase();
   // Search entered prose only: serialized schema keys, state and relation IDs are not content.
   const items=snapshot.filter(({draft})=>{
    if(!['title'in draft?draft.title:'','notes'in draft?draft.notes:'text'in draft?draft.text:''].some(text=>text.toLowerCase().includes(q)))return false;
-   return !range.from&&!range.to||matchesPersonalSearchDate(personalSearchRecordDate(draft as TodoDraft|InboxDraft).date,range);
+   return !range.from&&!range.to&&!range.monthDay||matchesPersonalSearchDate(personalSearchRecordDate(draft as TodoDraft|InboxDraft).date,range);
   }).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));
-  return{scope:'full-current-snapshot' as const,items,query,...range,coverage:{types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length}};
+  const coverage={types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length};
+  if(range.monthDay){
+   const start=(page-1)*personalMonthDayPageSize;
+   return {scope:'filtered-current-page' as const,items:items.slice(start,start+personalMonthDayPageSize),query,...range,coverage,page};
+  }
+  return{scope:'full-current-snapshot' as const,items,query,...range,coverage};
  }
  async referenceStates(owner:string,id:string){this.owner(owner);const entry=await this.repository.get(owner,'todo',validateId(id));if(!this.matches(entry,owner,'todo',id))return missing();return Promise.all(personalReferences(entry.draft as TodoDraft).map(async({type,link})=>{const target=await this.repository.get(owner,'inbox',link.id),allowed=this.matches(target,owner,type,link.id)&&target.source.id===link.sourceId;return{type,link,status:!allowed?'unavailable':target!.revision===link.revision?'current':'updated',current:allowed?publicEntry(target!):null};}));}
  async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<MutationResult>{

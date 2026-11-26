@@ -38,3 +38,5 @@
   .dialog .controls > button { width: 100%; }
   .dialog .form input { font-size: 16px; }
 }
+
+.pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
