@@ -23,7 +23,6 @@ import {
   RefreshCw,
   X,
   Check,
-  Clock,
   AlertTriangle,
   LogIn,
   LogOut,
@@ -136,26 +135,24 @@ function DataState({
   onRefresh?: () => void;
 }) {
   if (state.status === "ready") return null;
-  const error = state.status === "error" || state.status === "forbidden";
+  if (state.status === "loading" || state.status === "unknown" && onRefresh && !state.message) {
+    return (
+      <div className="lo-data-placeholder" role="region" aria-label="数据区域" aria-busy="true">
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+      </div>
+    );
+  }
+  if (state.status === "unknown") {
+    return <p className="lo-data-state" role="status">{state.message || "当前数据连接不可用。"}</p>;
+  }
   return (
-    <div className="lo-data-state" role={error ? "alert" : "status"}>
-      {error ? <AlertTriangle size={22} /> : <Clock size={22} />}
-      <h2>
-        {state.status === "loading"
-          ? "正在读取数据"
-          : state.status === "unknown"
-            ? "等待数据连接"
-            : state.status === "forbidden"
-              ? "无法访问当前空间"
-              : "数据读取失败"}
-      </h2>
-      {state.message && <p>{state.message}</p>}
-      {onRefresh && (
-        <Button variant="outline" onClick={onRefresh}>
-          <RefreshCw size={16} />
-          重新读取
-        </Button>
-      )}
+    <div className="lo-data-state">
+      <p role="alert">
+        <strong>{state.status === "forbidden" ? "无法访问当前空间" : "数据读取失败"}</strong>
+        {state.message && <span>{state.message}</span>}
+      </p>
+      {onRefresh && <Button variant="outline" onClick={onRefresh}>重新读取</Button>}
     </div>
   );
 }
