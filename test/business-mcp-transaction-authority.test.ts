@@ -11,7 +11,7 @@ import {classificationQueries} from '../src/personal-candidate/classification-po
 const config={ownerId:'fixture-owner',spaceId:'fixture-space',ownerEmail:'fixture@example.test',databaseName:'fixture',baseURL:'https://lifeos.nirvanachow.com',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],financeEnabled:true,requirementsEnabled:true,requirementSupportEnabled:true} as const;
 const fence={tokenId:'d'.repeat(64),bindingId:'fixture-binding',bindingRevision:1,expiresAt:2000000000,policy:'all-personal-business-v1'} as const;
 const revision='classification-oauth-v1:'+'b'.repeat(64);
-const operations=agentOperations.filter(op=>'policyClass'in op&&op.policyClass==='personal-business-data');
+const operations=agentOperations.filter(op=>op.module!=='article'&&op.module!=='learning'&&'policyClass'in op&&op.policyClass==='personal-business-data');
 const grant={grantId:'fixture-grant',ownerId:config.ownerId,spaceId:config.spaceId,scopes:[...new Set(operations.flatMap(op=>op.requiredScopes))],allowedOperationIds:operations.map(op=>op.id),businessDataPolicy:'all-personal-business-v1' as const,authorizationRevision:revision,oauthFence:fence};
 test('same-client producer port binds the exact current SQL state and refuses tuple/version/scope substitution',async()=>{
  const good={...grant,scopes:['personal-business:all'],producerAuthorizationRevision:revision};

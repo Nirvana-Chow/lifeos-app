@@ -2,6 +2,7 @@ import {validateCalendarDate} from '../calendar-candidate/domain.ts';
 import type {StoredEntry} from '../platform/contracts.ts';
 import {PlatformError} from '../platform/domain.ts';
 import type {PersonalConfig} from './config.ts';
+import {projectReports} from '../personal-reports/report.ts';
 import {personalEntryType} from './service.ts';
 
 export const taskWorkspaceSnapshotPath='/api/platform/personal/todo/workspace-snapshot';
@@ -17,10 +18,12 @@ export async function readTaskWorkspaceSnapshot(
  request:Request,config:PersonalConfig,storageVerified:boolean,reader:Partial<TaskWorkspaceReader>,includeAccess=false,
 ){
  const params=new URL(request.url).searchParams;
- if([...params.keys()].length!==(includeAccess?2:1)||!params.has('today')||(includeAccess&&params.get('include')!=='access'))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
+ const reports=params.get('view')==='project-reports';
+ if([...params.keys()].length!==(includeAccess||reports?2:1)||params.getAll('today').length!==1||
+    (reports&&(includeAccess||params.getAll('view').length!==1))||(includeAccess&&params.get('include')!=='access'))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
  const today=validateCalendarDate(params.get('today'));
  const types=workspaceTypes.filter(type=>config.allowedTypes.includes(type));
- if(!types.includes('todo'))throw new PlatformError(403,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');
+ if(!types.includes('todo')||reports&&!types.includes('project'))throw new PlatformError(403,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');
  if(!storageVerified||!reader.readTaskWorkspaceSnapshot)throw unavailable();
 
  let rows:StoredEntry[];
@@ -33,5 +36,7 @@ export async function readTaskWorkspaceSnapshot(
   const type=personalEntryType(row,config.spaceId);
   return types.some(allowed=>type===allowed);
  }).map(({ownerId:_,...entry})=>entry);
- return {scope:'task-workspace-current-snapshot' as const,items,total:items.length,truncated:false,today,observedAt:new Date().toISOString()};
+ const snapshot={scope:'task-workspace-current-snapshot' as const,items,total:items.length,truncated:false,today,observedAt:new Date().toISOString()};
+ if(!reports)return snapshot;
+ return {...snapshot,items:[],total:0,review:projectReports(snapshot,config.spaceId,today)};
 }

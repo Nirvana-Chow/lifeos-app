@@ -1,0 +1,9 @@
+.panel { padding: var(--lo-content-padding, 1rem); overflow-wrap: anywhere; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.controls input { max-width: 100%; border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.35rem 0.5rem; }
+.rows { list-style: none; margin: 1rem 0 0; padding: 0; }
+.rows li { border-block-start: 1px solid var(--border); padding: 0.8rem 0; }
+.rows h2 { font-size: 1rem; font-weight: 600; margin: 0 0 0.35rem; }
+.rows p { margin: 0.25rem 0; color: var(--muted-foreground); }
+.panel a, .panel button { text-decoration: underline; text-underline-offset: 0.2em; }
+.panel button:disabled { opacity: 0.6; }

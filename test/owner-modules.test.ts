@@ -39,3 +39,11 @@ test('storage review link requires an exact advertised service and matching veri
  assert.deepEqual(ownerModules(enabled,scope).find(link=>link.id==='storage-review'),{id:'storage-review',label:'存储审核',href:'/personal/storage-review'});
  for(const value of [status,{...enabled,storageReviewEnabled:'true'},{...enabled,storageVerified:false},{...enabled,ownerId:'other'}])assert.equal(ownerModules(value,scope).some(link=>link.id==='storage-review'),false);
 });
+
+test('project review navigation requires both project and Todo reads in the verified scope',()=>{
+ const value={scope:'personal-manual-candidate',storageVerified:true,ownerId:'fixture-owner',spaceId:'fixture-space'};
+ const href=(allowedTypes:string[])=>ownerModules({...value,allowedTypes},null).find(x=>x.id==='project-reports')?.href;
+ assert.equal(href(['project','todo']),'/personal/reports');
+ assert.equal(href(['project']),undefined);
+ assert.equal(href(['todo']),undefined);
+});
