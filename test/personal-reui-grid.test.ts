@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {clonePersonalJSON} from '../src/personal-candidate/clone-json.ts';
 import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,6 +35,7 @@ function harness(storage = new Map<string,string>()) {
     './reui/data-grid-table-virtual': { DataGridTableVirtual: 'virtual' },
     './reui/data-grid-cell-selection': { DataGridCellSelection: 'selection' },
     './ui/button': { Button: 'button' },
+    '../personal-candidate/editor': { clonePersonalJSON },
     '../personal-candidate/task-editor-state': { taskStatusLabels },
     '../personal-candidate/project-detail-href': { projectDetailHref },
     '../personal-candidate/task-grid-editor': { mountTaskGridEditor: () => { throw Error('input effects must be exercised by the editor behavior suite'); } },
