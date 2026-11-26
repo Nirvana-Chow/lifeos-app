@@ -5,7 +5,7 @@ import{useEffect,useRef,useState}from'react';
 import{Dialog,DialogContent,DialogTitle,DialogDescription}from'../ui-review/ui/dialog';
 import type{PublicEntry}from'../platform/contracts';
 import type{PersonalEditorFields}from'./editor';
-import{editorFromEntry}from'./editor';
+import{clonePersonalJSON,editorFromEntry}from'./editor';
 import type{PersonalRelations,PersonalReference}from'./business';
 import{taskStatusLabels,taskReceiptMatchesSubmission,type TaskTarget,type TaskIdentity}from'./task-editor-state';
 import styles from'./task-editor.module.css';
@@ -45,7 +45,7 @@ export function TaskEditor({
  const submitted=useRef<PersonalEditorFields|null>(null);
  const approvedDocumentLeave=useRef(false);
  const[editTask,setEditTask]=useState<TaskIdentity|null>(openingEdit?.task??null);
- const[fields,setFields]=useState(()=>structuredClone(initial.current)),[localError,setLocalError]=useState<string|null>(null),[submitting,setSubmitting]=useState(false);
+ const[fields,setFields]=useState(()=>clonePersonalJSON(initial.current)),[localError,setLocalError]=useState<string|null>(null),[submitting,setSubmitting]=useState(false);
  const busy=saving||uncertain||submitting,dirty=JSON.stringify(fields)!==JSON.stringify(initial.current);
  const viewing=target.mode==='edit'&&!writable&&!dirty;
  const detailFields=viewing&&!concealed&&entry&&spaceId?editorFromEntry(entry,spaceId).fields:null;
@@ -111,7 +111,7 @@ export function TaskEditor({
      <div><dt>标签</dt><dd>{relation.topics.length?relation.topics.map(topic=>relationName('topic',topic)).join('、'):'未设置'}</dd></div>
     </dl>
    </div>
-  </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=structuredClone(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
+  </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
     <label>标题<input autoFocus required maxLength={240} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
     <label>正文<textarea rows={6} maxLength={16384} value={fields.text} onChange={e=>setFields({...fields,text:e.target.value})}/></label>

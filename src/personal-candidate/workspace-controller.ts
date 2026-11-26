@@ -1,7 +1,7 @@
 import{PersonalMutationSession,makePersonalCommand,type PersonalBinding,type PersonalFetch,type PersonalCommand}from'./client.ts';
 import {planningKeys} from './planning.ts';
 import{personalTypes,personalReferences}from'./business.ts';
-import{editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
+import{clonePersonalJSON,editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
 import type{PersonalType}from'./config.ts';
 import{workspaceData,type WorkspaceData,type WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
@@ -12,25 +12,33 @@ export type ControllerSnapshot={singleTask?:{entry:PublicEntry;spaceId:string};s
 const canonical=(v:unknown):string=>JSON.stringify(v,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const errorCode=(v:unknown)=>obj(v)&&obj(v.error)?v.error.code:null;
+function snapshotFailure(status:number,code:unknown):string|null{
+ if(status===409&&code==='DATA_READER_INCOMPATIBLE')return '当前版本无法读取部分记录。请更新页面后重试。';
+ if(status===503&&(code==='PERSONAL_SNAPSHOT_UNAVAILABLE'||code==='TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'))
+  return '暂时无法读取完整待办列表，请重试。';
+ return null;
+}
+const workspaceReadTimeoutMs=10_000;
 export class PersonalWorkspaceController{
  private value:ControllerSnapshot={state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null};
  private listeners=new Set<()=>void>();private generation=0;private binding:PersonalBinding|null=null;private entries:PublicEntry[]=[];private session:PersonalMutationSession|null=null;private unsubscribe?:()=>void;
  private planningReadbackRequired=false;private busy=false;private preflight:AbortController|null=null;
+ private refreshRead:AbortController|null=null;
  private undo:{id:string;revision:number;status:WorkspaceTask['status'];deadline:number}|null=null;
  private pending:{command:PersonalCommand;base:PublicEntry|null;generation:number;session:PersonalMutationSession;priorStatus?:WorkspaceTask['status']}|null=null;
- private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number};
+ private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number;readTimeoutMs?:number;taskWorkspace?:boolean};
  constructor(options:PersonalWorkspaceController['options']){this.options=options;}
  getSnapshot=()=>this.value;subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
  private emit(patch:Partial<ControllerSnapshot>){this.value={...this.value,...patch};this.listeners.forEach(f=>f());}
  private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({singleTask:undefined,pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
- suspend(){++this.generation;this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
+ suspend(){++this.generation;this.refreshRead?.abort();this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
  private async json(path:string,signal?:AbortSignal){
   const read=async()=>{
    const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});
    const body:unknown=await response.json().catch(error=>{if(response.ok)throw error;return null;});
    return{response,body};
   };
-  if(!signal)return read();signal.throwIfAborted();
+  if(!signal)return read();if(signal.aborted)throw signal.reason;
   // Settle the caller even if a transport/body ignores abort; generation still fences late results.
   let onAbort!:()=>void;const cancelled=new Promise<never>((_,reject)=>{onAbort=()=>reject(signal.reason);signal.addEventListener('abort',onAbort,{once:true});});
   try{return await Promise.race([read(),cancelled]);}finally{signal.removeEventListener('abort',onAbort);}
@@ -38,8 +46,13 @@ export class PersonalWorkspaceController{
  async refresh(linkedTaskId?:string){
   if(this.value.saving)return;
   this.clearUndo();this.pending=null;const token=++this.generation;this.entries=[];
+  this.refreshRead?.abort();
+  const read=new AbortController();
+  this.refreshRead=read;
+  let timedOut=false;
+  const timer=setTimeout(()=>{timedOut=true;read.abort();},this.options.readTimeoutMs??workspaceReadTimeoutMs);
   this.emit({singleTask:undefined,state:{status:'loading'},access:{authenticated:null,writable:null,loginAllowed:null}});
-  const availability=this.json('/api/platform/personal/availability').then(({response,body})=>
+  const availability=this.json('/api/platform/personal/availability',read.signal).then(({response,body})=>
    response.ok&&obj(body)&&body.configured===true&&body.loginAllowed===true&&
    (body.https===true&&this.options.origin.startsWith('https://')||
     body.transport==='ssh-loopback'&&this.options.origin===body.origin&&new URL(this.options.origin).hostname==='127.0.0.1'),
@@ -54,10 +67,20 @@ export class PersonalWorkspaceController{
   };
   let failure='未能读取本人空间状态，请重试。';
   try{
-   const {response,body:status}=await this.json('/api/platform/personal/status');
+   const taskWorkspace=this.options.taskWorkspace===true;
+   const requestedDay=taskWorkspace?this.options.today():null;
+   const bundled=requestedDay!==null?await this.json('/api/platform/personal/todo/workspace-snapshot?today='+encodeURIComponent(requestedDay)+'&include=access',read.signal):undefined;
+   if(token!==this.generation)return;
+   const recoverable=bundled?snapshotFailure(bundled.response.status,errorCode(bundled.body)):null;
+   if(recoverable&&!linkedTaskId){unavailable(recoverable);return;}
+   // The linked-record recovery needs a fresh binding when the complete list could not be read.
+   const {response,body:status}=!bundled||recoverable
+    ?await this.json('/api/platform/personal/status',read.signal)
+    :bundled.response.ok?{response:bundled.response,body:obj(bundled.body)?bundled.body.access:null}:bundled;
    if(token!==this.generation)return;
    if(!response.ok){
     const code=errorCode(status);
+    if(bundled&&code==='PERSONAL_TYPE_DENIED'){unavailable('当前访问范围未确认包含待办。');return;}
     unavailable(response.status===401?'请登录本人账号。':response.status===403?'当前账号没有访问本人空间的权限。':
      code==='AUTH_UNAVAILABLE'?'身份服务暂不可用，请重试。':
      code==='PLATFORM_UNAVAILABLE'?'本人空间服务暂不可用，请稍后重试。':failure,response.status);
@@ -81,28 +104,35 @@ export class PersonalWorkspaceController{
    }
    this.emit({access:{authenticated:true,writable:status.writable===true,loginAllowed:this.value.access.loginAllowed,allowedTypes:[...status.allowedTypes] as PersonalType[],displayName:'本人空间'}});this.readMutation();
    failure='待办数据未能读取，请重试。';
-   const today=this.options.today(),v=await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today));
+   const today=requestedDay??this.options.today();
+   const v=bundled??await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today),read.signal);
    if(token!==this.generation)return;
    if(!v.response.ok){
-    const code=errorCode(v.body);
-    if((v.response.status===503&&code==='PERSONAL_SNAPSHOT_UNAVAILABLE')||(v.response.status===409&&code==='DATA_READER_INCOMPATIBLE')){
-     const message=code==='DATA_READER_INCOMPATIBLE'?'当前版本无法读取部分记录。请更新页面后重试。':'暂时无法读取完整待办列表，请重试。';
+    const message=snapshotFailure(v.response.status,errorCode(v.body));
+    if(message){
      unavailable(message);
-     if(linkedTaskId)await this.readLinkedTask(linkedTaskId,next.spaceId,today,token,message);
+     if(linkedTaskId)await this.readLinkedTask(linkedTaskId,next.spaceId,today,token,message,read.signal);
      return;
     }
     unavailable(v.response.status===401?'登录已失效，请重新登录。':v.response.status===403?'当前账号没有读取待办的权限。':failure,v.response.status);return;
    }
    failure='待办快照未能核验，请重新读取。';
-   const checked=workspaceData(v.body,next.spaceId,today);
+   const checked=workspaceData(v.body,next.spaceId,today,taskWorkspace?'task-workspace-current-snapshot':'full-current-snapshot');
    this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
-  }catch{if(token===this.generation)unavailable(failure);}
+  }catch{if(token===this.generation)unavailable(timedOut?'本人空间读取超时，请重试。':failure);}
+  finally{
+   // Availability can finish after the rows. Let it finish within the same budget.
+   void availability.then(()=>{
+    clearTimeout(timer);
+    if(this.refreshRead===read)this.refreshRead=null;
+   });
+  }
  }
  /** A single explicit link can be read independently of a failed list. It grants no write binding. */
- private async readLinkedTask(linkedTaskId:string,spaceId:string,today:string,token:number,listMessage:string){
+ private async readLinkedTask(linkedTaskId:string,spaceId:string,today:string,token:number,listMessage:string,signal:AbortSignal){
   try{
    const id=validateId(linkedTaskId);
-   const {response,body}=await this.json('/api/platform/personal/todo/'+id);
+   const {response,body}=await this.json('/api/platform/personal/todo/'+id,signal);
    if(token!==this.generation)return;
    if(response.status===401||response.status===403){
     this.emit({state:{status:'forbidden',message:response.status===401?'登录已失效，请重新登录。':'当前账号无法读取这条待办。'},
@@ -128,14 +158,14 @@ export class PersonalWorkspaceController{
  getEditorBinding():PersonalBinding|null{return this.value.state.status==='ready'&&this.binding?{...this.binding}:null;}
  getSpaceId():string|null{return this.value.state.status==='ready'?this.binding?.spaceId??null:null;}
  getTaskEntry(task:Pick<WorkspaceTask,'id'|'revision'>):PublicEntry|null{
-  if(this.value.state.status!=='ready')return null;const e=this.entries.find(e=>e.id===task.id&&e.kind==='todo'&&e.revision===task.revision);return e?structuredClone(e):null;
+  if(this.value.state.status!=='ready')return null;const e=this.entries.find(e=>e.id===task.id&&e.kind==='todo'&&e.revision===task.revision);return e?clonePersonalJSON(e):null;
  }
  getClassificationEntries():readonly PublicEntry[]|null{
-  return this.value.state.status==='ready'&&this.value.state.data.coverage==='complete'?this.entries:null;
+  return !this.options.taskWorkspace&&this.value.state.status==='ready'&&this.value.state.data.coverage==='complete'?this.entries:null;
  }
  getRelationOptions():Record<string,PublicEntry[]>{
   const result:Record<string,PublicEntry[]>={domain:[],project:[],topic:[]};if(this.value.state.status!=='ready'||!this.binding)return result;
-  for(const e of this.entries){const type=editorFromEntry(e,this.binding.spaceId).type;if(type in result)result[type].push(structuredClone(e));}return result;
+  for(const e of this.entries){const type=editorFromEntry(e,this.binding.spaceId).type;if(type in result)result[type].push(clonePersonalJSON(e));}return result;
  }
  private async applyReceipt(context:NonNullable<PersonalWorkspaceController['pending']>):Promise<PublicEntry|null>{
   if(context.generation!==this.generation||context.session!==this.session||!this.binding||this.value.state.status!=='ready')return null;
@@ -161,14 +191,14 @@ export class PersonalWorkspaceController{
   }
   // Confirming an original operation is independent of installing its old revision.
   // A newer authoritative snapshot stays intact even after the original key resolves.
-  if(current&&current.revision>saved.revision||command.id&&!current){this.pending=null;return structuredClone(saved);}
+  if(current&&current.revision>saved.revision||command.id&&!current){this.pending=null;return clonePersonalJSON(saved);}
   const already=current&&canonical(current)===canonical(observed);
   if(current&&!already&&(!command.id||current.revision!==command.body.expectedRevision))throw Error('本地版本或内容已变化，请重新读取核对。');
-  const entries=this.entries.map(e=>e.id===saved.id?structuredClone(observed):e);if(!current)entries.push(structuredClone(observed));
+  const entries=this.entries.map(e=>e.id===saved.id?clonePersonalJSON(observed):e);if(!current)entries.push(clonePersonalJSON(observed));
   const data=this.value.state.data,checked=workspaceData({items:entries,total:entries.length,scope:'full-current-snapshot',truncated:false,today:data.today,observedAt:data.asOf},this.binding.spaceId,data.today);
   this.entries=checked.entries;this.planningReadbackRequired=false;
   if(context.priorStatus!==undefined&&observed.revision===saved.revision){this.undo={id:saved.id,revision:saved.revision,status:context.priorStatus,deadline:this.now()+10000};}
-  this.emit({state:{status:'ready',data:checked.data},undoDeadline:this.undo?.deadline??null});this.pending=null;return structuredClone(saved);
+  this.emit({state:{status:'ready',data:checked.data},undoDeadline:this.undo?.deadline??null});this.pending=null;return clonePersonalJSON(saved);
  }
  matchesPendingBatchCommand(command:unknown):boolean{const state=this.session?.getSnapshot();if(state?.phase==='uncertain'&&!state.pending)return false;return !state?.pending||canonical(state.pending)===canonical(command);}
  async saveBatchTask(command:PersonalCommand):Promise<PublicEntry|null>{

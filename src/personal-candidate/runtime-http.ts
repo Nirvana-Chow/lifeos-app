@@ -21,6 +21,7 @@ import {readWritePermit,type WritePermitBinding} from '../deployment-candidate/w
 import type {PersonalConfig} from './config.ts';
 import {PersonalService} from './service.ts';
 import {handlePersonalRequest} from './http.ts';
+import {readTaskWorkspaceSnapshot,taskWorkspaceSnapshotPath,type TaskWorkspaceReader} from './task-workspace-read.ts';
 export const personalPermitPath='/run/lifeos-platform/write-gate/permit.json';
 /** No password, URL credentials, API secret or owner content participates in this digest. */
 export function personalPermitBinding(config:PersonalConfig,sourceSha:string):WritePermitBinding{
@@ -37,12 +38,17 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  if(config.businessWriteMode==='disabled')throw new PlatformError(503,'PERSONAL_WRITES_LOCKED','本人空间业务写入已关闭，请保留原保存请求。');
  requirePersonalWritePermit(config,sourceSha);
 }
-const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,articleEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
  const storageReview=options.storageVerified?new StorageReviewService(options.repository,options.config):undefined;
+ const readWorkspaceAccess=async()=>{
+  let writable=false;try{await options.assertWritable();writable=true;}catch{/* Report the capability as closed. */}
+  return {scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,
+   storageVerified:options.storageVerified,allowedTypes:options.config.allowedTypes,writable};
+ };
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
@@ -69,11 +75,23 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    }
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status'){
     if(request.method!=='GET'||url.search)return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此状态仅可读取。'}},405);
-    let writable=false;try{await options.assertWritable();writable=true;}catch{/* Only this capability is unavailable; never leak the permit path or contents. */}
-    return respond({scope:'personal-manual-candidate',ownerId:options.config.ownerId,spaceId:options.config.spaceId,allowedTypes:options.config.allowedTypes,requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,mediaEnabled:options.storageVerified&&options.config.mediaEnabled===true,articleEnabled:options.storageVerified&&options.config.articleEnabled===true,careerEnabled:options.storageVerified&&options.config.careerEnabled===true,portfolioEnabled:options.storageVerified&&options.config.portfolioEnabled===true,cookingEnabled:options.storageVerified&&options.config.cookingEnabled===true,healthEnabled:options.config.healthEnabled===true,peopleEnabled:options.config.peopleEnabled===true,financeEnabled:options.config.financeEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageVerified:options.storageVerified,storageReviewEnabled:options.storageVerified,fileHandoffEnabled:!!options.fileHandoff,writable,aiEnabled:false,userAccepted:false});
+    return respond({...await readWorkspaceAccess(),requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,articleEnabled:options.storageVerified&&options.config.articleEnabled===true,mediaEnabled:options.storageVerified&&options.config.mediaEnabled===true,careerEnabled:options.storageVerified&&options.config.careerEnabled===true,portfolioEnabled:options.storageVerified&&options.config.portfolioEnabled===true,cookingEnabled:options.storageVerified&&options.config.cookingEnabled===true,healthEnabled:options.config.healthEnabled===true,peopleEnabled:options.config.peopleEnabled===true,financeEnabled:options.config.financeEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageReviewEnabled:options.storageVerified,fileHandoffEnabled:!!options.fileHandoff,aiEnabled:false,userAccepted:false});
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
+   if(url.pathname===taskWorkspaceSnapshotPath){
+    if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','待办工作区仅限本人会话。');
+    const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
+    if(origin!==null&&origin!==new URL(options.config.baseURL).origin||site==='cross-site'||site==='same-site')
+     throw new PlatformError(403,'ORIGIN_DENIED','待办工作区需要相同来源。');
+    if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'待办工作区仅可读取。'}},405,{Allow:'GET'});
+    const includeAccess=url.searchParams.get('include')==='access';
+    const value=await readTaskWorkspaceSnapshot(request,options.config,options.storageVerified,options.repository,includeAccess);
+    if(!includeAccess){await assertOwner();return respond(value);}
+    const access=await readWorkspaceAccess();
+    await assertOwner();
+    return respond({...value,access});
+   }
    if(url.pathname==='/api/platform/personal/todo-classifications'||url.pathname.startsWith('/api/platform/personal/todo-classifications/')){
     if(!options.classification)return respond({error:{code:'NOT_FOUND',message:'分类尚未开放。'}},404);
     if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','仅限本人会话。');

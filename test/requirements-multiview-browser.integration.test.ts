@@ -41,11 +41,10 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
   await expect(page.getByText('当前仅可查看公开需求。',{exact:true})).toBeVisible();
  };
  const screenshots=join(source,'.review-results');await mkdir(screenshots,{recursive:true});
- await t.test('full-width title owns surplus before hydration without stretching metadata',async()=>{
-  const page=await browser.newPage({viewport:{width:1920,height:900},javaScriptEnabled:false});
+ await t.test('the management table title owns full-width surplus without stretching metadata',async()=>{
+  const page=await browser.newPage({viewport:{width:1920,height:900}});
   try{
-   await page.goto(origin,{waitUntil:'networkidle',timeout:60000});
-   await expect(page.locator('[data-requirement-id]')).toHaveCount(0);
+   await openReadonlyBaseline(page);
    const geometry=await page.locator('[data-requirements-grid="reui"]').evaluate(node=>({
     viewport:node.querySelector('[data-slot="data-grid-table-viewport"]')!.clientWidth,
     cols:[...node.querySelectorAll('col')].map(c=>({style:c.getAttribute('style'),width:getComputedStyle(c).width})),
@@ -53,16 +52,16 @@ test('OPT-IN requirements share filters across table, board and undated Gantt wi
      label:cell.querySelector('button')?.getAttribute('aria-label')??null,width:cell.getBoundingClientRect().width,
     })),
    }));
-   t.diagnostic(JSON.stringify({beforeHydration:geometry}));
+   t.diagnostic(JSON.stringify({managementTable:geometry}));
    const metadata=[['按交付状态排序',150],['按时间排序',200],['按结果排序',185]] as const;
    assert.deepEqual(geometry.headers.map(header=>header.label),['按需求排序',...metadata.map(([label])=>label),null]);
    for(const [label,width] of metadata){
     const actual=geometry.headers.find(header=>header.label===label)!.width;
-    assert.ok(Math.abs(actual-width)<1,`${label} should retain its ${width}px model width before hydration, got ${actual}`);
+    assert.ok(Math.abs(actual-width)<1,`${label} should retain its ${width}px model width, got ${actual}`);
    }
    const fixedWidth=metadata.reduce((total,[,width])=>total+width,0);
-   assert.ok(Math.abs(geometry.headers[0]!.width-(geometry.viewport-fixedWidth))<2,'Title owns all workspace surplus before hydration');
-   assert.ok(geometry.headers.at(-1)!.width<=1,'No empty fill strip before hydration');
+   assert.ok(Math.abs(geometry.headers[0]!.width-(geometry.viewport-fixedWidth))<2,'Title owns all workspace surplus');
+   assert.ok(geometry.headers.at(-1)!.width<=1,'No empty fill strip');
   }finally{await page.close();}
  });
  for(const [width,theme] of [[1920,'light'],[1920,'dark'],[1365,'light'],[1365,'dark'],[390,'light'],[390,'dark']] as const){

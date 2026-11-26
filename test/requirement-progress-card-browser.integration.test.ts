@@ -88,8 +88,21 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  const topic=[...repo.rows.values()].find(row=>row.id===topicId)!;
  const journalId=await seed('journal',{title:'合成思考近期',text:'合成日记正文第一行\n第二行保持原文。',occurredOn:day,personal:{type:'journal',
   links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-journal');
+ const backdatedId=await seed('journal',{title:'合成新录入旧事',text:'合成补录正文',occurredOn:shiftCalendarDate(day,-10),personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-backdated');
+ const notDatedId=await seed('journal',{title:'合成未记发生日期',text:'合成未记日期正文',occurredOn:null,personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-undated');
+ const stamp=(offset:number)=>new Date(Date.now()+offset*60_000).toISOString();
+ const older=[...repo.rows.values()].find(row=>row.id===journalId)!;
+ older.createdAt=stamp(-30);older.updatedAt=stamp(0);
+ const backdated=[...repo.rows.values()].find(row=>row.id===backdatedId)!;
+ backdated.createdAt=stamp(-1);backdated.updatedAt=backdated.createdAt;
+ const undated=[...repo.rows.values()].find(row=>row.id===notDatedId)!;
+ undated.createdAt=stamp(-3);undated.updatedAt=undated.createdAt;
  await seed('journal',{title:'合成正式日记',text:'未标记的正式日记',occurredOn:day},'overview-formal-diary');
- await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicateId=await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicate=[...repo.rows.values()].find(row=>row.id===duplicateId)!;
+ duplicate.createdAt=stamp(-60);duplicate.updatedAt=duplicate.createdAt;
  await seed('calendar',{title:'合成明日日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:tomorrow,endDate:shiftCalendarDate(tomorrow,1)}}},'overview-calendar');
  await seed('calendar',{title:'合成已过期日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
@@ -129,12 +142,15 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  const firstSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/requirements/snapshot')&&response.ok(),{timeout:45000});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
  await firstSnapshot;
- const card=page.getByRole('region',{name:'需求进度',exact:true});
+ const card=page.getByRole('region',{name:'需求交付与验收',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
- for(const [label,value] of [['计划','2'],['推进中','1'],['工程审查','1'],['受阻','1'],['标记开发完成','2'],['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
+ for(const [label,value] of [['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
   await expect(count(label)).toHaveText(value);
  }
- await expect(card.locator('dl[aria-label="推进状态"]')).toHaveCount(1);
+ await expect(page.getByRole('region',{name:'需求进度',exact:true})).toHaveCount(0);
+ await expect(card.getByText('待交付或验收 6 / 7 项',{exact:false})).toBeVisible();
+ await expect(card.getByRole('heading',{name:/推进状态/})).toHaveCount(0);
+ await expect(card.getByText('标记开发完成',{exact:true})).toHaveCount(0);
  await expect(card.locator('dl[aria-label="交付证据"]')).toHaveCount(1);
  await expect(card.locator('time')).toHaveAttribute('datetime','2026-11-25T00:00:00Z');
  await expect(card.locator('time')).toContainText('08:00');
@@ -151,6 +167,12 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
  await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
+ const thoughtRows=thoughts.getByRole('listitem');
+ await expect(thoughtRows.first().getByRole('link')).toHaveText('合成新录入旧事');
+ await expect(thoughtRows.first().locator('time').first()).toHaveAttribute('datetime',backdated.createdAt);
+ await expect(thoughtRows.first().locator('time').last()).toHaveAttribute('datetime',shiftCalendarDate(day,-10));
+ await expect(thoughtRows.filter({hasText:'合成未记发生日期'}).getByText('发生日期未记录')).toBeVisible();
+
  await expect(thoughts.getByText(/Memos.*接入/)).toHaveCount(0);
  const excerpt=thoughts.getByText('合成日记正文第一行 第二行保持原文。',{exact:true});
  await expect(excerpt).toBeVisible();
@@ -188,8 +210,8 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  try{
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await refreshing;
-  await expect(card.getByText('待处理 6 / 7 项', {exact:false})).toBeVisible();
-  await expect(card.getByText('正在读取需求进度…',{exact:true})).toHaveCount(0);
+  await expect(card.getByText('待交付或验收 6 / 7 项', {exact:false})).toBeVisible();
+  await expect(card.getByText('正在读取需求交付与验收…',{exact:true})).toHaveCount(0);
  }finally{holdSnapshot=false;snapshotGate.resolve();}
  for(const invalid of ['truncated','wrong-space','disabled','denied'] as const){
   mode='ok';
@@ -197,7 +219,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   await expect(count('已上线且本人验收')).toHaveText('1');
   const before=reads;mode=invalid;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  await expect(card.getByText('需求进度暂不可用')).toBeVisible();
+  await expect(card.getByText('需求交付与验收暂不可用')).toBeVisible();
   await expect(card.locator('dd')).toHaveCount(0);
   if(invalid==='wrong-space'){
    assert.equal(reads,before);
@@ -213,6 +235,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  const pool=page.getByRole('region',{name:'需求池',exact:true});
+ await expect(pool.getByRole('button',{name:'总需求 7',exact:true})).toBeVisible();
+ await expect(pool.getByRole('button',{name:'未完成 6',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'已完成 1',exact:true}).click();
+ const summaryRows=pool.getByRole('list',{name:'需求清单'}).getByRole('listitem');
+ await expect(summaryRows).toHaveCount(1);
+ await expect(summaryRows.first()).toHaveText('Synthetic private requirement 6');
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  const range=pool.getByLabel('显示范围',{exact:true});
  const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});
  await expect(range).toHaveValue('pending');
@@ -255,16 +284,22 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  exerciseCreate=true;
  writable=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await expect(pool.getByRole('group',{name:'需求统计'})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await pool.getByRole('button',{name:'新增需求',exact:true}).click();
  await detail.getByLabel('需求标题',{exact:true}).fill('Synthetic newly saved requirement');
  await detail.getByLabel('需求描述',{exact:true}).fill('Check the same owner snapshot in the pool and overview.');
  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
  await expect(detail.getByRole('heading',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await pool.getByRole('button',{name:'返回需求清单',exact:true}).click();
+ await expect(pool.getByRole('button',{name:'总需求 8',exact:true})).toBeVisible();
+ await expect(pool.getByRole('list',{name:'需求清单'}).getByRole('button',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await expect(pool.getByText('7 / 8 项',{exact:true})).toBeVisible();
  await expect(pool.getByRole('button',{name:/查看需求 .* Synthetic newly saved requirement$/})).toBeVisible();
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
- await expect(card.getByText('待处理 7 / 8 项',{exact:false})).toBeVisible();
+ await expect(card.getByText('待交付或验收 7 / 8 项',{exact:false})).toBeVisible();
 
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});

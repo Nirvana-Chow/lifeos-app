@@ -11,6 +11,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -34,6 +35,7 @@ import {
   DndContext,
   DragOverlay,
   getFirstCollision,
+  KeyboardCode,
   KeyboardSensor,
   MeasuringStrategy,
   MouseSensor,
@@ -57,7 +59,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Slot } from "radix-ui"
-import { createPortal } from "react-dom"
+import { createPortal, flushSync } from "react-dom"
 
 import { cn } from "../ui/utils"
 
@@ -142,6 +144,11 @@ const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 10 } }
 const TOUCH_SENSOR_OPTIONS = {
   activationConstraint: { delay: 250, tolerance: 5 },
 }
+const KEYBOARD_CODES = {
+  start: [KeyboardCode.Space],
+  end: [KeyboardCode.Space],
+  cancel: [KeyboardCode.Esc],
+}
 const MEASURING_CONFIG = {
   droppable: { strategy: MeasuringStrategy.Always },
 }
@@ -223,9 +230,68 @@ function Kanban<T>({
     index: number
   } | null>(null)
 
+  const root = useRef<HTMLDivElement>(null)
+  const tabCancelCode = `KanbanCancel:${useId()}`
+  const shouldRestoreFocus = accessibility?.restoreFocus !== false
+  const leavingWithTab = useRef(false)
+  const pendingFocus = useRef<{ id: UniqueIdentifier; previous: EventTarget | null } | null>(null)
+
+  const findHandle = useCallback((id: UniqueIdentifier) => {
+    const item = Array.from(root.current?.querySelectorAll<HTMLElement>(
+      '[data-slot="kanban-item"], [data-slot="kanban-column"]'
+    ) ?? []).find(node => node.dataset.value === String(id))
+    return item?.querySelector<HTMLElement>(
+      item.dataset.slot === "kanban-item"
+        ? '[data-slot="kanban-item-handle"]'
+        : '[data-slot="kanban-column-handle"]'
+    )
+  }, [])
+
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current
+    const document = root.current?.ownerDocument
+    if (!shouldRestoreFocus) {
+      pendingFocus.current = null
+      return
+    }
+    if (!pending || !document || activeId !== null) return
+    // Wait for the receipt to re-enable the handle without stealing focus
+    // if the user has already moved on.
+    if (document.activeElement !== document.body && document.activeElement !== pending.previous) {
+      pendingFocus.current = null
+      return
+    }
+    const handle = findHandle(pending.id)
+    if (handle && !handle.matches(':disabled, [aria-disabled="true"]')) {
+      pendingFocus.current = null
+      handle.focus({ preventScroll: true })
+    }
+  })
+
+  const restoreKeyboardFocus = useCallback((event: DragEndEvent | DragCancelEvent) => {
+    if (shouldRestoreFocus && !leavingWithTab.current && event.activatorEvent instanceof KeyboardEvent) {
+      pendingFocus.current = { id: event.active.id, previous: event.activatorEvent.target }
+    }
+  }, [shouldRestoreFocus])
+
   const keyboardCoordinates = useCallback<KeyboardCoordinateGetter>((event, args) => {
     const step = event.code === "ArrowLeft" ? -1 : event.code === "ArrowRight" ? 1 : 0
     const { active, collisionRect, droppableContainers, droppableRects } = args.context
+    if (event.code === KeyboardCode.Tab && active && root.current) {
+      const document = root.current.ownerDocument
+      leavingWithTab.current = true
+      try {
+        // Only this sensor recognizes the board's private cancellation code.
+        // The original Tab event continues with its native default action.
+        flushSync(() => document.dispatchEvent(new KeyboardEvent("keydown", {
+          code: tabCancelCode, cancelable: true,
+        })))
+        if (shouldRestoreFocus) findHandle(active.id)?.focus({ preventScroll: true })
+      } finally {
+        leavingWithTab.current = false
+      }
+      return undefined
+    }
     if (step && active && collisionRect) {
       const orderedColumns = Object.entries(valueRef.current)
       const current = orderedColumns.findIndex(([, items]) =>
@@ -247,12 +313,15 @@ function Kanban<T>({
       }
     }
     return sortableKeyboardCoordinates(event, args)
-  }, [])
+  }, [findHandle, shouldRestoreFocus, tabCancelCode])
 
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
     useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
-    useSensor(KeyboardSensor, { coordinateGetter: keyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      keyboardCodes: { ...KEYBOARD_CODES, cancel: [...KEYBOARD_CODES.cancel, tabCancelCode] },
+      coordinateGetter: keyboardCoordinates,
+    })
   )
 
   const columnIds = useMemo(() => {
@@ -393,9 +462,10 @@ function Kanban<T>({
     (event: DragStartEvent) => {
       lastOverIdRef.current = null
       setActiveId(event.active.id)
+      pendingFocus.current = null
       onDragStart?.(event)
 
-      if (onValueCommit || restoreOnCancel) {
+      if (onValueCommit || restoreOnCancel || event.activatorEvent instanceof KeyboardEvent) {
         const snapshot = valueRef.current
       const id = event.active.id
         const keys = Object.keys(snapshot)
@@ -490,14 +560,16 @@ function Kanban<T>({
 
   const handleDragCancel = useCallback(
     (event: DragCancelEvent) => {
+      restoreKeyboardFocus(event)
       const origin = dragOriginRef.current
 
-      if (restoreOnCancel && origin && !onMove) {
-        // Escape/cancel: undo the live-preview reshuffle applied during dragOver.
-        setColumns(origin.value)
-      } else if (onValueCommit && origin && !onMove) {
-        // No restore requested: the live preview stays visible, so commit it.
-        commitChange(valueRef.current, event, "item")
+      if (origin && !onMove) {
+        if (leavingWithTab.current || restoreOnCancel) {
+          setColumns(origin.value)
+        } else if (onValueCommit) {
+          // Other cancel routes retain the caller's live-preview behavior.
+          commitChange(valueRef.current, event, "item")
+        }
       }
 
       dragOriginRef.current = null
@@ -512,11 +584,13 @@ function Kanban<T>({
       setColumns,
       onDragCancel,
       commitChange,
+      restoreKeyboardFocus,
     ]
   )
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      restoreKeyboardFocus(event)
       const { active, over } = event
       lastOverIdRef.current = null
       setActiveId(null)
@@ -629,6 +703,7 @@ function Kanban<T>({
       setColumns,
       onMove,
       onDragEnd,
+      restoreKeyboardFocus,
       commitChange,
     ]
   )
@@ -664,7 +739,7 @@ function Kanban<T>({
       <DndContext
         sensors={sensors}
         modifiers={modifiers}
-        accessibility={accessibility}
+        accessibility={{ ...accessibility, restoreFocus: false }}
         measuring={MEASURING_CONFIG}
         collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
@@ -673,6 +748,7 @@ function Kanban<T>({
         onDragCancel={handleDragCancel}
       >
         <Comp
+          ref={root}
           data-slot="kanban"
           data-dragging={activeId !== null}
           className={cn(activeId !== null && "cursor-grabbing!", className)}

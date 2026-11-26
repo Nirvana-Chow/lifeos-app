@@ -25,3 +25,5 @@ export function editorFromEntry(entry:PublicEntry,spaceId:string):{type:Personal
 export function todoDraftFromEditor(fields:PersonalEditorFields){
  return validateTodo({title:fields.title,notes:fields.text,dueOn:fields.date||null,status:fields.status,...Object.fromEntries(planningKeys.filter(key=>Object.hasOwn(fields,key)).map(key=>[key,fields[key]||null])),...(fields.personal?{personal:fields.personal}:{})});
 }
+
+export {clonePersonalJSON} from './clone-json.ts';

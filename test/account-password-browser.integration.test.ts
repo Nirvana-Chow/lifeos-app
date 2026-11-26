@@ -58,7 +58,7 @@ test('OPT-IN legacy password keeps the disabled no-JS POST gate and enhances int
    if(!['GET','HEAD'].includes(request.method())){posts++;return route.fulfill({status:405});}
    if(url.pathname.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']}});
    if(url.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(url.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+   if(url.pathname.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal']},total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
    return route.continue();
   });
   await page.exposeBinding('recordLegacyPasswordState',(_source,value:boolean)=>{legacyStates.push(value);});

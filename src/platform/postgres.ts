@@ -1,6 +1,7 @@
 import {assertPostgresExecutionLease} from '../requirement-events/transaction.ts';
 import {projectPostgresExecution,admitPostgresExecution} from '../requirement-events/admission-postgres.ts';
 import {readExecutionCommand} from '../requirement-events/command-postgres.ts';
+import type {TaskWorkspaceType} from '../personal-candidate/task-workspace-read.ts';
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
 import {requiresExplicitArticlePermission,type OperationScope} from '../agent-api/personal-operation-registry.ts';
@@ -84,6 +85,15 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   },true);
  }
  async readCurrentSnapshot(owner:string):Promise<StoredEntry[]>{return this.scoped(owner,async c=>(await c.query(select+' WHERE r.owner_id=$1 ORDER BY r.id LIMIT 10001',[owner])).rows.map(decode),true);}
+ async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly TaskWorkspaceType[]):Promise<StoredEntry[]>{
+  return this.scoped(owner,async client=>(await client.query(select+`
+   WHERE r.owner_id=$1 AND s.original->>'spaceId'=$2 AND s.original->>'type'=ANY($3::text[])
+   AND (
+    (s.original->>'marker'='personal-manual-v1' AND r.kind=CASE WHEN s.original->>'type'='todo' THEN 'todo' ELSE 'inbox' END)
+    OR (s.original->>'marker'='personal-apple-reminders-v1' AND s.original->>'type'='todo' AND r.kind='todo')
+   )
+   ORDER BY r.id LIMIT 10001`,[owner,spaceId,types])).rows.map(decode),true);
+ }
  async list(owner:string,kind:Kind):Promise<StoredEntry[]>{return this.scoped(owner,async c=>(await c.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 ORDER BY r.created_at DESC,r.id',[owner,kind])).rows.map(decode));}
  async exportSnapshot(owner:string):Promise<{entries:StoredEntry[];history:StoredEntry[]}>{return this.scoped(owner,async client=>({entries:(await client.query(select+' WHERE r.owner_id=$1 ORDER BY r.id',[owner])).rows.map(decode),history:(await client.query('SELECT snapshot FROM lifeos_platform.platform_history WHERE owner_id=$1 ORDER BY record_id,revision',[owner])).rows.map(row=>row.snapshot as StoredEntry)}),true);}
  async history(owner:string,kind:Kind,id:string):Promise<StoredEntry[]>{return this.scoped(owner,async client=>(await client.query('SELECT h.snapshot FROM lifeos_platform.platform_history h JOIN lifeos_platform.platform_record r ON r.owner_id=h.owner_id AND r.id=h.record_id WHERE h.owner_id=$1 AND r.kind=$2 AND h.record_id=$3 ORDER BY h.revision DESC LIMIT 100',[owner,kind,id])).rows.map(row=>row.snapshot as StoredEntry));}
