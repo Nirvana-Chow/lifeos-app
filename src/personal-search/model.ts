@@ -1,3 +1,4 @@
+import {readHistoricalDiaryEvidence} from '../import-preview/historical-diary-source.ts';
 import {personalSearchRecordDate,type PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
 import {validateCalendarRecord} from '../calendar-candidate/personal-record.ts';
 import type {CalendarPersonal} from '../calendar-candidate/personal-domain.ts';
@@ -20,7 +21,7 @@ export function searchRow(value:unknown,spaceId:string,query:string):SearchRow{
  const id=validateId(entry.id),sourceId=validateId(source.id),revision=validateRevision(entry.revision),type=original.type as PersonalType;
  if(!personalTypes.includes(type)||entry.kind!==(type==='todo'?'todo':'inbox'))throw Error('记录类别无法核对。');
  if(original.marker===appleOriginMarker){if(type!=='todo')throw Error('记录来源无法核对。');readAppleOrigin(original,spaceId);}else{
-  object(original,['marker','spaceId','type','input']);const initial=object(original.input,['spaceId','confirmed','fields']);if(original.marker!=='personal-manual-v1'||initial.spaceId!==spaceId||initial.confirmed!==true)throw Error('记录来源无法核对。');normalizePersonalFields(type,initial.fields);
+  object(original,['marker','spaceId','type','input',...(type==='journal'?['historicalDiary']:[])]);const initial=object(original.input,['spaceId','confirmed','fields']);if(original.marker!=='personal-manual-v1'||initial.spaceId!==spaceId||initial.confirmed!==true)throw Error('记录来源无法核对。');normalizePersonalFields(type,initial.fields);if('historicalDiary'in original)readHistoricalDiaryEvidence(original.historicalDiary,initial.fields);
  }
  let title:string,text:string,recordDate:ReturnType<typeof personalSearchRecordDate>;
  if(type==='todo'){const draft=validateTodo(entry.draft);title=draft.title;text=draft.notes;recordDate=personalSearchRecordDate(draft);}

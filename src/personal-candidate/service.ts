@@ -1,3 +1,5 @@
+import {diarySourceDigest} from '../import-preview/historical-diary.ts';
+import {readHistoricalDiaryEvidence} from '../import-preview/historical-diary-source.ts';
 import {matchesPersonalSearchDate,personalSearchRecordDate,readPersonalSearchDateRange,type PersonalSearchDateRange} from './search-dates.ts';
 import {getRecipe} from '../cooking/catalog.ts';
 import type {CookingRecipePin} from '../cooking/log-domain.ts';
@@ -58,7 +60,13 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
+ try{
+  object(original,['marker','spaceId','type','input',...(type==='journal'?['historicalDiary']:[])]);
+  if('historicalDiary'in original){
+   const evidence=readHistoricalDiaryEvidence(original.historicalDiary,original.input.fields);
+   if(diarySourceDigest(evidence.namespace,evidence.source)!==evidence.sourceDigest)return null;
+  }
+  const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
  const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);

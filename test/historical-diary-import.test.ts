@@ -4,8 +4,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import test from 'node:test';
-import {diaryPackageFormat,SyntheticDiaryImport,type AuthorizeDiary,type DiaryReader,type DiaryScope,
-  type DiarySource,type DiaryStore,type DiaryTransaction,type ImportedDiary} from '../src/import-preview/historical-diary.ts';
+import {SyntheticDiaryImport,type AuthorizeDiary,type DiaryReader,type DiaryScope,
+  type DiaryStore,type DiaryTransaction,type ImportedDiary} from '../src/import-preview/historical-diary.ts';
+import {scope,batch,source} from './helpers/historical-diary-fixture.ts';
+
+const column=(row:unknown,key:string)=>row&&typeof row==='object'?(row as Record<string,unknown>)[key]:undefined;
 
 function database(path:string) {
   const db=new DatabaseSync(path);
@@ -31,11 +34,11 @@ class SQLiteDiaryFixture implements DiaryStore {
     return {
       read:async id=>{
         const row=db.prepare('SELECT value FROM diary WHERE owner=? AND space=? AND id=?').get(ownerId,spaceId,id);
-        return row?JSON.parse(String(row.value)):null;
+        return row?JSON.parse(String(column(row,'value'))):null;
       },
       readCommand:async key=>{
         const row=db.prepare('SELECT value FROM command WHERE owner=? AND space=? AND key=?').get(ownerId,spaceId,key);
-        return row?JSON.parse(String(row.value)):null;
+        return row?JSON.parse(String(column(row,'value'))):null;
       },
     };
   }
@@ -81,16 +84,10 @@ class SQLiteDiaryFixture implements DiaryStore {
   }
 }
 
-const scope={ownerId:'synthetic-owner',spaceId:'synthetic-diary'};
-const batch=(...entries:DiarySource[])=>({format:diaryPackageFormat,sourceNamespace:'fixture-only',entries});
-const source=(id:string,version='v1'):DiarySource=>({
-  originalId:id,sourcePath:'synthetic/'+id+'.md',sourceVersion:version,date:'2004-02-29',
-  body:'  # Synthetic '+id+'\r\n\r\n仅为合成样本。\n',
-});
 const allow:AuthorizeDiary=async (binding,authority)=>{
   if (binding.ownerId!==scope.ownerId || binding.spaceId!==scope.spaceId || authority.namespace!=='fixture-only') throw new Error('fixture-denied');
 };
-const count=(db:DatabaseSync,table:'diary'|'command')=>db.prepare('SELECT count(*) AS n FROM '+table).get()?.n;
+const count=(db:DatabaseSync,table:'diary'|'command')=>column(db.prepare('SELECT count(*) AS n FROM '+table).get(),'n');
 
 test('historical diary previews two new records, a duplicate and a source-version conflict',async t=>{
   const path=await mkdtemp(join(tmpdir(),'lifeos-diary-batch-'));
@@ -140,7 +137,7 @@ test('historical diary previews two new records, a duplicate and a source-versio
   try {
     assert.equal(count(check,'diary'),3);
     assert.equal(count(check,'command'),2);
-    const rows=check.prepare('SELECT value FROM diary').all().map(row=>JSON.parse(String(row.value)) as ImportedDiary);
+    const rows=check.prepare('SELECT value FROM diary').all().map(row=>JSON.parse(String(column(row,'value'))) as ImportedDiary);
     for (const expected of [first,second,earlier]) {
       const stored=rows.find(row=>row.source.originalId===expected.originalId);
       assert.deepEqual(stored?.source,expected);
@@ -164,6 +161,10 @@ test('preview rejects unsafe paths and calendar rollover, and conflicts every va
     await assert.rejects(service.preview(scope,batch({...one,sourcePath})),/DIARY_INVALID/);
   }
   await assert.rejects(service.preview(scope,batch({...one,date:'2001-02-29'})),/DIARY_INVALID_DATE/);
+  await assert.rejects(service.preview(scope,batch({...one,body:'\ud800'})),/DIARY_INVALID_BODY/);
+  const oversized=await service.preview(scope,batch({...one,body:'x'.repeat(16_385)}));
+  assert.equal(oversized.items[0].reason,'journal-body-limit');
+  assert.equal(oversized.counts.invalid,1);
   const revised={...one,sourcePath:'synthetic/renamed.md',sourceVersion:'v2'};
   const preview=await service.preview(scope,batch(one,one,revised));
   assert.deepEqual(preview.items.map(row=>row.status),['conflict','conflict','conflict']);
