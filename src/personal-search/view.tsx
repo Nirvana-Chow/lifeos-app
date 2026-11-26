@@ -1,6 +1,7 @@
 'use client';
 import type {ChangeEvent,FormEvent} from 'react';
 import type {PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
+import {Alert,AlertDescription} from '../ui-review/reui/alert';
 import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import {searchHref,searchTypeLabels,type SearchSelection,type SearchRow} from './model.ts';
@@ -46,7 +47,7 @@ export function PersonalSearchView({query,range={},selection,state,onRetry,inter
   <p className={s.hint}>日期按北京时间，包含所选起止日。设置任一日期后，日期未知的记录不进入结果。</p>
   {interaction&&<a className={s.standalone} href={interaction.standaloneHref}>在独立页面打开</a>}
   {!interaction&&<p className={s.hint}>仅搜索当前已授权的 LifeOS 本人记录标题与正文；不包含历史版本、财务流水、需求、反馈、附件内容或未导入的外部资料。未启用语义搜索。</p>}
-  {state.phase==='idle'?null:state.phase==='loading'?<p role="status">正在核对搜索结果…</p>:state.phase==='error'||state.phase==='auth'?<div role="alert"><p>{state.message}</p>{state.phase==='auth'?<a href="/login">重新登录</a>:<Button variant="outline" type="button" onClick={onRetry}>重新读取</Button>}</div>:<>
+  {state.phase==='idle'?null:state.phase==='loading'?<p role="status">正在核对搜索结果…</p>:state.phase==='error'||state.phase==='auth'?<Alert role="alert" variant="destructive"><AlertDescription><p>{state.message}</p>{state.phase==='auth'?<a href="/login">重新登录</a>:<Button variant="outline" type="button" onClick={onRetry}>重新读取</Button>}</AlertDescription></Alert>:<>
    <p className={s.hint}>{!interaction&&<>搜索词：{query.trim()||'（全部）'} · </>}已搜索 {state.data.coverage.scanned} 条当前授权记录，匹配 {state.data.coverage.matched} 条。</p>
    {!interaction&&<p className={s.hint}>覆盖类别：{state.data.coverage.types.map(type=>searchTypeLabels[type]).join('、')||'无'}。这是上述授权范围的完整当前快照，不代表所有个人资料。</p>}
    {selection?<section className={s.detail} aria-label="原业务记录只读详情">

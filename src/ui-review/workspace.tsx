@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Frame, FramePanel } from "../business-reui/frame";
 import { Badge } from "./ui/badge";
 import {
   Dialog,
@@ -1182,13 +1183,17 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             )}
           {settingsOpen&&<section data-settings-page className={workspaceStyles.settingsPage}>
             <div className={`lo-settings-panel ${workspaceStyles.settingsPanel}`} data-settings-panel={settingsPanel}>
-              {settingsPanel===defaultSettingsPanel&&availableSettings.length>0&&<ul className={workspaceStyles.settingsIndex} aria-label="可用设置">
-                {availableSettings.map(({id,label,icon:Icon})=><li key={id}>
-                  <Button variant="ghost" data-workspace-nav onClick={()=>selectSettingsPanel(id)}>
-                    <Icon size={19} aria-hidden="true"/><span>{label}</span><ChevronRight size={16} aria-hidden="true"/>
-                  </Button>
-                </li>)}
-              </ul>}
+              {settingsPanel===defaultSettingsPanel&&availableSettings.length>0&&<Frame className="max-w-[640px] border-0 bg-transparent p-0">
+                <FramePanel className="overflow-visible border-0 p-0 ring-1 ring-[color:var(--border)]">
+                  <ul className={workspaceStyles.settingsIndex} aria-label="可用设置">
+                    {availableSettings.map(({id,label,icon:Icon})=><li key={id}>
+                      <Button variant="ghost" data-workspace-nav onClick={()=>selectSettingsPanel(id)}>
+                        <Icon size={19} aria-hidden="true"/><span>{label}</span><ChevronRight size={16} aria-hidden="true"/>
+                      </Button>
+                    </li>)}
+                  </ul>
+                </FramePanel>
+              </Frame>}
               {access.authenticated === false && access.loginAllowed === true && props.onLogin && (
                 <Button variant="outline" onClick={props.onLogin}>
                   <LogIn size={17} />
