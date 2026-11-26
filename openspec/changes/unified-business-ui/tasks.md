@@ -215,3 +215,7 @@ The owner clarified that manual entry and conversation intake coexist. Verify a 
 For the existing owner workspace read flow, verify neutral page recovery and a read-only historical task link when the confirmed owner cannot load the full snapshot. Require an independently validated response before showing details, preserve failed-list and missing-record states, and leave authenticated production incident attribution and rollout pending independent evidence.
 
 With the flat Todo table and its previous candidate integrated, keep existing status filtering, single-entry creation and project relationships. Finish the compact Todo timeline and make the Kanban title open the existing in-place detail; verify the independent plan and deadline scales, keyboard editing and receipt-driven moves.
+
+### Storage review workspace entry (EXEC-STORAGE-ENTRY-001)
+
+Continue 1.2/3.1/3.2 and [Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41#issuecomment-7182201330). The storage content shares the existing checklist, decision and note controller with the standalone response. Its review is loaded on mount after verifying the owner and space. The shared personal layout owns canonical navigation, history, focus, scroll restoration and the active content guard. Keep the current direct entry until the host is qualified. Preserve the standalone CSP and the existing save, receipt and independent readback rules. Fixed-source integration, production readback and owner experience remain pending.
