@@ -49,8 +49,16 @@ export function exerciseHistoryRecord(scope:string):string|null {
   return window.location.hash==='#exercise'&&value?.scope===scope&&typeof value.id==='string'?value.id:null;
 }
 
-export function pushExerciseHistoryRecord(id:string,scope:string,url=window.location.href) {
-  window.history.pushState({...window.history.state,[exerciseDetailKey]:{id,scope}},'',url);
+function pushExerciseHistory(detail:{id:string;scope:string}|null,url?:string|URL) {
+  const state={...window.history.state,[exerciseDetailKey]:detail};
+  // Next copies its own state and synchronizes external URL changes through pushState.
+  delete state.__NA;
+  delete state._N;
+  window.history.pushState(state,'',url);
+}
+
+export function pushExerciseHistoryRecord(id:string,scope:string,url?:string) {
+  pushExerciseHistory({id,scope},url===window.location.href?undefined:url);
 }
 
 function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBrowse>) {
@@ -62,7 +70,7 @@ function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBro
     if(value===defaultValue)url.searchParams.delete(key);
     else url.searchParams.set(key,value);
   }
-  if(url.href!==window.location.href)window.history.pushState({...window.history.state,[exerciseDetailKey]:null},'',url);
+  if(url.href!==window.location.href)pushExerciseHistory(null,url);
 }
 
 export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|null>) {

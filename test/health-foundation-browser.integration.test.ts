@@ -306,7 +306,8 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
       await page.goBack();
       await expect(planned).toBeFocused();
       await expect(exerciseStatus).toHaveValue('planned');
-      await exerciseStatus.selectOption('completed');
+      await exerciseStatus.focus();
+      await page.keyboard.press('End');
       await expect(completed).toBeVisible();
       await expect(exerciseStatus).toHaveValue('completed');
     }
