@@ -42,6 +42,10 @@ function exerciseBrowse(url:URL):ReturnType<typeof initialBrowse> {
   };
 }
 
+function browseSection(current:ReturnType<typeof initialBrowse>,section:HealthSection,url:URL) {
+  return section==='exercise'?exerciseBrowse(url):current.section===section?current:initialBrowse(section);
+}
+
 const exerciseDetailKey='lifeosExerciseDetail';
 
 export function exerciseHistoryRecord(scope:string):string|null {
@@ -49,7 +53,7 @@ export function exerciseHistoryRecord(scope:string):string|null {
   return window.location.hash==='#exercise'&&value?.scope===scope&&typeof value.id==='string'?value.id:null;
 }
 
-function pushExerciseHistory(detail:{id:string;scope:string}|null,url?:string|URL) {
+function pushHealthHistory(detail:{id:string;scope:string}|null,url?:string|URL) {
   const state={...window.history.state,[exerciseDetailKey]:detail};
   // Next copies its own state and synchronizes external URL changes through pushState.
   delete state.__NA;
@@ -58,7 +62,7 @@ function pushExerciseHistory(detail:{id:string;scope:string}|null,url?:string|UR
 }
 
 export function pushExerciseHistoryRecord(id:string,scope:string,url?:string) {
-  pushExerciseHistory({id,scope},url===window.location.href?undefined:url);
+  pushHealthHistory({id,scope},url===window.location.href?undefined:url);
 }
 
 function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBrowse>) {
@@ -70,7 +74,7 @@ function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBro
     if(value===defaultValue)url.searchParams.delete(key);
     else url.searchParams.set(key,value);
   }
-  if(url.href!==window.location.href)pushExerciseHistory(null,url);
+  if(url.href!==window.location.href)pushHealthHistory(null,url);
 }
 
 export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|null>) {
@@ -92,7 +96,7 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
       const {hash}=url;
       const section = hash==='#exercise' ? 'exercise' : hash==='#sleep' ? 'sleep' : hash===''||hash==='#body' ? 'body' : null;
       if (!section) return;
-      setBrowse(current => section==='exercise' ? exerciseBrowse(url) : current.section===section ? current : initialBrowse(section));
+      setBrowse(current => browseSection(current,section,url));
     }
     syncSection();
     window.addEventListener('hashchange',syncSection);
@@ -137,6 +141,14 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
     ...browse,
     ...sections[browse.section],
     compact,
+    setSection:(section:HealthSection) => {
+      const url=new URL(window.location.href);
+      if(url.hash==='#'+section)return;
+      url.hash=section;
+      // A native fragment click can otherwise race the router's pending filter URL update.
+      pushHealthHistory(null,url);
+      setBrowse(current=>browseSection(current,section,url));
+    },
     setView:(view:HealthView) => browse.section==='exercise' ? setExerciseBrowse({view}) : setBrowse(current => ({...current,view})),
     setMetric:(metric:HealthMetric) => setBrowse(current => ({...current,metric})),
     setCategory:(category:ExerciseCategory) => setExerciseBrowse({view:'table',category,status:browse.category===category?browse.status:'all'}),
@@ -144,11 +156,15 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
   };
 }
 
-export function HealthSectionNav({section}:{section:HealthSection}) {
+export function HealthSectionNav({section,onSection}:{section:HealthSection;onSection:(section:HealthSection)=>void}) {
   return <nav className={s.sectionNav} aria-label="健康分区">
     {(Object.keys(sections) as HealthSection[]).map(key => (
       <Button asChild key={key} size="sm" variant={section===key?'secondary':'ghost'}>
-        <a href={'#'+key} aria-current={section===key?'location':undefined}>{sections[key].label}</a>
+        <a href={'#'+key} aria-current={section===key?'location':undefined} onClick={event=>{
+          if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey)return;
+          event.preventDefault();
+          onSection(key);
+        }}>{sections[key].label}</a>
       </Button>
     ))}
   </nav>;

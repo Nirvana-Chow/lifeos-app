@@ -464,7 +464,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
       virtualizerOptions={compactHealth?compactHealthVirtualizerOptions:undefined}/></DataGrid></DataGridContainer></div>}
  </>;
  return <div ref={root} className={s.workbench} data-personal-record-module={type}>
-  {status&&type==='health'&&<HealthSectionNav section={health.section}/>}
+  {status&&type==='health'&&<HealthSectionNav section={health.section} onSection={health.setSection}/>}
   {status&&type==='health'&&health.section==='exercise'&&<ExerciseRecordFilters category={health.category} status={health.status} inTable={health.view==='table'} onCategory={health.setCategory} onStatus={health.setStatus}/>}
   {writeJournal?<><div className={s.toolbar}>
    {status?.writable===true&&verified!==false&&<Button type="button" disabled={blocked||awaitingJournalDay} onClick={()=>create()}>写日记</Button>}

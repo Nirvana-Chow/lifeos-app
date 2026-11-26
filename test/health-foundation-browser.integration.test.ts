@@ -321,12 +321,17 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     const beforeSleep=page.url();
     await sleep.click();
     await expect(row('合成睡眠')).toBeVisible();
+    const sleepLocation=new URL(beforeSleep);
+    sleepLocation.hash='sleep';
+    await expect(page).toHaveURL(sleepLocation.href);
+    await expect(sleep).toHaveAttribute('aria-current','location');
     await page.goBack();
     await expect(page).toHaveURL(beforeSleep);
     await expect(completed).toBeVisible();
     await expect(exerciseStatus).toHaveValue('completed');
     await page.goForward();
     await expect(row('合成睡眠')).toBeVisible();
+    await expect(page).toHaveURL(sleepLocation.href);
     await exercise.click();
     await expect(completed).toBeVisible();
     await expect(exerciseStatus).toHaveValue('completed');
