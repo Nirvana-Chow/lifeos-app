@@ -1,5 +1,5 @@
 import type{PersonalBinding}from'./client.ts';
-import type{PersonalEditorFields}from'./editor.ts';
+import{clonePersonalJSON,type PersonalEditorFields}from'./editor.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
 import{taskCellFields,taskReceiptMatchesSubmission,type TaskIdentity}from'./task-editor-state.ts';
 export type TaskCellField='title'|'status'|'due';
@@ -10,7 +10,7 @@ const sameCell=(a:Pick<TaskCellDraft,'task'|'field'>,b:Pick<TaskCellDraft,'task'
 export class TaskCellDraftMemory{
  private epoch=0;private active:PersonalBinding|null=null;private retained:{binding:PersonalBinding;draft:TaskCellDraft}|null=null;private capture:(()=>void)|null=null;private confirmed=new Set<()=>void>();private discarded=new Set<()=>void>();
  verify(binding:PersonalBinding|null){if(!binding||!this.active||!same(binding,this.active))this.epoch++;if(binding&&this.retained&&!same(binding,this.retained.binding))this.retained=null;this.active=binding?{...binding}:null;}
- read():TaskCellDraft|null{return this.active&&this.retained&&same(this.active,this.retained.binding)?structuredClone(this.retained.draft):null;}
+ read():TaskCellDraft|null{return this.active&&this.retained&&same(this.active,this.retained.binding)?clonePersonalJSON(this.retained.draft):null;}
  /** Every editor receives a writer scoped to its binding, cell and lifecycle. Unrelated cleanup cannot clear it. */
  claim(task:TaskIdentity,field:TaskCellField,allowDiscard:()=>boolean):((draft:TaskCellDraft|null)=>void)|null{
   if(!this.active)return null;const binding={...this.active},cell={task:{...task},field},before=this.epoch;
@@ -27,7 +27,7 @@ export class TaskCellDraftMemory{
    const ownsRetained=this.retained&&same(binding,this.retained.binding)&&sameCell(this.retained.draft,cell);
    if(!draft){if(ownsRetained)this.retained=null;return;}
    if(!sameCell(draft,cell)||this.retained&&!ownsRetained)return;
-   this.retained={binding:{...binding},draft:structuredClone(draft)};
+   this.retained={binding:{...binding},draft:clonePersonalJSON(draft)};
   };
  }
  registerCapture(capture:()=>void){this.capture=capture;return()=>{if(this.capture===capture)this.capture=null;};}

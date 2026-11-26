@@ -4,6 +4,7 @@ import { createContext, useContext, useCallback, useEffect, useMemo, useRef, use
 import { useTable, tableFeatures, columnGroupingFeature, createGroupedRowModel, type CellContext, type HeaderContext, type ColumnDef } from '@tanstack/react-table';
 import type { TaskGridProps, TaskRow } from './contract';
 import type { TaskCellDraft, TaskCellField } from '../personal-candidate/task-cell-draft';
+import { clonePersonalJSON } from '../personal-candidate/editor';
 import { taskStatusLabels } from '../personal-candidate/task-editor-state';
 import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import { mountTaskGridEditor } from '../personal-candidate/task-grid-editor';
@@ -116,7 +117,7 @@ export function TaskTitleField(props: TaskTitleFieldProps) {
     const retained = current.draftMemory?.read();
     const draft = retained?.task.id === current.task.id && retained.field === 'title' ? retained : {
       task: { id: current.task.id, revision: current.task.revision },
-      fields: structuredClone(fields), field: 'title' as const, value: current.task.title,
+      fields: clonePersonalJSON(fields), field: 'title' as const, value: current.task.title,
     };
     const writeDraft = current.draftMemory?.claim(draft.task, 'title', () => window.confirm('放弃尚未保存的修改？'));
     if (current.draftMemory && !writeDraft) return;
@@ -268,7 +269,7 @@ export function TaskGrid(props: TaskGridProps) {
     const retained = current.draftMemory?.read();
     const restore = retained?.task.id === rowId && retained.field === field ? retained : null;
     const target: TaskCellDraft = restore ?? {
-      task: { id: task.id, revision: task.revision }, fields: structuredClone(fields), field, value: valueOf(task, field),
+      task: { id: task.id, revision: task.revision }, fields: clonePersonalJSON(fields), field, value: valueOf(task, field),
     };
     const writeDraft = current.draftMemory?.claim(target.task, field, () => window.confirm('当前表格修改尚未保存，放弃这些修改并编辑另一单元格？'));
     if (current.draftMemory && !writeDraft) return;
