@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
 import {createArkTaskTagSuggestionProvider} from '../src/personal-task-tag-suggestion/ark-provider.ts';
-import {taskTagSuggestionPath,taskTagSuggestionScope} from '../src/personal-task-tag-suggestion/contract.ts';
+import {taskTagBindingHeader,taskTagSuggestionPath,taskTagSuggestionScope} from '../src/personal-task-tag-suggestion/contract.ts';
 import {handleTaskTagSuggestion} from '../src/personal-task-tag-suggestion/http.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
@@ -87,9 +87,14 @@ test('personal router verifies topic ownership and keeps successful, rejected an
   const handler=createPersonalPlatformHandler({repository,config:personal,storageVerified:true,taskTagSuggestion:provider,
     sessions:{read:async()=>authorized?{userId:personal.ownerId,email:personal.ownerEmail}:null},
     assertWritable:async()=>assert.fail('Suggestion must never require write access')});
-  const send=(candidate=topic,signal?:AbortSignal)=>handler(new Request(baseURL+taskTagSuggestionPath,{method:'POST',signal,
-    headers:{Host:new URL(baseURL).host,Origin:baseURL,'Content-Type':'application/json'},
+  const binding=JSON.stringify([personal.ownerId,personal.spaceId]);
+  const send=(candidate=topic,signal?:AbortSignal,ownerScope:string|null=binding)=>handler(new Request(baseURL+taskTagSuggestionPath,{method:'POST',signal,
+    headers:{Host:new URL(baseURL).host,Origin:baseURL,'Content-Type':'application/json',...(ownerScope?{[taskTagBindingHeader]:ownerScope}:{})},
     body:JSON.stringify({scope:taskTagSuggestionScope,todoText,candidates:[candidate]})}));
+  const wrongSpace=JSON.stringify([personal.ownerId,'synthetic-other-space']);
+  assert.equal((await send(topic,undefined,wrongSpace)).status,403);
+  assert.equal((await send(topic,undefined,null)).status,403);
+  assert.equal(calls,0);
   assert.deepEqual(await (await send()).json(),{topicIds:[topic.id]});
   assert.equal((await send({...topic,revision:topic.revision-1})).status,409);
   const stopped=new AbortController();stopped.abort();

@@ -3,13 +3,13 @@
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '../ui-review/ui/button';
 import {isTaskTagCandidate,parseTaskTagSuggestionInput,parseTaskTagSuggestionResponse,taskTagCandidateLimit,
-  taskTagResultLimit,taskTagSuggestionPath,taskTagSuggestionScope,taskTagTextLimit,type TaskTagCandidate} from './contract';
+  taskTagBindingHeader,taskTagResultLimit,taskTagSuggestionPath,taskTagSuggestionScope,taskTagTextLimit,type TaskTagCandidate} from './contract';
 
 type Props = {
   ownerScope:string|null;
   todoText:string;
   topics:readonly TaskTagCandidate[];
-  onUse:(topicIds:readonly string[])=>void;
+  onUse:(topicIds:readonly string[],signal:AbortSignal)=>Promise<boolean>;
 };
 
 /** Apply accepted IDs to local editor state. The host retains its regular Save action. */
@@ -33,7 +33,7 @@ export function TaskTagSuggestionPanel({ownerScope,todoText,topics,onUse}:Props)
     setAvailableFor(null);
     if(!ownerScope)return;
     const request=new AbortController();
-    void fetch(taskTagSuggestionPath,{credentials:'same-origin',cache:'no-store',signal:request.signal})
+    void fetch(taskTagSuggestionPath,{credentials:'same-origin',cache:'no-store',headers:{[taskTagBindingHeader]:ownerScope},signal:request.signal})
       .then(async response=>response.ok?await response.json():null)
       .then(value=>{
         if(!request.signal.aborted&&value?.available===true&&value.scope===taskTagSuggestionScope)setAvailableFor(ownerScope);
@@ -58,7 +58,7 @@ export function TaskTagSuggestionPanel({ownerScope,todoText,topics,onUse}:Props)
     setStatus('正在请求建议…');
     try{
       const response=await fetch(taskTagSuggestionPath,{method:'POST',credentials:'same-origin',cache:'no-store',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:request.signal});
+        headers:{'Content-Type':'application/json',[taskTagBindingHeader]:ownerScope},body:JSON.stringify(input),signal:request.signal});
       if(!response.ok)throw Error('Suggestion unavailable');
       const value=parseTaskTagSuggestionResponse(await response.json(),input.candidates);
       if(!value)throw Error('Invalid suggestion');
@@ -68,6 +68,23 @@ export function TaskTagSuggestionPanel({ownerScope,todoText,topics,onUse}:Props)
       setStatus(value.topicIds.length?'已收到建议，请核对标签。':'本次没有匹配的标签。');
     }catch{
       if(!request.signal.aborted)setStatus('未能取得标签建议，可继续手动选标签。');
+    }finally{
+      if(requestRef.current===request){requestRef.current=null;setBusy(false);}
+    }
+  }
+
+  async function adopt() {
+    if(!choice.length||!currentResult||availableFor!==ownerScope||requestRef.current)return;
+    const request=new AbortController();
+    requestRef.current=request;
+    setBusy(true);
+    try{
+      const applied=await onUse(choice,request.signal);
+      if(request.signal.aborted)return;
+      setStatus(applied?'已加入草稿。请在待办中确认后保存。':'未能核对当前权限或标签版本，请刷新后重试。');
+      setResult(null);
+    }catch{
+      if(!request.signal.aborted){setStatus('未能核对当前权限或标签版本，请刷新后重试。');setResult(null);}
     }finally{
       if(requestRef.current===request){requestRef.current=null;setBusy(false);}
     }
@@ -103,14 +120,10 @@ export function TaskTagSuggestionPanel({ownerScope,todoText,topics,onUse}:Props)
     {!!currentResult?.topicIds.length&&<fieldset>
       <legend>采用到待办草稿</legend>
       {candidates.map(topic=><label key={topic.id}><input type="checkbox" checked={choice.includes(topic.id)}
-        disabled={!choice.includes(topic.id)&&choice.length>=taskTagResultLimit} onChange={event=>{
+        disabled={busy||!choice.includes(topic.id)&&choice.length>=taskTagResultLimit} onChange={event=>{
           setChoice(event.currentTarget.checked?[...choice,topic.id]:choice.filter(id=>id!==topic.id));
         }}/>{topic.title}</label>)}
-      <Button type="button" disabled={!choice.length} onClick={()=>{
-        onUse(choice);
-        setResult(null);
-        setStatus('已加入草稿。请在待办中确认后保存。');
-      }}>采用所选标签</Button>
+      <Button type="button" disabled={busy||!choice.length} onClick={()=>void adopt()}>采用所选标签</Button>
     </fieldset>}
   </fieldset>;
 }

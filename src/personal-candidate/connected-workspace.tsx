@@ -89,7 +89,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  };
  const restoreFocus=()=>{if(returnFocus.current?.isConnected)returnFocus.current.focus({preventScroll:true});};
  const close=()=>{setEditor(null);if(!editor?.singleCreate)queueMicrotask(restoreFocus);};
- const save=async(task:TaskIdentity|null,fields:PersonalEditorFields)=>{if(!commandStorage.current)return null;const saved=await controller.current?.saveTask(task,fields)??null;if(saved)cellDrafts.confirm(saved);return saved;};
+ const save=async(task:TaskIdentity|null,fields:PersonalEditorFields,verifyReadback=false)=>{if(!commandStorage.current)return null;const saved=await controller.current?.saveTask(task,fields,verifyReadback)??null;if(saved)cellDrafts.confirm(saved);return saved;};
  const retry=async()=>{const saved=await controller.current?.retry()??null;if(saved)cellDrafts.confirm(saved);return saved;};
  const getTaskFields=(task:TaskIdentity)=>{
   const host=controller.current,current=host?.getSnapshot();
@@ -101,6 +101,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   key={selectedId??editor.target.mode}
   target={editor.target} entry={selectedEntry} spaceId={editor.binding.spaceId} concealed={concealed}
   inPlaceDetail={editor.inPlaceDetail} LabelSuggestionAction={LabelSuggestionAction}
+  suggestionBinding={!concealed&&snapshot.access.allowedTypes?.includes('topic')?editor.binding:undefined}
   relations={concealed?{}:controller.current?.getRelationOptions()??{}}
   writable={snapshot.access.writable===true} saving={snapshot.saving} uncertain={snapshot.uncertain}
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}

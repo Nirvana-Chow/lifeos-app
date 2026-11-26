@@ -1,4 +1,5 @@
 export const taskTagSuggestionPath = '/api/platform/personal/todo/tag-suggestions';
+export const taskTagBindingHeader = 'X-LifeOS-Task-Tag-Binding';
 export const taskTagSuggestionScope = 'current-todo-and-explicit-topic-names-v1';
 export const taskTagTextLimit = 2000;
 export const taskTagCandidateLimit = 12;

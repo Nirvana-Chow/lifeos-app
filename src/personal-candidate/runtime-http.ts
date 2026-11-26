@@ -1,5 +1,6 @@
 import {handleFileIndexRequest} from '../personal-file-index/http.ts';
 import {handleTaskTagSuggestion,type TaskTagSuggestionProvider} from '../personal-task-tag-suggestion/http.ts';
+import {taskTagBindingHeader} from '../personal-task-tag-suggestion/contract.ts';
 import {readRecentMemoRow,recentMemosLimit,recentMemosPath,type RecentMemosReader} from '../personal-journal/recent-memos.ts';
 import {PersonalFinanceService} from '../personal-finance/service.ts';
 import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
@@ -83,9 +84,16 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     return respond({...await readWorkspaceAccess(),requirementsEnabled:options.config.requirementsEnabled===true,calendarEnabled:options.config.calendarEnabled===true,articleEnabled:options.storageVerified&&options.config.articleEnabled===true,mediaEnabled:options.storageVerified&&options.config.mediaEnabled===true,careerEnabled:options.storageVerified&&options.config.careerEnabled===true,portfolioEnabled:options.storageVerified&&options.config.portfolioEnabled===true,cookingEnabled:options.storageVerified&&options.config.cookingEnabled===true,healthEnabled:options.config.healthEnabled===true,peopleEnabled:options.config.peopleEnabled===true,financeEnabled:options.config.financeEnabled===true,requirementSupportEnabled:options.config.requirementSupportEnabled===true,personalAccountReady:true,personalDataAuthorized:true,storageReviewEnabled:options.storageVerified,fileHandoffEnabled:!!options.fileHandoff,aiEnabled:false,userAccepted:false});
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
-   const taskTagResponse=await handleTaskTagSuggestion(request,{baseURL:options.config.baseURL,assertOwner,
+   const assertTagBinding=async()=>{
+    await assertOwner();
+    const expected=JSON.stringify([options.config.ownerId,options.config.spaceId]);
+    if(request.headers.get(taskTagBindingHeader)!==expected)
+     throw new PlatformError(403,'TASK_TAG_BINDING_CHANGED','本人或空间已变化，请重新打开待办。');
+   };
+   const taskTagResponse=await handleTaskTagSuggestion(request,{baseURL:options.config.baseURL,assertOwner:assertTagBinding,
     canReadTopics:options.storageVerified&&options.config.allowedTypes.includes('todo')&&options.config.allowedTypes.includes('topic'),
     getTopic:async id=>{const entry=await service.get(options.config.ownerId,'topic',id);
+     if(!('title'in entry.draft))throw new PlatformError(404,'NOT_FOUND','没有可访问的本人标签。');
      return {id:entry.id,revision:entry.revision,title:entry.draft.title};},provider:options.taskTagSuggestion});
    if(taskTagResponse)return taskTagResponse;
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');

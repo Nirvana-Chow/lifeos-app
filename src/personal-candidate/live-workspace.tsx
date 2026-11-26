@@ -3,6 +3,7 @@ import {useContext,useLayoutEffect,useRef} from 'react';
 import type {SettingsPanel,WorkspacePage} from '../ui-review/contract';
 import {WorkspaceRouteContext,type TaskShellFrame} from './workspace-route-context';
 import {LifeOSWorkspace} from '../ui-review/workspace';
+import {TaskLabelSuggestion} from '../personal-task-tag-suggestion/editor-action';
 import {ConnectedPersonalWorkspace} from './connected-workspace';
 import {AccountApiKeys} from './account-api-keys';
 import {ClassificationReview} from './classification-review';
@@ -31,7 +32,7 @@ function PublishTaskFrame({publish,frame}:{publish:(frame:TaskShellFrame|null)=>
 
 export function LivePersonalWorkspace({initialTaskId,initialCreateTask,...options}:LiveOptions){
  const route=useContext(WorkspaceRouteContext);
- return <ConnectedPersonalWorkspace initialTaskId={initialTaskId} initialCreateTask={initialCreateTask}>
+ return <ConnectedPersonalWorkspace initialTaskId={initialTaskId} initialCreateTask={initialCreateTask} LabelSuggestionAction={TaskLabelSuggestion}>
   {props=>route?<PublishTaskFrame publish={route.publishTaskFrame} frame={{...props,...options}}/>:
    <PersonalWorkspaceView {...props} {...options}/>}
  </ConnectedPersonalWorkspace>;
