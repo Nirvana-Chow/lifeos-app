@@ -1,3 +1,4 @@
+import type {LearningService} from '../personal-learning/service.ts';
 import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
 import type {FilePermission} from '../file-handoff/authorization.ts';
 import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
@@ -30,6 +31,7 @@ import {organizationDetail,organizationSnapshot,completeOrganizationFields} from
 type Grant = Readonly<{grantId: string; ownerId: string; spaceId: string; scopes: readonly OperationScope[];businessDataPolicy?:'all-personal-business-v1';allowedOperationIds?:readonly string[];oauthFence?:OAuthGrantFence;fileHandoff?:FilePermission}>;
 type Options = {
   fileHandoff?:FileHandoffRuntime;
+  learning?:{forAgent:(grant:Grant, operationId:string, scopes:readonly OperationScope[])=>LearningService;ready:()=>Promise<boolean>};
   enabled?: boolean;
   modules?: AgentModules;
   mountPath?: '/api/platform/agent';
@@ -78,6 +80,7 @@ export function createAgentHandler(options: Options) {
     const operation = agentCapabilityOperations.find(entry => entry.id === id);
     if(operation?.module==='fileHandoff'){if(!modules.fileHandoff||!options.fileHandoff||options.fenceWrites!==true)return false;try{if(!await options.fileHandoff.ready())return false;}catch{return false;}}
     if(isRequirementEventOperation(id)||id==='streamRequirementEvents'){if(!modules.requirementEvents||!options.requirementEvents)return false;try{if(!await options.requirementEvents.ready())return false;}catch{return false;}}
+    if(operation?.module==='learning'){if(!modules.learning||!options.learning||options.fenceWrites!==true)return false;try{if(!await options.learning.ready())return false;}catch{return false;}}
     if(operation?.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy||options.fenceWrites!==true))return false;
     if(operation&&isRecordModule(operation.module)&&operation.id.startsWith('snapshot')&&!options.repository.readCurrentSnapshot)return false;
     if(operation&&isRecordModule(operation.module)&&(!personalRecordModuleEnabled(operation.module,config,modules as AgentModules)||options.fenceWrites!==true))return false;
@@ -96,10 +99,11 @@ export function createAgentHandler(options: Options) {
     const path = new URL(request.url);
     const mount = options.mountPath ?? '';
     const route = path.pathname.startsWith(mount + '/') ? path.pathname.slice(mount.length) : '';
+    const learningRoute=/^\/v1\/learning\/cards\/([a-f0-9-]{36})(?:\/(reviews)(?:\/([a-f0-9-]{36}))?)?$/.exec(route);
     const storageRoute=/^\/v1\/storage-reviews\/([a-f0-9-]{36})(?:\/(checklist|decisions|notes))?$/.exec(route);
     const fileRoute=/^\/v1\/file-handoffs\/([a-f0-9-]{36})(?:\/(content|acknowledgments))?$/.exec(route);
     const executionRoute=/^\/v1\/requirement-events\/claims\/([a-f0-9-]{36})$/.exec(route);
-    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
+    const personalRoute=/^\/v1\/records\/(journal|calendar|health|person|finance|media|career|portfolio|cooking|article)(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route);
     const personalType=personalRoute?.[1] as AgentRecordType|undefined,personalId=personalRoute?.[2]&&personalRoute[2]!=='snapshot'?personalRoute[2]:undefined;
     const feedbackRoute=/^\/v1\/feedback(?:\/(snapshot|[a-f0-9-]{36}))?$/.exec(route),feedbackId=feedbackRoute?.[1]&&feedbackRoute[1]!=='snapshot'?feedbackRoute[1]:undefined;
     const recordId = /^\/v1\/todos\/([a-f0-9-]{36})$/.exec(route)?.[1];
@@ -108,9 +112,9 @@ export function createAgentHandler(options: Options) {
     const organizationRoute=/^\/v1\/organization\/(project|domain|topic)(?:\/([a-f0-9-]{36}))?$/.exec(route);
     const organizationType=organizationRoute?.[1] as OrganizationType|undefined;
     const organizationId=organizationRoute?.[2];
-    const template=fileRoute?'/v1/file-handoffs/{id}'+(fileRoute[2]?'/'+fileRoute[2]:''):executionRoute?'/v1/requirement-events/claims/{id}':storageRoute?'/v1/storage-reviews/{id}'+(storageRoute[2]?'/'+storageRoute[2]:''):personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
+    const template=learningRoute?'/v1/learning/cards/{id}'+(learningRoute[2]?'/reviews'+(learningRoute[3]?'/{reviewId}':''):''):fileRoute?'/v1/file-handoffs/{id}'+(fileRoute[2]?'/'+fileRoute[2]:''):executionRoute?'/v1/requirement-events/claims/{id}':storageRoute?'/v1/storage-reviews/{id}'+(storageRoute[2]?'/'+storageRoute[2]:''):personalRoute?personalId?`/v1/records/${personalType}/{id}`:route:feedbackRoute?feedbackId?'/v1/feedback/{id}':route:requirementId?'/v1/requirements/{id}':organizationRoute ? organizationId ? '/v1/organization/{type}/{id}' : '/v1/organization/{type}' : recordId ? '/v1/todos/{id}' : route;
     const operation = agentCapabilityOperations.find(entry => entry.method === request.method && entry.path === template);
-    if (options.enabled !== true || !operation || operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy)||(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents')&&!modules.requirementEvents|| isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
+    if (options.enabled !== true || !operation || operation.module==='learning'&&(!modules.learning||!options.learning) || operation.module==='storageReview'&&(!modules.storageReview||!modules.businessDataPolicy)||(isRequirementEventOperation(operation.id)||operation.id==='streamRequirementEvents')&&!modules.requirementEvents|| isRecordModule(operation.module)&&!personalRecordModuleEnabled(operation.module,config,modules as AgentModules) || operation.module === 'todo' && !config.allowedTypes.includes('todo') || operation.module === 'organization' && !modules.organization || operation.module === 'requirements' && (!modules.requirements||!config.requirementsEnabled) || path.search) return respond(404, {error: 'NOT_FOUND'});
     try {
       assertLocalRequest(request, config.baseURL);
       const token = readBusinessBearer(request.headers.get('authorization'));
@@ -146,16 +150,40 @@ export function createAgentHandler(options: Options) {
         const adapter=options.requirementEvents!,mutationGuard=async()=>{if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');if(operation.method!=='GET')await options.assertWritable(grant);};
         return createRequirementEventHandler({enabled:true,origin:config.baseURL,events:adapter.service,requirements:service.requirements,admission,openNotifications:adapter.openNotifications,authorize:async()=>({actor,mutationGuard,current:async()=>{await mutationGuard();await authority.assertCurrentAuthority(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作尚未就绪。');}})})(request);
       }
+      if(operation.module==='learning'){
+        if(actor.businessDataPolicy||actor.oauthFence||actor.fileHandoff||!actor.scopes.includes('learning:read'))return respond(403,{error:'ACCESS_DENIED'});
+        const adapter=options.learning!.forAgent(grant,operation.id,operation.requiredScopes);
+        const binding={ownerId:actor.ownerId,spaceId:actor.spaceId};
+        const current=async()=>{
+          try{await authority.assertCurrentAuthority(actor,operation.id);}
+          catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}
+        };
+        const cardId=learningRoute?.[1],reviewId=learningRoute?.[3]??null;
+        if(operation.method==='GET'){
+          const value=cardId?await adapter.detail(binding,cardId,reviewId):await adapter.snapshot(binding);
+          await current();return respond(200,value);
+        }
+        const input=object(await readJSONBody(request),cardId?['confirmed','cardRevision','previousId','rating']:['confirmed','front','back']);
+        const command=cardId?{...input,kind:'review',cardId}:{...input,kind:'create'};
+        const guard=async()=>{
+          if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
+          authority.assertActorOrigin(actor,operation.id);
+          await options.assertWritable(grant);
+        };
+        const receipt=await adapter.mutate(binding,command,request.headers.get('idempotency-key')??'',guard);
+        await current();return respond(200,receipt);
+      }
       if(operation.module==='storageReview')return await handleStorageReviewAgent(request,{operation,recordId:storageRoute?.[1],actor,authority,repository:options.repository,config,currentReady:()=>available(operation.id),assertWritable:()=>options.assertWritable(grant)});
       if(isRecordModule(operation.module)){
-        if(actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
+        if(operation.module==='article'?actor.businessDataPolicy||actor.oauthFence||!actor.scopes.includes('article:read'):actor.businessDataPolicy!=='all-personal-business-v1')return respond(403,{error:'ACCESS_DENIED'});
         const current=async()=>{try{await authority.assertCurrentAuthority(actor,operation.id);}catch{throw new PlatformError(403,'ACCESS_DENIED','授权已变化。');}if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');};
         const read=async<T>(run:()=>Promise<T>)=>{await current();const result=await run();await current();return result;};
         const guard=async()=>{
           if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消。');
           // OAuth's original transaction fence below rechecks current authority
           // at every receipt/write phase. A second ledger client would self-wait.
-          if(actor.oauthFence){authority.assertActorOrigin(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');}
+          if(operation.module==='article')authority.assertActorOrigin(actor,operation.id);
+          else if(actor.oauthFence){authority.assertActorOrigin(actor,operation.id);if(!await available(operation.id))throw new PlatformError(503,'AGENT_OPERATION_UNAVAILABLE','操作暂不可用。');}
           else await current();
           await options.assertWritable(grant);
         };

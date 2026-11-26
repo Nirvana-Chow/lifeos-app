@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readPersonalConfig} from '../src/personal-candidate/config.ts';
+import {readPlatformConfig} from '../src/platform/config.ts';
+import {readAgentBusinessModules} from '../src/agent-api/config.ts';
+import {personalPermitBinding} from '../src/personal-candidate/runtime-http.ts';
 import {handleAgentRequest} from '../src/agent-api/runtime.ts';
 import {applyReviewEnvironment,validateReviewConfig} from '../src/platform/private-config.ts';
 
@@ -186,4 +190,28 @@ test('producer revision changes with permissions or expiry but excludes quota bo
  row={...row,permissions:{todo:['read','write']}};assert.notEqual((await readCurrentAgentGrant(pool,'grant'))!.authorizationRevision,first!.authorizationRevision);
  row={...row,permissions:{todo:['read']},expiresAt:'2099-01-01T00:00:00.000Z'};assert.notEqual((await readCurrentAgentGrant(pool,'grant'))!.authorizationRevision,first!.authorizationRevision);
  const flag=process.env.LIFEOS_AGENT_CLASSIFICATION;delete process.env.LIFEOS_AGENT_CLASSIFICATION;try{assert.equal(await getAgentGrantReader(),null);}finally{if(flag!==undefined)process.env.LIFEOS_AGENT_CLASSIFICATION=flag;}
+});
+
+
+test('review startup owns the learning flags and does not inherit or expand the old write permit',()=>{
+ const original={...platform,...personal,...agent};
+ const web={LIFEOS_PERSONAL_LEARNING:'learning-vocabulary-v1'};
+ const learning={...web,LIFEOS_AGENT_LEARNING:'learning-v1'};
+ const approved=validateReviewConfig({...original,...learning});
+ const parsed=readPersonalConfig(approved,readPlatformConfig(approved)!)!;
+ assert.equal(parsed.learningEnabled,true);
+ assert.equal(readAgentBusinessModules(approved,parsed).learning,true);
+ const env:Record<string,string|undefined>={...approved};
+ applyReviewEnvironment(original,env);
+ const inherited=readPersonalConfig(env,readPlatformConfig(env)!)!;
+ assert.equal(env.LIFEOS_PERSONAL_LEARNING,undefined);
+ assert.equal(env.LIFEOS_AGENT_LEARNING,undefined);
+ assert.equal(inherited.learningEnabled,undefined);
+ assert.equal(readAgentBusinessModules(env,inherited).learning,undefined);
+ assert.notEqual(personalPermitBinding(parsed,'a'.repeat(40)).configDigest,personalPermitBinding(inherited,'a'.repeat(40)).configDigest);
+ assert.equal(validateReviewConfig({...platform,...personal,...web}).LIFEOS_PERSONAL_LEARNING,web.LIFEOS_PERSONAL_LEARNING);
+ for(const change of [
+  {...learning,LIFEOS_PERSONAL_LEARNING:undefined},{...learning,LIFEOS_PERSONAL_LEARNING:'1'},{...learning,LIFEOS_AGENT_LEARNING:'1'},
+ ])assert.throws(()=>validateReviewConfig({...original,...change}));
+ assert.throws(()=>validateReviewConfig({...platform,...personal,...learning}));
 });

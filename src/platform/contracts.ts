@@ -18,6 +18,7 @@ export interface Transaction {
  assertRequirementExecutionLease?(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding):Promise<void>;
  /** Serialize deterministic identities even before the first record exists. */
  lockRecordIdentity?(kind:Kind,id:string):Promise<void>;
+ lockArticleAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
  lockAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;
  /** OAuth keeps its current authorization and original grant on this connection. */
  lockOAuthAgentGrant?(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[]):Promise<boolean>;

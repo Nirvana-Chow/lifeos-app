@@ -37,7 +37,18 @@ test('preview remains an explicit unfinished OAuth provenance path, not silently
 });
 test('registry annotations do not alter existing Agent API or SDK wire definitions',()=>{
  const registry=(capabilities as unknown as {agentOperationRegistry?:readonly Candidate[]}).agentOperationRegistry;
- assert.ok(registry);assert.equal(registry.length,68);
+ assert.ok(registry);
+ const articles=registry.filter(op=>op.module==='article');
+ const learning=registry.filter(op=>op.module==='learning');
+ assert.equal(registry.length-articles.length-learning.length,68);
+ assert.deepEqual(articles.map(op=>op.id),['snapshotArticle','getArticle','createArticle','updateArticle']);
+ assert.ok(articles.every(op=>op.mcpExposure==='native'));
+ assert.deepEqual(learning.map(op=>op.id),['snapshotLearningCards','getLearningCard','getLearningReview','createLearningCard','appendLearningReview']);
+ assert.ok(learning.every(op=>op.mcpExposure==='native'));
+ for(const op of [...articles,...learning]){
+  assert.equal(isBusinessMcpOperation(op.id),false);
+  assert.equal(isOAuthBusinessOperation(op.id,true),false);
+ }
  for(const operation of capabilities.agentOperations)assert.equal(Object.hasOwn(operation,'mcpExposure'),false);
  assert.deepEqual(project(registry).map(op=>op.id),capabilities.agentOperations.filter(op=>isBusinessMcpOperation(op.id)).map(op=>op.id));
  assert.deepEqual(project(registry,true).map(op=>op.id),capabilities.agentOperations.filter(op=>isOAuthBusinessOperation(op.id)).map(op=>op.id));

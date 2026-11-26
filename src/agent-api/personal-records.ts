@@ -7,6 +7,7 @@ import {personalRecordTypes,type AgentRecordType} from './personal-operation-reg
 
 export function isRecordModule(module:string):module is AgentRecordType|'feedback'{return (personalRecordTypes as readonly string[]).includes(module)||module==='feedback';}
 export function personalRecordModuleEnabled(module:string,config:PersonalConfig,modules:AgentModules):boolean{
+ if(module==='article')return modules.article===true&&config.articleEnabled===true;
  if(!modules.personalRecords||!modules.businessDataPolicy)return false;
  switch(module){
   case 'journal':return config.allowedTypes.includes('journal');
