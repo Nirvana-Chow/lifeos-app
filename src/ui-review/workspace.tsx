@@ -389,7 +389,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const target=[control,link,mainRegion.current?.querySelector<HTMLElement>('h1')].find(element=>element?.isConnected&&element.getClientRects().length);
       target?.focus({preventScroll:true});
       // The previous sidebar action may return only after owner navigation loads.
-      if(sidebarLink&&!control?.isConnected&&!link&&routePath==='/personal'&&state.status==='unknown')restoreRouteFocus.current=position;
+      if(sidebarLink&&!control?.isConnected&&!link&&routePath==='/personal'&&(state.status==='unknown'||state.status==='loading'))restoreRouteFocus.current=position;
     });
     return()=>cancelAnimationFrame(frame);
   },[routePath,state.status,page]);
