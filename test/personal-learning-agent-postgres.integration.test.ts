@@ -94,7 +94,7 @@ test('OPT-IN learning credentials, web, and the original Agent router share the 
  await once(server,'listening');
  t.after(async()=>{server.close();await once(server,'close');});
  origin='http://127.0.0.1:'+(server.address() as AddressInfo).port;
- const config={...binding,ownerEmail:'learning@example.test',databaseName:database,allowedTypes:['todo'],approval:'personal-manual-v1',businessWriteMode:'owner-managed',baseURL:origin} as const;
+ const config={...binding,ownerEmail:'learning@example.test',databaseName:database,allowedTypes:['todo'],approval:'personal-manual-v1',businessWriteMode:'owner-managed',learningEnabled:true,baseURL:origin} as const;
  const auth=betterAuth({baseURL:origin,secret:'synthetic-learning-agent-fixture-secret-only',database:verifier,logger:{disabled:true},telemetry:{enabled:false},
   plugins:[apiKey({enableSessionForAPIKeys:false,enableMetadata:true,startingCharactersConfig:{shouldStore:false}})]});
  const setRouter=(active:boolean)=>{

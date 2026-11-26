@@ -5,7 +5,6 @@ import type {Binding} from './domain.ts';
 export const learningGrantVersion = 'learning-v1';
 export const learningReadScope = 'learning:read';
 export const learningWriteScope = 'learning:write';
-export const learningWebVersion = 'learning-vocabulary-v1';
 
 export function learningGrantScopes(metadata:unknown,permissions:unknown):readonly (typeof learningReadScope|typeof learningWriteScope)[]|null {
  if(!metadata||typeof metadata!=='object'||Array.isArray(metadata)||Object.keys(metadata).sort().join(',')!=='learningAccess,spaceId'||

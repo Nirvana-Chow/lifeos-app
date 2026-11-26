@@ -1,4 +1,4 @@
-import {learningGrantVersion,learningWebVersion} from '../personal-learning/agent-permission.ts';
+import {learningGrantVersion} from '../personal-learning/agent-permission.ts';
 import {articleGrantVersion} from '../personal-article/agent-permission.ts';
 import {isHTTPSOrigin, type PlatformConfig} from '../platform/config.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
@@ -83,7 +83,7 @@ export function readAgentBusinessModules(env: Record<string,string|undefined>, p
   const article=env.LIFEOS_AGENT_ARTICLE;
   if(article!==undefined&&(article!==articleGrantVersion||personal?.articleEnabled!==true))throw Error('Agent article configuration unavailable');
   const learning=env.LIFEOS_AGENT_LEARNING;
-  if(learning!==undefined&&(learning!==learningGrantVersion||!personal||env.LIFEOS_PERSONAL_LEARNING!==learningWebVersion))throw Error('Agent learning configuration unavailable');
+  if(learning!==undefined&&(learning!==learningGrantVersion||personal?.learningEnabled!==true))throw Error('Agent learning configuration unavailable');
   const records=env.LIFEOS_AGENT_PERSONAL_RECORDS;
   if(records!==undefined&&(records!=='personal-records-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent personal records configuration unavailable');
   const policy=env.LIFEOS_AGENT_ALL_BUSINESS_DATA;

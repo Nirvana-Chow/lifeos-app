@@ -1,4 +1,3 @@
-import{learningWebVersion}from'../personal-learning/agent-permission.ts';
 import{PostgresLearningRepository,verifyLearningPostgres}from'../personal-learning/postgres.ts';
 import{LearningService}from'../personal-learning/service.ts';
 import type{LearningRuntime}from'../personal-learning/http.ts';
@@ -33,9 +32,9 @@ import{readCalendarCandidateFlag}from'./calendar-config.ts';import{CalendarServi
 type Runtime={learning?:LearningRuntime;businessOAuth?:{config:BusinessOAuthConfig;ledger:BusinessOAuthLedger};pool:SqlPool;ownerReadPool?:SqlPool;recovery?:ReturnType<typeof ownerRecoveryAccess>;passwordChangeAllowed?:boolean;personal?:PersonalConfig;readAuth?:ReturnType<typeof createPlatformAuth>;ownerAuthority?:ReturnType<typeof createOwnerAuthority>;config:PlatformConfig;auth:ReturnType<typeof createPlatformAuth>;handler:ReturnType<typeof createPlatformHandler>};
 let pending:Promise<Runtime>|undefined;
 async function buildRuntime(config:PlatformConfig):Promise<Runtime>{
- const{Pool}=await import('pg');const pool=new Pool({connectionString:config.databaseURL,max:3,connectionTimeoutMillis:2000,statement_timeout:5000,idle_in_transaction_session_timeout:5000,lock_timeout:2000,allowExitOnIdle:true,options:'-c search_path=pg_catalog,lifeos_platform'});let ownerReadPool:typeof pool|undefined;
+ const{Pool}=await import('pg');const pool=new Pool({connectionString:config.databaseURL,max:3,connectionTimeoutMillis:2000,statement_timeout:5000,idle_in_transaction_session_timeout:5000,lock_timeout:2000,allowExitOnIdle:true,options:'-c search_path=pg_catalog,lifeos_platform'});let ownerReadPool:typeof pool|undefined,learningReadPool:typeof pool|undefined;
  try{await verifyRestrictedPool(pool as SqlPool);const personal=readPersonalConfig(process.env,config);if(personal)await verifyOwnerMfaPool(pool as SqlPool);if(personal&&config.sessionDuration)await verifySessionDurationPool(pool as SqlPool);let businessOAuth:Runtime['businessOAuth'];if(personal)try{const oauth=readBusinessOAuthConfig(process.env,config.baseURL);if(oauth){await verifyBusinessOAuthPool(pool as SqlPool,oauth,{ownerId:personal.ownerId,ownerEmail:config.ownerEmail,spaceId:personal.spaceId});businessOAuth={config:oauth,ledger:new BusinessOAuthLedger(pool as SqlPool,oauth,personal.ownerId,personal.spaceId)};}}catch{/* Optional OAuth qualification never closes the original owner/API key entrypoints. */}const auth=createPlatformAuth(config,pool,personal?{...(businessOAuth?{businessOAuth:businessOAuth.config}:{}),sessionDuration:!!config.sessionDuration,requireMfa:true,forceSecureCookies:true,disableSessionRefresh:true,assertSessionWrite:personalAuthPolicy(process.env,async()=>requirePersonalWritePermit(personal,process.env.LIFEOS_REVIEW_GIT_SHA??'')).assertSessionWrite}:{}),repository=new PostgresPlatformRepository(pool as SqlPool,!!personal);let aiSettings:AISettingsService|undefined,aiSettingsUnavailableReason:string|undefined;
-  if(personal){const modules=readAgentBusinessModules(process.env,personal);const learningEnabled=process.env.LIFEOS_PERSONAL_LEARNING===learningWebVersion;if(modules.classification||learningEnabled){ownerReadPool=new Pool({connectionString:config.databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,idle_in_transaction_session_timeout:5000,lock_timeout:2000,allowExitOnIdle:true,options:'-c search_path=pg_catalog,lifeos_platform'});await verifyRestrictedPool(ownerReadPool as SqlPool);await verifyOwnerMfaPool(ownerReadPool as SqlPool);}
+  if(personal){const modules=readAgentBusinessModules(process.env,personal);const learningEnabled=personal.learningEnabled===true;if(modules.classification){ownerReadPool=new Pool({connectionString:config.databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,idle_in_transaction_session_timeout:5000,lock_timeout:2000,allowExitOnIdle:true,options:'-c search_path=pg_catalog,lifeos_platform'});await verifyRestrictedPool(ownerReadPool as SqlPool);await verifyOwnerMfaPool(ownerReadPool as SqlPool);}
    const readAuth=createPlatformAuth(config,ownerReadPool??pool,{requireMfa:true,forceSecureCookies:true,disableSessionRefresh:true,readOnlySessions:true,sessionDuration:!!config.sessionDuration});let passwordChangeAllowed=false;if(readOwnerAccountAccess(process.env)){try{const grants=await pool.query(`SELECT has_column_privilege(current_user,'lifeos_platform.platform_account','password','UPDATE') AND has_column_privilege(current_user,'lifeos_platform.platform_account','updatedAt','UPDATE') AND has_table_privilege(current_user,'lifeos_platform.platform_session','DELETE') AS allowed`);passwordChangeAllowed=grants.rows[0]?.allowed===true;}catch{}}
    const account=ownerAccountAccess(config,auth,{enabled:passwordChangeAllowed,withOwnerLock:ownerRecoveryLock(pool as SqlPool,config.ownerId),readOwner:async headers=>config.sessionDuration?(await readVerifiedOwnerSession(readAuth,config,headers))?.principal.userId??null:(await readOwnerPrincipal(readAuth,config,headers))?.userId??null});const recovery=ownerRecoveryAccess(config,pool,{capability:()=>readRecoveryCapability(pool,personal),withOwnerLock:ownerRecoveryLock(pool as SqlPool,config.ownerId),limit:ownerRecoveryRateLimit(pool as SqlPool,config.ownerId)});
    const ownerAuthority=createOwnerAuthority(readAuth,config,personal,modules.classification?async id=>{const reader=await getAgentGrantReader();return reader?reader(id):null;}:undefined);
@@ -45,27 +44,39 @@ async function buildRuntime(config:PlatformConfig):Promise<Runtime>{
    let learning:LearningRuntime|undefined;
    if(learningEnabled)try{
     await verifyLearningPostgres(pool as SqlPool);
+    // Authorization inside the serialized vocabulary write never consumes its held writer pool.
+    let learningAuth=readAuth;
+    if(!ownerReadPool){
+     learningReadPool=new Pool({connectionString:config.databaseURL,max:2,connectionTimeoutMillis:2000,statement_timeout:5000,
+      idle_in_transaction_session_timeout:5000,lock_timeout:2000,allowExitOnIdle:true,options:'-c search_path=pg_catalog,lifeos_platform'});
+     await verifyRestrictedPool(learningReadPool as SqlPool);
+     await verifyOwnerMfaPool(learningReadPool as SqlPool);
+     learningAuth=createPlatformAuth(config,learningReadPool,{requireMfa:true,forceSecureCookies:true,disableSessionRefresh:true,readOnlySessions:true,sessionDuration:!!config.sessionDuration});
+    }
     learning={baseURL:config.baseURL,service:new LearningService(new PostgresLearningRepository(pool as SqlPool)),
      authorize:async(request,write)=>{
-      if(!await readOwnerPrincipal(readAuth,config,request.headers))throw new PlatformError(403,'LEARNING_ACCESS_DENIED','学习权限不可用。');
+      if(!await readOwnerPrincipal(learningAuth,config,request.headers))throw new PlatformError(403,'LEARNING_ACCESS_DENIED','学习权限不可用。');
       let writable=false;
       try{requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??'');writable=true;}catch{}
       if(write&&!writable)throw new PlatformError(403,'LEARNING_ACCESS_DENIED','学习写入未启用。');
       return {binding:{ownerId:personal.ownerId,spaceId:personal.spaceId},writable};
      }};
-   }catch{/* Optional vocabulary schema qualifying does not affect other owner data. */}
+   }catch{await learningReadPool?.end().catch(()=>undefined);learningReadPool=undefined;}
    const records=createPersonalPlatformHandler({repository,classification,...(fileHandoff?{fileHandoff:{runtime:fileHandoff,authority:ownerAuthority}}:{}),config:personal,storageVerified:true,sessions:{read:headers=>readOwnerPrincipal(readAuth,config,headers)},assertWritable:async()=>requirePersonalBusinessWrite(personal,process.env.LIFEOS_REVIEW_GIT_SHA??'')});
    return{...(learning?{learning}:{}),...(businessOAuth?{businessOAuth}:{}),pool:pool as SqlPool,...(ownerReadPool?{ownerReadPool:ownerReadPool as SqlPool}:{}),config,personal,auth,readAuth,ownerAuthority,passwordChangeAllowed,recovery,handler:request=>new URL(request.url).pathname==='/api/platform/personal/password'?account(request):records(request)};}
   try{const ai=readAISettingsRuntimeConfig(process.env,config.baseURL);if(ai){await verifyAISettingsPool(pool as SqlPool);aiSettings=new AISettingsService(new PostgresAISettingsRepository(pool as SqlPool),ai.masterKeyFile?loadAISecretVault(ai.masterKeyFile):null,{baseURL:config.baseURL,...ai});}}catch{aiSettingsUnavailableReason='AI 配置存储初始化未通过，其他记录服务不受此项影响。';}
   let calendar:CalendarService|undefined;try{if(readCalendarCandidateFlag(process.env)){await verifyCalendarPool(pool as SqlPool);calendar=new CalendarService(new PostgresCalendarRepository(pool as SqlPool));}}catch{/* The optional calendar remains unavailable; core records keep their verified adapter. */}
   let chat:ChatService|undefined;try{if(readChatCandidateFlag(process.env)){await verifyChatPool(pool as SqlPool);chat=new ChatService(new PostgresChatRepository(pool as SqlPool),aiSettings??closedChatProviderSelector);}}catch{/* Optional chat remains unavailable; independent records and settings stay usable. */}
   const captureRuns=(await initializeCaptureRuns(process.env,pool as SqlPool)).repository;
-  return{pool:pool as SqlPool,config,auth,handler:createPlatformHandler({repository,sessions:{read:headers=>readOwnerPrincipal(auth,config,headers)},baseURL:config.baseURL,storageVerified:true,aiSettings,aiSettingsUnavailableReason,calendar,chat,captureRuns,owner:{id:config.ownerId,email:config.ownerEmail}})};}catch(error){await Promise.allSettled([pool.end(),ownerReadPool?.end()]);throw error;}
+  return{pool:pool as SqlPool,config,auth,handler:createPlatformHandler({repository,sessions:{read:headers=>readOwnerPrincipal(auth,config,headers)},baseURL:config.baseURL,storageVerified:true,aiSettings,aiSettingsUnavailableReason,calendar,chat,captureRuns,owner:{id:config.ownerId,email:config.ownerEmail}})};}catch(error){await Promise.allSettled([pool.end(),ownerReadPool?.end(),learningReadPool?.end()]);throw error;}
 }
 async function runtime():Promise<Runtime|null>{const config=readPlatformConfig(process.env);if(!config)return null;if(!pending)pending=buildRuntime(config).catch(error=>{pending=undefined;throw error;});return pending;}
 export async function getPlatformLearningRuntime(){
- if(process.env.LIFEOS_PERSONAL_LEARNING!==learningWebVersion)return null;
- try{return (await runtime())?.learning??null;}catch{return null;}
+ try{
+  const config=readPlatformConfig(process.env);
+  if(!config||readPersonalConfig(process.env,config)?.learningEnabled!==true)return null;
+  return (await runtime())?.learning??null;
+ }catch{return null;}
 }
 export async function getPlatformOwnerAuthority(){try{return (await runtime())?.ownerAuthority??null;}catch{return null;}}
 export async function readPlatformPagePrincipal(headers:Headers){const value=await runtime();return value?readOwnerPrincipal(value.readAuth??value.auth,value.config,headers):null;}
