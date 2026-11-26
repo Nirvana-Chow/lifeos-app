@@ -2,8 +2,9 @@
 import{TaskCellDraftMemory}from'./task-cell-draft';
 import{flushSync}from'react-dom';
 import type{PersonalBinding}from'./client';
-import{useEffect,useRef,useState,type ReactNode}from'react';
+import{useEffect,useLayoutEffect,useRef,useState,type ReactNode}from'react';
 import{PersonalWorkspaceController,type ControllerSnapshot}from'./workspace-controller';
+import{useOwnerPageRecovery}from'./privacy';
 import{TaskEditor}from'./task-editor';
 import{TaskBatchEditor}from'./task-batch-editor';
 import editorStyles from './task-editor.module.css';
@@ -28,6 +29,7 @@ type TaskActions={
 const sameBinding=(a:PersonalBinding,b:PersonalBinding)=>a.ownerId===b.ownerId&&a.spaceId===b.spaceId;
 /** UI-only shell is supplied by its owner; this host alone owns personal API access. */
 export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreateTask=false}:{initialTaskId?:string;initialCreateTask?:boolean;children:(props:ControllerSnapshot&TaskActions)=>ReactNode}){
+ const recovered=useOwnerPageRecovery();
  const controller=useRef<PersonalWorkspaceController|null>(null);
  const commandStorage=useRef(false);
  const cellDrafts=useRef(new TaskCellDraftMemory()).current;
@@ -46,6 +48,14 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   const warn=(event:BeforeUnloadEvent)=>{cellDrafts.captureCurrent();const value=host.getSnapshot();if(cellDrafts.hasDraft()||value.saving||value.uncertain){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);
   return()=>{stop();host.suspend();cellDrafts.clear();controller.current=null;commandStorage.current=false;document.removeEventListener('visibilitychange',visibility);window.removeEventListener('beforeunload',warn);};
  },[]);
+ useLayoutEffect(()=>{
+  if(!recovered)return;
+  const host=controller.current;
+  if(!host)return;
+  // A foreground snapshot predates the successful owner recheck.
+  // Keep a previous denial concealed and read everything else under fresh access.
+  if(host.getSnapshot().state.status!=='forbidden')void host.refresh(initialTaskId);
+ },[recovered,initialTaskId]);
  useEffect(()=>{if(initialOpened.current||snapshot.state.status!=='ready')return;initialOpened.current=true;const target=resolveTaskTarget(initialTaskId,initialCreateTask,snapshot.state.data.tasks);if(target){returnFocus.current=document.activeElement as HTMLElement|null;open(target);}},[snapshot.state,initialTaskId,initialCreateTask]);
  // A draft stays in component memory while concealed, scoped to its original verified owner and space.
  const verifiedBinding=controller.current?.getEditorBinding()??null;
