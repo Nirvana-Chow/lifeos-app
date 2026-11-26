@@ -8,8 +8,11 @@ import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer,type Page} from '@playwright/test';
 import {PersonalFinanceService} from '../src/personal-finance/service.ts';
 import {handlePersonalFinance} from '../src/personal-finance/http.ts';
+import type {PersonalConfig} from '../src/personal-candidate/config.ts';
+import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {personalEntryType,PersonalService} from '../src/personal-candidate/service.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
-import {journalFixture,journalStatus} from './helpers/journal-history.ts';
+import {journalStatus} from './helpers/journal-history.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
 const fixtureOwner='synthetic-owner',fixtureSpace=journalStatus.spaceId;
@@ -54,17 +57,30 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
  browserProcess=trackAuthThemeProcess(browserServer.process());
  browser=await chromium.connect(browserServer.wsEndpoint());
  const before=process.env.LIFEOS_FINANCE_SHELL_EXPECT_RELOAD==='1';
- const repo=new MemoryPort();
+ const config:PersonalConfig={ownerId:fixtureOwner,ownerEmail:'finance-fixture@example.invalid',spaceId:fixtureSpace,
+  databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal'],financeEnabled:true,approval:'personal-manual-v1',baseURL:origin};
+ const repo=Object.assign(new MemoryPort(),{
+  async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly string[]){
+   return structuredClone([...repo.rows.values()].filter(row=>{
+    const type=personalEntryType(row,spaceId);
+    return row.ownerId===owner&&type!==null&&types.includes(type);
+   }));
+  },
+ });
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  const service=new PersonalFinanceService(repo,{ownerId:fixtureOwner,spaceId:fixtureSpace,enabled:true,writable:true},()=>fixedDate);
  for(const kind of ['income','expense'] as const)await service.create(fixtureOwner,{
   spaceId:fixtureSpace,confirmed:true,fields:{kind,currency:'CNY',amountMinor:kind==='income'?10000:2901,occurredOn:'2030-11-26',notes:'Synthetic finance '+kind},
  },'synthetic-finance-'+kind);
- const tasks=Array.from({length:44},(_,index)=>{
-  const entry=journalFixture(100+index,null);
+ const personal=new PersonalService(repo,config);
+ const taskCount=44;
+ for(let index=0;index<taskCount;index++){
   const fields={title:'合成导航待办 '+index,notes:'',dueOn:null,status:'open'};
-  return {...entry,kind:'todo',draft:fields,source:{...entry.source,original:{marker:'personal-manual-v1',
-   type:'todo',spaceId:fixtureSpace,input:{spaceId:fixtureSpace,confirmed:true,fields}}}};
+  await personal.mutate(fixtureOwner,'todo',null,{spaceId:fixtureSpace,confirmed:true,fields},`synthetic-finance-task-${index}`);
+ }
+ const taskHandler=createPersonalPlatformHandler({
+  repository:repo,config,storageVerified:true,
+  sessions:{read:async()=>({userId:fixtureOwner,email:config.ownerEmail})},assertWritable:async()=>{},
  });
  for(const width of [1365,390,430]){
   const page:Page=await browser.newPage({viewport:{width,height:900},colorScheme:width===390?'dark':'light',timezoneId:'Asia/Shanghai'});
@@ -92,14 +108,11 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
     return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body});
    }
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   const access={...journalStatus,ownerId:fixtureOwner,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal'],financeEnabled:true};
-   if(path.endsWith('/status'))return route.fulfill({json:access});
-   if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot')){
-    const narrow=path.endsWith('/workspace-snapshot');
-    if(narrow)assert.equal(url.searchParams.get('include'),'access');
-    return route.fulfill({json:{...(narrow?{access}:{}),scope:narrow?'task-workspace-current-snapshot':'full-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:fixedDate}});
-   }
-   return route.fulfill({status:404,json:{}});
+   if(path.endsWith('/workspace-snapshot'))assert.equal(url.searchParams.get('include'),'access');
+   const headers=new Headers(request.headers());
+   headers.set('host',url.host);
+   const response=await taskHandler(new Request(url,{method:request.method(),headers}));
+   return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
   });
   const taskHeading=page.getByRole('heading',{name:'待办',exact:true,level:1});
   const financeHeading=page.getByRole('heading',{name:'财务',exact:true,level:1});
@@ -110,15 +123,15 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
   const multiStep=!before&&width===430;
   await page.goto(origin+(multiStep?'/personal':taskPath),{waitUntil:'domcontentloaded',timeout:60000});
   if(multiStep){
-   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
+   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1,{timeout:30_000});
    await mobileMenu.click();
    await page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('button',{name:'待办',exact:true}).click();
    await expect(page).toHaveURL(origin+taskPath);
   }
   await expect(taskHeading).toBeVisible({timeout:30000});
-  await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
+  await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1,{timeout:30_000});
   await page.getByRole('button',{name:'列表',exact:true}).click();
-  await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasks.length);
+  await expect(taskRows.locator('.lo-task-row')).toHaveCount(taskCount);
   await taskRows.evaluate(region=>{region.scrollTop=240;});
   await expect.poll(()=>taskRows.evaluate(region=>region.scrollTop)).toBe(240);
   await page.evaluate(selectors=>Object.assign(window,{financeShellProof:selectors.map(selector=>document.querySelector(selector))}),shellSelectors);
