@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {on} from 'node:events';
-import {cp,mkdir,mkdtemp,readFile,symlink,writeFile} from 'node:fs/promises';
+import {cp,mkdir,mkdtemp,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer,type Page} from '@playwright/test';
@@ -30,20 +30,6 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),cp(join(source,'src'),join(root,'src'),{recursive:true}),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
  ]);
- // Only the fixture opts these routes into the shared host. The integration owner lands this map.
- const context=join(root,'src/personal-candidate/workspace-route-context.ts');
- const host=join(root,'src/personal-candidate/persistent-workspace.tsx');
- const modules=Object.entries(businessPaths).map(([key,title])=>['/personal/'+key,title]);
- const originalContext=await readFile(context,'utf8');
- assert.ok(originalContext.includes("path==='/personal/storage-review';"));
- await writeFile(context,originalContext
-  .replace("='/personal'|'/personal/journal'|'/personal/storage-review';",
-   "='/personal'|'/personal/journal'|'/personal/storage-review'|"+modules.map(([path])=>JSON.stringify(path)).join('|')+';')
-  .replace("path==='/personal/storage-review';","path==='/personal/storage-review'||"+modules.map(([path])=>'path==='+JSON.stringify(path)).join('||')+';'));
- const originalHost=await readFile(host,'utf8');
- const title="path==='/personal/storage-review'?'存储审核':'记录'";
- assert.ok(originalHost.includes(title));
- await writeFile(host,originalHost.replace(title,'(('+JSON.stringify(Object.fromEntries(modules))+') as Record<string,string>)[path]??('+title+')'));
  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>Synthetic login</h1>}');
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await writeFile(join(root,'src/platform/runtime.ts'),`
@@ -79,10 +65,11 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
  const media=(await seed('media','Synthetic film',emptyMediaPersonal('film'),'media')).entry;
  await seed('portfolio','Synthetic account',emptyPortfolioPersonal('account'),'portfolio');
 
- const navigationFailures:string[]=[];
  for(const width of [1365,390]){
   const page:Page=await browser.newPage({viewport:{width,height:850}});
   const writes:string[]=[],documents:string[]=[],errors:string[]=[],reads:string[]=[];
+  const mediaRead=Promise.withResolvers<void>(),mediaRequested=Promise.withResolvers<void>();
+  let holdMediaRead=false;
   let writable=true;
   await page.context().addCookies([{name:'synthetic-owner',value:'1',url:origin}]);
   page.on('pageerror',error=>errors.push(error.message));
@@ -99,6 +86,10 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
    if(path.endsWith('/status'))return route.fulfill({json:access});
    if(path.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access,
     items:[],truncated:false,total:0,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00.000Z'}});
+   if(holdMediaRead&&path==='/api/platform/personal/media/snapshot'){
+    mediaRequested.resolve();
+    await mediaRead.promise;
+   }
    const response=await handlePersonalRequest(new Request(url,{headers:{host:url.host}}),config.ownerId,origin,service,{
     assertOwner:async()=>{},assertWritable:async()=>{throw Error('Fixture is read-only');},
    });
@@ -110,7 +101,7 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   const search=(name:BusinessPath)=>main.getByRole('textbox',{name:'搜索'+businessPaths[name],exact:true});
   const nodeSelectors=['.lo-shell','header.lo-header','aside.lo-sidebar','#personal-main'];
   await page.goto(origin+'/personal/career',{waitUntil:'domcontentloaded',timeout:60000});
-  await expect(heading('career')).toBeVisible();
+  await expect(heading('career')).toBeVisible({timeout:30000});
   await expect(main.getByRole('button',{name:'求职看板',exact:true})).toBeEnabled();
   await expect(main.getByRole('button',{name:/^Synthetic opportunity /}).first()).toBeVisible();
   await page.evaluate(selectors=>Object.assign(window,{businessShell:{document,nodes:selectors.map(s=>document.querySelector(s))}}),nodeSelectors);
@@ -137,9 +128,12 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
    assert.equal(await sameShell(),true);
   }
   await search('career').fill('Synthetic opportunity');
+  // Exercise the existing horizontal scrollbar at both screen sizes.
+  await page.addStyleTag({content:'[data-personal-record-module="career"] [data-slot="data-grid-table"]{min-width:1400px!important}'});
   const viewport=main.locator('[data-slot="data-grid-table-viewport"]');
-  await viewport.evaluate(node=>{node.scrollTop=180;});
-  await expect.poll(()=>viewport.evaluate(node=>node.scrollTop)).toBe(180);
+  const position=()=>viewport.evaluate(node=>({x:node.scrollLeft,y:node.scrollTop}));
+  await viewport.evaluate(node=>node.scrollTo(72,180));
+  await expect.poll(position).toEqual({x:72,y:180});
   await go('resume');
   await expect(search('resume')).toHaveValue('');
   await main.getByRole('combobox',{name:'简历版本'}).selectOption(resume.id);
@@ -153,8 +147,8 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
    page.locator('aside.lo-sidebar').getByRole('link',{name:'简历',exact:true});
   await expect(focus).toBeFocused();
   await viewport.waitFor();
-  const scrollRestored=await viewport.evaluate(node=>node.scrollTop);
-  if(scrollRestored!==180)navigationFailures.push(width+'px career scroll: expected 180, got '+scrollRestored);
+  await expect.poll(position).toEqual({x:72,y:180});
+  const scrollRestored=await position();
   await expect(search('career')).toHaveValue('');
   await page.evaluate(()=>{setTimeout(()=>history.forward(),0);});
   await expect(page).toHaveURL(origin+'/personal/resume');
@@ -166,20 +160,22 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   await go('portfolio');
   await expect(search('portfolio')).toHaveValue('');
   await expect(main.getByText('Synthetic account',{exact:true})).toBeVisible();
-  await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
-  await expect(page).toHaveURL(origin+'/personal/media');
-  await expect(heading('media')).toBeVisible();
-  assert.equal(await sameShell(),true);
-  await page.evaluate(()=>{setTimeout(()=>history.forward(),0);});
+  holdMediaRead=true;
   try{
-   await expect(page).toHaveURL(origin+'/personal/portfolio');
-   await expect(heading('portfolio')).toBeVisible();
    await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
    await expect(page).toHaveURL(origin+'/personal/media');
-  }catch(error){
-   navigationFailures.push(width+'px portfolio Forward: '+String(error));
-   if(new URL(page.url()).pathname!=='/personal/media')await go('media');
+   await expect(heading('media')).toBeVisible();
+   await mediaRequested.promise;
+   assert.equal(await sameShell(),true);
+   await page.evaluate(()=>{setTimeout(()=>history.forward(),0);});
+   await expect(page).toHaveURL(origin+'/personal/portfolio');
+   await expect(heading('portfolio')).toBeVisible();
+  }finally{
+   holdMediaRead=false;
+   mediaRead.resolve();
   }
+  assert.equal(await sameShell(),true);
+  await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
   assert.equal(await sameShell(),true);
   await expect(page).toHaveURL(origin+'/personal/media');
   await expect(heading('media')).toBeVisible();
@@ -195,9 +191,13 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   await (await confirmation).dismiss();
   await expect(page).toHaveURL(origin+'/personal/media');
   await expect(detail.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('Synthetic unsaved film');
-  page.once('dialog',dialog=>dialog.accept());
-  await page.keyboard.press('Escape');
+  const discard=page.waitForEvent('dialog');
+  await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
+  await (await discard).accept();
+  await expect(page).toHaveURL(origin+'/personal/resume');
+  await expect(heading('resume')).toBeVisible();
   await expect(detail).toHaveCount(0);
+  assert.equal(await sameShell(),true);
   assert.deepEqual(documents,['/personal/career']);
   assert.deepEqual(writes,[]);
   assert.deepEqual(errors,[]);
@@ -211,5 +211,4 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   await expect(anonymous.locator('.lo-shell')).toHaveCount(0);
  }
  await anonymous.close();
- assert.deepEqual(navigationFailures,[]);
 });

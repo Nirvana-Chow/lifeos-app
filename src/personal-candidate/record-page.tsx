@@ -19,9 +19,9 @@ function useRecordNavigation(){
  return {guard,mayLeave};
 }
 
-function RecordContent({type,careerSection,linkedPersonId,guard}:RecordPageProps&{guard:NavigationGuard}){
+function RecordContent({type,careerSection,linkedPersonId,guard,hosted}:RecordPageProps&{guard:NavigationGuard;hosted?:boolean}){
  return <PersonalRecordWorkbench type={type} linkedPersonId={linkedPersonId}
-  careerSection={careerSection} navigationGuard={guard}/>;
+  careerSection={careerSection} navigationGuard={guard} allowNavigationDuringRefresh={hosted}/>;
 }
 
 function StandaloneRecordPage({content,title,mayLeave}:{
@@ -41,7 +41,7 @@ export function PersonalRecordPage(props:RecordPageProps){
 export function HostedBusinessRecordPage(props:HostedBusinessRecordProps){
  const {guard,mayLeave}=useRecordNavigation();
  const hosted=useActiveContentGuard(mayLeave);
- const content=<RecordContent key={props.careerSection??props.type} {...props} guard={guard}/>;
+ const content=<RecordContent key={props.careerSection??props.type} {...props} guard={guard} hosted={hosted}/>;
  if(hosted)return content;
  return <PrivacyBoundary><StandaloneRecordPage content={content}
   title={recordModuleLabels[props.careerSection??props.type]} mayLeave={mayLeave}/></PrivacyBoundary>;
