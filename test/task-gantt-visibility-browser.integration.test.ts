@@ -56,7 +56,7 @@ test('OPT-IN task and project Gantt share their axis and keep titles visible on 
    if(!url.pathname.startsWith('/api/'))return route.continue();
    if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:false}});
    if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable:false}});
-   if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:rows.length,items:rows,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'}});
+   if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal','project','domain','topic']},truncated:false,total:rows.length,items:rows,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'}});
    if(url.pathname==='/api/platform/personal/todo/'+uuid(1))return route.fulfill({json:{entry:rows[0]}});
    if(url.pathname==='/api/platform/personal/todo/'+uuid(1)+'/history')return route.fulfill({json:{items:[rows[0]],truncated:false}});
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});

@@ -12,8 +12,8 @@ test('OPT-IN mobile Expand survives missing native clone and recovers after a st
 },async()=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-task-expand-'));
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browserServer:BrowserServer|undefined,browser:Browser|undefined;
- let holdStatus=false,releaseStatus!:()=>void;
- const heldStatus=new Promise<void>(resolve=>releaseStatus=resolve);
+ let holdSnapshot=false,releaseSnapshot!:()=>void;
+ const heldSnapshot=new Promise<void>(resolve=>releaseSnapshot=resolve);
  try{
   await mkdir(join(root,'app/personal'),{recursive:true});
   await Promise.all([
@@ -22,7 +22,7 @@ test('OPT-IN mobile Expand survives missing native clone and recovers after a st
    cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
    symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
   ]);
-  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
+  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false,reactStrictMode:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),`
 export const readPlatformPagePrincipal=async()=>({id:'synthetic-expand-owner'});
 export const readPlatformPasswordCapability=async()=>false;
@@ -66,7 +66,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     initialDraft:reminderFields,
    }},
   };
-  let heldReads=0,statusReads=0,workspaceReads=0,wideReads=0;
+  let heldReads=0,workspaceReads=0,wideReads=0,earlyStandaloneStatus=0;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),path=url.pathname;
    if(url.origin!==origin)return route.abort();
@@ -74,14 +74,15 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405});}
    if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/personal/status')){
-    statusReads++;
-    if(holdStatus){heldReads++;await heldStatus;if(page.isClosed())return;}
+    if(workspaceReads===0)earlyStandaloneStatus++;
     return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
    }
    if(path.endsWith('/personal/overview')){wideReads++;return route.fulfill({status:500});}
    if(path.endsWith('/personal/todo/workspace-snapshot')){
     workspaceReads++;
-    return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
+    assert.equal(url.searchParams.get('include'),'access');
+    if(holdSnapshot){heldReads++;await heldSnapshot;if(page.isClosed())return;}
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:true,allowedTypes:['todo']},truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
    }
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
   });
@@ -92,7 +93,9 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   const boundary=page.getByRole('heading',{name:'本人工作台暂不可用',exact:true});
   assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
-  assert.equal(workspaceReads,1,'cold entry reads the narrow workspace once');
+  const initialReads=workspaceReads;
+  assert.equal(initialReads,1,'cold entry reads the narrow workspace once');
+  assert.equal(earlyStandaloneStatus,0,'the task workspace does not wait for a separate status request');
   for(let iteration=0;iteration<2;iteration++){
    await expand.tap();
    await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
@@ -103,7 +106,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(reminderTitle);
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
-  assert.equal(workspaceReads,1,'opening details does not reload the workspace');
+  assert.equal(workspaceReads,initialReads,'opening details does not reload the workspace');
   const returnToForeground=()=>page.evaluate(()=>{
    for(const visibilityState of ['hidden','visible']){
     Object.defineProperty(document,'visibilityState',{configurable:true,value:visibilityState});
@@ -111,31 +114,32 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    }
   });
   await returnToForeground();
-  await expect.poll(()=>workspaceReads).toBe(2);
+  await expect.poll(()=>workspaceReads).toBe(initialReads+1);
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
   await expand.tap();
-  holdStatus=true;
+  holdSnapshot=true;
   await returnToForeground();
   await expect(details).toHaveCount(0);
   await expect.poll(()=>heldReads).toBeGreaterThan(0);
   await expect(workspace).toHaveAttribute('data-workspace-state','error',{timeout:12_000});
   await expect(page.getByText('本人空间读取超时，请重试。',{exact:true})).toBeVisible();
-  const attempts=statusReads;
-  holdStatus=false;
-  releaseStatus();
+  const attempts=workspaceReads;
+  assert.equal(attempts,initialReads+2,'a stalled foreground return requests one snapshot');
+  holdSnapshot=false;
+  releaseSnapshot();
   await expect(workspace).toHaveAttribute('data-workspace-state','error');
-  assert.equal(statusReads,attempts);
+  assert.equal(workspaceReads,attempts);
   await workspace.getByRole('button',{name:'重新读取',exact:true}).tap();
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
   await expand.tap();
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
   await expect(boundary).toHaveCount(0);
   assert.equal(wideReads,0);
-  assert.equal(workspaceReads,3,'only cold entry, verified foreground return and manual retry read the workspace');
+  assert.equal(workspaceReads,attempts+1,'explicit retry requests one snapshot');
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{
-  releaseStatus();
+  releaseSnapshot();
   await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server});
  }
 });
