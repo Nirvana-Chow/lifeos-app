@@ -57,6 +57,7 @@ test('OPT-IN public navigation aligns semantic Lucide icons across actual owner,
  browserProcess=trackAuthThemeProcess(browserServer.process());
  browser=await chromium.connect(browserServer.wsEndpoint());
  const errors:string[]=[],unexpected:string[]=[];
+ let taskWritable=false;
  async function createPage(width:number,theme:'light'|'dark'){
   const page=await browser!.newPage({viewport:{width,height:880},colorScheme:theme,hasTouch:width<500,reducedMotion:'reduce'});
   page.on('pageerror',e=>errors.push(e.message));
@@ -69,7 +70,7 @@ test('OPT-IN public navigation aligns semantic Lucide icons across actual owner,
     const today=url.searchParams.get('today')??'';
     assert.match(today,/^\d{4}-\d{2}-\d{2}$/);
     assert.equal(url.searchParams.get('include'),'access');
-    return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today,observedAt:'2026-11-26T00:00:00Z',access:{scope:'personal-manual-candidate',ownerId:'icons-synthetic-owner',spaceId:'icons-synthetic-space',storageVerified:true,allowedTypes:['todo'],writable:false}}});
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today,observedAt:'2026-11-26T00:00:00Z',access:{scope:'personal-manual-candidate',ownerId:'icons-synthetic-owner',spaceId:'icons-synthetic-space',storageVerified:true,allowedTypes:['todo'],writable:taskWritable}}});
    }
    if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today'),observedAt:'2026-11-26T00:00:00Z'}});
    return route.fulfill({status:404,json:{}});
@@ -79,6 +80,13 @@ test('OPT-IN public navigation aligns semantic Lucide icons across actual owner,
  const desktop=await createPage(1365,'light');
  await desktop.goto(origin+'/personal?page=tasks');
  await expect(desktop.locator('[data-task-grid="reui"]').getByText('暂无待办',{exact:true})).toBeVisible();
+ const createTask=desktop.getByRole('button',{name:'新建待办',exact:true});
+ await expect(createTask).toHaveCount(0);
+ taskWritable=true;
+ await desktop.reload();
+ await expect(desktop.locator('[data-task-grid="reui"]').getByText('暂无待办',{exact:true})).toBeVisible();
+ await expect(createTask).toBeEnabled();
+ taskWritable=false;
  const primaryNav=desktop.getByRole('navigation',{name:'主导航',exact:true});
  const primarySettings=desktop.getByRole('button',{name:'打开设置',exact:true});
  const primarySearch=desktop.locator('header').getByRole('button',{name:'搜索本人记录',exact:true});
