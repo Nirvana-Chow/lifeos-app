@@ -6,6 +6,7 @@ import {dirname,resolve} from 'node:path';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import ts from 'typescript';
+import {renderAuthComponent} from './helpers/auth-component-render.ts';
 import {emptyCareerPersonal,type CareerKind} from '../src/personal-career/domain.ts';
 const nativeRequire=createRequire(import.meta.url);
 function load(file:string):any{
@@ -53,7 +54,10 @@ test('resume preview prints only explicitly pinned facts and escapes untrusted t
  const empty=renderToStaticMarkup(React.createElement(ResumePreview,{records:[]}));assert.match(empty,/暂无简历版本/);
 });
 test('JD evidence view separates original requirement, linked facts and owner-entered gaps/actions',()=>{
- const {CareerMatch}=load('CareerMatch.tsx');const fact=record();const opportunity=record('opportunity',{requirements:[{requirement:'原岗位要求',facts:[pin],gap:'缺口待核实',nextAction:'查原报告'}]});
- const html=renderToStaticMarkup(React.createElement(CareerMatch,{record:opportunity,records:[fact]}));
+ const fact=record(), opportunity=record('opportunity',{requirements:[{requirement:'原岗位要求',facts:[pin],gap:'缺口待核实',nextAction:'查原报告'}]});
+ const html=renderAuthComponent('src/personal-career/CareerMatch.tsx','CareerMatch',{record:opportunity,records:[fact]});
+ assert.match(html,/data-slot="data-grid-table"/);
+ assert.match(html,/<th scope="row"[^>]*>原岗位要求<\/th>/);
+ assert.match(html,/版本 1/);
  assert.match(html,/原岗位要求/);assert.match(html,/内部合成事实/);assert.match(html,/缺口待核实/);assert.match(html,/查原报告/);assert.doesNotMatch(html,/\d+%|推荐录用|已核实/);
 });
