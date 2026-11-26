@@ -320,7 +320,7 @@ test('refresh times out waiting for status transport or overview body and ignore
 });
 
 test('only the connected task reader requests and accepts the distinct workspace snapshot', async()=>{
- const path='/api/platform/personal/todo/workspace-snapshot?today=2030-11-02';
+ const path='/api/platform/personal/todo/workspace-snapshot?today=2030-11-02&include=access';
  const full='/api/platform/personal/overview?today=2030-11-02';
  const date='2030-11-02',spaceId='synthetic-task-reader-space';
  for(const [taskWorkspace,expectedPath,scope] of [
@@ -334,15 +334,89 @@ test('only the connected task reader requests and accepts the distinct workspace
    fetcher:async input=>{
     const route=String(input);
     reads.push(route);
-    if(route.endsWith('/status'))return Response.json({scope:'personal-manual-candidate',ownerId:'synthetic-task-reader-owner',spaceId,storageVerified:true,allowedTypes:['todo'],writable:false});
+    const access={scope:'personal-manual-candidate',ownerId:'synthetic-task-reader-owner',spaceId,storageVerified:true,allowedTypes:['todo'],writable:false};
+    if(route.endsWith('/status'))return Response.json(access);
     if(route.endsWith('/availability'))return Response.json({});
-    return Response.json({scope,truncated:false,total:0,items:[],today:date,observedAt:date+'T00:00:00Z'});
+    return Response.json({scope,truncated:false,total:0,items:[],today:date,observedAt:date+'T00:00:00Z',...(taskWorkspace&&{access})});
    },
   });
   await controller.refresh();
   assert.deepEqual(reads.filter(read=>read.includes('?today=')),[expectedPath]);
+  assert.equal(reads.some(read=>read.endsWith('/status')),!taskWorkspace);
   const mismatched=taskWorkspace&&scope==='full-current-snapshot';
   assert.equal(controller.getSnapshot().state.status,mismatched?'error':'ready');
   assert.deepEqual(controller.getClassificationEntries(),taskWorkspace?null:[]);
  }
+});
+
+test('a bundled refresh conceals old records through an access loss and ignores its late response',async()=>{
+ const f=fixture(),origin='http://127.0.0.1:3331',today='2026-10-27';
+ const [previous,access]=await Promise.all([
+  (await f.fetcher('/api/platform/personal/overview?today='+today)).json(),
+  (await f.fetcher('/api/platform/personal/status')).json(),
+ ]);
+ const calls:string[]=[];
+ let phase:'initial'|'late'|'denied'='initial',release!:()=>void;
+ const held=new Promise<void>(resolve=>{release=resolve;});
+ const controller=new PersonalWorkspaceController({taskWorkspace:true,origin,today:()=>today,key:()=>crypto.randomUUID(),fetcher:async input=>{
+  const path=String(input);
+  calls.push(path);
+  if(path.endsWith('/availability'))return f.fetcher(path);
+  if(phase==='late')await held;
+  if(phase==='denied')return Response.json({error:{code:'LOGIN_REQUIRED'}},{status:401});
+  return Response.json({...previous,scope:'task-workspace-current-snapshot',access});
+ }});
+ await controller.refresh();
+ assert.equal(controller.getTaskEntry({id,revision:3})?.id,id);
+ phase='late';
+ const pending=controller.refresh();
+ assert.equal(controller.getTaskEntry({id,revision:3}),null);
+ controller.suspend();
+ phase='denied';
+ await controller.refresh();
+ release();
+ await pending;
+ assert.equal(controller.getSnapshot().state.status,'forbidden');
+ assert.equal(controller.getTaskEntry({id,revision:3}),null);
+ assert.equal(calls.filter(path=>path.includes('/workspace-snapshot?')).length,3);
+ assert.equal(calls.some(path=>path.endsWith('/status')),false);
+});
+
+test('a linked Todo uses a fresh status check only when the bundled list is unavailable',async()=>{
+ const f=fixture(),origin='http://127.0.0.1:3331',calls:string[]=[];
+ const controller=new PersonalWorkspaceController({taskWorkspace:true,origin,today:()=> '2026-10-27',key:()=>crypto.randomUUID(),fetcher:async input=>{
+  const path=String(input);
+  calls.push(path);
+  if(path.includes('/workspace-snapshot?'))return Response.json({error:{code:'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'}},{status:503});
+  return f.fetcher(path);
+ }});
+ await controller.refresh(id);
+ assert.equal(controller.getSnapshot().state.status,'error');
+ assert.equal(controller.getSnapshot().singleTask?.entry.id,id);
+ assert.equal(controller.getEditorBinding(),null);
+ assert.deepEqual(calls.map(path=>new URL(path,origin).pathname),[
+  '/api/platform/personal/availability','/api/platform/personal/todo/workspace-snapshot',
+  '/api/platform/personal/status','/api/platform/personal/todo/'+id,
+ ]);
+});
+
+test('bundled access cannot rebind visible Todo state to a different space while refreshing',async()=>{
+ const f=fixture(),today='2026-10-27';
+ const [previous,access]=await Promise.all([
+  (await f.fetcher('/api/platform/personal/overview?today='+today)).json(),
+  (await f.fetcher('/api/platform/personal/status')).json(),
+ ]);
+ let spaceId=access.spaceId;
+ const controller=new PersonalWorkspaceController({
+  taskWorkspace:true,origin:'http://127.0.0.1:3331',today:()=>today,key:()=>crypto.randomUUID(),
+  fetcher:async input=>String(input).endsWith('/availability')?f.fetcher(input):
+   Response.json({...previous,scope:'task-workspace-current-snapshot',access:{...access,spaceId}}),
+ });
+ await controller.refresh();
+ assert.equal(controller.getTaskEntry({id,revision:3})?.id,id);
+ spaceId='different-space';
+ await controller.refresh();
+ assert.deepEqual(controller.getSnapshot().state,{status:'error',message:'本人身份或空间发生变化，请重新读取。'});
+ assert.equal(controller.getEditorBinding(),null);
+ assert.equal(controller.getTaskEntry({id,revision:3}),null);
 });

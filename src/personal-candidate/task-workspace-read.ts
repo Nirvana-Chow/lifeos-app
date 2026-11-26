@@ -14,10 +14,10 @@ export interface TaskWorkspaceReader {
 const unavailable=()=>new PlatformError(503,'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE','暂时无法核验待办工作区快照。');
 
 export async function readTaskWorkspaceSnapshot(
- request:Request,config:PersonalConfig,storageVerified:boolean,reader:Partial<TaskWorkspaceReader>,
+ request:Request,config:PersonalConfig,storageVerified:boolean,reader:Partial<TaskWorkspaceReader>,includeAccess=false,
 ){
  const params=new URL(request.url).searchParams;
- if([...params.keys()].length!==1||!params.has('today'))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
+ if([...params.keys()].length!==(includeAccess?2:1)||!params.has('today')||(includeAccess&&params.get('include')!=='access'))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
  const today=validateCalendarDate(params.get('today'));
  const types=workspaceTypes.filter(type=>config.allowedTypes.includes(type));
  if(!types.includes('todo'))throw new PlatformError(403,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');

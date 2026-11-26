@@ -108,8 +108,14 @@ test('OPT-IN development projects respects owner binding and preserves the caree
    requirementsEnabled:true,careerEnabled:true,allowedTypes:['todo','career','project','domain']}});
   if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable}});
   if(path.endsWith('/personal/todo/workspace-snapshot')||path.endsWith('/personal/overview')){
-   const scope=path.endsWith('/personal/overview')?'full-current-snapshot':'task-workspace-current-snapshot';
-   return route.fulfill({json:{scope,items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+   const narrow=path.endsWith('/workspace-snapshot');
+   if(narrow&&!poolStorageVerified)return route.fulfill({status:503,json:{error:{code:'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'}}});
+   const scope=narrow?'task-workspace-current-snapshot':'full-current-snapshot';
+   const access=narrow&&url.searchParams.get('include')==='access'?{
+    scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:poolStorageVerified,writable,
+    allowedTypes:['todo','career','project','domain'],
+   }:undefined;
+   return route.fulfill({json:{scope,access,items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
   }
   return route.fulfill({json:{scope:'isolated-synthetic-review'}});
  });
