@@ -51,10 +51,11 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
  const endpoint='/api/platform/personal/storage-review',canonical='/personal/storage-review',tasksHref='/personal?page=tasks';
  const ownerId='storage-synthetic-owner',spaceId='storage-synthetic-space';
  const gate={timeout:20_000};
- const focusFailures:string[]=[];
+ const focusFailures:{width:number;actual:unknown}[]=[];
  const item=(id:string,title:string,status:'pending'|'protected'='pending')=>({id,title,status,kind:'file' as const,group:'合成归档',body:'仅供审核测试',question:''});
  const checklist={schema:1 as const,revision:'storage-shell-v1',context:{summary:'合成清单'},items:[
   {...item('G43','合成父目录'),kind:'folder' as const},item('G43.01','合成子项'),item('SAFE','合成受保护项','protected'),
+  ...Array.from({length:9},(_,index)=>item('SAFE-'+index,'合成受保护项 '+index,'protected')),
  ]};
  for(const width of [1365,390,430]){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:width===390?'dark':'light'});
@@ -175,6 +176,15 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await expect(keep).toBeChecked(gate);
   await childRow.getByRole('button',{name:'撤销决定'}).click();
   await expect(keep).not.toBeChecked(gate);
+  await filter.fill('');
+  await expect(page.locator('[data-id="SAFE-8"]')).toBeVisible();
+  const measured=await page.evaluate(()=>{
+   const main=document.querySelector('#personal-main')!;
+   if(main.scrollHeight-main.clientHeight>=180){main.scrollTop=180;return 'main';}
+   window.scrollTo(0,180);return 'window';
+  });
+  const storageScroll=()=>page.evaluate(region=>region==='main'?document.querySelector('#personal-main')!.scrollTop:window.scrollY,measured);
+  await expect.poll(storageScroll).toBe(180);
   await page.goBack();
   await expect(page).toHaveURL(origin+'/personal?page=settings',gate);
   assert.deepEqual(await compare(),[true,true,true,true,true]);
@@ -182,9 +192,15 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   const expectedFocus=width===1365?link:navButton;
   try{await expect(expectedFocus).toBeFocused({timeout:4000});}catch{
    const actual=await page.evaluate(()=>({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),id:document.activeElement?.id,title:document.activeElement?.getAttribute('title')}));
-   focusFailures.push(JSON.stringify({width,actual}));
+   focusFailures.push({width,actual});
   }
   assert.deepEqual(documents,['/personal']);
+  await page.goForward();
+  await expect(page).toHaveURL(origin+canonical,gate);
+  await expect(note).toHaveValue(raw,gate);
+  const restoration=await storageScroll();
+  console.log('STORAGE_SCROLL_PROBE '+JSON.stringify({width,measured,scrolled:180,restoration}));
+  await expect.poll(storageScroll,gate).toBe(180);
 
   await page.goto(origin+canonical+'?review=storage-shell-v1',{waitUntil:'domcontentloaded'});
   await expect(note).toHaveValue(raw,gate);
@@ -207,7 +223,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    await expect(page.getByRole('button',{name:'重新核对'})).toBeVisible(gate);
    await expect(childRow).toHaveCount(0);
   }
-  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,scroll:returnScroll,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true,focusRestored:!focusFailures.some(record=>record.includes('"width":'+width+','))}));
+  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,settingsScroll:returnScroll,storageForwardScroll:180,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true,focusRestored:!focusFailures.some(record=>record.width===width)}));
   assert.deepEqual(errors,[]);assert.deepEqual(egress,[]);
   await page.close();
  }
