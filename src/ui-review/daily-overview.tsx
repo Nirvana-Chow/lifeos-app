@@ -8,6 +8,7 @@ import {loadRecentMemos} from '../personal-journal/recent-memos.ts';
 import type {TaskRow, WorkspaceState} from './contract.ts';
 import {RequirementProgressCard} from './requirement-progress-card';
 import {filterTasks, metricTaskFilter} from './selectors.ts';
+import {Badge} from './ui/badge';
 import {Button} from './ui/button';
 import s from './daily-overview.module.css';
 
@@ -88,7 +89,7 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
         {calendar.state === 'ready' ? <>
           {calendar.value.rows.length ? <ul className={s.rows}>{calendar.value.rows.map(row=><li key={row.id}><span>{row.title}</span><time dateTime={row.day}>{row.day} · {row.label}</time></li>)}</ul>
             : <p className="lo-empty-compact">未来 7 天暂无已读取的日程</p>}
-          {calendar.value.appleMissing && <p className={s.note}>Apple 日历尚未连接</p>}
+          {calendar.value.appleMissing && <p className={s.note}><Badge variant="secondary">Apple 日历尚未连接</Badge></p>}
         </> : <p className="lo-empty-compact" role="status">{calendar.state === 'loading'?'正在读取日程…':'近期日程暂不可用'}</p>}
       </OverviewPanel>
     </div>
