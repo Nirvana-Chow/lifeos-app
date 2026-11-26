@@ -248,11 +248,27 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  const pool=page.getByRole('region',{name:'需求池',exact:true});
  await expect(pool.getByRole('button',{name:'总需求 7',exact:true})).toBeVisible();
- await expect(pool.getByRole('button',{name:'未完成 6',exact:true})).toBeVisible();
- await pool.getByRole('button',{name:'已完成 1',exact:true}).click();
  const summaryRows=pool.getByRole('list',{name:'需求清单'}).getByRole('listitem');
- await expect(summaryRows).toHaveCount(1);
- await expect(summaryRows.first()).toHaveText('Synthetic private requirement 6');
+ const detail=page.getByRole('dialog');
+ async function checkSummaryIds(label:string,indexes:readonly number[]):Promise<void>{
+  await pool.getByRole('button',{name:label,exact:true}).click();
+  await expect(summaryRows).toHaveCount(indexes.length);
+  const ids:string[]=[];
+  for(const row of await summaryRows.all()){
+   const button=row.getByRole('button');
+   const title=await button.innerText();
+   const request=page.waitForRequest(request=>
+    request.method()==='GET'&&/^\/api\/platform\/personal\/requirements\/[^/]+$/.test(new URL(request.url()).pathname));
+   await button.click();
+   ids.push(new URL((await request).url()).pathname.split('/').at(-1)!);
+   await expect(detail.getByRole('heading',{name:title,exact:true})).toBeVisible();
+   await detail.getByRole('button',{name:'关闭',exact:true}).click();
+   await expect(detail).toHaveCount(0);
+  }
+  assert.deepEqual(ids.sort(),indexes.map(index=>items[index].id).sort());
+ }
+ await checkSummaryIds('已完成 2',[3,5]);
+ await checkSummaryIds('未完成 5',[0,1,2,4,6]);
  await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  const range=pool.getByLabel('显示范围',{exact:true});
  const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});
@@ -265,7 +281,6 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(row(6)).toBeVisible();
  await expect(row(3)).toHaveCount(0);
  await row(6).click();
- const detail=page.getByRole('dialog');
  await expect(detail.getByRole('link',{name:'打开正式站结果'})).toHaveAttribute('href',production.resultHref);
  await expect(detail.getByRole('link',{name:'查看正式站验证记录'})).toHaveAttribute('href',production.verificationHref);
  await detail.getByRole('button',{name:'关闭',exact:true}).click();

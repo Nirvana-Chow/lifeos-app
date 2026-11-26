@@ -127,11 +127,11 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
   if(!pool)return null;
   const completed:RequirementItem[]=[],pending:RequirementItem[]=[];
   for(const item of pool.items){
-   const complete=requirementIsComplete(item.requirement,delivery.get(item.id));
+   const complete=item.fields.workflow?.state==='done';
    (complete?completed:pending).push(item);
   }
   return {all:pool.items,completed,pending};
- },[pool,delivery]);
+ },[pool]);
  const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>{
   const evidence=delivery.get(item.id);
   return requirementIsComplete(item,evidence)===(range==='completed')&&(progressFilter==='all'||evidence?.state===progressFilter);
