@@ -78,14 +78,13 @@ export function TrainingCalendar({records,onOpenRecord}:TrainingCalendarProps) {
     </>}
     <section className={s.panel} aria-labelledby="training-plans-heading">
       <h3 id="training-plans-heading">运动计划</h3>
-      <p className={s.hint}>显示所有已读计划。</p>
       {data.planned.length ? <div className={s.tableWrap}><table className={s.table}>
         <thead><tr><th scope="col">计划日期</th><th scope="col">计划与原始记录</th></tr></thead>
         <tbody>{data.planned.map(row => <tr key={row.id}>
           <td>{row.date ?? '日期未知'}</td>
           <td><Button type="button" variant="link" className={s.recordButton} onClick={() => onOpenRecord(row.id)}>{row.title}</Button><p className={s.hint}>{recordMetrics(row)}</p></td>
         </tr>)}</tbody>
-      </table></div> : <p className={s.empty}>当前无已读运动计划。</p>}
+      </table></div> : <p className={s.empty}>当前没有匹配的运动计划。</p>}
     </section>
   </section>;
 }

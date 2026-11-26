@@ -179,6 +179,15 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     }
   }
   await page.setViewportSize({width:1365,height:900});
+  const search = page.getByRole('textbox',{name:'搜索健康',exact:true});
+  await search.fill('合成飞盘实绩');
+  await expect(calendar.getByRole('button',{name:'合成飞盘实绩',exact:true})).toBeVisible();
+  await expect(calendar.getByRole('img',{name:/^已读运动日历，1 个/})).toBeVisible();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toBeVisible();
+  await expect(plan).toHaveCount(0);
+  await search.clear();
+  await expect(plan).toBeVisible();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toHaveCount(0);
   await row('趋势').click();
   await expect(page.getByLabel('查看指标')).toBeVisible();
   await page.getByLabel('查看指标').selectOption('trainingMinutes');
@@ -205,7 +214,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(page.getByText('当前筛选下暂无已读记录。',{exact:true})).toBeVisible();
   await expect(filters.getByText(/历史覆盖未知/)).toBeVisible();
   await row('运动').click();
-  await expect(page.getByText('当前无已读运动计划。',{exact:true})).toBeVisible();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toBeVisible();
   await expect(page.getByText('暂无已读完成记录。',{exact:true})).toBeVisible();
   items = [healthRecord(5,'合成健身计划','strength','planned','2031-02-01')];
   await row('刷新').click();
