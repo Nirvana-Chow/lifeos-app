@@ -60,11 +60,11 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    await page.goto(url,{waitUntil:'domcontentloaded'});
    if(url===searchUrl)await expect(page.getByRole('heading',{name:'搜索结果',exact:true})).toBeVisible();
    const before=searchReads();
-   const trigger=page.getByRole('button',{name:'搜索本人记录',exact:true});
+   const trigger=page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true});
    await expect(trigger).toBeVisible();
    const draftInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
    if(url===taskUrl){
-    const title=page.locator('tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
+    const title=page.locator('[data-task-grid="reui"] tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
     await title.dblclick();
     await draftInput.fill('Unsent synthetic task title');
    }

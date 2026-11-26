@@ -52,6 +52,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   for(const width of [390,430,1365]){
    const page=await browser.newPage(width===1365?{viewport:{width,height:900}}:{...devices['iPhone 13'],viewport:{width,height:844}});
    const errors:string[]=[],writes:unknown[]=[],readbacks:number[]=[];
+   let snapshotReads=0;
    page.on('pageerror',error=>{errors.push(error.stack??error.message);console.log('PHONE_TASK_PAGE_ERROR '+(error.stack??error.message));});
    if(process.env.PHONE_TASK_TABLE_NO_CLONE==='1'){
     await page.addInitScript(()=>Object.defineProperty(window,'structuredClone',{configurable:true,value:undefined}));
@@ -75,7 +76,12 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     }
     assert.equal(request.method(),'GET');
     if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-    if(path.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:1,items:[task],today:url.searchParams.get('today'),observedAt:at}});
+    if(path==='/api/platform/personal/todo/workspace-snapshot'){
+     const today=url.searchParams.get('today')??'';
+     assert.match(today,/^\d{4}-\d{2}-\d{2}$/);
+     snapshotReads++;
+     return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:1,items:[task],today,observedAt:at}});
+    }
     if(path.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
     return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
    });
@@ -88,6 +94,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    if(!await grid.isVisible())await view.click();
    const row=grid.locator('tbody tr[data-row-id]').first(),heading=row.locator('td[data-col-id="title"]').getByText(title,{exact:true});
    await expect(heading).toBeVisible({timeout:25000});
+   assert.ok(snapshotReads>0,'actual tasks must use the narrow workspace read');
    const measured=await row.evaluate(node=>{
     const measure=(selector:string)=>{
      const cell=node.querySelector<HTMLElement>(selector)!;
