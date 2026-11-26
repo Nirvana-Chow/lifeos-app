@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { flexRender, tableFeatures, columnGroupingFeature, createGroupedRowModel } from '@tanstack/react-table';
+import { clonePersonalJSON } from '../src/personal-candidate/editor.ts';
 import { TaskCellDraftMemory } from '../src/personal-candidate/task-cell-draft.ts';
 import { taskStatusLabels } from '../src/personal-candidate/task-editor-state.ts';
 
@@ -34,6 +35,7 @@ function harness(storage = new Map<string,string>()) {
     './reui/data-grid-table-virtual': { DataGridTableVirtual: 'virtual' },
     './reui/data-grid-cell-selection': { DataGridCellSelection: 'selection' },
     './ui/button': { Button: 'button' },
+    '../personal-candidate/editor': { clonePersonalJSON },
     '../personal-candidate/task-editor-state': { taskStatusLabels },
     '../personal-candidate/project-detail-href': { projectDetailHref },
     '../personal-candidate/task-grid-editor': { mountTaskGridEditor: () => { throw Error('input effects must be exercised by the editor behavior suite'); } },
