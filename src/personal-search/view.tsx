@@ -1,12 +1,13 @@
 'use client';
 import type {PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
+import {taskStatusLabels} from '../personal-candidate/task-editor-state';
 import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import {searchHref,searchTypeLabels,type SearchSelection,type SearchRow} from './model.ts';
 import type {PersonalSearchData} from './client.ts';
 import s from './styles.module.css';
 export type SearchViewState={phase:'loading'}|{phase:'error';message:string}|{phase:'auth';message:string}|{phase:'ready';data:PersonalSearchData};
-function Identity({row}:{row:SearchRow}){return <div className={s.metadata}><span>{searchTypeLabels[row.type]} · {row.dateLabel}：{row.date??'日期未知'}</span><span>{row.sourceLabel} · 版本 {row.revision}</span><span>记录 ID：{row.id}</span><span>来源 ID：{row.sourceId}</span></div>;}
+function Identity({row}:{row:SearchRow}){return <div className={s.metadata}><span>{searchTypeLabels[row.type]} · {row.dateLabel}：{row.date??'日期未知'}</span>{row.todoStatus==='cancelled'?<span>{taskStatusLabels.cancelled}</span>:null}<span>{row.sourceLabel} · 版本 {row.revision}</span><span>记录 ID：{row.id}</span><span>来源 ID：{row.sourceId}</span></div>;}
 export function PersonalSearchView({query,range={},selection,state,onRetry}:{query:string;range?:PersonalSearchDateRange;selection:SearchSelection|null;state:SearchViewState;onRetry:()=>void}){
  return <section className={s.page} aria-label="本人记录搜索">
   <form action="/personal/search" method="get" className={s.form} role="search"><label htmlFor="personal-search-query">搜索标题与正文</label><Input id="personal-search-query" name="q" maxLength={240} defaultValue={query} placeholder="输入关键词，留空查看当前授权记录"/>
