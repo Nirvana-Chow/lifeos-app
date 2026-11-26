@@ -240,7 +240,7 @@ export function TaskGrid(props: TaskGridProps) {
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const [groupingState,setGroupingState]=useState<{scope:string|null;value:TaskGrouping}>({scope:null,value:'none'});
-  const grouping=groupingState.scope===scope&&(!props.flatProjects||groupingState.value!=='area')?groupingState.value:'none';
+  const grouping=groupingState.scope===scope?groupingState.value:'none';
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
   const configurableOrder=props.flatProjects?layout.order.filter(id=>id!=='area'):layout.order;
   const visibility=useMemo<Record<string,boolean>>(()=>({project:props.flatProjects||props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility,...(props.flatProjects?{area:false}:{})}),[props.tasks,layout.visibility,props.flatProjects]);
@@ -337,7 +337,7 @@ export function TaskGrid(props: TaskGridProps) {
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
     <div ref={host} className={styles.root} data-flat-projects={props.flatProjects||undefined} aria-label="待办表格" data-task-grid="reui">
       <div className={styles.columnToolbar}>
-       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option>{!props.flatProjects&&<option value="area">按领域</option>}</select></label>
+       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option><option value="area">按领域</option></select></label>
        <Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
        {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器。</p>{configurableOrder.map((id,index)=><div className={styles.columnSetting} key={id}>
         <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>
