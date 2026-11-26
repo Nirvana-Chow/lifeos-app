@@ -26,6 +26,7 @@ export function LearningWorkspace() {
   const verified = useOwnerPageVerification();
   const [view, setView] = useState<Data | null>(null);
   const [busy, setBusy] = useState(true);
+  const [recheck, setRecheck] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -48,11 +49,11 @@ export function LearningWorkspace() {
       void load<Data>('', {signal:controller.signal}).then(data => {
         if (id !== epoch.current) return;
         setView(data);
-        if (frozen.current?.scope === data.scope && data.writable) {
+        if (frozen.current?.scope !== data.scope) {
+          frozen.current = null;
+        } else if (data.writable) {
           setPending(frozen.current);
           setError('保存结果尚未确认。可在当前页面重试原请求。');
-        } else {
-          frozen.current = null;
         }
       }).catch(reason => {
         if (id === epoch.current) setError(reason.message);
@@ -63,7 +64,7 @@ export function LearningWorkspace() {
     refresh();
     document.addEventListener('visibilitychange', refresh);
     return () => {epoch.current++;controller?.abort();document.removeEventListener('visibilitychange', refresh);};
-  }, [verified]);
+  }, [verified,recheck]);
 
   async function send(command: Command, retained?: Pending) {
     if (verified !== true || !view?.writable || busy || writing.current || (pending && !retained)) return;
@@ -104,7 +105,8 @@ export function LearningWorkspace() {
     } catch (reason) {
       if (id !== epoch.current) return;
       if (reason instanceof RequestError && [401,403].includes(reason.status)) {
-        frozen.current = null;
+        // Authorization can change after commit. Keep the exact command concealed until this scope is verified.
+
         setView(null);setPending(null);setRevealed(null);setFront('');setBack('');
         setError('请重新验证词卡访问权限。');
       } else if (!retained && reason instanceof RequestError && reason.status === 409 &&
@@ -135,6 +137,8 @@ export function LearningWorkspace() {
     {busy && !view && <p role="status">正在读取词卡…</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    {!view && !busy && error && frozen.current && <div><Button type="button" variant="outline"
+      onClick={()=>setRecheck(value=>value+1)}>重新核对词卡权限</Button></div>}
     {pending && <div><Button type="button" variant="outline" disabled={busy}
       onClick={()=>void send(pending.command,pending)}>重试原请求</Button></div>}
     {view && <>

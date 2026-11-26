@@ -66,7 +66,7 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   assert.equal((await context.request.get(data)).status(),401);
   await context.addCookies([{name:'learning-fixture',value:'owner',url:origin}]);
   const commands:{key:string;body:string}[]=[];
-  let dropReview = false;
+  let denyReviewReceipt = false;
   await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.origin!==origin)return route.abort();
@@ -76,11 +76,11 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
     }});
     if(request.method()!=='POST'||url.pathname!=='/personal/learning/data')return route.continue();
     commands.push({key:request.headers()['idempotency-key'],body:request.postData()!});
-    if(!dropReview)return route.continue();
-    dropReview=false;
+    if(!denyReviewReceipt)return route.continue();
+    denyReviewReceipt=false;
     const result=await route.fetch();
     assert.equal(result.status(),200);
-    await route.abort('failed');
+    await route.fulfill({status:403,json:{error:{code:'LEARNING_ACCESS_CHANGED',message:'Synthetic denial after commit'}}});
   });
   await page.goto(entry,{waitUntil:'domcontentloaded',timeout:90000});
   await expect(page.getByRole('heading',{name:'新建词卡'})).toBeVisible({timeout:30000});
@@ -93,10 +93,13 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   assert.equal(commands.length,1);
   await card.getByRole('button',{name:'查看释义并复习'}).click();
   await expect(card).toContainText('Synthetic definition');
-  dropReview=true;
+  denyReviewReceipt=true;
   await card.getByRole('button',{name:'记得',exact:true}).click();
+  await expect(page.getByRole('alert').filter({hasText:'请重新验证词卡访问权限'})).toBeVisible();
+  await expect(card).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'重试原请求'})).toHaveCount(0);
+  await page.getByRole('button',{name:'重新核对词卡权限'}).click();
   await expect(page.getByRole('alert').filter({hasText:'保存结果尚未确认'})).toBeVisible();
-  await expect(card).not.toContainText('下次到期');
   await page.getByRole('button',{name:'重试原请求'}).click();
   await expect(card).toContainText('最近复习：记得');
   assert.deepEqual(commands[1],commands[2]);
