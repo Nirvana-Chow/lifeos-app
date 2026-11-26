@@ -1,6 +1,6 @@
 "use client";
 
-import {isWorkspaceRoute} from "../personal-candidate/workspace-route-context";
+import {isBusinessRecordWorkspaceRoute,isWorkspaceRoute} from "../personal-candidate/workspace-route-context";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {Popover} from "radix-ui";
 import {
@@ -437,16 +437,37 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       window.scrollTo(0,position?.windowY??0);
       if(routePath!=='/personal'||state.status==='ready')restoreRouteScroll.current=false;
     };
-    // The review list acquires its height only after the owner check and read.
-    if(routePath==='/personal/storage-review'&&position&&!main.querySelector('#storage-review-body:not([hidden])')){
+    const recordRoute=isBusinessRecordWorkspaceRoute(routePath);
+    const awaitingRegions=()=>{
+      if(!position)return false;
+      const regions=scrollRegions(main);
+      return position.regions.some(({x,y},index)=>{
+        if(x===0&&y===0)return false;
+        const region=regions[index];
+        return !region||region.scrollWidth-region.clientWidth<x||region.scrollHeight-region.clientHeight<y;
+      });
+    };
+    // Authorized content can mount its scroll regions after the shell commits.
+    const awaitingContent=()=>routePath==='/personal/storage-review'
+      ?!!position&&!main.querySelector('#storage-review-body:not([hidden])')
+      :recordRoute&&awaitingRegions();
+    if(awaitingContent()){
       const observer=new MutationObserver(()=>{
-        if(main.querySelector('#storage-review-body:not([hidden])')){
+        if(!awaitingContent()){
           observer.disconnect();
           restore();
         }
       });
-      observer.observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
-      return ()=>observer.disconnect();
+      observer.observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','style']});
+      const abandon=()=>{
+        observer.disconnect();
+        restoreRouteScroll.current=false;
+      };
+      if(recordRoute)for(const event of ['wheel','touchstart','keydown'] as const)main.addEventListener(event,abandon,{once:true});
+      return ()=>{
+        observer.disconnect();
+        for(const event of ['wheel','touchstart','keydown'] as const)main.removeEventListener(event,abandon);
+      };
     }
     restore();
   },[routePath,state.status,page]);
