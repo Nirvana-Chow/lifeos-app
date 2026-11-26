@@ -2,7 +2,7 @@ import {object,PlatformError, todoKeys, validateTodo} from '../platform/domain.t
 import type {PublicEntry} from '../platform/contracts.ts';
 
 export const todoOriginalLineLimit = 4096;
-export const todoOriginalLinePattern = /^[^\r\n\u0000\u2028\u2029]*$/u;
+export const todoOriginalLinePattern = /^(?:[^\r\n\u0000\u2028\u2029\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$/;
 
 export function validateTodoOriginalLine(value: unknown): string {
  if (typeof value !== 'string' || value.length > todoOriginalLineLimit || !todoOriginalLinePattern.test(value)) {

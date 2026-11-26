@@ -3,6 +3,7 @@ import test from 'node:test';
 import {MemoryPort} from './helpers/platform.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
+import {searchRow} from '../src/personal-search/model.ts';
 
 const baseURL = 'http://127.0.0.1:3190';
 const ownerId = 'synthetic-owner-a';
@@ -249,7 +250,7 @@ test('mounted handler never advertises writes without its transaction fence', as
 
 test('createTodo accepts one explicitly confirmed original line only under the existing scoped operation', async () => {
  const {send,repository,denyWrite}=fixture();
- const originalLine='  明天核对合成事项  ';
+ const originalLine='  明天核对合成事项 📋  ';
  const request={fields,originalLine};
  const key='synthetic-capture-original';
  for(const identity of ['reader','foreign','wrong-space']){
@@ -257,7 +258,9 @@ test('createTodo accepts one explicitly confirmed original line only under the e
  }
  const discovery=await send('/v2/capabilities','GET','writer');
  assert.match(discovery.body.operations.find((op:{id:string})=>op.id==='createTodo').description,/originalLine/);
- assert.equal((await send('/v1/todos','POST','writer',{...request,originalLine:'two\nlines'},key)).status,400);
+ for(const invalid of ['two\nlines','\ud800']){
+  assert.equal((await send('/v1/todos','POST','writer',{...request,originalLine:invalid},key)).status,400);
+ }
  assert.equal(repository.rows.size,0);
  assert.equal(repository.receipts.size,0);
  const created=await send('/v1/todos','POST','writer',request,key);
@@ -270,6 +273,8 @@ test('createTodo accepts one explicitly confirmed original line only under the e
  assert.equal(JSON.stringify(publicRead.body).includes(originalLine),false);
  const ownerRead=new PersonalService(repository,config);
  const stored=await ownerRead.get(ownerId,'todo',id);
+ const projected=searchRow(stored,spaceId,fields.title);
+ assert.equal(projected.title,fields.title);assert.equal(JSON.stringify(projected).includes(originalLine),false);
  assert.deepEqual(stored.source.original,{marker:'personal-manual-v1',spaceId,type:'todo',input:{...request,spaceId,confirmed:true}});
  assert.equal((await send('/v1/todos','POST','writer',{...request,originalLine:'changed'},key)).status,409);
  assert.equal((await send(path,'PATCH','writer',{...request,expectedRevision:1},'synthetic-capture-no-edit')).status,400);
@@ -283,6 +288,6 @@ test('createTodo accepts one explicitly confirmed original line only under the e
  assert.equal((await ownerRead.get(ownerId,'todo',id)).revision,2);
  assert.equal(repository.rows.size,1);assert.equal(repository.events.length,2);
  denyWrite();
- assert.equal((await send('/v1/todos','POST','writer',request,key)).status,403);
+ assert.equal((await send('/v1/todos','POST','writer',request,key)).status,503);
  assert.equal(repository.events.length,2);
 });

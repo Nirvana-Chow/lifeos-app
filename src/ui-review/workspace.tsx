@@ -1035,6 +1035,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {(page === "tasks" || page === "inbox") && (
             <>
               <div className="lo-task-toolbar">
+                {page === "tasks" && state.status === "ready" && mayWrite(access) &&
+                  access.allowedTypes?.includes("todo") && props.onOpenTaskBatch &&
+                  <Button variant="outline" disabled={!canWrite}
+                    onClick={event=>props.onOpenTaskBatch?.(event.currentTarget)}>多行录入</Button>}
                 {page === "tasks" && (props.renderTaskClassificationPreview
                   ? access.authenticated !== false && <Dialog key={retainedPrivateScope}>
                     {verifiedPrivateScope && data?.coverage === "complete" &&

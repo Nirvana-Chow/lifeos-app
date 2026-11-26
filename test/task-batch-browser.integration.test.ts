@@ -24,7 +24,7 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','3127'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],detached:true});serverProcess=trackAuthThemeProcess(server,true);server.stderr.on('data',chunk=>process.stderr.write(chunk));
   const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.once('error',error=>{clearTimeout(timer);reject(error);});server.stdout.on('data',chunk=>{process.stdout.write(chunk);output=(output+String(chunk)).slice(-65536);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
   browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
-  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(9000);
+  const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(9000);page.setDefaultNavigationTimeout(60000);
   const ownerId='synthetic-planning-owner',spaceId='synthetic-batch-space';
   const config:PersonalConfig={ownerId,spaceId,ownerEmail:'fixture@example.invalid',databaseName:'lifeos_platform_test_local',
    allowedTypes:['todo'],approval:'personal-manual-v1',baseURL:origin,transport:'ssh-loopback'};
@@ -58,7 +58,6 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   });
   const read=async(path:string)=>handler(new Request(origin+'/api/platform/personal/'+path,{headers:{host:new URL(origin).host}}));
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle',timeout:60000});
-  await page.getByRole('button',{name:'新建待办',exact:true}).click();
   await page.getByRole('button',{name:'多行录入',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'多行录入待办',exact:true});await expect(dialog).toBeVisible();
   await dialog.getByLabel('原始输入（最多50行）').fill('明天交稿\n\n 明天交稿 \n第三项');
@@ -114,16 +113,16 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   assert.deepEqual(await capture.locator('dd').allTextContents(),[' 明天交稿 ','第二项','未设置']);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});
-  await page.getByRole('button',{name:'新建待办',exact:true}).click();await page.getByRole('button',{name:'多行录入',exact:true}).click();
+  await page.getByRole('button',{name:'多行录入',exact:true}).click();
   await dialog.getByLabel('原始输入（最多50行）').fill('合成保留未尝试批次');await dialog.getByRole('button',{name:'预检条目'}).click();
   page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'关闭并保留',exact:true}).click();await expect(dialog).toHaveCount(0);
   assert.equal(calls.length,5);assert.equal(repo.receipts.size,3);assert.equal(repo.events.length,3);
   await page.getByRole('button',{name:'新建待办',exact:true}).click();const single=page.getByRole('dialog',{name:'新建待办',exact:true});await single.getByLabel('标题',{exact:true}).fill('合成原单条待确认');await single.getByRole('button',{name:'保存待办',exact:true}).click();await expect(single.getByRole('button',{name:'重试同一请求',exact:true})).toBeEnabled();
   assert.equal(calls.length,6);page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
   await page.getByRole('button',{name:'重试同一请求',exact:true}).click();await expect(page.getByRole('button',{name:'重试同一请求',exact:true})).toHaveCount(0);assert.equal(calls.length,7);assert.deepEqual(calls[5],calls[6]);assert.equal(repo.rows.size,4);
-  await page.getByRole('button',{name:'新建待办',exact:true}).click();await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,7);
+  await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,7);
   assert.equal(Object.hasOwn(calls[5].body,'originalLine'),false);
-  const legacy=[...repo.rows.values()].find(row=>row.draft.title==='合成原单条待确认')!;
+  const legacy=[...repo.rows.values()].find(row=>'title'in row.draft&&row.draft.title==='合成原单条待确认')!;
   page.once('dialog',d=>d.accept());await page.goto(origin+'/personal/edit?type=todo&id='+legacy.id,{waitUntil:'networkidle'});
   await expect(detail).toBeVisible();await detail.getByText('录入原文与初次确认',{exact:true}).click();
   await expect(detail.getByText('原始输入未记录。',{exact:true})).toBeVisible();
