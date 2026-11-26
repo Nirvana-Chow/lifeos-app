@@ -23,19 +23,37 @@ function reviewOf(row: Record<string, unknown>): Review {
 
 export type LearningWriteFence = (client: SqlClient, binding: Binding) => Promise<void>;
 
+// PostgreSQL's parsed/deparsed form of both clauses in proposed migration 0027.
+const learningPolicyScope = "((owner_id = current_setting('lifeos.owner_id'::text, true)) AND (space_id = current_setting('lifeos.learning_space_id'::text, true)))";
+
 /** Run once when admitting the restricted, already migrated pool. No bootstrap or grants here. */
 export async function verifyLearningPostgres(pool: SqlPool): Promise<void> {
   await verifyRestrictedPool(pool);
   const client = await pool.connect();
   try {
+    await client.query('BEGIN READ ONLY');
+    await client.query('SET LOCAL search_path = pg_catalog, pg_temp');
     const result = await client.query(`SELECT count(*)::int AS ready
       FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname='lifeos_platform' AND c.relname IN ('learning_card','learning_review','learning_command')
+      WHERE current_user='lifeos_platform_candidate_runtime'
+        AND n.nspname='lifeos_platform' AND c.relname IN ('learning_card','learning_review','learning_command')
+        AND c.relkind='r' AND c.relowner=(SELECT relowner FROM pg_catalog.pg_class
+          WHERE oid='lifeos_platform.platform_record'::regclass)
         AND c.relrowsecurity AND c.relforcerowsecurity
         AND has_table_privilege(current_user,c.oid,'SELECT') AND has_table_privilege(current_user,c.oid,'INSERT')
         AND NOT has_table_privilege(current_user,c.oid,'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        AND NOT has_any_column_privilege(current_user,c.oid,'UPDATE,REFERENCES')`);
-    if (result.rows[0]?.ready !== 3) throw new Error('Restricted vocabulary PostgreSQL schema required');
+        AND NOT has_any_column_privilege(current_user,c.oid,'UPDATE,REFERENCES')
+        AND (SELECT count(*)=1 AND bool_and(p.polname=(c.relname||'_scope')
+          AND p.polcmd='*' AND p.polpermissive AND p.polroles=ARRAY[0::oid]
+          AND pg_get_expr(p.polqual,p.polrelid)=$1 AND pg_get_expr(p.polwithcheck,p.polrelid)=$1)
+          FROM pg_catalog.pg_policy p WHERE p.polrelid=c.oid)`,[learningPolicyScope]);
+    if (result.rows.length !== 1 || result.rows[0].ready !== 3) {
+      throw new Error('Restricted vocabulary PostgreSQL schema required');
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(()=>undefined);
+    throw error;
   } finally {
     client.release();
   }

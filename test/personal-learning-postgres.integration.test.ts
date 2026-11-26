@@ -111,11 +111,39 @@ test('restricted PostgreSQL and real HTTP serialize reviews and preserve origina
 
   const runtime=await pool.connect();
   try {
-    await runtime.query("SELECT set_config('lifeos.owner_id',$1,false)",[owner.ownerId]);
-    const unbound=await runtime.query('SELECT id FROM lifeos_platform.learning_card');
-    assert.equal(unbound.rowCount,0,'RLS also requires a workspace binding');
-    await runtime.query("SELECT set_config('lifeos.learning_space_id',$1,false)",[owner.spaceId]);
-    assert.equal((await runtime.query('SELECT id FROM lifeos_platform.learning_card')).rowCount,1);
+    const counts=async()=>{
+      const visible=[];
+      for(const table of ['learning_card','learning_review','learning_command']){
+        visible.push((await runtime.query('SELECT * FROM lifeos_platform.'+table)).rowCount);
+      }
+      return visible;
+    };
+    const bind=(binding:{ownerId:string;spaceId:string})=>runtime.query(
+      "SELECT set_config('lifeos.owner_id',$1,false),set_config('lifeos.learning_space_id',$2,false)",
+      [binding.ownerId,binding.spaceId],
+    );
+    assert.deepEqual(await counts(),[0,0,0],'RLS requires verified binding');
+    await bind({...owner,spaceId:''});
+    assert.deepEqual(await counts(),[0,0,0],'owner alone cannot see any learning row');
+    await bind(alternate);
+    assert.deepEqual(await counts(),[0,0,0],'same owner with another workspace is isolated');
+    await bind(foreign);
+    assert.deepEqual(await counts(),[0,0,0],'same workspace with another owner is isolated');
+    await bind(owner);
+    assert.deepEqual(await counts(),[1,2,3]);
+    for(const other of [alternate,foreign]){
+      const args=[other.ownerId,other.spaceId];
+      const denied={code:'42501',message:/row-level security/};
+      await assert.rejects(runtime.query(`INSERT INTO lifeos_platform.learning_card
+        (owner_id,space_id,id,revision,front,back,created_at) VALUES($1,$2,$3,1,'synthetic','synthetic',now())`,
+      [...args,randomUUID()]),denied);
+      await assert.rejects(runtime.query(`INSERT INTO lifeos_platform.learning_review
+        (owner_id,space_id,id,card_id,card_revision,sequence,previous_id,rating,reviewed_at,schedule_version)
+        VALUES($1,$2,$3,$4,1,3,$5,'again',now(),'recall-ladder-v1')`,[...args,randomUUID(),left.cardId,latest.id]),denied);
+      await assert.rejects(runtime.query(`INSERT INTO lifeos_platform.learning_command
+        (owner_id,space_id,command_key,digest,card_id) VALUES($1,$2,'learning-pg-raw-denied',$3,$4)`,
+      [...args,'a'.repeat(64),left.cardId]),denied);
+    }
     await assert.rejects(runtime.query('UPDATE lifeos_platform.learning_review SET rating=$1',['again']),{code:'42501'});
     await assert.rejects(runtime.query('DELETE FROM lifeos_platform.learning_command'),{code:'42501'});
   } finally {runtime.release(true);}
