@@ -1,3 +1,4 @@
+import {readRecentMemoRow,recentMemosLimit,recentMemosPath,type RecentMemosReader} from '../personal-journal/recent-memos.ts';
 import {PersonalFinanceService} from '../personal-finance/service.ts';
 import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
 import {handleFileHandoffRequest} from '../file-handoff/http.ts';
@@ -39,7 +40,7 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader & RecentMemosReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -79,6 +80,21 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
+   if(url.pathname===recentMemosPath){
+    const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
+    if(request.headers.has('authorization')||origin!==null&&origin!==new URL(options.config.baseURL).origin||site==='cross-site'||site==='same-site')
+     throw new PlatformError(403,'OWNER_ONLY','最近思考仅限同源本人会话。');
+    if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'最近思考仅可读取。'}},405,{Allow:'GET'});
+    if(url.search||request.body!==null)throw new PlatformError(400,'INVALID_QUERY','最近思考不接受查询参数。');
+    const {ownerId,spaceId,allowedTypes}=options.config;
+    if(!allowedTypes.includes('journal'))throw new PlatformError(403,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');
+    if(!options.storageVerified||!options.repository.readRecentMemos)throw new PlatformError(503,'RECENT_MEMOS_UNAVAILABLE','暂时无法读取最近思考。');
+    const result=await options.repository.readRecentMemos(ownerId,spaceId,allowedTypes.includes('topic'));
+    if(result.rows.length>recentMemosLimit)throw new PlatformError(503,'RECENT_MEMOS_UNAVAILABLE','最近思考超出显示上限。');
+    const rows=result.rows.map(readRecentMemoRow);
+    await assertOwner();
+    return respond({scope:'recent-memos-v1',ownerId,spaceId,rows,classificationPending:result.classificationPending});
+   }
    if(url.pathname===taskWorkspaceSnapshotPath){
     if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','待办工作区仅限本人会话。');
     const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
