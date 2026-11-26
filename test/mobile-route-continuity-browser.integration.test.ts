@@ -234,7 +234,10 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
   });
   await run('legacy linked project editor',async()=>{
    await go('/personal?page=tasks');await awaitMobile('待办');
-   await main.getByRole('link',{name:'查看项目：合成移动项目',exact:true}).click();
+   await main.getByRole('button',{name:'查看待办详情：合成移动待办',exact:true}).click();
+   const taskDetail=page.getByRole('dialog',{name:'待办详情',exact:true});
+   await taskDetail.getByText('关联',{exact:true}).click();
+   await taskDetail.getByRole('link',{name:'合成移动项目',exact:true}).click();
    const path='/personal/edit?type=project&id='+project.id;
    await checkBox(path,'项目');
    await expect(main.getByLabel('标题',{exact:true})).toHaveValue('合成移动项目',{timeout:25000});

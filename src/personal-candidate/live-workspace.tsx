@@ -15,7 +15,7 @@ type LiveOptions=WorkspaceOptions&{initialPage?:WorkspacePage;initialModal?:'set
 export function PersonalWorkspaceView({showApiKeys=false,passwordEnabled=false,...props}:TaskShellFrame){
  const classificationCloseGuard=useRef<(()=>boolean)|null>(null);
  const settingsCloseGuard=useRef<(()=>boolean)|null>(null);
- return <LifeOSWorkspace desktopNavigation {...props} renderTaskClassificationPreview={()=> <TaskClassificationPreview embedded/>} syncUrl
+ return <LifeOSWorkspace desktopNavigation flatTaskLabels {...props} renderTaskClassificationPreview={()=> <TaskClassificationPreview embedded/>} syncUrl
   classificationCloseGuard={classificationCloseGuard}
   renderClassification={(planId,onClose,onPlanChange,container)=><ClassificationReview key={planId} {...{planId,onClose,onPlanChange,container}} closeGuard={classificationCloseGuard}/>} settingsCloseGuard={settingsCloseGuard}
   availableSettingsPanels={showApiKeys?['security','api-keys']:['security']}

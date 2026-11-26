@@ -12,15 +12,16 @@ export type ReuiGridPresentation = {
   nativeTitle: boolean;
   visible: boolean;
 };
-export function reuiGridRendered(f: ReuiGridPresentation): boolean {
+export function reuiGridRendered(f: ReuiGridPresentation, flatLabels=false): boolean {
+  const expectedHeaders=flatLabels?['完成','待办','状态','到期日','详情']:['完成','待办','状态','到期日','项目','领域','详情'];
   return f.renderer === 'reui' && f.failures === 0 && f.grids === 1 && f.visible && f.nativeTitle &&
     f.expectedRows > 0 && f.declaredRows === f.expectedRows + 1 && f.renderedRows > 0 && f.renderedRows <= f.expectedRows &&
-    JSON.stringify(f.headers) === JSON.stringify(['完成', '待办', '状态', '到期日', '项目', '领域', '详情']) &&
-    f.cellsPerRow.length === f.renderedRows && f.cellsPerRow.every(count => count === 7);
+    JSON.stringify(f.headers) === JSON.stringify(expectedHeaders) &&
+    f.cellsPerRow.length === f.renderedRows && f.cellsPerRow.every(count => count === expectedHeaders.length);
 }
 export const taskGridRoot = (page: Page) => page.locator('[data-task-grid="reui"]');
 export const taskGridInput = (page: Page) => taskGridRoot(page).getByRole('textbox', { name: '编辑待办', exact: true });
-export const taskGridTitleCell = (page: Page, title: string) => taskGridRoot(page).getByRole('gridcell', { name: title, exact: true });
+export const taskGridTitleButton = (page: Page, title: string) => taskGridRoot(page).getByRole('button', { name: '查看待办详情：'+title, exact: true });
 export const taskGridViewport = (page: Page) => taskGridRoot(page).locator('[data-slot="data-grid-table-viewport"]');
 
 /** Explicit full-field fixture setup; an automatic checked state alone is not a saved choice. */
@@ -35,7 +36,7 @@ export async function showTaskGridReferenceColumns(page:Page):Promise<void>{
 }
 
 /** Native virtual rows only: neither the old canvas nor any text fallback can satisfy this oracle. */
-export async function requireTaskGrid(page: Page, title: string, expectedRows = 1): Promise<void> {
+export async function requireTaskGrid(page: Page, title: string, expectedRows = 1, flatLabels=false): Promise<void> {
   await expect.poll(async () => reuiGridRendered(await page.evaluate(({ title, expectedRows }) => {
     const root = document.querySelector('[data-task-grid="reui"]');
     const grids = root?.querySelectorAll('table[data-slot="data-grid-table"][role="grid"]');
@@ -62,8 +63,11 @@ export async function requireTaskGrid(page: Page, title: string, expectedRows = 
       }),
       renderedRows: rows.length,
       cellsPerRow: rows.map(row => row.querySelectorAll('td[aria-colindex]').length),
-      nativeTitle: rows.some(row => row.querySelector('td[data-col-id="title"]')?.textContent?.trim() === title),
+      nativeTitle: rows.some(row => {
+        const cell=row.querySelector('td[data-col-id="title"]');
+        return (cell?.querySelector('button[data-task-detail-focus] span')??cell)?.textContent?.trim()===title;
+      }),
       visible: hasBox(root) && hasBox(grid) && hasBox(viewport) && rows.every(hasBox),
     };
-  }, { title, expectedRows })), { timeout: 5000, message: 'Selected ReUI grid must render the native seven-column synthetic row model' }).toBe(true);
+  }, { title, expectedRows }),flatLabels), { timeout: 5000, message: 'Selected ReUI grid must render the exact native task columns' }).toBe(true);
 }

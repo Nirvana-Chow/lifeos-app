@@ -69,8 +69,8 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    await expect(trigger).toBeVisible();
    const draftInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
    if(url===taskUrl){
-    const title=page.locator('[data-task-grid="reui"] tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
-    await title.dblclick();
+    const title=page.locator('[data-task-grid="reui"] tr[data-row-id="'+todo.id+'"]').getByRole('button',{name:'查看待办详情：Synthetic workspace task',exact:true});
+    await title.press('F2');
     await draftInput.fill('Unsent synthetic task title');
    }
    await trigger.click();

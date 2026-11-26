@@ -4,14 +4,14 @@ import{flushSync}from'react-dom';
 import type{PersonalBinding}from'./client';
 import{useEffect,useRef,useState,type ReactNode}from'react';
 import{PersonalWorkspaceController,type ControllerSnapshot}from'./workspace-controller';
-import{TaskEditor}from'./task-editor';
+import{TaskEditor,type TaskLabelSuggestionAction}from'./task-editor';
 import{TaskBatchEditor}from'./task-batch-editor';
 import editorStyles from './task-editor.module.css';
 import{editorFromEntry,type PersonalEditorFields}from'./editor';
 import{resolveTaskTarget,type TaskIdentity,type TaskTarget}from'./task-editor-state';
 import type{PublicEntry}from'../platform/contracts';
 import type{WorkspaceTask}from'./workspace-data';
-type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boolean};
+type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boolean;inPlaceDetail:boolean};
 type TaskActions={
  viewPreferenceScope:string|null;
  onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:(trigger?:HTMLElement)=>boolean;
@@ -27,7 +27,7 @@ type TaskActions={
 };
 const sameBinding=(a:PersonalBinding,b:PersonalBinding)=>a.ownerId===b.ownerId&&a.spaceId===b.spaceId;
 /** UI-only shell is supplied by its owner; this host alone owns personal API access. */
-export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreateTask=false}:{initialTaskId?:string;initialCreateTask?:boolean;children:(props:ControllerSnapshot&TaskActions)=>ReactNode}){
+export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreateTask=false,LabelSuggestionAction}:{initialTaskId?:string;initialCreateTask?:boolean;LabelSuggestionAction?:TaskLabelSuggestionAction;children:(props:ControllerSnapshot&TaskActions)=>ReactNode}){
  const controller=useRef<PersonalWorkspaceController|null>(null);
  const commandStorage=useRef(false);
  const cellDrafts=useRef(new TaskCellDraftMemory()).current;
@@ -74,12 +74,20 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const open=(next:TaskTarget,trigger?:HTMLElement,singleCreate=false)=>{
   const host=controller.current,binding=host?.getEditorBinding();
   if(!binding || next.mode==='create' && (snapshot.access.writable!==true ||
-    !snapshot.access.allowedTypes?.includes('todo') || !commandStorage.current) || !beforeNavigate())return false;
+    !snapshot.access.allowedTypes?.includes('todo') || !commandStorage.current))return false;
+  const inPlaceDetail=next.mode==='edit'&&!!trigger;
+  if(inPlaceDetail){
+   const current=host?.getSnapshot();
+   if(current?.saving||current?.uncertain)return false;
+   cellDrafts.captureCurrent();
+   if(editorCloseGuard.current?.()===false||batchCloseGuard.current?.()===false)return false;
+   setBatchBinding(null);
+  }else if(!beforeNavigate())return false;
   returnFocus.current=trigger??(document.activeElement as HTMLElement|null);
-  setEditor({target:next,binding,singleCreate});
+  setEditor({target:next,binding,singleCreate,inPlaceDetail});
   return true;
  };
- const restoreFocus=()=>{if(returnFocus.current?.isConnected)returnFocus.current.focus();};
+ const restoreFocus=()=>{if(returnFocus.current?.isConnected)returnFocus.current.focus({preventScroll:true});};
  const close=()=>{setEditor(null);if(!editor?.singleCreate)queueMicrotask(restoreFocus);};
  const save=async(task:TaskIdentity|null,fields:PersonalEditorFields)=>{if(!commandStorage.current)return null;const saved=await controller.current?.saveTask(task,fields)??null;if(saved)cellDrafts.confirm(saved);return saved;};
  const retry=async()=>{const saved=await controller.current?.retry()??null;if(saved)cellDrafts.confirm(saved);return saved;};
@@ -92,12 +100,13 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
  const editorContent=editor&&<TaskEditor
   key={selectedId??editor.target.mode}
   target={editor.target} entry={selectedEntry} spaceId={editor.binding.spaceId} concealed={concealed}
+  inPlaceDetail={editor.inPlaceDetail} LabelSuggestionAction={LabelSuggestionAction}
   relations={concealed?{}:controller.current?.getRelationOptions()??{}}
   writable={snapshot.access.writable===true} saving={snapshot.saving} uncertain={snapshot.uncertain}
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}
   onStopWaiting={()=>controller.current?.cancel()}
   onBatch={editor.singleCreate?undefined:()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
-  onRestoreFocus={editor.singleCreate?restoreFocus:undefined}
+  onRestoreFocus={restoreFocus}
   closeGuard={editorCloseGuard}
  />;
  return <>{children({

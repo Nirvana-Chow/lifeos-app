@@ -89,6 +89,13 @@ function TaskGridInput({ edit, latest, close, advance, onError }: {
   return <input ref={node => { input.current = node; }} className={styles.input} aria-label={label} type={edit.field === 'due' ? 'date' : 'text'} defaultValue={restored?.value ?? edit.value} />;
 }
 
+export function TaskLabels({labels}:Pick<TaskRow,'labels'>) {
+  if (!labels?.length) return null;
+  return <span className={styles.labels} role="list" aria-label="待办标签">
+    {labels.map(label=><span key={label.id} role="listitem" title={label.title}>{label.title}</span>)}
+  </span>;
+}
+
 type TaskTitleFieldProps = FieldAccess & {
   task: TaskRow;
   className?: string;
@@ -143,7 +150,7 @@ export function TaskTitleField(props: TaskTitleFieldProps) {
     </span>
   );
   const editable = canWrite(props);
-  return <Button ref={trigger} variant="ghost" className={props.className}
+  return <Button ref={trigger} variant="ghost" className={props.className} data-task-detail-focus={props.openDetailsOnClick||undefined}
     aria-label={`${editable && !props.openDetailsOnClick ? '编辑标题' : '查看待办'}：${props.task.title}`}
     aria-keyshortcuts={editable ? props.openDetailsOnClick ? 'F2' : 'Enter F2' : undefined}
     title={editable ? props.openDetailsOnClick ? 'F2 编辑标题' : '双击编辑标题' : undefined}
@@ -199,7 +206,7 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
       aria-label={`查看项目：${project.title}`}>{project.title}</a> : <span className={styles.cell}>—</span>;
   }
   if (!editableFields.includes(column.id as TaskCellField)) {
-    return <Button variant="ghost" className={styles.open} data-cell-interactive disabled={latest.current.blocked}
+    return <Button variant="ghost" className={styles.open} data-cell-interactive data-task-detail-focus disabled={latest.current.blocked}
       aria-label={column.id === 'detail' ? `打开任务：${row.original.title}` : `${columnLabels[column.id]}：${String(getValue())}，打开任务：${row.original.title}`}
       onClick={event => latest.current.onOpen(row.original, event.currentTarget)}><span>{String(getValue())}</span></Button>;
   }
@@ -207,9 +214,30 @@ function TaskGridValueCell({ row, column, getValue }: CellContext<typeof taskGri
     return <TaskGridInput edit={edit} latest={latest} close={close} advance={advance} onError={onError} />;
   }
   const value = column.id === 'status' ? taskStatusLabels[row.original.status] : String(getValue());
+  if (column.id === 'title' && latest.current.flatLabels) {
+    return <span className={styles.cell} onDoubleClick={()=>open(row.id,'title')}>
+      <button type="button" className={styles.labelTitle} data-cell-interactive data-task-detail-focus
+        aria-label={`查看待办详情：${row.original.title}`} disabled={latest.current.blocked}
+        aria-keyshortcuts={canWrite(latest.current)?'F2':undefined}
+        onClick={event=>latest.current.onOpen(row.original,event.currentTarget)}
+        onDoubleClick={event=>event.stopPropagation()}
+        onKeyDown={event=>{
+          if(!canWrite(latest.current)||event.nativeEvent.isComposing||event.ctrlKey||event.metaKey||event.altKey)return;
+          const initial=event.key.length===1&&event.key!==' '?event.key:undefined;
+          if(event.key!=='F2'&&initial===undefined)return;
+          event.preventDefault();
+          event.stopPropagation();
+          open(row.id,'title',initial);
+        }}>
+        <span className={styles.cellText}>{row.original.title}</span>
+        {row.original.referenceChanged&&<span className={styles.referenceChanged} role="img" aria-label="关联待核对">!</span>}
+      </button>
+      <TaskLabels labels={row.original.labels}/>
+    </span>;
+  }
   return <span className={styles.cell} onDoubleClick={() => open(row.id, column.id as TaskCellField)}>
     <span className={styles.cellText}>{value || '—'}</span>
-    {column.id === 'title' && <button type="button" className={styles.titleDetails} data-cell-interactive
+    {column.id === 'title' && <button type="button" className={styles.titleDetails} data-cell-interactive data-task-detail-focus
       aria-label={`查看待办详情：${row.original.title}`} disabled={latest.current.blocked}
       onClick={event => latest.current.onOpen(row.original, event.currentTarget)}
       onDoubleClick={event => event.stopPropagation()}>↗</button>}
@@ -241,10 +269,10 @@ export function TaskGrid(props: TaskGridProps) {
   const [columnsOpen,setColumnsOpen]=useState(false),[layoutNotice,setLayoutNotice]=useState('');
   const scope=props.viewPreferenceScope??null;
   const [groupingState,setGroupingState]=useState<{scope:string|null;value:TaskGrouping}>({scope:null,value:'none'});
-  const grouping=groupingState.scope===scope&&(!props.flatProjects||groupingState.value!=='area')?groupingState.value:'none';
+  const grouping=!props.flatLabels&&groupingState.scope===scope&&(!props.flatProjects||groupingState.value!=='area')?groupingState.value:'none';
   const layout=layoutState.scope===scope?layoutState.value:defaultLayout();
-  const configurableOrder=props.flatProjects?layout.order.filter(id=>id!=='area'):layout.order;
-  const visibility=useMemo<Record<string,boolean>>(()=>({project:props.flatProjects||props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility,...(props.flatProjects?{area:false}:{})}),[props.tasks,layout.visibility,props.flatProjects]);
+  const configurableOrder=layout.order.filter(id=>!(props.flatLabels&&(id==='project'||id==='area')||props.flatProjects&&id==='area'));
+  const visibility=useMemo<Record<string,boolean>>(()=>({project:props.flatProjects||props.tasks.some(task=>!!task.project),area:props.tasks.some(task=>!!task.area),...layout.visibility,...(props.flatProjects?{area:false}:{}),...(props.flatLabels?{project:false,area:false}:{})}),[props.tasks,layout.visibility,props.flatProjects,props.flatLabels]);
   useEffect(()=>{setLayoutState({scope,value:readLayout(scope)});setColumnsOpen(false);setLayoutNotice('');},[scope]);
   function changeLayout(value:GridLayout){
    setLayoutState({scope,value});
@@ -324,7 +352,7 @@ export function TaskGrid(props: TaskGridProps) {
   tableRef.current = table;
   const rowIds = table.getRowModel().rows.map(row => row.id);
   const retained = props.draftMemory?.read();
-  const restoreIndex = retained ? rowIds.indexOf(retained.task.id) : -1;
+  const restoreIndex = retained && !(props.flatLabels && edit) ? rowIds.indexOf(retained.task.id) : -1;
   useEffect(() => {
     if (edit || !canWrite(latest.current)) return;
     const draft = latest.current.draftMemory?.read();
@@ -336,9 +364,9 @@ export function TaskGrid(props: TaskGridProps) {
 
   return (
     <GridCellContext.Provider value={{ edit, latest, open, close, advance, onError }}>
-    <div ref={host} className={styles.root} data-flat-projects={props.flatProjects||undefined} aria-label="待办表格" data-task-grid="reui">
+    <div ref={host} className={styles.root} data-flat-projects={props.flatProjects||undefined} data-flat-labels={props.flatLabels||undefined} aria-label="待办表格" data-task-grid="reui">
       <div className={styles.columnToolbar}>
-       <label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option>{!props.flatProjects&&<option value="area">按领域</option>}</select></label>
+       {!props.flatLabels&&<label className={styles.groupingControl}><span>分组</span><select aria-label="待办表格分组" value={grouping} disabled={props.blocked||!!edit} onChange={event=>setGroupingState({scope,value:event.target.value as TaskGrouping})}><option value="none">不分组</option><option value="project">按项目</option>{!props.flatProjects&&<option value="area">按领域</option>}</select></label>}
        <Button variant="ghost" disabled={props.blocked||!!edit} aria-expanded={columnsOpen} onClick={()=>setColumnsOpen(value=>!value)}>列设置</Button>
        {columnsOpen&&<div className={styles.columnSettings} role="group" aria-label="表格列设置"><p>列设置仅用于当前浏览器。</p>{configurableOrder.map((id,index)=><div className={styles.columnSetting} key={id}>
         <label><input type="checkbox" aria-label={`显示${columnLabels[id]}列`} checked={visibility[id]!==false} disabled={props.blocked||!!edit||id==='complete'||id==='title'} onChange={event=>changeLayout({...layout,visibility:{...layout.visibility,[id]:event.target.checked}})}/>{columnLabels[id]}</label>

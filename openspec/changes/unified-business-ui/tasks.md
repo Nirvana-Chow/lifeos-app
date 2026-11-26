@@ -216,6 +216,10 @@ For the existing owner workspace read flow, verify neutral page recovery and a r
 
 With the flat Todo table and its previous candidate integrated, keep existing status filtering, single-entry creation and project relationships. Finish the compact Todo timeline and make the Kanban title open the existing in-place detail; verify the independent plan and deadline scales, keyboard editing and receipt-driven moves.
 
+### LO-TASK-001 flat task list and in-place detail (2026-11-26)
+
+Continue the existing 1.2 / 3.1 / 3.2 under [Issue #5](https://github.com/Nirvana-Chow/lifeos-app/issues/5#issuecomment-7186238389). Keep the personal task table flat with optional owner labels. Create without a project or domain picker, and let the owner select an existing project in the collapsed task-detail association section. Preserve pre-existing references on unrelated changes, the same editor and receipt path, shell nodes, scroll, focus, and unsaved drafts. Verify the personal task route on desktop and phone. The #19 label-suggestion consumer is optional and independently qualified before activation. The existing release and owner acceptance gates remain open.
+
 ## LO-UI-001 persistent workspace shell checkpoint (2026-11-26)
 
 Continue [Issue #30](https://github.com/Nirvana-Chow/lifeos-app/issues/30) under existing 1.2 / 3.1 / 3.2. The first slice gives the canonical task workspace `/personal?page=tasks` and records at `/personal/journal` one persistent ReUI chrome under the personal layout. The root's existing overview, inbox, projects, areas, requirements, settings and classification query states continue through the same root workspace. Journal record queries keep their existing route and server verification. Task and journal readers and editors remain route-owned.
