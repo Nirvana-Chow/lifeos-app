@@ -24,7 +24,7 @@ import type {HealthPersonal,HealthPersonalFields} from '../personal-health/domai
 import {emptyHealthFields,healthSummary,healthKindLabels} from '../personal-health/presentation';
 import {ExerciseRecordFilters} from '../personal-health/record-filters';
 import {matchesExerciseRecord} from '../personal-health/record-filter';
-import {HealthMetricOptions,HealthSectionNav,HealthSourceNote,HealthViewControls,useHealthBrowse} from '../personal-health/sections';
+import {CompactHealthRow,compactHealthVirtualizerOptions,HealthMetricOptions,HealthSectionNav,HealthSourceNote,HealthViewControls,useHealthBrowse} from '../personal-health/sections';
 import {projectHealthTrend,type HealthMetric} from '../personal-health/projection';
 import {TrainingCalendar} from '../personal-health/xunji-log/calendar';
 import {HealthTrendView} from '../personal-health/trend';
@@ -60,7 +60,6 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const title=labels[careerSection??type];
  const awaitingJournalDay=writeJournal===true&&!journalDay;
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
- const health=useHealthBrowse(type==='health');
  const [status,setStatus]=useState<Status|null>(null),[entries,setEntries]=useState<PublicEntry[]>([]),[options,setOptions]=useState<Record<string,PublicEntry[]>>(emptyOptions),[search,setSearch]=useState(''),[view,setView]=useState<RecordView>(()=>initialRecordView(type,careerSection)),[resumeId,setResumeId]=useState('');
  const [relatedEvents,setRelatedEvents]=useState<RelatedCalendarEvents|null>(null);
  const [relatedJournals,setRelatedJournals]=useState<RelatedJournals|null>(null),[linkedProfile,setLinkedProfile]=useState(linkedPersonId);
@@ -68,6 +67,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string;fromNovelShelf?:boolean}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
  const draftCache=useRef<{scope:string;editor:NonNullable<typeof editor>;history:PublicEntry[]}|null>(null);
  const root=useRef<HTMLDivElement>(null),journalBody=useRef<HTMLTextAreaElement>(null),session=useRef<PersonalMutationSession|null>(null),current=useRef<Status|null>(null),generation=useRef(0),editorRef=useRef(editor),busyRef=useRef(false);editorRef.current=editor;busyRef.current=busy;
+ const health=useHealthBrowse(type==='health',root);
+ const compactHealth=type==='health'&&health.compact;
  const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
  const autosaveTimer=useRef<number|undefined>(undefined),verifiedRef=useRef(verified);
  const journalSelection=useRef<{field:HTMLTextAreaElement;entryId:string;start:number;end:number;direction:'forward'|'backward'|'none'}|null>(null);
@@ -331,8 +332,13 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const portfolioEntries=useMemo(()=>type==='portfolio'?rows.map(entry=>({id:entry.id,sourceId:entry.source.id,revision:entry.revision,fields:recordFields(entry,type) as PortfolioPersonalFields})):[],[rows,type]);
  const openById=(id:string)=>{const entry=entries.find(entry=>entry.id===id);if(entry)void open(entry);};
  const recordSummary=(value:RecordFields)=>type==='person'?personSummary(value.personal as PersonPersonal).join(' · ')||'—':type==='health'?healthSummary(value as HealthPersonalFields):type==='media'?mediaSummary(value.personal as MediaPersonal).join(' · '):type==='career'?careerSummary(value.personal as CareerPersonal).join(' · '):type==='portfolio'?portfolioSummary(value.personal as PersonalPortfolio).join(' · '):value.text.replace(/\s+/g,' ').slice(0,110);
- const columns:ColumnDef<typeof dataGridFeatures,PublicEntry>[]=[{id:'title',header:type==='person'?'姓名':'标题',size:280,minSize:180,meta:{fillWidth:true},cell:({row})=><Button variant="ghost" className={s.titleButton} onClick={()=>void open(row.original)}>{recordFields(row.original,type).title}</Button>},{id:'summary',header:type==='person'?'关系与生日':type==='health'?'记录摘要':'正文摘要',size:360,cell:({row})=>{const value=recordFields(row.original,type);return <span className={s.summary}>{recordSummary(value)}</span>;}},{id:'date',header:'记录日期',size:130,cell:({row})=>recordFields(row.original,type).occurredOn??'—'}];
- const table=useTable({features:dataGridFeatures,data:tableRows,columns,getRowId:entry=>entry.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(tableRows.length,1)}},autoResetPageIndex:false});
+ const columns:ColumnDef<typeof dataGridFeatures,PublicEntry>[]=[{id:'title',header:type==='person'?'姓名':compactHealth?'记录':'标题',size:280,minSize:180,meta:{fillWidth:true},cell:({row})=>{
+  const entry=row.original,fields=recordFields(entry,type);
+  return compactHealth
+   ? <CompactHealthRow title={fields.title} summary={recordSummary(fields)} date={fields.occurredOn} onOpen={()=>void open(entry)}/>
+   : <Button variant="ghost" className={s.titleButton} onClick={()=>void open(entry)}>{fields.title}</Button>;
+ }},{id:'summary',header:type==='person'?'关系与生日':type==='health'?'记录摘要':'正文摘要',size:360,cell:({row})=>{const value=recordFields(row.original,type);return <span className={s.summary}>{recordSummary(value)}</span>;}},{id:'date',header:'记录日期',size:130,cell:({row})=>recordFields(row.original,type).occurredOn??'—'}];
+ const table=useTable({features:dataGridFeatures,data:tableRows,columns,getRowId:entry=>entry.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(tableRows.length,1)},...(compactHealth?{columnVisibility:{summary:false,date:false}}:{})},autoResetPageIndex:false});
  const careerRecord=type==='career'&&editor?.entry?{id:editor.entry.id,sourceId:editor.entry.source.id,revision:editor.entry.revision,fields:recordFields(editor.entry,'career') as CareerPersonalFields}:null;
  const fields=editor?.fields,links=fields?.personal?.type==='journal'?fields.personal.links:emptyLinks();
  const media=fields?.personal;
@@ -346,7 +352,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const recordCount=type==='health'
   ? (health.view==='table'?tableRows.length:healthEntries.length)
   : (type==='media'?tableRows.length:sectionEntries.length);
- const healthGridStyle=type==='health'?{minHeight:0,height:`min(65vh,780px,${Math.max(136,52+tableRows.length*44)}px)`}:undefined;
+ const gridRowEstimate=compactHealth?104:44;
+ const healthGridStyle=type==='health'?{minHeight:0,height:`min(65vh,780px,${Math.max(136,52+tableRows.length*gridRowEstimate)}px)`}:undefined;
  const toolbar=<div className={s.toolbar}><Input aria-label={'搜索'+title} placeholder={'搜索'+title} value={search} onChange={e=>{setLinkedProfile(undefined);setSearch(e.target.value);}}/><span className={s.count}>{status?recordCount+' 条':'正在读取'}</span>
    {type==='media'&&<label className={s.metric}>筛选作品<select value={mediaKind} disabled={!status} onChange={event=>setMediaKind(event.target.value as MediaBrowseFilter)}>
     <option value="all">全部作品</option>
@@ -377,7 +384,8 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    :status&&type==='health'&&health.view==='trend'?<>
      <label className={s.metric}>查看指标<select value={health.metric} onChange={event=>health.setMetric(event.target.value as HealthMetric)}><HealthMetricOptions metrics={health.metrics}/></select></label>
      <HealthTrendView trend={projectHealthTrend(healthEntries,health.metric)}/>
-   </>:status&&<div className={s.grid} style={healthGridStyle}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual height="100%" estimateSize={44} overscan={8}/></DataGrid></DataGridContainer></div>}
+   </>:status&&<div className={s.grid} style={healthGridStyle}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual key={compactHealth?'compact':'standard'} height="100%" estimateSize={gridRowEstimate} overscan={8}
+      virtualizerOptions={compactHealth?compactHealthVirtualizerOptions:undefined}/></DataGrid></DataGridContainer></div>}
  </>;
  return <div ref={root} className={s.workbench} data-personal-record-module={type}>
   {status&&type==='health'&&<HealthSectionNav section={health.section}/>}

@@ -1,6 +1,7 @@
 'use client';
 
-import {useEffect, useState} from 'react';
+import {useEffect, useState, type RefObject} from 'react';
+import {elementScroll, measureElement, observeElementOffset, observeElementRect} from '@tanstack/react-virtual';
 import {Button} from '../ui-review/ui/button';
 import type {HealthPersonal} from './domain';
 import {healthMetricLabels} from './presentation';
@@ -29,8 +30,18 @@ function initialBrowse(section:HealthSection) {
   };
 }
 
-export function useHealthBrowse(enabled:boolean) {
+export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|null>) {
   const [browse,setBrowse] = useState(() => initialBrowse('body'));
+  const [compact,setCompact] = useState(false);
+  useEffect(() => {
+    const host = root.current;
+    if (!enabled || !host) return;
+    const update = () => setCompact(host.clientWidth<620);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(host);
+    return () => observer.disconnect();
+  },[enabled,root]);
   useEffect(() => {
     if (!enabled) return;
     function syncSection() {
@@ -46,6 +57,7 @@ export function useHealthBrowse(enabled:boolean) {
   return {
     ...browse,
     ...sections[browse.section],
+    compact,
     setView:(view:HealthView) => setBrowse(current => ({...current,view})),
     setMetric:(metric:HealthMetric) => setBrowse(current => ({...current,metric})),
     setCategory:(category:ExerciseCategory) => setBrowse(current => current.category===category ? current : ({...current,category,status:'all'})),
@@ -73,6 +85,23 @@ export function HealthViewControls({section,view,onView}:{
       <Button key={key} type="button" size="sm" variant={view===key?'secondary':'ghost'}
         aria-pressed={view===key} onClick={()=>onView(key)}>{labels[key]}</Button>
     ))}
+  </div>;
+}
+
+export const compactHealthVirtualizerOptions = {
+  measureElement,
+  observeElementRect,
+  observeElementOffset,
+  scrollToFn:elementScroll,
+};
+
+export function CompactHealthRow({title,summary,date,onOpen}:{
+  title:string; summary:string; date:string|null; onOpen:()=>void;
+}) {
+  return <div className={s.compactRow}>
+    <Button type="button" variant="link" onClick={onOpen}>{title}</Button>
+    <p>{summary}</p>
+    {date && <time dateTime={date}>{date}</time>}
   </div>;
 }
 

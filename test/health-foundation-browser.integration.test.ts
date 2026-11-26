@@ -139,6 +139,13 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(nav).toBeVisible();
     const tableBounds = await bodyTable.boundingBox();
     assert.ok(tableBounds && tableBounds.height<245,'one body record should not reserve a full viewport');
+    await expect.poll(()=>bodyTable.getByText('70 kg · 20% · 腰围 78 cm').evaluate(summary=>{
+      const range = document.createRange();
+      range.selectNodeContents(summary);
+      const text = range.getBoundingClientRect();
+      const table = summary.closest('table')!.getBoundingClientRect();
+      return text.left>=table.left && text.right<=Math.min(table.right,innerWidth)-8;
+    }),{message:'body metrics must fully fit the visible table width'}).toBe(true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     const proof = process.env.LIFEOS_HEALTH_PROOF_DIR;
     if(proof) await page.screenshot({path:join(proof,`body-${width}.png`),animations:'disabled'});
@@ -206,6 +213,11 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   const calendar = page.getByRole('region',{name:'运动日历与记录',exact:true});
   await expect(calendar.getByRole('img',{name:/^已读运动日历，1 个/})).toBeVisible();
   await expect(plans.getByRole('row',{name:/2031-02-01.*合成健身计划/})).toBeVisible();
+  const analysisHeading = calendar.getByRole('heading',{name:'训练日记分析'});
+  for (const activity of [calendar.getByRole('heading',{name:'最近已读运动'}),plans,calendar.getByRole('heading',{name:/^运动热力图/})]) {
+    assert.ok((await activity.boundingBox())!.y < (await analysisHeading.boundingBox())!.y,
+      'personal exercise content must appear before the optional analytics panel');
+  }
   for (const width of [1365,390]) {
     await page.setViewportSize({width,height:900});
     await expect(plans.getByRole('button',{name:'合成健身',exact:true})).toHaveCount(0);

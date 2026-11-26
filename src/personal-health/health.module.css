@@ -35,3 +35,7 @@
 .trend summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 @media(min-width:1024px) and (pointer:fine){.fields label,.fields :is(input,select){font-size:14px}.fields :is(input,select){min-height:32px;padding:4px 8px}.fields summary,.trend summary{min-height:32px}}
 @media(max-width:680px){.grid{grid-template-columns:1fr}.summary dl{gap:12px 20px}}
+
+.compactRow{display:grid;gap:3px;padding-block:4px 8px;min-width:0}
+.compactRow>button{justify-self:start;max-width:100%;padding-inline:0;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.compactRow>p,.compactRow>time{margin:0;white-space:normal;overflow-wrap:anywhere;color:var(--muted-foreground);font-size:var(--lo-font-meta)}
