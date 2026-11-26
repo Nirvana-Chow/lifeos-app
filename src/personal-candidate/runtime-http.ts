@@ -1,3 +1,4 @@
+import {handleFileIndexRequest} from '../personal-file-index/http.ts';
 import {readRecentMemoRow,recentMemosLimit,recentMemosPath,type RecentMemosReader} from '../personal-journal/recent-memos.ts';
 import {PersonalFinanceService} from '../personal-finance/service.ts';
 import type {FileHandoffRuntime} from '../file-handoff/runtime.ts';
@@ -40,7 +41,7 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  requirePersonalWritePermit(config,sourceSha);
 }
 const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader & RecentMemosReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader & RecentMemosReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;fileIndexManifest?:string;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -65,6 +66,8 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     return respond({configured:true,writable,loginAllowed:options.config.readonlyLoginApproved===true||writable,https:new URL(options.config.baseURL).protocol==='https:',transport:options.config.transport??'https',origin:options.config.baseURL,userAccepted:false});
    }
    await assertOwner();
+   const fileIndexResponse=await handleFileIndexRequest(request,{service,storageVerified:options.storageVerified,manifest:options.fileIndexManifest,assertOwner});
+   if(fileIndexResponse)return fileIndexResponse;
    if(url.pathname==='/api/platform/personal/file-handoffs'||url.pathname.startsWith('/api/platform/personal/file-handoffs/')){
     if(!options.fileHandoff)return respond({error:{code:'NOT_FOUND',message:'文件交接尚未开放。'}},404);
     if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','文件网页入口仅限本人会话。');
