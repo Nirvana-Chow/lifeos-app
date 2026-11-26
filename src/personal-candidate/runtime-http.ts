@@ -86,6 +86,7 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    const taskTagResponse=await handleTaskTagSuggestion(request,{baseURL:options.config.baseURL,assertOwner,
     canReadTopics:options.storageVerified&&options.config.allowedTypes.includes('todo')&&options.config.allowedTypes.includes('topic'),
     getTopic:async id=>{const entry=await service.get(options.config.ownerId,'topic',id);
+     if(!('title' in entry.draft)||typeof entry.draft.title!=='string')throw new PlatformError(404,'NOT_FOUND','没有可访问的本人记录。');
      return {id:entry.id,revision:entry.revision,title:entry.draft.title};},provider:options.taskTagSuggestion});
    if(taskTagResponse)return taskTagResponse;
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
