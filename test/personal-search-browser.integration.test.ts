@@ -12,7 +12,7 @@ import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-h
 import {calendarFields} from './helpers/personal-calendar-port.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
 const source=resolve(import.meta.dirname,'..');
-test('OPT-IN owner search uses stable original reads and retains query/back/keyboard context without writes or egress',{skip:process.env.RUN_PERSONAL_SEARCH_BROWSER_TESTS!=='1'&&'Requires disposable synthetic Next fixture and native Chrome',timeout:180_000},async t=>{
+test('OPT-IN owner search uses stable original reads and retains query/back/keyboard context without writes or egress',{skip:process.env.RUN_PERSONAL_SEARCH_BROWSER_TESTS!=='1'&&'Requires disposable synthetic Next fixture and native Chrome',timeout:240_000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-search-browser-'));await mkdir(join(root,'app/personal/[...section]'),{recursive:true});await mkdir(join(root,'app/login'),{recursive:true});
  const workspaceSource=await readFile(join(source,'app/personal/page.tsx'),'utf8');
  const workspaceRoute=workspaceSource.replace("from'../../src/platform/runtime'","from'../../src/search-fixture-principal'");
@@ -46,6 +46,18 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   const entry=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic search diary',text:'Original needle diary body',occurredOn:null}},'browser-search-journal')).entry;const calendar=(await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic calendar',text:'Calendar needle body'}},'browser-search-calendar')).entry;const dated=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic December diary',text:'Boundary needle prose',occurredOn:'2025-12-31'}},'browser-search-december')).entry;
   await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic Shanghai calendar',text:'Boundary needle',personal:{...calendarFields.personal,schedule:{kind:'timed',startAt:'2025-12-31T16:00:00Z',endAt:'2025-12-31T17:00:00Z',timeZone:'UTC'}}}},'browser-search-shanghai');
   const todo=(await service.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic workspace task',notes:'Keep as-is',dueOn:null,status:'open'}},'browser-search-workspace-task')).entry;
+  const archive=[];
+  for(let index=0;index<51;index++){
+   const row=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{
+    title:index===0?'Synthetic earliest leap diary':'Synthetic leap diary '+index,
+    text:'Archive month-day prose',occurredOn:index===0?'2000-02-29':'2024-02-29',
+   }},'browser-month-day-'+index)).entry;
+   repo.rows.get(row.id)!.updatedAt=new Date(Date.UTC(2024,2,1,0,0,index)).toISOString();
+   archive.push(row);
+  }
+  await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{
+   title:'Synthetic archive unknown date',text:'Archive month-day prose',occurredOn:null,
+  }},'browser-month-day-unknown');
   const snapshot=JSON.stringify([...repo.rows.values()]);
   const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{}});
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){outside.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET'){
@@ -164,6 +176,73 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   await expect(keyword).toHaveValue('needle');await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
   await december.click();await expect(page.getByRole('region',{name:'原业务记录只读详情'})).toBeVisible();await page.goBack();
   await expect(december).toBeVisible();await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
+  const monthDay=page.getByLabel('同月同日',{exact:true});
+  const search=page.getByRole('search');
+  await monthDay.fill('01-01');
+  await search.getByRole('button',{name:'搜索',exact:true}).click();
+  await expect(page.getByRole('link',{name:'Synthetic Shanghai calendar 查看原记录',exact:true})).toBeVisible();
+  await expect(december).toHaveCount(0);
+  await expect(original).toHaveCount(0);
+  await expect(start).toHaveValue('2025-12-31');
+  await expect(end).toHaveValue('2026-01-01');
+  assert.equal(new URL(page.url()).searchParams.get('monthDay'),'01-01');
+
+  await keyword.fill('Archive month-day');
+  await start.fill('2000-01-01');
+  await end.fill('2024-12-31');
+  await monthDay.fill('02-29');
+  await search.getByRole('button',{name:'搜索',exact:true}).click();
+  const oldest=page.getByRole('link',{name:'Synthetic earliest leap diary 查看原记录',exact:true});
+  const pagination=page.getByRole('navigation',{name:'搜索结果分页'});
+  await expect(pagination).toContainText('第 1 页，共 2 页');
+  await expect(oldest).toHaveCount(0);
+  await expect(page.getByText('Synthetic archive unknown date',{exact:true})).toHaveCount(0);
+  await pagination.getByRole('link',{name:'下一页'}).click();
+  await expect(oldest).toBeVisible();
+  await expect(pagination).toContainText('第 2 页，共 2 页');
+  assert.equal(new URL(page.url()).searchParams.get('searchPage'),'2');
+  await oldest.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading',{name:'Synthetic earliest leap diary',exact:true})).toBeVisible();
+  assert.ok(reads.includes('/api/platform/personal/journal/'+archive[0].id));
+  assert.equal(new URL(page.url()).searchParams.get('searchPage'),'2');
+  await page.getByRole('link',{name:'返回搜索结果',exact:true}).click();
+  await expect(oldest).toBeVisible();
+  await expect(monthDay).toHaveValue('02-29');
+  await expect(start).toHaveValue('2000-01-01');
+  await expect(end).toHaveValue('2024-12-31');
+  await oldest.click();
+  await expect(page.getByRole('region',{name:'原业务记录只读详情'})).toBeVisible();
+  await page.goBack();
+  await expect(oldest).toBeVisible();
+  await expect(pagination).toContainText('第 2 页，共 2 页');
+
+  if(width===390){
+   await page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true}).click();
+   const dialog=page.getByRole('dialog',{name:'搜索本人记录',exact:true});
+   await dialog.getByRole('searchbox',{name:'搜索标题与正文',exact:true}).fill('Archive month-day');
+   await dialog.getByLabel('同月同日',{exact:true}).fill('02-29');
+   await dialog.getByRole('button',{name:'搜索',exact:true}).click();
+   const next=dialog.getByRole('button',{name:'下一页',exact:true});
+   await next.focus();
+   await page.keyboard.press('Enter');
+   const dialogOldest=dialog.getByRole('button',{name:'Synthetic earliest leap diary 查看原记录',exact:true});
+   await expect(dialogOldest).toBeFocused();
+   const previous=dialog.getByRole('button',{name:'上一页',exact:true});
+   await previous.focus();
+   await page.keyboard.press('Enter');
+   await expect(dialog.getByRole('button',{name:'Synthetic leap diary 50 查看原记录',exact:true})).toBeFocused();
+   await next.focus();
+   await page.keyboard.press('Enter');
+   await expect(dialogOldest).toBeFocused();
+   await page.keyboard.press('Enter');
+   await expect(dialog.getByRole('heading',{name:'Synthetic earliest leap diary',exact:true})).toBeVisible();
+   await dialog.getByRole('button',{name:'返回搜索结果',exact:true}).click();
+   await expect(dialogOldest).toBeFocused();
+   await expect(dialog.getByRole('link',{name:'在独立页面打开'})).toHaveAttribute('href','/personal/search?q=Archive+month-day&monthDay=02-29&searchPage=2');
+   await page.keyboard.press('Escape');
+   await expect(dialog).toHaveCount(0);
+  }
   broken=true;await page.goto(origin+'/personal/search?q=needle');await expect(page.getByRole('region',{name:'本人记录搜索'}).getByRole('alert')).toContainText('无法核对完整搜索结果');await expect(original).toHaveCount(0);broken=false;await page.getByRole('button',{name:'重新读取',exact:true}).click();await expect(original).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(writes,[]);assert.deepEqual(outside,[]);assert.equal(JSON.stringify([...repo.rows.values()]),snapshot);
   expired=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(original).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'请重新登录',exact:true})).toBeVisible();assert.deepEqual(errors,[]);await page.close();

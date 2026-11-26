@@ -72,3 +72,57 @@ test('personal search applies inclusive cross-year Shanghai dates without droppi
   ),{status:404,code:'NOT_FOUND',message:'没有可访问的本人记录。'});
  }
 });
+
+test('same month/day intersects keyword and range before paging the full authorized snapshot', async () => {
+ const {repo}=await setup();
+ const service=new PersonalService(repo,{...config,calendarEnabled:true});
+ const create=async(type:'journal'|'calendar',fields:object,key:string)=>
+  (await service.mutate(config.ownerId,type,null,{spaceId:config.spaceId,confirmed:true,fields},key)).entry;
+ const years=Array.from({length:54},(_,index)=>2000+4*index).filter(year=>year%100!==0||year%400===0).slice(0,51);
+ const journals:Awaited<ReturnType<typeof create>>[]=[];
+ for(const [index,year] of years.entries()){
+  const row=await create('journal',{title:'Leap match '+year,text:'Shared prose',occurredOn:year+'-02-29'},'leap-match-'+year);
+  repo.rows.get(row.id)!.updatedAt=new Date(Date.UTC(2026,0,1,0,0,index)).toISOString();
+  journals.push(row);
+ }
+ for(const [suffix,date,title] of [['wrong-day','2024-02-28','Leap wrong day'],['unknown',null,'Leap unknown'],['wrong-text','2024-02-29','Unmatched']] as const){
+  await create('journal',{title,text:'Different prose',occurredOn:date},'leap-'+suffix);
+ }
+ const timed=await create('calendar',{title:'Shanghai midnight',text:'Leap shared prose',occurredOn:null,
+  personal:{type:'calendar',schemaVersion:1,calendarKind:'event',links:{project:null,domain:null,people:[]},
+   schedule:{kind:'timed',startAt:'2024-02-28T16:00:00Z',endAt:'2024-02-28T17:00:00Z',timeZone:'UTC'}}},'leap-shanghai');
+ const other=new PersonalService(repo,{...config,spaceId:'search-leap-other-space'});
+ await other.mutate(config.ownerId,'journal',null,{spaceId:other.config.spaceId,confirmed:true,fields:{
+  title:'Leap another space',text:'Private',occurredOn:'2024-02-29',
+ }},'leap-other-space');
+ const original=JSON.stringify([...repo.rows.values()]);
+ let revoked=false,ownerChecks=0,writes=0;
+ const send=(params:string)=>handlePersonalRequest(
+  new Request(config.baseURL+'/api/platform/personal/search?'+params,{headers:{host:new URL(config.baseURL).host}}),
+  config.ownerId,config.baseURL,service,{assertOwner:async()=>{if(++ownerChecks===2&&revoked)throw Error('revoked');},
+   assertWritable:async()=>{writes++;}},
+ );
+ const first=await (await send('q=leap&monthDay=02-29'))!.json();
+ const second=await (await send('q=leap&monthDay=02-29&searchPage=2'))!.json();
+ assert.equal(first.scope,'filtered-current-page');
+ assert.equal(first.page,1);
+ assert.equal(second.page,2);
+ assert.equal(first.items.length,50);
+ assert.equal(second.items.length,2);
+ assert.equal(first.coverage.matched,52);
+ assert.deepEqual(second.coverage,first.coverage);
+ assert.deepEqual(new Set([...first.items,...second.items].map((row:{id:string})=>row.id)),new Set([...journals.map(row=>row.id),timed.id]));
+ assert.ok(second.items.some((row:{id:string})=>row.id===journals[0].id));
+ const narrow=await (await send('q=leap&monthDay=02-29&from=2024-02-29&to=2025-03-01'))!.json();
+ assert.deepEqual(new Set(narrow.items.map((row:{id:string})=>row.id)),new Set([journals[6].id,timed.id]));
+ for(const [query,code] of [
+  ['monthDay=02-30','INVALID_MONTH_DAY'],['monthDay=2-29','INVALID_MONTH_DAY'],['monthDay=04-31','INVALID_MONTH_DAY'],
+  ['monthDay=02-29&monthDay=02-28','INVALID_QUERY'],['searchPage=2','INVALID_SEARCH_PAGE'],
+  ['monthDay=02-29&searchPage=201','INVALID_SEARCH_PAGE'],
+ ])await assert.rejects(send('q=leap&'+query),{code});
+ revoked=true;
+ ownerChecks=0;
+ await assert.rejects(send('q=leap&monthDay=02-29&searchPage=2'),/revoked/);
+ assert.equal(writes,0);
+ assert.equal(JSON.stringify([...repo.rows.values()]),original);
+});
