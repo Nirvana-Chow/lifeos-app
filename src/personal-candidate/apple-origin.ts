@@ -1,4 +1,5 @@
 import {object,validateId,validateTodo,type TodoDraft} from '../platform/domain.ts';
+import {clonePersonalJSON} from './clone-json.ts';
 import type {ReminderPreviewRow} from '../import-preview/reminders.ts';
 export const appleOriginMarker='personal-apple-reminders-v1';
 export type AppleOrigin={marker:typeof appleOriginMarker;spaceId:string;type:'todo';sourceRef:string;sourceDigest:string;source:ReminderPreviewRow['source'];initialDraft:TodoDraft};
@@ -15,7 +16,7 @@ export function readAppleOrigin(value:unknown,spaceId?:string):AppleOrigin{
  if(Object.values(times).some(t=>!timestamp(t))||typeof original.title!=='string'||original.title.length>240||!original.title.trim()||s.notesIncluded===false&&'notes'in original||s.notesIncluded===true&&(typeof original.notes!=='string'||original.notes.length>16384))return fail();
  const initial=object(v.initialDraft,['title','notes','dueOn','status']),draft=validateTodo(initial),due=s.dueDate===null?null:new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(s.dueDate as string));
  if(draft.title!==original.title.trim()||draft.notes!==(s.notesIncluded?original.notes:'')||draft.status!==(s.isCompleted?'done':'open')||draft.dueOn!==due)return fail();
- return structuredClone(v) as AppleOrigin;
+ return clonePersonalJSON(v) as AppleOrigin;
 }
 export function originalPersonalType(original:unknown):string|null{
  if(!original||typeof original!=='object'||Array.isArray(original))return null;
