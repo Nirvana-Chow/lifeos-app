@@ -77,9 +77,29 @@ export function mountTaskGridEditor(
     event.stopPropagation();
     void commit(event.key === 'Tab' ? event.shiftKey ? 'previous' : 'next' : null);
   };
+  const isSearchFocus = (target: EventTarget | null) =>
+    target instanceof Element && !!target.closest('[data-personal-search-focus]');
+  // WebKit can blur the input with no relatedTarget before activating a
+  // header button. Capture the initiating press before that native blur.
+  let searchPress = false;
+  const rememberPress = (event: MouseEvent) => {
+    if ('isPrimary' in event && !event.isPrimary) return;
+    searchPress = event.button === 0 && isSearchFocus(event.target);
+  };
+  const endPress = () => { searchPress = false; };
+  const gestures = new AbortController();
+  const capture = {capture: true, signal: gestures.signal};
+  const document = input.ownerDocument;
+  document.addEventListener('pointerdown', rememberPress, capture);
+  document.addEventListener('mousedown', rememberPress, capture);
+  for (const type of ['pointerup', 'pointercancel', 'mouseup', 'click', 'keydown']) {
+    document.addEventListener(type, endPress, capture);
+  }
   const blur = (event: Event) => {
     const target = (event as FocusEvent).relatedTarget;
-    if (target && target instanceof Element && target.closest('[data-personal-search-focus]')) {
+    const keepDraft = (target === null && searchPress) || isSearchFocus(target);
+    endPress();
+    if (keepDraft) {
       editor.captureDraft();
       return;
     }
@@ -114,6 +134,7 @@ export function mountTaskGridEditor(
     dispose() {
       if (!active) return;
       active = false;
+      gestures.abort();
       editor.onEnd();
       input.removeEventListener('compositionstart', compositionStart);
       input.removeEventListener('compositionend', compositionEnd);
