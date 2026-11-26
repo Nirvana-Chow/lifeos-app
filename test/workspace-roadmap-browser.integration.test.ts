@@ -97,7 +97,7 @@ test('OPT-IN synthetic roadmap, category navigation and topic settings use the s
    if(!['GET','HEAD'].includes(request.method())){writes++;return route.fulfill({status:405});}
    if(url.pathname==='/api/platform/personal/status')return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']}});
    if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+   if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']},total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
    return route.continue();
   });
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:55000});

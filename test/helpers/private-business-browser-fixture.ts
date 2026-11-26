@@ -636,7 +636,7 @@ async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture[
   page.waitForResponse(response=>{
    const url=new URL(response.url());
    return url.origin===privateOrigin&&url.pathname==='/api/platform/personal/todo/workspace-snapshot'
-     &&/^\?today=\d{4}-\d{2}-\d{2}$/.test(url.search)&&response.request().method()==='GET'
+     &&/^\?today=\d{4}-\d{2}-\d{2}&include=access$/.test(url.search)&&response.request().method()==='GET'
      &&response.frame()===page.mainFrame();
   }),
   page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}),

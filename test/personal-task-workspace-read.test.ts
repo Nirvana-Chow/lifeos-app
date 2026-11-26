@@ -56,13 +56,14 @@ async function fixture(t:TestContext){
 
  let session: {userId:string;email:string}|null={userId:configBase.ownerId,email:configBase.ownerEmail};
  let expireAfterRead=false,storageVerified=true,allowedTypes=configBase.allowedTypes,readerAvailable=true;
+ let writable=false,permitChecks=0;
  let origin:string;
  const server=createServer(async(req,res)=>{
   const handler=createPersonalPlatformHandler({
    config:{...configBase,baseURL:origin,allowedTypes},storageVerified,
    repository:readerAvailable?repository:memoryWithoutReader,
    sessions:{read:async headers=>headers.get('cookie')===cookie&&(!expireAfterRead||reads.length===0)?session:null},
-   assertWritable:async()=>assert.fail('a GET must never check write authority'),
+   assertWritable:async()=>{permitChecks++;if(!writable)throw Error('Synthetic write permit closed');},
   });
   const response=await handler(new Request(origin+req.url,{method:req.method,headers:new Headers(req.headers as Record<string,string>)}));
   res.writeHead(response.status,Object.fromEntries(response.headers));
@@ -80,6 +81,8 @@ async function fixture(t:TestContext){
   setStorage:(value:boolean)=>{storageVerified=value;},
   setAllowed:(value:readonly PersonalType[])=>{allowedTypes=value;},
   removeReader:()=>{readerAvailable=false;},
+  openWritePermit:()=>{writable=true;},
+  permitChecks:()=>permitChecks,
  };
 }
 
@@ -209,4 +212,36 @@ test('the PostgreSQL adapter binds owner, space and types in a read-only query b
  assert.equal(calls[3]?.sql,'COMMIT');
  assert.equal(calls.length,4);
  assert.equal(released,true);
+});
+
+test('opt-in workspace access uses the same protected snapshot and leaves the legacy response intact',async t=>{
+ const f=await fixture(t);
+ const legacy=await f.get(query);
+ assert.equal(legacy.status,200);
+ assert.equal('access' in await legacy.json(),false);
+ assert.equal(f.permitChecks(),0);
+ const bundle=await f.get(query+'&include=access');
+ assert.equal(bundle.status,200);
+ assert.equal(bundle.headers.get('cache-control'),'private, no-store');
+ assert.equal(bundle.headers.get('vary'),'Cookie');
+ const value=await bundle.json();
+ assert.equal(value.total,4);
+ assert.deepEqual(value.access,{scope:'personal-manual-candidate',ownerId:configBase.ownerId,spaceId:configBase.spaceId,storageVerified:true,allowedTypes:configBase.allowedTypes,writable:false});
+ f.openWritePermit();
+ assert.equal((await (await f.get(query+'&include=access')).json()).access.writable,true);
+ assert.equal(f.permitChecks(),2);
+ for(const invalid of ['&include=other','&include=access&include=access','&include=access&extra=true']){
+  assert.equal((await f.get(query+invalid)).status,400);
+ }
+});
+
+test('the opt-in read returns neither access nor data after the bound session is revoked',async t=>{
+ const f=await fixture(t);
+ f.setExpiry();
+ const response=await f.get(query+'&include=access');
+ assert.equal(response.status,401);
+ const value=await response.json();
+ assert.equal(value.error.code,'LOGIN_REQUIRED');
+ assert.equal('access' in value,false);
+ assert.equal('items' in value,false);
 });
