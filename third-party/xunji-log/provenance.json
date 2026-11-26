@@ -31,7 +31,7 @@
     {
       "derivedFrom": "web/src/pages/Calendar.tsx",
       "localPath": "src/personal-health/xunji-log/calendar.tsx",
-      "sha256": "5bea78c4e07e4fd4af58bfdf56613f24f56e718b6020fc904be95ba0600f6923",
+      "sha256": "bff33ab02bf23f2bcf65ab820e193354ba77863247f1c2072332b4317dd626c0",
       "changes": [
         "Copied the original Calendar implementation and adapted its daily cells, trainedDates, openDay, heatmap click handler, metric controls, native calendar/visualMap/heatmap options and recent table.",
         "Replace upstream Analysis/DrillPanel with validated owner health records and a single existing onOpenRecord(id) callback; multi-record days preserve original titles for selection.",
