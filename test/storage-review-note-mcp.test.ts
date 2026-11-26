@@ -12,7 +12,7 @@ function setup(){
  const repository=new MemoryPort(),transaction=repository.transaction.bind(repository);let fenced=true,lost=false;
  repository.readCurrentSnapshot=async()=>structuredClone([...repository.rows.values()]);
  repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>fenced}));
- const operations=agentOperations.filter(op=>'policyClass'in op&&op.policyClass==='personal-business-data');
+ const operations=agentOperations.filter(op=>op.module!=='article'&&op.module!=='learning'&&'policyClass'in op&&op.policyClass==='personal-business-data');
  const grant={grantId:'synthetic-note-grant',ownerId,spaceId,businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:operations.map(op=>op.id),scopes:[...new Set(operations.flatMap(op=>op.requiredScopes))]};
  const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:false,classification:false,businessDataPolicy:true,storageReview:true},repository,
   config:{ownerId,spaceId,baseURL:origin,ownerEmail:'synthetic-note@example.test',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal']},

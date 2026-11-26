@@ -6,7 +6,7 @@ import {normalizePersonalFields,personalTypes,type ObjectFields} from '../person
 import {appleOriginMarker,readAppleOrigin} from '../personal-candidate/apple-origin.ts';
 import type {PersonalType} from '../personal-candidate/config.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
-export const searchTypeLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
+export const searchTypeLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',article:'文章',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
 export type SearchSelection={type:PersonalType;id:string};
 export type SearchRow=SearchSelection&{sourceId:string;revision:number;title:string;text:string;excerpt:string;date:string|null;dateLabel:string;sourceLabel:string;calendar?:CalendarPersonal};
 export type SearchCoverage={types:PersonalType[];scanned:number;matched:number};

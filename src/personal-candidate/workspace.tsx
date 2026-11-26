@@ -13,7 +13,7 @@ import {PersonalRecordForm} from './record-form';import {SnapshotPanel} from './
 type Status={ownerId:string;spaceId:string;writable:boolean;allowedTypes:PersonalType[]};
 type Fields=PersonalEditorFields;
 const fresh=(type:PersonalType='todo'):Fields=>({title:'',text:'',date:'',status:'open',...(type==='project'?{personal:{type:'project',stage:'idea',purpose:null,nextStep:'',domain:null,topics:[]}}:type==='domain'||type==='topic'?{personal:{type}}:{})});
-export const personalWorkspaceLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
+export const personalWorkspaceLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭',article:'文章'};
 const labels=personalWorkspaceLabels;
 export function PersonalWorkspace({initialType='todo',initialId,returnHref='/review/admin',focused=false,navigationGuard}:{
  initialType?:PersonalType;initialId?:string;returnHref?:string;focused?:boolean;

@@ -1,3 +1,4 @@
+import {requiresExplicitArticlePermission} from './personal-operation-registry.ts';
 import type {Transaction} from '../platform/contracts.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {normalizeAgentScopes} from './scopes.ts';
@@ -14,7 +15,14 @@ export type AgentWriteGrant = AgentGrantBinding;
 export async function assertAgentGrant(tx:Transaction,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],operationId?:string):Promise<void>{
   let scopes:readonly OperationScope[];
   let operationScopes:readonly OperationScope[]|undefined;
-  if(grant.businessDataPolicy){
+  const article=requiresExplicitArticlePermission(operationId,requiredScopes);
+  if(article){
+    const operation=agentOperations.find(entry=>entry.id===operationId&&entry.module==='article');
+    if(grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff||!operation||
+       operation.requiredScopes.length!==requiredScopes.length||!operation.requiredScopes.every((scope,index)=>scope===requiredScopes[index]))
+      throw new PlatformError(403,'GRANT_OPERATION_INVALID','授权操作无效。');
+    scopes=requiredScopes;
+  }else if(grant.businessDataPolicy){
     const operation=agentOperations.find(entry=>entry.id===operationId);
     const expected=operation&&policyAuthorizationScopes(operation);
     if(grant.businessDataPolicy!=='all-personal-business-v1'||!operation||!expected||expected.length!==requiredScopes.length||expected.some(scope=>!requiredScopes.includes(scope as OperationScope)))
@@ -24,9 +32,9 @@ export async function assertAgentGrant(tx:Transaction,grant:AgentGrantBinding,re
   }else{
     try{scopes=normalizeAgentScopes(requiredScopes);}catch{throw new PlatformError(403,'GRANT_SCOPES_INVALID','授权范围无效。');}
   }
-  const lock=grant.oauthFence?(tx.lockOAuthAgentGrant??tx.lockAgentGrant):tx.lockAgentGrant;
+  const lock=article?tx.lockArticleAgentGrant:grant.oauthFence?(tx.lockOAuthAgentGrant??tx.lockAgentGrant):tx.lockAgentGrant;
   if(!lock)throw new PlatformError(503,'AGENT_WRITE_FENCE_UNAVAILABLE','业务授权检查暂不可用。');
-  if(!await lock.call(tx,grant.businessDataPolicy||grant.oauthFence?{...grant,operationId}:grant,operationScopes??scopes))throw new PlatformError(403,'WRITE_GRANT_REVOKED','业务授权已失效。');
+  if(!await lock.call(tx,grant.businessDataPolicy||grant.oauthFence||article?{...grant,operationId}:grant,operationScopes??scopes))throw new PlatformError(403,'WRITE_GRANT_REVOKED','业务授权已失效。');
 }
 
 /** Only the legacy todo writer can use the pre-business migration fence. */
