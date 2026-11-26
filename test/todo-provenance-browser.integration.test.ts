@@ -49,6 +49,7 @@ test('OPT-IN Todo entry distinguishes explicit source evidence and keeps origina
  const config:PersonalConfig={ownerId,spaceId,ownerEmail,baseURL:origin,transport:'ssh-loopback',
   approval:'personal-manual-v1',databaseName:'lifeos_platform_test_local',allowedTypes:['todo']};
  const repo=new MemoryPort();
+ repo.readCurrentSnapshot=async owner=>[...repo.rows.values()].filter(row=>row.ownerId===owner);
  const repository=Object.assign(repo,{readTaskWorkspaceSnapshot:async(owner:string)=>[...repo.rows.values()].filter(row=>row.ownerId===owner)});
  const service=new PersonalService(repository,config);
  await service.mutate(ownerId,'todo',null,{spaceId,confirmed:true,fields:{
@@ -96,23 +97,35 @@ test('OPT-IN Todo entry distinguishes explicit source evidence and keeps origina
  await create.getByRole('button',{name:'保存待办',exact:true}).click();
  await expect(create).toHaveCount(0);
  detail=await openTask(title);
+ const currentBody=()=>detail.getByRole('textbox',{name:'正文',exact:true});
+ await expect(currentBody()).toHaveValue(original,{timeout:15_000});
  await expect(detail.getByRole('combobox',{name:'表达类型（可选）',exact:true})).toHaveCount(0);
  await detail.getByText('来源与修订历史',{exact:true}).click();
  await expect(detail.getByText('本人网页',{exact:true})).toBeVisible();
  await expect(detail.getByText('口述表达',{exact:true})).toBeVisible();
  await detail.getByText('修订 1',{exact:true}).click();
  await expect(detail.getByRole('listitem').getByText(original,{exact:true})).toBeVisible();
- await detail.getByLabel('正文',{exact:true}).fill(corrected);
+ await expect(currentBody()).toHaveValue(original,{timeout:15_000});
+ await currentBody().fill(corrected);
  await detail.getByRole('button',{name:'保存待办',exact:true}).click();
  await expect(detail).toHaveCount(0);
  await page.reload({waitUntil:'domcontentloaded'});
  detail=await openTask(title);
- await expect(detail.getByLabel('正文',{exact:true})).toHaveValue(corrected);
+ await expect(currentBody()).toHaveValue(corrected,{timeout:15_000});
  await detail.getByText('来源与修订历史',{exact:true}).click();
  await expect(detail.getByText('修订 2',{exact:true})).toBeVisible();
  await detail.getByText('最初录入内容',{exact:true}).click();
  await expect(detail.locator('pre')).toContainText(original);
  await detail.getByText('修订 1',{exact:true}).click();
  await expect(detail.getByRole('listitem').getByText(original,{exact:true})).toBeVisible();
+ await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'搜索本人记录',exact:true}).click();
+ const search=page.getByRole('dialog',{name:'搜索本人记录',exact:true});
+ const query=search.getByRole('searchbox',{name:'搜索标题与正文',exact:true});
+ await query.fill(title);
+ await query.press('Enter');
+ await search.getByRole('button',{name:title+' 查看原记录',exact:true}).click();
+ await expect(search.getByText('输入渠道 本人网页 · 表达 口述表达 · 版本 2',{exact:true})).toBeVisible();
+ await expect(search.getByText(corrected,{exact:true})).toBeVisible();
  assert.deepEqual(errors,[]);
 });
