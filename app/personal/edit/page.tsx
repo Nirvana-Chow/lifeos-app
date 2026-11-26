@@ -3,7 +3,7 @@ import {headers} from 'next/headers';
 import {redirect} from 'next/navigation';
 import {readPlatformPagePrincipal,readPlatformPasswordCapability} from '../../../src/platform/runtime';
 import {LivePersonalWorkspace} from '../../../src/personal-candidate/live-workspace';
-import {PersonalWorkspace} from '../../../src/personal-candidate/workspace';
+import {FocusedPersonalWorkspace} from '../../../src/personal-candidate/focused-workspace';
 import type {PersonalType} from '../../../src/personal-candidate/config';
 import {validateId} from '../../../src/platform/domain';
 
@@ -18,5 +18,5 @@ export default async function Page({searchParams}:{searchParams:Promise<{type?:s
  if(type==='todo')return <LivePersonalWorkspace passwordEnabled={await readPlatformPasswordCapability()} showApiKeys={process.env[keyManagementFlag]==='1'} initialPage="tasks" initialTaskId={q.id} initialCreateTask={q.id===undefined}/>;
  let id:string|undefined;
  try{if(q.id)id=validateId(q.id);}catch{}
- return <PersonalWorkspace initialType={type} initialId={id} returnHref="/personal" focused/>;
+ return <FocusedPersonalWorkspace initialType={type} initialId={id}/>;
 }

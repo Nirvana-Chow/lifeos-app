@@ -17,6 +17,7 @@ function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'b
   if (fields.personal.healthKind==='training') {
     fields.personal.activity = kind==='frisbee'?'other':'strength';
     fields.personal.state = state;
+    fields.personal.durationMinutes = 30;
   }
   if (fields.personal.healthKind==='body') {
     fields.personal.weight={value:70,unit:'kg'};
@@ -155,6 +156,24 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(page.getByRole('heading',{name:'运动日历',exact:true})).toBeVisible();
   await row('趋势').click();
   await expect(page.getByLabel('查看指标')).toBeVisible();
+  await page.getByLabel('查看指标').selectOption('trainingMinutes');
+  await expect(page.getByText(/2 条训练计划已排除/)).toBeVisible();
+  const completedChart = page.getByRole('img',{name:/^已完成训练时长，min，2 条有日期的记录/});
+  await expect(completedChart.locator('svg')).toBeVisible();
+  for (const width of [390,430]) {
+    await page.setViewportSize({width,height:844});
+    await expect(page.getByRole('button',{name:'切换到桌面版',exact:true})).toBeVisible();
+    const chartWidths = () => completedChart.evaluate(host=>({
+      chart:host.clientWidth,
+      svg:host.querySelector('svg')?.getBoundingClientRect().width,
+      region:host.closest('section[aria-label="健康趋势"]')!.clientWidth,
+    }));
+    const {region} = await chartWidths();
+    assert.ok(region>0 && region<=width);
+    await expect.poll(chartWidths,{message:'the completed training chart must fit the active mobile trend region'})
+      .toEqual({chart:region,svg:region,region});
+    t.diagnostic('mobile trend '+width+'px '+JSON.stringify(await chartWidths()));
+  }
   await row('表格').click();
   items = [];
   await row('刷新').click();

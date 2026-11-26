@@ -34,7 +34,7 @@ export function JournalActivityPage({ markup, styles, initialDate, serverDay, me
       const stylesheet = document.createElement('style');
       stylesheet.textContent = styles;
       const layout = document.createElement('div');
-      layout.className = 'activity-document';
+      layout.className = 'activity-document activity-embedded';
       // Only the repository's static layout is markup. Journal fields are mounted as text.
       layout.innerHTML = markup;
       shadow.replaceChildren(stylesheet, layout);
