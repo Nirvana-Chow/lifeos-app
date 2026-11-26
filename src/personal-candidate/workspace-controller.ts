@@ -19,11 +19,14 @@ function snapshotFailure(status:number,code:unknown):string|null{
  return null;
 }
 const workspaceReadTimeoutMs=10_000;
+const taskSnapshotTag=/^W\/"lifeos-task-v1-[A-Za-z0-9_-]{43}"$/;
+type TaskSnapshotMemory={day:string;etag:string;body:Record<string,unknown>};
 export class PersonalWorkspaceController{
  private value:ControllerSnapshot={state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null};
  private listeners=new Set<()=>void>();private generation=0;private binding:PersonalBinding|null=null;private entries:PublicEntry[]=[];private session:PersonalMutationSession|null=null;private unsubscribe?:()=>void;
  private planningReadbackRequired=false;private busy=false;private preflight:AbortController|null=null;
  private refreshRead:AbortController|null=null;
+ private taskSnapshot:TaskSnapshotMemory|null=null;
  private undo:{id:string;revision:number;status:WorkspaceTask['status'];deadline:number}|null=null;
  private pending:{command:PersonalCommand;base:PublicEntry|null;generation:number;session:PersonalMutationSession;priorStatus?:WorkspaceTask['status']}|null=null;
  private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number;readTimeoutMs?:number;taskWorkspace?:boolean};
@@ -31,10 +34,13 @@ export class PersonalWorkspaceController{
  getSnapshot=()=>this.value;subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
  private emit(patch:Partial<ControllerSnapshot>){this.value={...this.value,...patch};this.listeners.forEach(f=>f());}
  private clear(){this.preflight?.abort();this.preflight=null;this.clearUndo();this.pending=null;this.busy=false;this.binding=null;this.entries=[];this.unsubscribe?.();this.unsubscribe=undefined;this.session?.invalidateBinding();this.session=null;this.emit({singleTask:undefined,pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
- suspend(){++this.generation;this.refreshRead?.abort();this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
- private async json(path:string,signal?:AbortSignal){
+ suspend(){this.taskSnapshot=null;this.suspendForBackground();}
+ // Backgrounding conceals all actionable data. The held read cannot be used until the server revalidates it.
+ suspendForBackground(){++this.generation;this.refreshRead?.abort();this.clear();this.emit({state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false});}
+ private async json(path:string,signal?:AbortSignal,etag?:string){
   const read=async()=>{
-   const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{})});
+   const response=await this.options.fetcher(path,{credentials:'same-origin',cache:'no-store',...(signal?{signal}:{}),...(etag?{headers:{'If-None-Match':etag}}:{})});
+   if(response.status===304)return{response,body:null};
    const body:unknown=await response.json().catch(error=>{if(response.ok)throw error;return null;});
    return{response,body};
   };
@@ -61,6 +67,7 @@ export class PersonalWorkspaceController{
    if(token===this.generation)this.emit({access:{...this.value.access,loginAllowed}});
   });
   const unavailable=(message:string,status?:number)=>{
+   this.taskSnapshot=null;
    this.clear();
    this.emit({state:{status:status===401||status===403?'forbidden':'error',message},
     access:{authenticated:status===401||status===403?false:null,writable:false,loginAllowed:this.value.access.loginAllowed}});
@@ -69,16 +76,22 @@ export class PersonalWorkspaceController{
   try{
    const taskWorkspace=this.options.taskWorkspace===true;
    const requestedDay=taskWorkspace?this.options.today():null;
-   const bundled=requestedDay!==null?await this.json('/api/platform/personal/todo/workspace-snapshot?today='+encodeURIComponent(requestedDay)+'&include=access',read.signal):undefined;
+   const remembered=this.taskSnapshot?.day===requestedDay?this.taskSnapshot:null;
+   const bundled=requestedDay!==null?await this.json('/api/platform/personal/todo/workspace-snapshot?today='+encodeURIComponent(requestedDay)+'&include=access',read.signal,remembered?.etag):undefined;
    if(token!==this.generation)return;
+   const revalidated=bundled?.response.status===304;
+   const etag=bundled?.response.headers.get('etag');
+   const observedAt=revalidated?bundled.response.headers.get('x-lifeos-snapshot-observed-at'):null;
+   if(revalidated&&(!remembered||etag!==remembered.etag||!observedAt||!Number.isFinite(Date.parse(observedAt))))throw Error('Unverified task snapshot');
+   const bundledBody=revalidated?{...remembered!.body,observedAt}:bundled?.body;
    const recoverable=bundled?snapshotFailure(bundled.response.status,errorCode(bundled.body)):null;
    if(recoverable&&!linkedTaskId){unavailable(recoverable);return;}
    // The linked-record recovery needs a fresh binding when the complete list could not be read.
    const {response,body:status}=!bundled||recoverable
     ?await this.json('/api/platform/personal/status',read.signal)
-    :bundled.response.ok?{response:bundled.response,body:obj(bundled.body)?bundled.body.access:null}:bundled;
+    :bundled.response.ok||revalidated?{response:bundled.response,body:obj(bundledBody)?bundledBody.access:null}:bundled;
    if(token!==this.generation)return;
-   if(!response.ok){
+   if(!response.ok&&!revalidated){
     const code=errorCode(status);
     if(bundled&&code==='PERSONAL_TYPE_DENIED'){unavailable('当前访问范围未确认包含待办。');return;}
     unavailable(response.status===401?'请登录本人账号。':response.status===403?'当前账号没有访问本人空间的权限。':
@@ -107,7 +120,7 @@ export class PersonalWorkspaceController{
    const today=requestedDay??this.options.today();
    const v=bundled??await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today),read.signal);
    if(token!==this.generation)return;
-   if(!v.response.ok){
+   if(!v.response.ok&&!revalidated){
     const message=snapshotFailure(v.response.status,errorCode(v.body));
     if(message){
      unavailable(message);
@@ -117,7 +130,9 @@ export class PersonalWorkspaceController{
     unavailable(v.response.status===401?'登录已失效，请重新登录。':v.response.status===403?'当前账号没有读取待办的权限。':failure,v.response.status);return;
    }
    failure='待办快照未能核验，请重新读取。';
-   const checked=workspaceData(v.body,next.spaceId,today,taskWorkspace?'task-workspace-current-snapshot':'full-current-snapshot');
+   const body=bundled?bundledBody:v.body;
+   const checked=workspaceData(body,next.spaceId,today,taskWorkspace?'task-workspace-current-snapshot':'full-current-snapshot');
+   this.taskSnapshot=requestedDay!==null&&etag&&taskSnapshotTag.test(etag)&&obj(body)?{day:requestedDay,etag,body}:null;
    this.entries=checked.entries;this.planningReadbackRequired=false;this.emit({state:{status:'ready',data:checked.data}});
   }catch{if(token===this.generation)unavailable(timedOut?'本人空间读取超时，请重试。':failure);}
   finally{

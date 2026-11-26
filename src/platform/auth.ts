@@ -49,6 +49,11 @@ export async function readVerifiedOwnerSession(auth:PlatformAuth,config:Platform
  const state=await inspectOwnerMfaState(auth,config,headers);
  return state.kind==='ready'&&(!auth.options.plugins?.some(plugin=>plugin.id===sessionDurationPluginId)||freshAuthentication(state.authenticatedAt))?{principal:state.principal,sessionRef:state.sessionRef}:null;
 }
+/** Identifies the current MFA-authenticated data session without requesting step-up. */
+export async function readOwnerDataSession(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<(Principal&{sessionRef:string})|null>{
+ const state=await inspectOwnerMfaState(auth,config,headers);
+ return state.kind==='ready'?{...state.principal,sessionRef:state.sessionRef}:null;
+}
 export async function readOwnerPrincipal(auth:PlatformAuth,config:PlatformConfig,headers:Headers):Promise<Principal|null>{
  if(auth.options?.plugins?.some(plugin=>plugin.id==='two-factor')){const state=await readOwnerMfaState(auth,config,headers);return state.kind==='ready'?state.principal:null;}
  try{const session=await auth.api.getSession({headers});if(!session||session.user.id!==config.ownerId||session.user.email.toLowerCase()!==config.ownerEmail.toLowerCase())return null;return{userId:session.user.id,email:session.user.email};}catch{return null;}

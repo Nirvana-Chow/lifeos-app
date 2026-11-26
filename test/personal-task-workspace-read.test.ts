@@ -9,6 +9,7 @@ import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-h
 import {personalEntryType,PersonalService} from '../src/personal-candidate/service.ts';
 import type {StoredEntry} from '../src/platform/contracts.ts';
 import {PostgresPlatformRepository,type SqlPool} from '../src/platform/postgres.ts';
+import {PersonalWorkspaceController} from '../src/personal-candidate/workspace-controller.ts';
 import {workspaceData} from '../src/personal-candidate/workspace-data.ts';
 import {reminderSourceDigest} from '../src/import-preview/reminders.ts';
 
@@ -54,13 +55,15 @@ async function fixture(t:TestContext){
   memory.rows.set(entry.id,{...entry,ownerId:configBase.ownerId});
  }
 
- let session: {userId:string;email:string}|null={userId:configBase.ownerId,email:configBase.ownerEmail};
+ let session: {userId:string;email:string;sessionRef?:string}|null={userId:configBase.ownerId,email:configBase.ownerEmail,sessionRef:'synthetic-session-one'};
+ let spaceId=configBase.spaceId;
  let expireAfterRead=false,storageVerified=true,allowedTypes=configBase.allowedTypes,readerAvailable=true;
  let writable=false,permitChecks=0;
  let origin:string;
  const server=createServer(async(req,res)=>{
   const handler=createPersonalPlatformHandler({
-   config:{...configBase,baseURL:origin,allowedTypes},storageVerified,
+   config:{...configBase,baseURL:origin,allowedTypes,spaceId},storageVerified,
+   taskSnapshotValidatorKey:'synthetic-task-snapshot-test-key',
    repository:readerAvailable?repository:memoryWithoutReader,
    sessions:{read:async headers=>headers.get('cookie')===cookie&&(!expireAfterRead||reads.length===0)?session:null},
    assertWritable:async()=>{permitChecks++;if(!writable)throw Error('Synthetic write permit closed');},
@@ -74,10 +77,11 @@ async function fixture(t:TestContext){
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));
  origin='http://127.0.0.1:'+(server.address() as AddressInfo).port;
- return {reads,todo,project,domain,topic,put:(row:StoredEntry)=>memory.rows.set(row.id,row),
+ return {reads,todo,project,domain,topic,origin,row:(id:string)=>memory.rows.get(id)!,remove:(id:string)=>memory.rows.delete(id),put:(row:StoredEntry)=>memory.rows.set(row.id,row),
   get:(url:string,init?:RequestInit)=>fetch(origin+url,{...init,headers:{cookie,...init?.headers}}),
   setSession:(value:typeof session)=>{session=value;},
   setExpiry:()=>{expireAfterRead=true;},
+  setSpace:(value:string)=>{spaceId=value;},
   setStorage:(value:boolean)=>{storageVerified=value;},
   setAllowed:(value:readonly PersonalType[])=>{allowedTypes=value;},
   removeReader:()=>{readerAvailable=false;},
@@ -116,6 +120,60 @@ test('the opted-in owner HTTP path loads only task workspace records, preserving
  const journal=await f.get('/api/platform/personal/journal/snapshot');
  assert.equal((await journal.json()).total,176);
  t.diagnostic(JSON.stringify({oldBytes:Buffer.byteLength(wideText),narrowBytes:Buffer.byteLength(narrowText),oldFixtureRowsReturned:180,narrowFixtureRowsReturned:4,physicalPostgres:false}));
+});
+
+test('task snapshot revalidation is private, session-bound and compares the whole representation',async t=>{
+ const f=await fixture(t),bundled=query+'&include=access';
+ const read=(tag:string|null)=>f.get(bundled,tag?{headers:{'If-None-Match':tag}}:undefined);
+ const first=await read(null),etag=first.headers.get('etag');
+ assert.equal(first.status,200);assert.ok(etag);assert.equal((await first.json()).total,4);
+ const same=await read(etag);
+ assert.equal(same.status,304);assert.equal(await same.text(),'');
+ assert.equal(same.headers.get('cache-control'),'private, no-store');assert.equal(same.headers.get('vary'),'Cookie');
+ assert.ok(Number.isFinite(Date.parse(same.headers.get('x-lifeos-snapshot-observed-at')!)));
+ assert.equal(f.reads.length,2,'storage is still independently checked');
+ const legacy=await f.get(query,{headers:{'If-None-Match':etag}});
+ assert.equal(legacy.status,200);assert.equal(legacy.headers.get('etag'),null);
+ f.setSession({userId:configBase.ownerId,email:configBase.ownerEmail,sessionRef:'synthetic-new-session'});
+ const newSession=await read(etag),newTag=newSession.headers.get('etag');
+ assert.equal(newSession.status,200);assert.ok(newTag&&newTag!==etag);
+ // Keep item count and even the fixture revision unchanged. Representation edits still invalidate.
+ const task=f.row(f.todo.id);
+ f.put({...task,draft:{...task.draft,title:'Same count edit'}});
+ const changed=await read(newTag),changedTag=changed.headers.get('etag');
+ assert.equal(changed.status,200);assert.notEqual(changedTag,newTag);
+ assert.equal((await changed.json()).items.find((row:StoredEntry)=>row.id===task.id).draft.title,'Same count edit');
+ f.remove(f.todo.id);
+ const removed=await read(changedTag);assert.equal(removed.status,200);assert.equal((await removed.json()).total,3);
+ const removedTag=removed.headers.get('etag');f.openWritePermit();
+ const writable=await read(removedTag);assert.equal(writable.status,200);assert.equal((await writable.json()).access.writable,true);
+ f.setSpace('synthetic-another-space');
+ const moved=await read(writable.headers.get('etag'));assert.equal(moved.status,200);assert.equal((await moved.json()).total,0);
+ const tag=moved.headers.get('etag');
+ f.setSession(null);assert.equal((await read(tag)).status,401);
+ f.setSession({userId:'synthetic-other-owner',email:configBase.ownerEmail,sessionRef:'synthetic-new-session'});
+ assert.equal((await read(tag)).status,403);
+ f.setSession({userId:configBase.ownerId,email:configBase.ownerEmail,sessionRef:'synthetic-new-session'});
+ f.reads.length=0;f.setExpiry();assert.equal((await read(tag)).status,401);
+});
+
+test('the real foreground reader renders a 304 only from its validated in-memory snapshot',async t=>{
+ const f=await fixture(t);const requests:{status:number;tag:string|null}[]=[];
+ const controller=new PersonalWorkspaceController({origin:f.origin,taskWorkspace:true,today:()=>date,key:()=>crypto.randomUUID(),fetcher:async(input,init)=>{
+  const url=String(input),r=await f.get(url,init);
+  if(url.includes('workspace-snapshot'))requests.push({status:r.status,tag:new Headers(init?.headers).get('if-none-match')});
+  return r;
+ }});
+ await controller.refresh();assert.equal(requests[0]?.status,200);assert.equal(requests[0]?.tag,null);
+ assert.ok(controller.getTaskEntry(f.todo));
+ controller.suspendForBackground();assert.equal(controller.getTaskEntry(f.todo),null);
+ await controller.refresh();assert.equal(requests[1]?.status,304);assert.ok(requests[1]?.tag);
+ assert.ok(controller.getTaskEntry(f.todo));
+ controller.suspendForBackground();f.setSession(null);await controller.refresh();
+ assert.equal(requests[2]?.status,401);assert.equal(controller.getSnapshot().state.status,'forbidden');assert.equal(controller.getTaskEntry(f.todo),null);
+ f.setSession({userId:configBase.ownerId,email:configBase.ownerEmail,sessionRef:'synthetic-new-session'});
+ await controller.refresh();assert.equal(requests[3]?.tag,null);assert.equal(requests[3]?.status,200);
+ controller.suspend();await controller.refresh();assert.equal(requests[4]?.tag,null);
 });
 
 test('the narrow read rejects unapproved calls without fallback, and rechecks authority before disclosure',async t=>{
