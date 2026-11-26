@@ -38,3 +38,8 @@
  }
  .header { padding-top:max(20px,env(safe-area-inset-top,0px)); }
 }
+
+.capture{margin-top:12px}
+.capture dl{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin:0}
+.capture dt{color:var(--muted-foreground);font-size:var(--lo-font-small,14px)}
+.capture dd{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}

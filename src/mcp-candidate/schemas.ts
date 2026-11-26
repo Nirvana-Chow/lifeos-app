@@ -7,6 +7,7 @@ import {z} from 'zod';
 import {agentOperations} from '../agent-api/capabilities.ts';
 import {object,todoKeys,todoRequiredKeys,financeKeys,validateId,validateRevision,validateIdempotencyKey,validateTodo,validateFinance,PlatformError} from '../platform/domain.ts';
 import {normalizePersonalFields} from '../personal-candidate/business.ts';
+import {todoOriginalLineLimit,todoOriginalLinePattern} from '../personal-candidate/todo-capture.ts';
 import {organizationTypes,completeOrganizationFields} from '../agent-api/organization.ts';
 import {completeRecordFields,isRecordModule} from '../agent-api/personal-records.ts';
 import {requirementId,validateRequirementFields,validateBaselineBinding} from '../requirements-candidate/domain.ts';
@@ -17,6 +18,8 @@ import {writeFieldsSchema,storageReviewWriteFieldsSchema,organizationFieldsSchem
 import {validateStorageReviewFields} from '../storage-review/agent-fields.ts';
 export type Operation=typeof agentOperations[number];
 const fields=z.record(z.string(),z.unknown());
+const originalLine=z.string().max(todoOriginalLineLimit).regex(todoOriginalLinePattern).optional()
+ .describe('One verbatim input line the owner explicitly confirmed for this todo; omit when unknown.');
 // Envelope parsing deliberately leaves business values to the canonical native
 // normalizers below. The discovery projection must never become a second writer.
 function envelopeSchema(operation:Operation){
@@ -27,6 +30,11 @@ function envelopeSchema(operation:Operation){
  else if(operation.id==='commitTodoClassification'){shape.planId=z.string();shape.digest=z.string();shape.confirmed=z.literal(true);shape.idempotencyKey=z.string();}
  else if(operation.method!=='GET'){
   shape.fields=fields;shape.idempotencyKey=z.string();
+  // Accept only for recovery of a historical receipt. Discovery keeps the previous create schema.
+  if(operation.id==='createTodo'){
+   shape.originalLine=originalLine;
+   shape.expression=z.enum(['written','spoken']).optional();
+  }
   if(operation.method==='PATCH')shape.expectedRevision=z.number();
   if(operation.id==='updateRequirement')shape.baselineBinding=z.union([fields,z.null()]);
  }

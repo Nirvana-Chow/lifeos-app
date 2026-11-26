@@ -15,6 +15,7 @@ type EditorContext={target:TaskTarget;binding:PersonalBinding;singleCreate:boole
 type TaskActions={
  viewPreferenceScope:string|null;
  onRefresh:()=>void;onLogin:()=>void;onLogout:()=>void;onCreateTask:(trigger?:HTMLElement)=>boolean;
+ onOpenTaskBatch:(trigger?:HTMLElement)=>void;
  onOpenTask:(task:TaskIdentity,trigger?:HTMLElement)=>boolean;
  onBeforeNavigate:()=>boolean;
  onBeforeSettingsChange:()=>boolean;
@@ -79,6 +80,13 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   setEditor({target:next,binding,singleCreate});
   return true;
  };
+ const openBatch=(trigger?:HTMLElement)=>{
+  const binding=controller.current?.getEditorBinding();
+  if(!binding||snapshot.access.writable!==true||!snapshot.access.allowedTypes?.includes('todo')||
+   !commandStorage.current||!beforeNavigate())return;
+  if(trigger)returnFocus.current=trigger;
+  setBatchBinding(binding);
+ };
  const restoreFocus=()=>{if(returnFocus.current?.isConnected)returnFocus.current.focus();};
  const close=()=>{setEditor(null);if(!editor?.singleCreate)queueMicrotask(restoreFocus);};
  const save=async(task:TaskIdentity|null,fields:PersonalEditorFields)=>{if(!commandStorage.current)return null;const saved=await controller.current?.saveTask(task,fields)??null;if(saved)cellDrafts.confirm(saved);return saved;};
@@ -96,7 +104,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
   writable={snapshot.access.writable===true} saving={snapshot.saving} uncertain={snapshot.uncertain}
   error={snapshot.mutationError} onSave={save} onClose={close} onRetry={retry}
   onStopWaiting={()=>controller.current?.cancel()}
-  onBatch={editor.singleCreate?undefined:()=>{const binding=controller.current?.getEditorBinding();if(binding){setEditor(null);setBatchBinding(binding);}}}
+  onBatch={editor.singleCreate?undefined:()=>openBatch()}
   onRestoreFocus={editor.singleCreate?restoreFocus:undefined}
   closeGuard={editorCloseGuard}
  />;
@@ -109,6 +117,7 @@ export function ConnectedPersonalWorkspace({children,initialTaskId,initialCreate
    if(beforeNavigate()&&await controller.current?.logout())window.location.replace('/login');
   },
   onCreateTask:trigger=>open({mode:'create'},trigger,!!trigger),
+  onOpenTaskBatch:openBatch,
   onOpenTask:(task,trigger)=>open({mode:'edit',task},trigger),
   onBeforeNavigate:beforeNavigate,
   onBeforeSettingsChange:()=>{
