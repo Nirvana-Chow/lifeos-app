@@ -20,20 +20,27 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
  const routeSource=await readFile(join(source,'app/personal/[...section]/page.tsx'),'utf8');
  const route=routeSource.replace("from '../../../src/platform/runtime'","from '../../../src/search-fixture-principal'");
  assert.notEqual(route,routeSource,'Fixture must replace only the canonical route principal reader');
- await Promise.all([...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),cp(join(source,'src'),join(root,'src'),{recursive:true}),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),writeFile(join(root,'app/personal/[...section]/page.tsx'),route),writeFile(join(root,'app/personal/page.tsx'),workspaceRoute),writeFile(join(root,'app/login/page.tsx'),`export default function Page(){return <main><h1>请重新登录</h1></main>;}`)]);
- await writeFile(join(root,'src/search-fixture-principal.ts'),"export async function readPlatformPagePrincipal(){return {userId:'search-browser-owner'};} export async function readPlatformPasswordCapability(){return false;}");
+ const layoutSource=await readFile(join(source,'app/personal/layout.tsx'),'utf8');
+ const layout=layoutSource.replace("from '../../src/platform/runtime'","from '../../src/search-fixture-principal'");
+ assert.notEqual(layout,layoutSource,'Fixture must retain the actual personal layout');
+ await Promise.all([...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),cp(join(source,'src'),join(root,'src'),{recursive:true}),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),writeFile(join(root,'app/personal/[...section]/page.tsx'),route),writeFile(join(root,'app/personal/page.tsx'),workspaceRoute),writeFile(join(root,'app/personal/layout.tsx'),layout),writeFile(join(root,'app/login/page.tsx'),`export default function Page(){return <main><h1>请重新登录</h1></main>;}`)]);
+ await writeFile(join(root,'src/search-fixture-principal.ts'),`
+export async function readPlatformPagePrincipal(){return {userId:'search-browser-owner'};}
+export async function readPlatformPasswordCapability(){return false;}
+export async function readPlatformLoginCapability(){return {sessionDuration:false};}
+`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});t.after(async()=>{if(t.signal.aborted)t.diagnostic(log);server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('Synthetic Next fixture failed to start')),30000);server.once('exit',()=>{clearTimeout(timer);reject(Error(log));});server.stdout.on('data',chunk=>{log+=String(chunk);const match=log.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
  for(const[width,theme]of[[1365,'light'],[390,'dark'],[430,'light']]as const){
-  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai'}),errors:string[]=[],writes:string[]=[],outside:string[]=[],reads:string[]=[];page.on('pageerror',error=>errors.push(error.message));let expired=false,broken=false;
+  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai'}),errors:string[]=[],writes:string[]=[],outside:string[]=[],reads:string[]=[];page.on('pageerror',error=>errors.push(error.message));let expired=false,broken=false,denyCancelledDetail=false;
   const discardPrompts:string[]=[];
   page.on('dialog',async dialog=>{
    if(dialog.type()==='beforeunload'){await dialog.accept();return;}
    discardPrompts.push(dialog.message());await dialog.dismiss();
   });
-  const config:PersonalConfig={ownerId:'search-browser-owner',ownerEmail:'search@example.invalid',spaceId:'search-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','calendar'],calendarEnabled:true,approval:'personal-manual-v1',baseURL:origin};const repo=Object.assign(new MemoryPort(),{
+  const config:PersonalConfig={ownerId:'search-browser-owner',ownerEmail:'search@example.invalid',spaceId:'search-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','domain','journal','calendar'],calendarEnabled:true,approval:'personal-manual-v1',baseURL:origin};const repo=Object.assign(new MemoryPort(),{
    async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly string[]){
     return structuredClone([...repo.rows.values()].filter(row=>{
      const type=personalEntryType(row,spaceId);
@@ -49,11 +56,24 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   const seedTask=async(key:string,title:string,fields:Record<string,unknown>,owner=config)=>{
    return (await new PersonalService(repo,owner).mutate(owner.ownerId,'todo',null,{spaceId:owner.spaceId,confirmed:true,fields:{title,notes:'Synthetic needle',...fields}},key)).entry;
   };
-  const cancelled=await seedTask('browser-search-cancelled','Synthetic cancelled task',{status:'cancelled',dueOn:'2026-01-01',plannedStartOn:'2025-12-29',plannedEndOn:'2025-12-30'});
+  const openTask=await seedTask('browser-search-cancelled','Synthetic cancelled task',{status:'open',dueOn:'2026-01-01',plannedStartOn:'2025-12-29',plannedEndOn:'2025-12-30'});
+  const {entry:cancelled}=await service.mutate(config.ownerId,'todo',openTask.id,{spaceId:config.spaceId,confirmed:true,
+   expectedRevision:openTask.revision,fields:{...openTask.draft,status:'cancelled'}},'browser-search-cancel-transition');
+  assert.equal(cancelled.source.id,openTask.source.id);
+  assert.equal(cancelled.revision,openTask.revision+1);
   await seedTask('browser-search-outside','Synthetic outside deadline',{status:'cancelled',dueOn:'2026-01-02',plannedStartOn:'2025-12-31',plannedEndOn:'2026-01-01'});
   const legacy=await seedTask('browser-search-legacy','Synthetic legacy task',{dueOn:'2025-12-31'});
   delete (repo.rows.get(legacy.id)!.draft as {status?:string}).status;
   const foreign=await seedTask('browser-search-foreign','Synthetic other owner task',{status:'cancelled',dueOn:'2026-01-01'},{...config,ownerId:'other-owner',spaceId:'other-space'});
+  const areas=[];
+  const linked=[];
+  for(const key of ['first','second']){
+   const {entry:area}=await service.mutate(config.ownerId,'domain',null,{spaceId:config.spaceId,confirmed:true,
+    fields:{title:'同名合成领域',text:'',occurredOn:null,personal:{type:'domain'}}},'browser-search-area-'+key);
+   areas.push(area);
+   linked.push(await seedTask('browser-search-area-task-'+key,'合成领域待办 '+key,{notes:'',dueOn:null,status:'open',
+    personal:{project:null,domain:{id:area.id,sourceId:area.source.id,revision:area.revision},topics:[]}}));
+  }
   const snapshot=JSON.stringify([...repo.rows.values()]);
   const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{}});
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){outside.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET'){
@@ -63,6 +83,7 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')assert.equal(url.searchParams.get('include'),'access');
    reads.push(url.pathname);
    if(expired)return route.fulfill({status:401,json:{error:{code:'AUTH_REQUIRED'}}});
+   if(denyCancelledDetail&&url.pathname==='/api/platform/personal/todo/'+cancelled.id)return route.fulfill({status:403,json:{error:{code:'FORBIDDEN'}}});
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status')return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
    if(url.pathname.endsWith('/search')&&broken)return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});
    const headers=new Headers(request.headers());headers.set('host',url.host);try{const response=await handler(new Request(url,{headers}));if(!response)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});assert.equal(response.headers.get('cache-control'),'private, no-store');return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE'}}});}
@@ -74,13 +95,29 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    if(url===searchUrl)await expect(page.getByRole('heading',{name:'搜索结果',exact:true})).toBeVisible();
    const before=searchReads();
    const trigger=page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true});
-   await expect(trigger).toBeVisible();
+   await expect(trigger).toBeVisible({timeout:30_000});
    const draftInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
    if(url===taskUrl){
-    const grouping=page.getByRole('combobox',{name:'待办表格分组'});
+    const grid=page.locator('[data-task-grid="reui"]');
+    const grouping=grid.getByRole('combobox',{name:'待办表格分组'});
+    const leaves=grid.locator('tbody tr[data-row-id]:not(:has([data-task-group]))');
+    const expected=[todo.id,legacy.id,...linked.map(row=>row.id)].sort();
+    const assertVisibleOnce=async()=>{
+     await expect(leaves).toHaveCount(expected.length);
+     assert.deepEqual(await leaves.evaluateAll(rows=>rows.map(row=>row.getAttribute('data-row-id')).sort()),expected);
+    };
+    await expect(grouping).toHaveValue('none',{timeout:30_000});
+    await assertVisibleOnce();
+    await grouping.selectOption('project');
+    await expect(grid.locator('[data-task-group="project"]')).toHaveText('未关联项目4 项');
+    await assertVisibleOnce();
     await grouping.selectOption('area');
-    await expect(page.locator('[data-task-group="area"]')).toHaveText('未关联领域1 项');
-    const title=page.locator('[data-task-grid="reui"] tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
+    await expect(grid.locator('[data-task-group="area"]')).toHaveCount(3);
+    for(const area of areas)await expect(grid.locator('[data-task-group-id="'+area.id+'"]')).toHaveText('同名合成领域1 项');
+    await expect(grid.locator('[data-task-group-id="unassigned"]')).toHaveText('未关联领域2 项');
+    await assertVisibleOnce();
+    assert.deepEqual(writes,[],'Switching grouping is presentation only');
+    const title=grid.locator('tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
     await title.dblclick();
     await draftInput.fill('Unsent synthetic task title');
    }
@@ -127,10 +164,31 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    const standalone=popup.getByRole('link',{name:'在独立页面打开',exact:true});
    await expect(standalone).toHaveAttribute('href','/personal/search?q=needle&from=2025-12-31&to=2025-12-31');
    assert.equal(await popup.evaluate(element=>{const box=element.getBoundingClientRect();return box.left>=0&&box.right<=innerWidth; }),true);
+   await popup.getByLabel('结束日期',{exact:true}).fill('2026-01-01');
+   await field.press('Enter');
+   const cancelledButton=popup.getByRole('button',{name:'Synthetic cancelled task 查看原记录',exact:true});
+   const cancelledRow=popup.getByRole('listitem').filter({has:page.getByRole('button',{name:'Synthetic cancelled task 查看原记录',exact:true})});
+   await expect(cancelledRow.getByText('已取消',{exact:true})).toBeVisible();
+   await expect(cancelledRow.getByText('待办 · 截止日期：2026-01-01',{exact:true})).toBeVisible();
+   await cancelledButton.click();
+   const popupDetail=popup.getByRole('region',{name:'原业务记录只读详情'});
+   await expect(popupDetail.getByText('已取消',{exact:true})).toBeVisible();
+   await expect(popupDetail.getByText('待办 · 截止日期：2026-01-01',{exact:true})).toBeVisible();
+   assert.ok(reads.includes('/api/platform/personal/todo/'+cancelled.id));
+   await popupDetail.getByRole('button',{name:'返回搜索结果'}).click();
+   await expect(cancelledButton).toBeFocused();
+   denyCancelledDetail=true;
+   await cancelledButton.click();
+   await expect(popup.getByRole('alert')).toContainText('搜索结果已隐藏');
+   await expect(popup.getByText(/Synthetic cancelled task|Synthetic needle|已取消/)).toHaveCount(0);
+   denyCancelledDetail=false;
+   await field.press('Enter');
+   await expect(cancelledButton).toBeVisible();
    expired=true;
    await field.press('Enter');
    await expect(popup.getByRole('alert')).toContainText('本人会话已失效');
    await expect(journal).toHaveCount(0);
+   await expect(cancelledButton).toHaveCount(0);
    expired=false;
    await page.keyboard.press('Escape');
    await expect(popup).toHaveCount(0);
@@ -180,7 +238,12 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   const detail=page.getByRole('region',{name:'原业务记录只读详情'});
   await expect(detail.getByRole('heading',{name:'Synthetic cancelled task',exact:true})).toBeVisible();
   await expect(detail.getByText('已取消',{exact:true})).toBeVisible();
+  await expect(detail.getByText('待办 · 截止日期：2026-01-01',{exact:true})).toBeVisible();
   assert.ok(reads.includes('/api/platform/personal/todo/'+cancelled.id));
+  await page.goBack();
+  await expect(cancelledLink).toBeVisible();
+  await page.goForward();
+  await expect(detail.getByRole('heading',{name:'Synthetic cancelled task',exact:true})).toBeVisible();
   await detail.getByRole('link',{name:'返回搜索结果',exact:true}).click();
   await expect(cancelledLink).toBeVisible();
   await expect(keyword).toHaveValue('needle');
@@ -207,7 +270,9 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
 
   broken=true;await page.goto(origin+'/personal/search?q=needle');await expect(page.getByRole('region',{name:'本人记录搜索'}).getByRole('alert')).toContainText('无法核对完整搜索结果');await expect(original).toHaveCount(0);broken=false;await page.getByRole('button',{name:'重新读取',exact:true}).click();await expect(original).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(writes,[]);assert.deepEqual(outside,[]);assert.equal(JSON.stringify([...repo.rows.values()]),snapshot);
-  expired=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(original).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'请重新登录',exact:true})).toBeVisible();assert.deepEqual(errors,[]);await page.close();
+  expired=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(original).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'请重新登录',exact:true})).toBeVisible();assert.deepEqual(errors,[]);
+  console.log('GROUPING_SEARCH_BROWSER '+JSON.stringify({width,theme,sameNameAreas:areas.length,ungrouped:2,visibleRows:4,groupingModes:3,writes:writes.length,draftRetained:true,hiddenOn:[401,403],cancelledDetail:cancelled.id,backForward:true}));
+  await page.close();
  }
  assert.ok(!/Failed to compile|Module not found/.test(log),log);
 });
