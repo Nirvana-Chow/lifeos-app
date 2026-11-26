@@ -69,9 +69,48 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
  const healthDetail=useRef<{id:string;scope:string;url:string;bodySection:BodySection|null}|null>(null);
  const healthTrigger=useRef<string|null>(null),healthClosePending=useRef(false);
  const [healthHistoryUnavailable,setHealthHistoryUnavailable]=useState(false);
+ const [bodyFocus,setBodyFocus]=useState<{id:string;section:BodySection}|null>(null);
  const bodyLanding=type==='health'&&health.section==='body'&&!health.bodySection&&!health.bodyOriginals;
- const bodyScroll=useRef<Partial<Record<BodySection,number>>>({});
  const compactHealth=type==='health'&&(health.compact||health.bodySection==='circumference');
+ const bodyScroll=useRef<Partial<Record<BodySection,{top:number;rowId?:string;offset:number}>>>({});
+ const restoringBodyScroll=useRef(false),bodyGrid=useRef<HTMLDivElement>(null);
+ const bodySection=health.bodySection;
+ useLayoutEffect(()=>{
+  if(!bodySection||health.view!=='table'||!status)return;
+  const position=bodyScroll.current[bodySection];
+  if(!position?.rowId)return;
+  const viewport=bodyGrid.current?.querySelector<HTMLElement>('[data-slot="data-grid-table-viewport"]');
+  if(!viewport)return;
+  const selector='[data-row-id="'+CSS.escape(position.rowId)+'"]';
+  restoringBodyScroll.current=true;
+  let frame=0,attempts=0,previous:number|undefined;
+  const stop=()=>{
+   cancelAnimationFrame(frame);
+   restoringBodyScroll.current=false;
+  };
+  const restore=()=>{
+   const row=viewport.querySelector<HTMLElement>(selector);
+   if(row){
+    const offset=row.getBoundingClientRect().top-viewport.getBoundingClientRect().top;
+    const delta=offset-position.offset;
+    if(Math.abs(delta)<=1&&previous===offset){stop();return;}
+    if(Math.abs(delta)>1)viewport.scrollTop+=delta;
+    previous=offset;
+   }
+   if(++attempts<8)frame=requestAnimationFrame(restore);
+   else stop();
+  };
+  frame=requestAnimationFrame(restore);
+  viewport.addEventListener('wheel',stop,{once:true,passive:true});
+  viewport.addEventListener('pointerdown',stop,{once:true,passive:true});
+  viewport.addEventListener('keydown',stop,{once:true});
+  return()=>{
+   stop();
+   viewport.removeEventListener('wheel',stop);
+   viewport.removeEventListener('pointerdown',stop);
+   viewport.removeEventListener('keydown',stop);
+  };
+ },[bodySection,health.view,compactHealth,!!status]);
  const [journalAutosave,setJournalAutosave]=useState(false),[journalComposing,setJournalComposing]=useState(false),[journalSaveNotice,setJournalSaveNotice]=useState('');
  const autosaveTimer=useRef<number|undefined>(undefined),verifiedRef=useRef(verified);
  const journalSelection=useRef<{field:HTMLTextAreaElement;entryId:string;start:number;end:number;direction:'forward'|'backward'|'none'}|null>(null);
@@ -259,10 +298,11 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
    const retained=bodySection?draftCache.current:null;
    const cached=retained?.editor.entry;
    if(retained?.bodySection)draftCache.current=null;
-   setEditor(retained?.scope===binding&&retained.bodySection===bodySection&&cached&&
+   setEditor(after.writable&&retained?.scope===binding&&retained.bodySection===bodySection&&cached&&
     cached.id===row.id&&cached.source.id===row.source.id&&cached.revision===row.revision
     ?retained.editor:{entry:row,fields,initial:JSON.stringify(fields)});
    setHistory(checkedHistory);
+   if(type==='health'&&after.writable!==current.current.writable){current.current=after;setStatus(after);}
   }catch(e){if(token===generation.current)setError(e instanceof Error?e.message:'读取未完成。');}
   finally{
    if(token===generation.current){
@@ -435,6 +475,23 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
    return personal?.type==='media'&&matchesMediaBrowse(personal,mediaKind,options.topic);
   });
  },[type,rows,healthEntries,health.section,health.bodySection,health.category,health.status,mediaKind,options.topic]);
+ const focusRowIndex=bodyFocus&&bodyFocus.section===bodySection
+  ?tableRows.findIndex(entry=>entry.id===bodyFocus.id):-1;
+ useEffect(()=>{
+  if(!bodyFocus)return;
+  let frame=0,attempts=0;
+  const focus=()=>{
+   if(editorRef.current){setBodyFocus(null);return;}
+   const target=focusRowIndex>=0?bodyGrid.current?.querySelector<HTMLElement>(
+    '[data-health-record="'+CSS.escape(bodyFocus.id)+'"]'):null;
+   if(target){target.focus({preventScroll:true});setBodyFocus(null);return;}
+   if(focusRowIndex>=0&&++attempts<8){frame=requestAnimationFrame(focus);return;}
+   root.current?.querySelector<HTMLAnchorElement>('[aria-label="身体指标记录"] a[aria-current]')?.focus({preventScroll:true});
+   setBodyFocus(null);
+  };
+  frame=requestAnimationFrame(focus);
+  return()=>cancelAnimationFrame(frame);
+ },[bodyFocus,focusRowIndex]);
  const healthFiltered=!!search.trim()||health.category!=='all'||health.status!=='all';
  const emptyTable=type==='person'?(entries.length?'没有符合搜索条件的人物。':'暂无已确认人物。'):type==='health'
   ? (healthFiltered?'当前筛选下暂无已读记录。':'当前分区暂无已读记录。')
@@ -510,13 +567,16 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
    :status&&type==='health'&&health.view==='trend'?<>
      <label className={s.metric}>查看指标<select value={health.metric} onChange={event=>health.setMetric(event.target.value as HealthMetric)}><HealthMetricOptions metrics={health.metrics}/></select></label>
      <HealthTrendView trend={projectHealthTrend(healthEntries,health.metric)}/>
-   </>:status&&<div className={s.grid} style={healthGridStyle} onScrollCapture={health.bodySection?event=>{
-      if(event.target instanceof HTMLElement&&event.target.dataset.slot==='data-grid-table-viewport')
-       bodyScroll.current[health.bodySection!]=event.target.scrollTop;
-     }:undefined}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual key={(health.bodySection??'')+(compactHealth?'compact':'standard')} height="100%" estimateSize={gridRowEstimate} overscan={8}
+   </>:status&&<div className={s.grid} style={healthGridStyle} ref={bodySection?bodyGrid:undefined} onScrollCapture={bodySection?event=>{
+      const viewport=event.target;
+      if(restoringBodyScroll.current||!(viewport instanceof HTMLElement)||viewport.dataset.slot!=='data-grid-table-viewport')return;
+      const top=viewport.getBoundingClientRect().top;
+      const row=Array.from(viewport.querySelectorAll<HTMLElement>('tbody tr[data-row-id]')).find(value=>value.getBoundingClientRect().bottom>top);
+      bodyScroll.current[bodySection]={top:viewport.scrollTop,rowId:row?.dataset.rowId,offset:row?row.getBoundingClientRect().top-top:0};
+     }:undefined}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual key={(health.bodySection??'')+(compactHealth?'compact':'standard')} height="100%" estimateSize={gridRowEstimate} overscan={8} scrollToRowIndex={focusRowIndex>=0?focusRowIndex:undefined}
       virtualizerOptions={health.bodySection?{
        ...compactHealthVirtualizerOptions,
-       initialOffset:()=>bodyScroll.current[health.bodySection!]??0,
+       initialOffset:()=>bodyScroll.current[health.bodySection!]?.top??0,
       }:compactHealth?compactHealthVirtualizerOptions:undefined}/></DataGrid></DataGridContainer></div>}
  </>;
  return <div ref={root} className={s.workbench} data-personal-record-module={type}>
@@ -536,7 +596,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
     if(editorRef.current)return;
     const row=root.current?.querySelector<HTMLElement>('[data-health-record="'+CSS.escape(id)+'"]');
     if(row)row.focus({preventScroll:true});
-    else root.current?.querySelector<HTMLAnchorElement>('[aria-label="身体指标记录"] a[aria-current]')?.focus({preventScroll:true});
+    else if(bodySection)setBodyFocus({id,section:bodySection});
    });
   }:undefined}><DialogTitle>{editor?.entry?'编辑':'新增'}{title}</DialogTitle><DialogDescription className={s.description}>{careerSection==='resume'?'引用已保存的职业经历与项目成果，整理和预览简历版本。':recordModuleDescriptions[type]}</DialogDescription>{fields&&<form onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={blocked||!status?.writable} className={s.form}><label>{type==='person'?'姓名':'标题'}<Input required maxLength={240} value={fields.title} onChange={event=>setFields({...fields,title:event.target.value})}/></label>{writeJournal&&type==='journal'&&<Button type="button" variant="outline" size="sm" disabled={fields.text.length>0}
    onClick={()=>{

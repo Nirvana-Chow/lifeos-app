@@ -268,20 +268,29 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   const viewport=page.locator('[data-slot="data-grid-table-viewport"]');
   await viewport.evaluate(element=>{element.scrollTop=1300;});
   await expect.poll(()=>viewport.evaluate(element=>element.scrollTop)).toBeGreaterThan(1000);
-  const scroll=await viewport.evaluate(element=>element.scrollTop);
   const scrollRecord=page.getByRole('link',{name:'合成滚动测量 15',exact:true});
   await scrollRecord.click();
   await expect(title).toHaveValue('合成滚动测量 15');
   await page.keyboard.press('Escape');
   await expect(scrollRecord).toBeFocused();
   assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
-  const restoreScroll=await viewport.evaluate(element=>element.scrollTop);
+  const rowOffset=()=>scrollRecord.evaluate(element=>element.getBoundingClientRect().top-
+   element.closest('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect().top);
+  const beforeSwitch=await rowOffset();
   await fat.click();
   await page.goBack();
   await expect(weight).toBeFocused();
-  await expect.poll(()=>viewport.evaluate((element,top)=>Math.abs(element.scrollTop-top),restoreScroll)).toBeLessThan(16);
-  assert.ok(scroll>1000);
-  t.diagnostic('390 px list scroll retained at '+restoreScroll+' px after category traversal');
+  await expect.poll(async()=>Math.abs((await rowOffset())-beforeSwitch)).toBeLessThan(16);
+  assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
+  t.diagnostic('390 px list restored the same row within 16px after category traversal');
+  const farId=items.find(record=>record.draft.title==='合成滚动测量 29')!.id;
+  await page.goto(canonical+'#body-weight/'+farId);
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.reload();
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'合成滚动测量 29',exact:true})).toBeFocused();
   items=originalItems;
 
   await page.goto(canonical+'#body-circumference/'+items[6].id);
