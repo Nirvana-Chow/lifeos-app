@@ -46,13 +46,38 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
     if (!enabled) return;
     function syncSection() {
       const hash = window.location.hash;
-      const section = hash==='#exercise' ? 'exercise' : hash==='#sleep' ? 'sleep' : 'body';
+      const section = hash==='#exercise' ? 'exercise' : hash==='#sleep' ? 'sleep' : hash===''||hash==='#body' ? 'body' : null;
+      if (!section) return;
       setBrowse(current => current.section===section ? current : initialBrowse(section));
     }
     syncSection();
     window.addEventListener('hashchange',syncSection);
     return () => window.removeEventListener('hashchange',syncSection);
   },[enabled]);
+  useEffect(() => {
+    if (!enabled) return;
+    const main = root.current?.closest<HTMLElement>('main#personal-main');
+    const skip = main?.closest('.lo-shell')?.querySelector<HTMLAnchorElement>(':scope > a.lo-skip[href="#personal-main"]');
+    if (!main || !skip) return;
+
+    let addedTabIndex = false;
+    const focusMain = (event:MouseEvent) => {
+      if (event.defaultPrevented || event.button!==0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      // Keep the health section's deep link and browser history when jumping to the landmark.
+      event.preventDefault();
+      if (!main.hasAttribute('tabindex')) {
+        main.tabIndex = -1;
+        addedTabIndex = true;
+      }
+      main.focus({preventScroll:true});
+      main.scrollIntoView({block:'start'});
+    };
+    skip.addEventListener('click',focusMain);
+    return () => {
+      skip.removeEventListener('click',focusMain);
+      if (addedTabIndex && main.getAttribute('tabindex')==='-1') main.removeAttribute('tabindex');
+    };
+  },[enabled,root]);
 
   return {
     ...browse,

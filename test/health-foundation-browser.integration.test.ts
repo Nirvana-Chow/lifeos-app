@@ -127,6 +127,14 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   const row = (name:string) => page.getByRole('button',{name,exact:true});
   const dialog = page.getByRole('dialog');
   const filters = page.getByRole('region',{name:'运动记录筛选'});
+  const skip = page.getByRole('link',{name:'跳到主要内容',exact:true});
+  const main = page.locator('main#personal-main');
+  async function useSkipLink() {
+    for(let tab=0; tab<60 && !await skip.evaluate(link=>link===document.activeElement); tab++)
+      await page.keyboard.press('Tab');
+    await expect(skip).toBeFocused();
+    await page.keyboard.press('Enter');
+  }
   await expect(body).toHaveAttribute('aria-current','location');
   await expect(row('合成体重体脂')).toBeVisible();
   await expect(row('合成睡眠')).toHaveCount(0);
@@ -163,11 +171,26 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await page.getByLabel('查看指标').selectOption('waist');
   await expect(page.getByRole('img',{name:/^腰围，cm，1 条有日期的记录/})).toBeVisible();
 
+  await page.goto(origin+'/personal/health#body');
+  await page.reload();
+  await expect(body).toHaveAttribute('aria-current','location');
+  await expect(row('合成体重体脂')).toBeVisible();
   await sleep.click();
   await expect(page).toHaveURL(origin+'/personal/health#sleep');
   await expect(row('合成睡眠')).toBeVisible();
   await expect(row('合成体重体脂')).toHaveCount(0);
   await expect(row('合成健身')).toHaveCount(0);
+  await page.reload();
+  await expect(sleep).toHaveAttribute('aria-current','location');
+  await row('趋势').click();
+  await expect(page.getByLabel('查看指标')).toHaveValue('sleepMinutes');
+  await useSkipLink();
+  await expect(sleep).toHaveAttribute('aria-current','location');
+  await expect(row('趋势')).toHaveAttribute('aria-pressed','true');
+  await expect(main).toBeFocused();
+  await expect(page).toHaveURL(origin+'/personal/health#sleep');
+  await page.keyboard.press('Tab');
+  assert.ok(await main.evaluate(element=>element.contains(document.activeElement)));
   await exercise.focus();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(origin+'/personal/health#exercise');
@@ -199,6 +222,20 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await filters.getByLabel('运动状态').selectOption('completed');
   await expect(row('合成飞盘实绩')).toBeVisible();
   await expect(row('合成飞盘计划')).toHaveCount(0);
+  await useSkipLink();
+  await expect(exercise).toHaveAttribute('aria-current','location');
+  await expect(row('表格')).toHaveAttribute('aria-pressed','true');
+  await expect(filters.getByRole('button',{name:'飞盘',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(filters.getByLabel('运动状态')).toHaveValue('completed');
+  await expect(main).toBeFocused();
+  await expect(page).toHaveURL(origin+'/personal/health#exercise');
+  await page.evaluate(()=>{window.location.hash='#personal-main';});
+  await expect(page).toHaveURL(origin+'/personal/health#personal-main');
+  await expect(exercise).toHaveAttribute('aria-current','location');
+  await expect(filters.getByLabel('运动状态')).toHaveValue('completed');
+  await page.goBack();
+  await expect(page).toHaveURL(origin+'/personal/health#exercise');
+  await expect(row('合成飞盘实绩')).toBeVisible();
   await row('合成飞盘实绩').click();
   await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
   await page.keyboard.press('Escape');
