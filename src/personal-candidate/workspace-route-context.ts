@@ -2,7 +2,10 @@
 import {createContext,useContext,useLayoutEffect,type RefObject} from 'react';
 import type {LifeOSWorkspaceProps} from '../ui-review/contract';
 
-export type WorkspaceRoutePath='/personal'|'/personal/journal';
+export type WorkspaceRoutePath='/personal'|'/personal/journal'|'/personal/finance';
+export function isWorkspaceRoute(path:string):path is WorkspaceRoutePath{
+ return path==='/personal'||path==='/personal/journal'||path==='/personal/finance';
+}
 export type WorkspaceRoute={path:WorkspaceRoutePath;push:(href:string)=>void};
 export type TaskShellFrame=LifeOSWorkspaceProps&{showApiKeys?:boolean;passwordEnabled?:boolean};
 export const WorkspaceRouteContext=createContext<{
