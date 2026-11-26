@@ -83,6 +83,7 @@
     }
     > :global(.lo-view-switch) svg { display: none; }
     > :global(.lo-filter-button) { grid-area: 2 / 3; min-height: 44px; }
+    > :global(.lo-task-batch-action) { grid-area: 3 / 1 / 4 / -1; justify-self: start; }
   }
 
   :global(html:not([data-lifeos-workspace-layout="desktop"])) .root[data-flat-projects] {
