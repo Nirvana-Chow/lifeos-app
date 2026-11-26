@@ -318,3 +318,31 @@ test('refresh times out waiting for status transport or overview body and ignore
   }finally{clearTimeout(timer);release();await pending;}
  }
 });
+
+test('only the connected task reader requests and accepts the distinct workspace snapshot', async()=>{
+ const path='/api/platform/personal/todo/workspace-snapshot?today=2030-11-02';
+ const full='/api/platform/personal/overview?today=2030-11-02';
+ const date='2030-11-02',spaceId='synthetic-task-reader-space';
+ for(const [taskWorkspace,expectedPath,scope] of [
+  [true,path,'task-workspace-current-snapshot'],
+  [false,full,'full-current-snapshot'],
+  [true,path,'full-current-snapshot'],
+ ] as const){
+  const reads:string[]=[];
+  const controller=new PersonalWorkspaceController({
+   taskWorkspace,origin:'http://127.0.0.1:3000',today:()=>date,key:()=>crypto.randomUUID(),
+   fetcher:async input=>{
+    const route=String(input);
+    reads.push(route);
+    if(route.endsWith('/status'))return Response.json({scope:'personal-manual-candidate',ownerId:'synthetic-task-reader-owner',spaceId,storageVerified:true,allowedTypes:['todo'],writable:false});
+    if(route.endsWith('/availability'))return Response.json({});
+    return Response.json({scope,truncated:false,total:0,items:[],today:date,observedAt:date+'T00:00:00Z'});
+   },
+  });
+  await controller.refresh();
+  assert.deepEqual(reads.filter(read=>read.includes('?today=')),[expectedPath]);
+  const mismatched=taskWorkspace&&scope==='full-current-snapshot';
+  assert.equal(controller.getSnapshot().state.status,mismatched?'error':'ready');
+  assert.deepEqual(controller.getClassificationEntries(),taskWorkspace?null:[]);
+ }
+});
