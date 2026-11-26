@@ -1,3 +1,4 @@
+import {expressionTypes} from '../todo-provenance/domain.ts';
 import {executionArgumentSchema} from '../requirement-events/argument-schemas.ts';
 import {fileArgumentSchema,parseFileArguments} from '../file-handoff/arguments.ts';
 import {isRequirementEventOperation} from '../requirement-events/operations.ts';
@@ -27,6 +28,7 @@ function envelopeSchema(operation:Operation){
  else if(operation.id==='commitTodoClassification'){shape.planId=z.string();shape.digest=z.string();shape.confirmed=z.literal(true);shape.idempotencyKey=z.string();}
  else if(operation.method!=='GET'){
   shape.fields=fields;shape.idempotencyKey=z.string();
+  if(operation.id==='createTodo')shape.expression=z.enum(expressionTypes).optional();
   if(operation.method==='PATCH')shape.expectedRevision=z.number();
   if(operation.id==='updateRequirement')shape.baselineBinding=z.union([fields,z.null()]);
  }
@@ -43,6 +45,7 @@ export function argumentSchema(operation:Operation):z.ZodType{
  else if(operation.id==='commitTodoClassification'){shape.planId=recordId;shape.digest=digest;shape.confirmed=z.literal(true);shape.idempotencyKey=commandKey;}
  else if(operation.method!=='GET'){
   shape.idempotencyKey=commandKey;
+  if(operation.id==='createTodo')shape.expression=z.enum(expressionTypes).optional().describe('Use only an explicitly supplied expression type; omission is unknown.');
   if(operation.method==='PATCH')shape.expectedRevision=operation.module==='requirements'?z.number().int().min(0).max(2147483647).describe('CAS revision from GET; zero only for the first edit of a public LO-ID.'):revision;
   if(operation.id==='updateRequirement')shape.baselineBinding=baselineBinding;
   if(operation.module==='organization'){

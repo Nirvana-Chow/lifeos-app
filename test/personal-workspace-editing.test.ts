@@ -28,7 +28,7 @@ const {PersonalRecordForm}=load('src/personal-candidate/record-form.tsx');
 const {SourceSummary}=load('src/ui-review/source-summary.tsx');
 const task={id:'11111111-1111-4111-8111-111111111111',revision:3,title:'Synthetic reminder',notes:'',status:'open' as const,dueOn:null,area:null,project:null,inInbox:null,sourceLabel:'Apple 提醒事项',sourceCapturedAt:'2026-10-25T03:00:00Z'};
 function workspace(overrides:Partial<LifeOSWorkspaceProps>={}){
- const props:LifeOSWorkspaceProps={state:{status:'ready',data:{tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']},initialPage:'tasks',initialView:'list',onOpenTask:()=>{},onCreateTask:()=>{},...overrides};
+ const props:LifeOSWorkspaceProps={state:{status:'ready',data:{tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'本人网页',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'}},access:{authenticated:true,writable:true,loginAllowed:true,allowedTypes:['todo','journal','project','domain','topic']},initialPage:'tasks',initialView:'list',onOpenTask:()=>{},onCreateTask:()=>{},...overrides};
  return renderToStaticMarkup(React.createElement(LifeOSWorkspace,props));
 }
 test('task workspace exposes browsing sections and reserves category creation for its explicit section',()=>{
@@ -44,9 +44,9 @@ test('read-only and unverified workspace never expose category creation and labe
  }
 });
 test('source summary keeps total and original Apple timing semantics when rendered',()=>{
- const data={tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'手工录入',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'};
+ const data={tasks:[task,{...task,id:'22222222-2222-4222-8222-222222222222',sourceCapturedAt:'2026-10-26T04:00:00Z'},{...task,id:'33333333-3333-4333-8333-333333333333',sourceLabel:'本人网页',sourceCapturedAt:null}],areas:[],projects:[],coverage:'complete',today:'2026-10-27',asOf:'2026-10-27T09:00:00Z'};
  const html=renderToStaticMarkup(React.createElement(SourceSummary,{data}));
- assert.match(html,/全部待办[\s\S]*3/);assert.match(html,/Apple 提醒事项[\s\S]*2/);assert.match(html,/手工录入[\s\S]*1/);assert.match(html,/2026-10-25T03:00:00Z/);assert.match(html,/2026-10-26T04:00:00Z/);assert.match(html,/2026-10-27T09:00:00Z/);assert.match(html,/非实时|不是实时/);assert.match(html,/不会.*(?:写回|反写).*Apple/);
+ assert.match(html,/全部待办[\s\S]*3/);assert.match(html,/Apple 提醒事项[\s\S]*2/);assert.match(html,/本人网页：1/);assert.match(html,/获准 Agent API：0/);assert.match(html,/2026-10-25T03:00:00Z/);assert.match(html,/2026-10-26T04:00:00Z/);assert.match(html,/2026-10-27T09:00:00Z/);assert.match(html,/非实时|不是实时/);assert.match(html,/不会.*(?:写回|反写).*Apple/);
  const partial=renderToStaticMarkup(React.createElement(SourceSummary,{data:{...data,tasks:[{...task,sourceCapturedAt:null}],coverage:'partial'}}));
  assert.match(partial,/全部待办[\s\S]*未知/);assert.match(partial,/Apple.*读取时间.*未提供|Apple.*读取.*未知/);
 });

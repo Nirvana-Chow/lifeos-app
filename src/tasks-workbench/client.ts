@@ -54,6 +54,16 @@ export class TasksClient{
  async history(id:string):Promise<TaskEntry[]>{
   id=validateId(id);const value=await this.request('/api/platform/todos/'+id+'/history');try{if(!record(value)||!Array.isArray(value.history))throw Error();const entries=value.history.map(parseEntry);if(entries.some(entry=>entry.id!==id))throw Error();return entries;}catch{throw this.invalidResponse();}
  }
+ async originalInbox(pin:{id:string;sourceId:string;revision:number}):Promise<string>{
+  const id=validateId(pin.id),sourceId=validateId(pin.sourceId),revision=validateRevision(pin.revision);
+  const value=await this.request('/api/platform/inbox/'+id+'/history');
+  if(!record(value)||!Array.isArray(value.history))throw this.invalidResponse();
+  const original=value.history.find(row=>record(row)&&!('ownerId'in row)&&row.kind==='inbox'&&
+    row.id===id&&row.revision===revision&&record(row.source)&&row.source.id===sourceId&&
+    row.source.externalId===id&&record(row.draft)&&typeof row.draft.text==='string');
+  if(!original)throw this.invalidResponse();
+  return original.draft.text;
+ }
  async send(command:TaskCommand):Promise<TaskMutationResult>{
   const value=await this.request(command.path,command);try{if(!record(value)||typeof value.duplicate!=='boolean')throw Error();const entry=parseEntry(value.entry);if(command.method==='PATCH'&&!command.path.endsWith('/'+entry.id))throw Error();return{entry,duplicate:value.duplicate};}catch{throw this.invalidResponse(true);}
  }

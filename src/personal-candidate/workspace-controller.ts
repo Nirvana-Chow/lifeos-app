@@ -223,7 +223,7 @@ export class PersonalWorkspaceController{
    for(const {type,link} of personalReferences(draft)){const target=this.entries.find(e=>e.id===link.id);if(!target||target.source.id!==link.sourceId||target.revision!==link.revision||editorFromEntry(target,binding.spaceId).type!==type)throw Error('关联记录或版本已变化，请重新选择后保存。');}
    const check=await this.json('/api/platform/personal/status',preflight.signal);if(token!==this.generation||session!==this.session)return null;
    if(!check.response.ok||!obj(check.body)||check.body.scope!=='personal-manual-candidate'||check.body.ownerId!==binding.ownerId||check.body.spaceId!==binding.spaceId||check.body.storageVerified!==true||check.body.writable!==true||!Array.isArray(check.body.allowedTypes)||!check.body.allowedTypes.includes('todo')){this.suspend();this.emit({state:{status:'forbidden',message:'会话或写入权限已变化，请重新登录核对。'}});return null;}
-   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision);
+   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision,task?undefined:fields.expression);
    if(batchCommand&&canonical(command)!==canonical(batchCommand))throw Error('保留的行请求内容不符，未发送。');
    this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,command.id===null);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
   }catch(error){if(token===this.generation)this.emit({mutationError:error instanceof Error?error.message:'操作未确认，请重新读取核对。'});return null;}

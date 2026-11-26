@@ -111,6 +111,26 @@ Use these operations only after exact v2 discovery; the three native module gate
 `portfolio` metadata has `type:'portfolio'`, `schemaVersion:1`, explicit currency, project/domain/topic links and `portfolioKind`: account, asset or investment. Accounts preserve account type and `{balanceMinor,asOf}`; assets preserve asset type and `{valuationMinor,valuationOn,account}`; investments preserve symbol/name, decimal-string quantity, exact `{costMinor,valuationMinor,asOf}` and optional account/asset pins. Amounts are exact integer minor-unit strings; null means unknown and zero remains zero. Monetary values need their actual as-of/valuation date. Keep currencies separate; do not guess exchange rates, current prices, balances or return. Portfolio account references must point to portfolio account records, and asset references to portfolio asset records; the shared transaction verifies subtype, owner, source ID and current revision after locking. These are manual dated account/asset/investment records, separate from finance transactions; no bank/broker connection, trading, payment, automatic valuation or reconciliation is enabled.
 
 
+## Todo provenance
+
+When creating a Todo, pass the optional top-level `expression` as `written` or `spoken` only when explicitly supplied by the user. Omit it if unknown. The API sets the verified capture channel server-side and rejects a channel in the request. Writing style is not evidence of an expression type or recording. Detail and receipt may include immutable `provenance` with `channel` and `expression`; for old sources their absence means unknown. Preserve the original key and body on retries. Corrections do not replace the original text or provenance.
+
+## Vocabulary cards and reviews
+
+Discover through `GET /v2/capabilities` using the same dedicated learning credential that will read or write. An existing broad, Article, or OAuth grant does not imply learning access. This is a scoped REST contract.
+
+When advertised and explicitly confirmed, create a card with `POST /v1/learning/cards` and body `{confirmed:true,front,back}`. Read it with `GET /v1/learning/cards/{id}`; an unreviewed card has no due time. To review, fetch the current card revision and latest review ID. Obtain the user's explicit `again` or `recalled` rating, then send `POST /v1/learning/cards/{id}/reviews` with `{confirmed:true,cardRevision,previousId,rating}`. Use `previousId: null` only when no prior review exists.
+
+Keep the original body and idempotency key before either POST. Independently verify the returned card and event IDs through the card or exact review GET and check the rating, revision and due projection. If the result is unknown, reverify the same credential and retry the exact original body/key. When the server definitively reports a revision conflict, reread and get confirmation before a new command. A vocabulary card is independent from saved articles and resource collections.
+
+## Private articles
+
+For Private Article REST operations, use only the operations advertised by live v2 discovery for the current dedicated Article credential. If absent, use the owner website or stop for separately approved provisioning. A read credential can discover `snapshotArticle` and `getArticle`. An explicitly write-enabled Article credential can additionally discover `createArticle` and `updateArticle`. General business credentials, server MCP and OAuth do not confer Article permissions.
+
+The REST contract uses the full `fields` object with `title`, `text`, `occurredOn` and `personal`. It preserves the complete nonblank body with its paragraph breaks. Use `occurredOn: null` when the date is unknown. Set `personal` to `{type:"article",schemaVersion:1,author,attribution,sourceURL}`. Attribution is `original`, `excerpt` or `summary`. Provide an author or a credential-free absolute HTTP(S) source URL, using `null` for unknown optional values. Save only after the user confirms the article and supplied attribution.
+
+When discovery advertises the approved operation, preserve the original idempotency key and independently compare the complete body, attribution, author, URL, source ID and current revision. Use the revision from a fresh GET for updates. The source address is a reference. Saving creates a private article.
+
 ## Requirement event transport and fenced execution
 
 Only when exact v2 discovery advertises `eventTransports` with `streamRequirementEvents`, `transport:'sse'`, the fixed `/v1/requirement-events/stream` path and requirements:read may the reviewed native listener connect. This descriptor is separate from JSON `operations`; never call it through ordinary `lifeos_call`/LifeOSApiClient JSON execution, infer it from source code, forward arbitrary headers, or expose the Key. Native stdin is cursor-only, with credential-free JSONL batches; persist the cursor/queue before accepting a batch. Empty heartbeat/reconnect never launches an AI turn. Worker slots default0 and require reservation against the existing parent Goal, not an additional parallel tree.

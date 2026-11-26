@@ -1,3 +1,4 @@
+import {todoCapture} from '../todo-provenance/domain.ts';
 import{clonePersonalJSON,editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
 import type{WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
@@ -31,6 +32,7 @@ export function taskReceiptMatchesSubmission(target:TaskTarget,fields:PersonalEd
  if(target.mode==='edit'&&(receipt.id!==target.task.id||receipt.revision!==target.task.revision+1)||target.mode==='create'&&receipt.revision!==1)return false;
  try{
   if(editorFromEntry(receipt,spaceId).type!=='todo')return false;
+  if(target.mode==='create'&&fields.expression!==undefined&&todoCapture(receipt.source.original)?.expression!==fields.expression)return false;
   const expected=todoDraftFromEditor(fields);
   return JSON.stringify(validateTodo(receipt.draft))===JSON.stringify(expected);
  }catch{return false;}

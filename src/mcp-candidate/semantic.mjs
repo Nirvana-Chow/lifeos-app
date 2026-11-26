@@ -41,7 +41,12 @@ export function verifyReceipt(operation,args,before,data){
  if(operation.method==='POST'&&e.revision!==1)throw Error('CREATE_REVISION_MISMATCH');
  if(operation.method==='PATCH'&&(!before||e.id!==args.id||(before.sourceId!==null&&e.sourceId!==before.sourceId)||e.revision!==args.expectedRevision+1))throw Error('RECEIPT_IDENTITY_OR_CAS_MISMATCH');
  let expected;
- if(operation.module==='todo'){const raw={...args.fields};if(raw.personal===null)delete raw.personal;expected={...validateTodo(raw),personal:raw.personal??null};}
+ if(operation.module==='todo'){
+  const raw={...args.fields};if(raw.personal===null)delete raw.personal;expected={...validateTodo(raw),personal:raw.personal??null};
+  if(operation.id==='createTodo'&&(args.expression!==undefined||e.provenance!==undefined)&&
+     !equal(e.provenance,{version:1,channel:'agent-api',expression:args.expression??null}))throw Error('TODO_CAPTURE_RECEIPT_MISMATCH');
+  if(operation.id==='updateTodo'&&!equal(e.provenance,before?.provenance))throw Error('TODO_CAPTURE_IDENTITY_MISMATCH');
+ }
  else if(operation.module==='finance')expected=validateFinance(args.fields);
  else if(operation.module==='requirements')expected=validateRequirementFields(args.fields);
  else if(operation.module==='feedback')expected=validateFeedbackInput(args.fields);

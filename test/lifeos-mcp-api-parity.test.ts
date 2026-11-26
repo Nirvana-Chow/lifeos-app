@@ -19,7 +19,7 @@ test('native request seam verifies actual synthetic Agent projections and inheri
   const repository=new MemoryPort();repository.readCurrentSnapshot=async()=>structuredClone([...repository.rows.values()]);
   const transaction=repository.transaction.bind(repository);
   repository.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{},lockAgentGrant:async()=>true}));
-  const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:[...new Set(agentOperations.filter(op=>op.module!=='fileHandoff').flatMap(op=>op.requiredScopes))],businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:agentOperations.filter(op=>op.module!=='catalog'&&op.module!=='fileHandoff').map(op=>op.id)};
+  const grant={grantId:'synthetic-grant',ownerId:'synthetic-owner',spaceId:'synthetic-space',scopes:[...new Set(agentOperations.filter(op=>op.module!=='fileHandoff'&&op.module!=='article'&&op.module!=='learning').flatMap(op=>op.requiredScopes))],businessDataPolicy:'all-personal-business-v1' as const,allowedOperationIds:agentOperations.filter(op=>op.module!=='catalog'&&op.module!=='fileHandoff'&&op.module!=='article'&&op.module!=='learning').map(op=>op.id)};
   const handler=createAgentHandler({enabled:true,mountPath:'/api/platform/agent',fenceWrites:true,modules:{organization:true,classification:false,personalRecords:true,businessDataPolicy:true,requirements:true},repository,
    config:{ownerId:grant.ownerId,spaceId:grant.spaceId,ownerEmail:'fixture@example.invalid',databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','project','domain','topic'],requirementsEnabled:true,requirementSupportEnabled:true,calendarEnabled:true,healthEnabled:true,peopleEnabled:true,financeEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true,baseURL:origin},
    verify:async key=>key==='synthetic-fixture-provider'?grant:null,readCurrentGrant:async()=>grant,operationAvailable:()=>true,assertWritable:async()=>{}});
@@ -40,6 +40,10 @@ test('native request seam verifies actual synthetic Agent projections and inheri
    assert.equal(result.ok,true,operationId+JSON.stringify(result));assert.equal(result.verification?.verified,true,operationId+JSON.stringify(result));saved[operationId]=result.data!.entry;
   }
   const todo=saved.createTodo;
+  const explicit=await client.execute('createTodo',{fields:{title:'Synthetic expressed Todo',notes:'Same written material',dueOn:null,status:'open'},
+   expression:'spoken',idempotencyKey:'synthetic-explicit-todo-capture'});
+  assert.equal(explicit.verification?.verified,true,JSON.stringify(explicit));
+  assert.deepEqual((explicit.data!.entry as any).provenance,{version:1,channel:'agent-api',expression:'spoken'});
   const todoUpdated=await client.execute('updateTodo',{id:todo.id,expectedRevision:1,fields:{title:todo.fields.title,notes:'Edited',dueOn:null,status:'open',personal:null},idempotencyKey:'synthetic-preserve-todo'});
   assert.equal(todoUpdated.verification?.verified,true,JSON.stringify(todoUpdated));assert.equal((todoUpdated.data!.entry as any).fields.plannedStartOn,'2026-11-06');
   const req=saved.createRequirement,{workflow,...requiredFields}=req.fields;
