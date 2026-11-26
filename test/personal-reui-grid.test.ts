@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {clonePersonalJSON} from '../src/personal-candidate/clone-json.ts';
 import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

@@ -94,9 +94,10 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    console.log('KANBAN_GENERIC_CANCEL_PASS '+JSON.stringify({tab:['Tab','Shift+Tab'],commits:0,documentEscapeEventsOnTab:0,defaultEscapeCommits:1,explicitFocusOptOut:true}));
   }
   const taskId='11111111-1111-4111-8111-111111111111',projectId='33333333-3333-4333-8333-333333333333',newId='55555555-5555-4555-8555-555555555555',spaceId='synthetic-planning-space',ownerId='synthetic-planning-owner';
-  const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
+  const areaId='77777777-7777-4777-8777-777777777777',areaSource='88888888-8888-4888-8888-888888888888';
+  const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':id===areaId?areaSource:'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
   // Only this private test's Node memory is written. No remote service, real record or database.
-  let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:null,topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
+  let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:{id:areaId,sourceId:areaSource,revision:1},topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}}),makeEntry(areaId,'domain',{title:'合成排期领域',text:'',occurredOn:null,personal:{type:'domain'}})];
   let overviewUnavailable=false;
   let writable=true,writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   let rejectNextCreate=false,createRequests=0,newTaskReads=0,taskPatchRequests=0;
@@ -153,12 +154,22 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:60000});const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();
   const grouping=grid.getByRole('combobox',{name:'待办表格分组'});
   await expect(grouping).toHaveValue('none');
-  await expect(grouping.getByRole('option',{name:'按领域'})).toHaveCount(0);
   await expect(grid.getByRole('columnheader',{name:/项目/})).toBeVisible();
   await expect(grid.getByRole('columnheader',{name:/领域/})).toHaveCount(0);
+  const groupingRequests=taskPatchRequests;
   await grouping.selectOption('project');
-  await expect(grid.locator('[data-task-group="project"]').first()).toBeVisible();
+  await expect(grid.locator('[data-task-group="project"][data-task-group-id="'+projectId+'"]')).toHaveText('合成排期项目1 项');
+  await expect(grid.locator('tbody [data-row-id="'+taskId+'"]')).toHaveCount(1);
+  await expect(grouping.getByRole('option',{name:'按领域',exact:true})).toHaveCount(1);
+  await grouping.selectOption('area');
+  await expect(grid.locator('[data-task-group="area"][data-task-group-id="'+areaId+'"]')).toHaveText('合成排期领域1 项');
+  await expect(grid.locator('tbody [data-row-id="'+taskId+'"]')).toHaveCount(1);
+  await expect(grid.getByRole('columnheader',{name:/领域/})).toHaveCount(0);
   await grouping.selectOption('none');
+  await expect(grid.locator('[data-task-group]')).toHaveCount(0);
+  assert.equal(taskPatchRequests,groupingRequests);
+  assert.equal(writes,0);
+  console.log('TASK_ROUTE_GROUPING_PASS '+JSON.stringify({project:true,area:true,areaColumnHidden:true,leafCount:1,patches:taskPatchRequests-groupingRequests}));
   await page.getByRole('button',{name:'甘特',exact:true}).click();let gantt=page.getByRole('region',{name:'待办甘特',exact:true});await expect(gantt.getByRole('heading',{name:'尚无完整排期',exact:true})).toBeVisible();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();await gantt.getByRole('button',{name:'查看待办表格',exact:true}).click();
   await expect(grid.getByRole('link',{name:'查看项目：合成排期项目',exact:true})).toBeVisible();
   await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
