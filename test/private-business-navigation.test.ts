@@ -1,3 +1,4 @@
+import * as navigationIcons from '../src/workbench/navigation-icons.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
@@ -13,7 +14,7 @@ function compile(path:string,imports:Record<string,any>,fetcher:(...args:any[])=
 function privateMap(){assert.ok(existsSync('src/workbench/private-navigation.ts'),'Exact private navigation is missing');return compile('src/workbench/private-navigation.ts',{'./navigation.ts':navigation});}
 function shell(surface='personal'){
  const refs:any[]=[],requests:string[]=[];let at=0;const styles=new Proxy({},{get:(_,key)=>String(key)});
- const imports:any={react:{useState:(v:any)=>[v,()=>{}],useEffect:()=>{},useRef:(v:any)=>{const ref={current:v};refs[at++]=ref;return ref;}},'react/jsx-runtime':jsx,'next/link':{default:'a'},'next/navigation':{usePathname:()=>surface==='personal'?'/personal/schedule':'/review/admin/schedule'},'../personal-candidate/privacy':{PrivacyBoundary:'privacy',LogoutButton:'logout'},'../admin-preview/icons':{Icon:'icon'},'./theme-switch':{ThemeSwitch:'theme'},'./navigation':navigation,'./private-navigation':existsSync('src/workbench/private-navigation.ts')?privateMap():{},'./status':{WorkspaceStatusProvider:'provider'},'./styles.module.css':{default:styles}};
+ const imports:any={react:{useState:(v:any)=>[v,()=>{}],useEffect:()=>{},useRef:(v:any)=>{const ref={current:v};refs[at++]=ref;return ref;}},'react/jsx-runtime':jsx,'next/link':{default:'a'},'next/navigation':{usePathname:()=>surface==='personal'?'/personal/schedule':'/review/admin/schedule'},'../personal-candidate/privacy':{PrivacyBoundary:'privacy',LogoutButton:'logout'},'../admin-preview/icons':{Icon:'icon'},'./theme-switch':{ThemeSwitch:'theme'},'./navigation-icons':navigationIcons,'./navigation':navigation,'./private-navigation':existsSync('src/workbench/private-navigation.ts')?privateMap():{},'./status':{WorkspaceStatusProvider:'provider'},'./styles.module.css':{default:styles}};
  const mod=compile('src/workbench/shell.tsx',imports,(url:any)=>{requests.push(url);return Promise.resolve({ok:false}) as any;});
  const tree=mod.WorkbenchShell({surface,children:'module'});return{tree,requests,async help(){await all(tree,n=>n.type==='button'&&n.props['aria-label']==='帮助与版本')[0].props.onClick();}};
 }

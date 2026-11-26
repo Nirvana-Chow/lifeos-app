@@ -5,11 +5,6 @@ import {Popover} from "radix-ui";
 import {
   LayoutDashboard,
   Ellipsis,
-  CheckSquare2,
-  Settings,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Menu,
   Plus,
   Search,
   List,
@@ -68,6 +63,7 @@ import "./review.css";
 import {ThemeSwitch,ThemeSystemAction} from "../workbench/theme-switch";
 import {WorkspaceLayoutSettings, WorkspaceLayoutToggle} from "../workbench/workspace-layout-control";
 import {CategoryGrid} from "./category-grid";
+import {CollapseSidebarIcon,ExpandSidebarIcon,OpenNavigationIcon,SearchNavigationIcon,SettingsNavigationIcon,TodoNavigationIcon} from '../workbench/navigation-icons';
 import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
@@ -81,7 +77,7 @@ import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspa
 
 const workspacePageNavigation = {
  overview:{label:'总览',icon:LayoutDashboard},
- tasks:{label:'待办',icon:CheckSquare2},
+ tasks:{label:'待办',icon:TodoNavigationIcon},
  projects:{label:'个人项目',icon:Folders},
  areas:{label:'领域',icon:Layers},
 } as const;
@@ -544,7 +540,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           data-workspace-nav
           onClick={() => openSettings()}
         >
-          <Settings size={19} />
+          <SettingsNavigationIcon/>
           <span>设置</span>
         </Button>
         <Button
@@ -554,9 +550,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           onClick={() => setCollapsed(!collapsed)}
         >
           {collapsed ? (
-            <PanelLeftOpen size={19} />
+            <ExpandSidebarIcon/>
           ) : (
-            <PanelLeftClose size={19} />
+            <CollapseSidebarIcon/>
           )}
           <span>收起侧栏</span>
         </Button>
@@ -719,7 +715,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           ref={menuButton}
           onClick={() => setMobileOpen(true)}
         >
-          <Menu size={20} />
+          <OpenNavigationIcon/>
         </Button>
         <Button
           variant="ghost"
@@ -735,10 +731,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <div className="lo-header-actions">
           {props.desktopNavigation && <WorkspaceLayoutToggle className={`lo-icon-button ${workspaceStyles.layoutToggle}`}/>}
           <Button variant="ghost" size="icon" className="lo-icon-button" aria-label="打开设置" title="设置"
-            data-workspace-nav onClick={()=>openSettings()}><Settings size={19} aria-hidden="true"/></Button>
+            data-workspace-nav onClick={()=>openSettings()}><SettingsNavigationIcon/></Button>
           {globalSearch && <Button asChild variant="ghost" size="icon" className="lo-icon-button">
             <a href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
-              <Search size={19} aria-hidden="true"/>
+              <SearchNavigationIcon/>
             </a>
           </Button>}
           <ThemeSwitch allowSystem={!props.desktopNavigation && settingsSection}/>
