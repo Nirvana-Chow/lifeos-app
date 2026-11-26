@@ -88,8 +88,21 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  const topic=[...repo.rows.values()].find(row=>row.id===topicId)!;
  const journalId=await seed('journal',{title:'合成思考近期',text:'合成日记正文第一行\n第二行保持原文。',occurredOn:day,personal:{type:'journal',
   links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-journal');
+ const backdatedId=await seed('journal',{title:'合成新录入旧事',text:'合成补录正文',occurredOn:shiftCalendarDate(day,-10),personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-backdated');
+ const notDatedId=await seed('journal',{title:'合成未记发生日期',text:'合成未记日期正文',occurredOn:null,personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-undated');
+ const stamp=(offset:number)=>new Date(Date.now()+offset*60_000).toISOString();
+ const older=[...repo.rows.values()].find(row=>row.id===journalId)!;
+ older.createdAt=stamp(-30);older.updatedAt=stamp(0);
+ const backdated=[...repo.rows.values()].find(row=>row.id===backdatedId)!;
+ backdated.createdAt=stamp(-1);backdated.updatedAt=backdated.createdAt;
+ const undated=[...repo.rows.values()].find(row=>row.id===notDatedId)!;
+ undated.createdAt=stamp(-3);undated.updatedAt=undated.createdAt;
  await seed('journal',{title:'合成正式日记',text:'未标记的正式日记',occurredOn:day},'overview-formal-diary');
- await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicateId=await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicate=[...repo.rows.values()].find(row=>row.id===duplicateId)!;
+ duplicate.createdAt=stamp(-60);duplicate.updatedAt=duplicate.createdAt;
  await seed('calendar',{title:'合成明日日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:tomorrow,endDate:shiftCalendarDate(tomorrow,1)}}},'overview-calendar');
  await seed('calendar',{title:'合成已过期日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
@@ -151,6 +164,12 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
  await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
+ const thoughtRows=thoughts.getByRole('listitem');
+ await expect(thoughtRows.first().getByRole('link')).toHaveText('合成新录入旧事');
+ await expect(thoughtRows.first().locator('time').first()).toHaveAttribute('datetime',backdated.createdAt);
+ await expect(thoughtRows.first().locator('time').last()).toHaveAttribute('datetime',shiftCalendarDate(day,-10));
+ await expect(thoughtRows.filter({hasText:'合成未记发生日期'}).getByText('发生日期未记录')).toBeVisible();
+
  await expect(thoughts.getByText(/Memos.*接入/)).toHaveCount(0);
  const excerpt=thoughts.getByText('合成日记正文第一行 第二行保持原文。',{exact:true});
  await expect(excerpt).toBeVisible();
