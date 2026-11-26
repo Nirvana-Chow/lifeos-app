@@ -66,7 +66,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const resumeFields={...fields,title:'Synthetic resume version',personal:{...emptyCareerPersonal('resume'),facts:[{id,sourceId,revision:1}]}};
  const resumeEntry={...entry,id:resumeId,draft:{...resumeFields,disposition:'reference'},source:{...entry.source,id:resumeSourceId,externalId:resumeId,
   original:{...entry.source.original,input:{spaceId,confirmed:true,fields:resumeFields}}}};
- let denied=false,writable=false;
+ let progressFailure:401|403|503|null=null,writable=false;
  let summaries=0,snapshots=0,careerReads=0,revisionReads=0;
  const requests:string[]=[];
  const snapshot={scope:'full-current-requirements-snapshot',truncated:false,items,total:items.length,observedAt:time};
@@ -86,7 +86,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   }
   if(path.endsWith('/personal/requirements/development-progress')){
    summaries++;
-   if(denied)return route.fulfill({status:403,json:{}});
+   if(progressFailure)return route.fulfill({status:progressFailure,json:{}});
    return route.fulfill({json:readLifeOSDevelopmentProgress(snapshot)});
   }
   if(path.endsWith('/personal/career/snapshot'))return route.fulfill({json:{items:[entry,resumeEntry],truncated:false,total:2}});
@@ -174,10 +174,22 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert.equal(summaries-before,1);
  }
- denied=true;
- await page.reload();
- await expect(card.getByText('需求进度暂不可用。')).toBeVisible();
- await expect(card.locator('dd')).toHaveCount(0);
+ const requirementsEntry=card.getByRole('link',{name:'打开需求池'});
+ progressFailure=503;
+ for(const width of [1365,390]){
+  await page.setViewportSize({width,height:900});
+  await page.goto(development);
+  await expect(card.getByText('需求进度暂不可用。')).toBeVisible();
+  await expect(card.locator('dd')).toHaveCount(0);
+  await expect(requirementsEntry).toHaveAttribute('href','/personal?page=requirements');
+ }
+ for(const status of [401,403] as const){
+  progressFailure=status;
+  await page.reload();
+  await expect(card.getByText('需求进度暂不可用。')).toBeVisible();
+  await expect(card.locator('dd')).toHaveCount(0);
+  await expect(requirementsEntry).toHaveCount(0);
+ }
  await openHome();
  await openMobileNavigation();
  await drawer.getByRole('button',{name:'职业成长',exact:true}).click();

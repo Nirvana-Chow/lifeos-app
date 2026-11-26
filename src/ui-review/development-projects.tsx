@@ -12,6 +12,7 @@ export function DevelopmentProjects() {
   const verified = useOwnerPageVerification();
   const [progress, setProgress] = useState<ReturnType<typeof readLifeOSDevelopmentProgress> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [summaryUnavailable, setSummaryUnavailable] = useState(false);
   const request = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -19,6 +20,7 @@ export function DevelopmentProjects() {
       request.current?.abort();
       request.current = null;
       setProgress(null);
+      setSummaryUnavailable(false);
       setLoading(true);
     };
     const visibility = () => { if (document.visibilityState === 'hidden') hide(); };
@@ -44,7 +46,10 @@ export function DevelopmentProjects() {
         const response = await fetch('/api/platform/personal/requirements/development-progress', {
           credentials:'same-origin', cache:'no-store', signal,
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          if (!signal.aborted && response.status === 503) setSummaryUnavailable(true);
+          return;
+        }
         const result = await response.json() as NonNullable<typeof progress>;
         if (!signal.aborted) setProgress(result);
       } catch {
@@ -61,7 +66,7 @@ export function DevelopmentProjects() {
   return <section className={`lo-panel ${styles.card}`} aria-label="LifeOS 网站需求进度">
     <header className="lo-panel-heading">
       <h2>LifeOS 网站</h2>
-      {progress && <Button asChild variant="ghost" data-workspace-nav>
+      {(progress || summaryUnavailable) && <Button asChild variant="ghost" data-workspace-nav>
         <a href={workspaceHref('requirements')}>打开需求池</a>
       </Button>}
     </header>
