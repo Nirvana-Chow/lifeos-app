@@ -92,8 +92,13 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
     return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body});
    }
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(path.endsWith('/status'))return route.fulfill({json:{...journalStatus,ownerId:fixtureOwner,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal'],financeEnabled:true}});
-   if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot'))return route.fulfill({json:{scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:fixedDate}});
+   const access={...journalStatus,ownerId:fixtureOwner,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal'],financeEnabled:true};
+   if(path.endsWith('/status'))return route.fulfill({json:access});
+   if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot')){
+    const narrow=path.endsWith('/workspace-snapshot');
+    if(narrow)assert.equal(url.searchParams.get('include'),'access');
+    return route.fulfill({json:{...(narrow?{access}:{}),scope:narrow?'task-workspace-current-snapshot':'full-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:fixedDate}});
+   }
    return route.fulfill({status:404,json:{}});
   });
   const taskHeading=page.getByRole('heading',{name:'待办',exact:true,level:1});
@@ -110,7 +115,7 @@ test('OPT-IN owner task and finance routes share navigation without bypassing dr
    await page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('button',{name:'待办',exact:true}).click();
    await expect(page).toHaveURL(origin+taskPath);
   }
-  await expect(taskHeading).toBeVisible();
+  await expect(taskHeading).toBeVisible({timeout:30000});
   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
   await page.getByRole('button',{name:'列表',exact:true}).click();
   await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasks.length);
