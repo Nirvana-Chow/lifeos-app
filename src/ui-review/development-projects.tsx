@@ -12,10 +12,25 @@ type DevelopmentProgress = ReturnType<typeof readLifeOSDevelopmentProgress>;
 
 export function DevelopmentProjects() {
   const verified = useOwnerPageVerification();
+  const [pageShown, setPageShown] = useState(false);
   const [reading, setReading] = useState<{progress: DevelopmentProgress | null} | null>();
 
   useEffect(() => {
-    if (verified !== true || document.visibilityState === 'hidden') {
+    let frame: number | undefined;
+    // Let React commit the privacy boundary's pageshow check before we read.
+    const show = () => { frame = window.requestAnimationFrame(() => setPageShown(true)); };
+    const navigation = window.performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const loadFinished = navigation ? navigation.loadEventEnd > 0 : document.readyState === 'complete';
+    if (loadFinished) show();
+    else window.addEventListener('pageshow', show, {once:true});
+    return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      window.removeEventListener('pageshow', show);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pageShown || verified !== true || document.visibilityState === 'hidden') {
       setReading(undefined);
       return;
     }
@@ -48,21 +63,13 @@ export function DevelopmentProjects() {
         if (!signal.aborted) setReading(result);
       }
     }
-    // Let the existing pageshow verification start before sending the first read.
-    let start: number | undefined;
-    const scheduleRead = () => {
-      start = window.setTimeout(() => { if (!signal.aborted) void load(); }, 0);
-    };
-    if (document.readyState === 'complete') scheduleRead();
-    else window.addEventListener('pageshow', scheduleRead, {once:true});
+    void load();
     return () => {
       controller.abort();
-      window.clearTimeout(start);
-      window.removeEventListener('pageshow', scheduleRead);
       window.removeEventListener('pagehide', hide);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [verified]);
+  }, [pageShown, verified]);
 
   if (verified !== true) return null;
 

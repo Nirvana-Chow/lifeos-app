@@ -56,6 +56,8 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const items=baseline.requirements.map(requirement=>({id:requirement.id,revision:0,sourceId:null,
   fields:{title:'Synthetic requirement',body:'Private fixture body',phaseId:'foundation',priority:'P2',plannedStartOn:null,plannedEndOn:null},
   baselineBinding:{baselineVersion:baseline.baselineVersion,itemVersion:requirement.version,digest:'a'.repeat(64)},baselineConflict:false,requirement}));
+ const expectedRequirement=items.find(item=>item.id==='LO-REQ-001');
+ assert.ok(expectedRequirement);
  const ownerId='synthetic-owner',spaceId='synthetic-space';
  const id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';
  const fields={title:'Synthetic career record',text:'Synthetic career original',occurredOn:'2026-11-20',personal:emptyCareerPersonal('achievement')};
@@ -88,10 +90,14 @@ test('OPT-IN development projects respects owner binding and preserves the caree
    if(request.frame().url()===development)snapshots++;
    return route.fulfill({json:snapshot});
   }
+  if(path==='/api/platform/personal/requirements/'+expectedRequirement.id){
+   return route.fulfill({json:{entry:expectedRequirement}});
+  }
   if(path.endsWith('/personal/requirements/development-progress')){
    summaries++;
-   if(summaryGate)await summaryGate;
-   if(summaryError)return route.fulfill({status:summaryError.status,json:{error:{code:summaryError.code}}});
+   const gate=summaryGate,error=summaryError;
+   if(gate)await gate;
+   if(error)return route.fulfill({status:error.status,json:{error:{code:error.code}}});
    return route.fulfill({json:readLifeOSDevelopmentProgress(snapshot)});
   }
   if(path.endsWith('/personal/career/snapshot'))return route.fulfill({json:{items:[entry,resumeEntry],truncated:false,total:2}});
@@ -101,19 +107,34 @@ test('OPT-IN development projects respects owner binding and preserves the caree
    spaceId,storageVerified:poolStorageVerified,writable,
    requirementsEnabled:true,careerEnabled:true,allowedTypes:['todo','career','project','domain']}});
   if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable}});
-  if(path.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+  if(path.endsWith('/personal/todo/workspace-snapshot')||path.endsWith('/personal/overview')){
+   const scope=path.endsWith('/personal/overview')?'full-current-snapshot':'task-workspace-current-snapshot';
+   return route.fulfill({json:{scope,items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+  }
   return route.fulfill({json:{scope:'isolated-synthetic-review'}});
  });
  const card=page.getByRole('region',{name:'LifeOS 网站需求进度',exact:true});
  const poolLink=card.getByRole('link',{name:'打开需求池',exact:true});
  const pool=page.getByRole('region',{name:'需求池',exact:true});
  const poolUrl=origin+'/personal?page=requirements';
+ const requirementRow=pool.getByRole('list',{name:'需求清单',exact:true})
+  .getByRole('button',{name:expectedRequirement.requirement.title,exact:true});
  const openPool=async()=>{
   await expect(poolLink).toHaveAttribute('href','/personal?page=requirements');
   await poolLink.click();
   await expect(page).toHaveURL(poolUrl);
-  await expect(pool.getByLabel('显示范围',{exact:true})).toHaveValue('pending');
-  await expect(pool.locator('[data-requirement-id="LO-REQ-001"]')).toBeVisible();
+  const summary=pool.getByRole('group',{name:'需求统计',exact:true});
+  await expect(summary.getByRole('button',{name:'总需求 '+items.length,exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(summary.getByRole('button',{name:'已完成 0',exact:true})).toHaveAttribute('aria-pressed','false');
+  await expect(summary.getByRole('button',{name:'未完成 '+items.length,exact:true})).toHaveAttribute('aria-pressed','false');
+  await expect(requirementRow).toBeVisible();
+  const detailRead=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/requirements/'+expectedRequirement.id);
+  await requirementRow.click();
+  assert.equal((await detailRead).status(),200);
+  const detail=page.getByRole('dialog',{name:expectedRequirement.requirement.title,exact:true});
+  await expect(detail.getByText(expectedRequirement.id,{exact:true})).toBeVisible();
+  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+  await expect(requirementRow).toBeFocused();
  };
  const firstCareerRecord=page.getByRole('button',{name:fields.title,exact:true});
  const openLegacyResume=async()=>{
@@ -220,7 +241,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  await poolLink.click();
  await expect(page).toHaveURL(poolUrl);
  await expect(page.getByText('本人空间存储尚未核验，暂无法读取待办。',{exact:true})).toBeVisible();
- await expect(pool.locator('[data-requirement-id="LO-REQ-001"]')).toHaveCount(0);
+ await expect(requirementRow).toHaveCount(0);
  poolStorageVerified=true;
  summaryError=null;
 
@@ -248,6 +269,39 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   summaryGate=null;
  }
  await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
+ await expect(card.locator('dd')).toHaveCount(0);
+ await expect(poolLink).toHaveCount(0);
+
+ // An earlier storage failure must not reopen the fallback after current owner denial.
+ const beforeSuperseded=summaries;
+ let releaseSuperseded:()=>void=()=>{};
+ summaryError={status:503,code:'PERSONAL_STORAGE_UNAVAILABLE'};
+ summaryGate=new Promise(resolve=>{releaseSuperseded=resolve;});
+ try{
+  await page.goto(development,{waitUntil:'domcontentloaded'});
+  await expect(card.getByText('正在读取需求进度…',{exact:true})).toBeVisible();
+  await expect.poll(()=>summaries).toBe(beforeSuperseded+1);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(summaries,beforeSuperseded+1);
+
+  const oldAbort=page.waitForEvent('requestfailed',request=>new URL(request.url()).pathname.endsWith('/development-progress'));
+  ownerCheckFailure=503;
+  await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+  await expect(card).toHaveCount(0);
+  await oldAbort;
+
+  summaryError={status:403,code:'OWNER_ONLY'};
+  summaryGate=null;
+  ownerCheckFailure=null;
+  await page.getByRole('button',{name:'重新核对',exact:true}).click();
+  await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
+  assert.equal(summaries,beforeSuperseded+2);
+ }finally{
+  releaseSuperseded();
+  summaryGate=null;
+ }
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  await expect(card.locator('dd')).toHaveCount(0);
  await expect(poolLink).toHaveCount(0);
  ownerCheckFailure=403;
