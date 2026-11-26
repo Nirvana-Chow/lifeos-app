@@ -21,7 +21,11 @@ test('task toolbar opens a private, read-only classification preview', {
   skip: process.env.RUN_TASK_CLASSIFICATION_PREVIEW_BROWSER_TESTS !== '1', timeout: 120_000,
 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'lifeos-task-preview-'));
-  t.after(() => rm(root, {recursive: true, force: true}));
+  let shutdown: (()=>Promise<void>) | undefined;
+  t.after(async () => {
+    try{await shutdown?.();}
+    finally{await rm(root, {recursive:true,force:true,maxRetries:3});}
+  });
   await mkdir(join(root, 'app/personal/task-classification-preview'), {recursive: true});
   await Promise.all([
     ...['layout.tsx', 'globals.css', 'theme.css', 'personal/page.tsx', 'personal/layout.tsx',
@@ -40,7 +44,8 @@ test('task toolbar opens a private, read-only classification preview', {
     '--webpack', '--hostname', '127.0.0.1', '--port', '0'],
     {cwd: root, env: {PATH: process.env.PATH, NODE_ENV: 'development', NEXT_TELEMETRY_DISABLED: '1'}});
   const stopped = once(server, 'exit');
-  t.after(async () => {if (server.exitCode === null) server.kill('SIGTERM'); await stopped;});
+  const stopServer=async()=>{if(server.exitCode===null)server.kill('SIGTERM');await stopped;};
+  shutdown=stopServer;
   const origin = await new Promise<string>((accept, reject) => {
     const timeout = setTimeout(() => reject(Error('Synthetic server did not start')), 30_000);
     server.stdout?.on('data', chunk => {
@@ -50,7 +55,7 @@ test('task toolbar opens a private, read-only classification preview', {
     server.once('exit', () => {clearTimeout(timeout); reject(Error('Synthetic server exited'));});
   });
   const browser = await chromium.launch({executablePath: process.env.LIFEOS_TEST_CHROMIUM_PATH});
-  t.after(() => browser.close());
+  shutdown=async()=>{try{await browser.close();}finally{await stopServer();}};
   const preview = '/personal/task-classification-preview';
   const guest = await browser.newPage();
   await guest.goto(origin + preview);
