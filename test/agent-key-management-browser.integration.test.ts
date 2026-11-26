@@ -58,7 +58,11 @@ export const handlePlatformRequest=async(request:Request)=>{
  if(url.pathname==='/api/platform/personal/availability')return Response.json({configured:true,loginAllowed:true,transport:'ssh-loopback',origin});
  const config={ownerId,ownerEmail:'fixture@example.test',spaceId,databaseName:'synthetic-memory',baseURL:origin,approval:'personal-manual-v1',allowedTypes};
  const taskReader={readTaskWorkspaceSnapshot:async(owner,boundSpace,types)=>structuredClone([...repository.rows.values()].filter(row=>row.ownerId===owner&&types.includes(personalEntryType(row,boundSpace))))};
- if(url.pathname===taskWorkspaceSnapshotPath)return Response.json(await readTaskWorkspaceSnapshot(request,config,true,taskReader));
+ if(url.pathname===taskWorkspaceSnapshotPath){
+  const includeAccess=url.searchParams.get('include')==='access';
+  const snapshot=await readTaskWorkspaceSnapshot(request,config,true,taskReader,includeAccess);
+  return Response.json(includeAccess?{...snapshot,access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:true,allowedTypes}}:snapshot);
+ }
  const service=new PersonalService(repository,config);
  try{return await handlePersonalRequest(request,ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}})??Response.json({error:{code:'PLATFORM_UNAVAILABLE'}},{status:503});}
  catch(error){return Response.json({error:{code:'SYNTHETIC_REQUEST_REJECTED'}},{status:typeof error==='object'&&error&&'status'in error?Number(error.status):500});}
@@ -170,7 +174,7 @@ test('OPT-IN API dialogs preserve one-time secrets, expiry, focus, uncertain res
         personalReads++;
         if(path==='/api/platform/personal/status')return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-account-owner',spaceId:'synthetic-account-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']}});
         if(path==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-        if(path==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:0,items:[],today:url.searchParams.get('today'),observedAt:'2030-11-02T12:00:00.000Z'}});
+        if(path==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-account-owner',spaceId:'synthetic-account-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','project','domain','topic']},truncated:false,total:0,items:[],today:url.searchParams.get('today'),observedAt:'2030-11-02T12:00:00.000Z'}});
         throw Error('Unexpected synthetic account request');
       }
       if (path === keyEndpoint && request.method() === 'GET') {

@@ -87,7 +87,7 @@ test('task toolbar opens a private, read-only classification preview', {
       if (url.pathname.endsWith('/availability')) return route.fulfill({json: {configured: true, loginAllowed: true, transport: 'ssh-loopback', origin}});
       if (url.pathname.endsWith('/status')) return route.fulfill({json: {scope: 'personal-manual-candidate',
         storageVerified: true, writable: false, ownerId: 'synthetic-owner', spaceId: space, allowedTypes: ['todo', 'project', 'topic']}});
-      if (url.pathname.endsWith('/todo/workspace-snapshot')) return route.fulfill({json: {scope: 'task-workspace-current-snapshot',
+      if (url.pathname.endsWith('/todo/workspace-snapshot')) return route.fulfill({json: {scope: 'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:space,storageVerified:true,writable:false,allowedTypes:['todo','project','topic']},
         today: url.searchParams.get('today'), observedAt: '2030-01-01T00:00:00Z', truncated: false,
         total: entries.length, items: entries}});
       if (url.pathname.endsWith('/overview')) return route.fulfill({json: {scope: 'full-current-snapshot',
