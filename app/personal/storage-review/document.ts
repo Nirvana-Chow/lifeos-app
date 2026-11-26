@@ -399,6 +399,7 @@ async function requestReview(method='GET',body,command) {
 }
 function canEdit() { return !busy && !recoveryBlocked && (!synced || !uncertain && !!remote); }
 function syncControls() {
+  byId('export').disabled = !choices.size && !remote?.notes?.length && !noteDrafts.size;
   byId('open-server').disabled = busy;
   byId('save-server').disabled = busy || synced || uncertain || !!pendingDecision || remote === undefined || !review.items.length;
   byId('sync-login').hidden = !sessionDenied && !pendingDecision && !uncertain;
@@ -614,7 +615,6 @@ function metrics(shown) {
   byId('counts').textContent = '独立项／子项：留 '+n.keep+' · 删除候选（待处理） '+n.trash+' · 暂缓 '+n.defer+(n.parentSelected ? ' · 父目录历史选择 '+n.parentSelected : '');
   byId('visible').textContent = '显示 '+shown+' / '+review.items.length+' 项';
   byId('copy').disabled = !choices.size;
-  byId('export').disabled = !choices.size && !remote?.notes?.length && !noteDrafts.size;
 }
 function render() {
   const query = byId('search').value.trim().toLowerCase();
