@@ -291,8 +291,10 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    const popup=page.getByRole('dialog',{name:'搜索本人记录',exact:true});
    await popup.getByRole('searchbox',{name:'搜索标题与正文',exact:true}).fill('Cancellation boundary');
    await popup.getByRole('button',{name:'搜索',exact:true}).click();
-   const cancelButton=popup.getByRole('button',{name:'Synthetic cancelled task 查看原记录',exact:true});
-   await expect(popup.getByRole('listitem').filter({has:cancelButton}).getByText('已取消',{exact:true})).toBeVisible();
+   const cancelButtonOptions={name:'Synthetic cancelled task 查看原记录',exact:true};
+   const cancelButton=popup.getByRole('button',cancelButtonOptions);
+   const cancelRow=popup.getByRole('listitem').filter({has:page.getByRole('button',cancelButtonOptions)});
+   await expect(cancelRow.getByText('已取消',{exact:true})).toBeVisible();
    const beforePopupDetail=detailReads();
    await cancelButton.focus();await page.keyboard.press('Enter');
    await expect(popup.getByRole('region',{name:'原业务记录只读详情'}).getByText('已取消',{exact:true})).toBeVisible();
