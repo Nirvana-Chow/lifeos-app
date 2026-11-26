@@ -1,7 +1,6 @@
 import {makePersonalCommand,type PersonalCommand,type PersonalBinding} from './client.ts';
 import {validateTodo,validateId,object} from '../platform/domain.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
-import {validateTodoOriginalLine} from './todo-capture.ts';
 const splitLines=(raw:string)=>raw.split(/\r\n|\n|\r/);
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type BatchRow={title:string;selected:boolean;state:'pending'|'unknown'|'failed'|'verified';command:PersonalCommand|null;receipt:Pick<PublicEntry,'id'|'revision'>|null};
@@ -50,15 +49,11 @@ export class TaskBatch {
  clear(){if(this.busy||this.rows.some(r=>r.state==='unknown'))throw Error('请先核对原请求。');this.storage.removeItem(this.storageKey);this.rows=[];this.raw='';}
  async run(save:(command:PersonalCommand)=>Promise<PublicEntry|null>,changed:()=>void=()=>{},uncertain:()=>boolean=()=>true){
   if(this.busy||batchIssues(this.rows).some(Boolean)||!this.rows.some(r=>r.selected&&r.state!=='verified'))return;
-  const lines=splitLines(this.raw);
-  for(const [index,row] of this.rows.entries()){
-   if(row.selected&&!row.command)validateTodoOriginalLine(lines[index]);
-  }
   this.busy=true;
   try{
-   for(const [index,row] of this.rows.entries()){
+   for(const row of this.rows){
     if(!row.selected||row.state==='verified')continue;
-    row.command??=this.command(row.title,this.key(),lines[index]);
+    row.command??=this.command(row.title,this.key());
     row.state='unknown';this.keep();changed();
     let receipt:PublicEntry|null=null;
     try{receipt=await save(row.command);}catch{/* Unknown outcome retains the exact command. */}

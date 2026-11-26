@@ -9,6 +9,7 @@ import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-h
 import {personalEntryType} from '../src/personal-candidate/service.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
 import {MemoryPort} from './helpers/platform.ts';
+import {seedTodoCapture} from './helpers/todo-capture-fixture.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
 test('OPT-IN multiline todo preview sequential readback reload and mobile keyboard',{
@@ -35,9 +36,10 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   });
   repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
   const calls:{key:string;body:any}[]=[],errors:string[]=[];
-  let readbacks=0,loseSecond=true,expired=false,expirePost=false;
+  const sequence:string[]=[];
+  let readbacks=0,loseSecond=true,expired=false,expireDetail=false;
   const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,
-   sessions:{read:async headers=>expired||expirePost&&headers.has('idempotency-key')?null:{userId:ownerId,email:config.ownerEmail}},
+   sessions:{read:async headers=>expired||headers.has('x-fixture-revoked')?null:{userId:ownerId,email:config.ownerEmail}},
    assertWritable:async()=>{},
   });
   page.on('pageerror',e=>errors.push(e.message));
@@ -46,14 +48,21 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
    const request=route.request(),url=new URL(request.url()),method=request.method(),headers=new Headers(request.headers());
    headers.set('host',url.host);
    const body=request.postData()??undefined;
-   if(method==='POST')calls.push({key:headers.get('idempotency-key')!,body:JSON.parse(body!)});
+   if(method==='POST'){
+    calls.push({key:headers.get('idempotency-key')!,body:JSON.parse(body!)});
+    sequence.push('POST');
+   }
+   const entries=[...repo.rows.values()];
+   const detail=method==='GET'&&entries.find(row=>url.pathname.endsWith('/'+row.id));
+   if(detail){
+    readbacks++;sequence.push('GET '+detail.id);
+    if(detail.id===entries[1]?.id){
+     if(expireDetail)headers.set('x-fixture-revoked','1');
+     if(loseSecond)return route.abort();
+    }
+   }
    const reply=await handler(new Request(url,{method,headers,body}));
    if(method==='POST'&&reply.status===201&&JSON.parse(body!).fields.title==='合成原单条待确认')return route.abort();
-   const entries=[...repo.rows.values()];
-   if(method==='GET'&&entries.some(row=>url.pathname.endsWith('/'+row.id))){
-    readbacks++;
-    if(loseSecond&&url.pathname.endsWith('/'+entries[1]?.id))return route.abort();
-   }
    return route.fulfill({status:reply.status,headers:Object.fromEntries(reply.headers),body:await reply.text()});
   });
   const read=async(path:string)=>handler(new Request(origin+'/api/platform/personal/'+path,{headers:{host:new URL(origin).host}}));
@@ -71,12 +80,12 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   assert.equal(calls.length,2);assert.equal(repo.rows.size,2);assert.equal(readbacks,2);
   const [first,second]=[...repo.rows.values()];
   assert.equal('dueOn'in first.draft&&first.draft.dueOn,null);
-  assert.equal(calls[0].body.originalLine,'明天交稿');
-  assert.equal(calls[1].body.originalLine,' 明天交稿 ');
+  assert.equal(Object.hasOwn(calls[0].body,'originalLine'),false);
+  assert.equal(Object.hasOwn(calls[1].body,'originalLine'),false);
   const secondRead=await read('todo/'+second.id);assert.equal(secondRead.status,200);
   const {entry:observed}=await secondRead.json();
   assert.equal(observed.draft.title,'第二项');assert.equal(observed.draft.dueOn,null);
-  assert.equal(observed.source.original.input.originalLine,' 明天交稿 ');
+  assert.equal(Object.hasOwn(observed.source.original.input,'originalLine'),false);
   assert.equal(observed.source.original.input.fields.title,'第二项');
   assert.equal(repo.receipts.size,2);assert.equal(repo.events.length,2);
   page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});
@@ -88,40 +97,39 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
   await expect(dialog).toHaveCount(0);assert.equal(calls.length,2);await expect(page.getByRole('textbox',{name:'第3项标题',exact:true})).toHaveCount(0);
   expired=false;page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toBeVisible();
-  expirePost=true;await dialog.getByRole('button',{name:'核对原请求并继续'}).click();await expect.poll(()=>calls.length).toBe(3);await expect(dialog).toHaveCount(0);
-  assert.deepEqual(calls[1],calls[2]);assert.equal(repo.rows.size,2);
-  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'前往登录',exact:true}).click();await page.waitForURL(origin+'/login');assert.equal(calls.length,3);
-  expirePost=false;loseSecond=false;await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});await expect(dialog).toBeVisible();await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
+  loseSecond=false;expireDetail=true;
+  const revokedAt=sequence.length;
+  await dialog.getByRole('button',{name:'核对原请求并继续'}).click();await expect(dialog).toHaveCount(0);
+  assert.deepEqual(sequence.slice(revokedAt),['GET '+second.id]);
+  assert.equal(calls.length,2);assert.equal(repo.rows.size,2);
+  page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'前往登录',exact:true}).click();await page.waitForURL(origin+'/login');
+  expireDetail=false;await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});await expect(dialog).toBeVisible();
+  const resumedAt=sequence.length;
+  await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
   await expect(dialog.getByText('第4项 · 已保存并回读',{exact:true})).toBeVisible();
-  assert.equal(calls.length,5);assert.deepEqual(calls[1],calls[3]);assert.equal(repo.rows.size,3);
-  assert.equal(calls.filter(c=>c.key===calls[0].key).length,1);
-  assert.equal(calls[4].body.originalLine,'第三项');assert.equal(repo.receipts.size,3);assert.equal(repo.events.length,3);
+  assert.equal(sequence[resumedAt],'GET '+second.id);assert.equal(sequence[resumedAt+1],'POST');
+  assert.equal(calls.length,3);assert.equal(repo.rows.size,3);
+  assert.equal(calls.filter(c=>c.key===calls[1].key).length,1);
+  assert.equal(Object.hasOwn(calls[2].body,'originalLine'),false);assert.equal(repo.receipts.size,3);assert.equal(repo.events.length,3);
   const history=await (await read('todo/'+second.id+'/history')).json();
-  assert.equal(history.items[0].source.original.input.originalLine,' 明天交稿 ');
+  assert.equal(Object.hasOwn(history.items[0].source.original.input,'originalLine'),false);
   assert.equal(history.items[0].source.original.input.fields.title,'第二项');
   const search=await (await read('search?q='+encodeURIComponent('第二项'))).json();
   assert.equal(search.items[0].id,second.id);
   await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await dialog.getByRole('button',{name:'清空批次'}).click();await expect(dialog.getByLabel('原始输入（最多50行）')).toBeVisible();
   await dialog.getByLabel('原始输入（最多50行）').focus();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);
-  await page.goto(origin+'/personal/edit?type=todo&id='+second.id,{waitUntil:'networkidle'});
   const detail=page.getByRole('dialog',{name:'待办详情',exact:true});
-  await expect(detail).toBeVisible();
-  const capture=detail.locator('details').filter({has:page.getByText('录入原文与初次确认',{exact:true})});
-  await capture.locator('summary').click();
-  await expect(capture).toContainText('初次确认标题');
-  assert.deepEqual(await capture.locator('dd').allTextContents(),[' 明天交稿 ','第二项','未设置']);
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle'});
   await page.getByRole('button',{name:'多行录入',exact:true}).click();
   await dialog.getByLabel('原始输入（最多50行）').fill('合成保留未尝试批次');await dialog.getByRole('button',{name:'预检条目'}).click();
   page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'关闭并保留',exact:true}).click();await expect(dialog).toHaveCount(0);
-  assert.equal(calls.length,5);assert.equal(repo.receipts.size,3);assert.equal(repo.events.length,3);
+  assert.equal(calls.length,3);assert.equal(repo.receipts.size,3);assert.equal(repo.events.length,3);
   await page.getByRole('button',{name:'新建待办',exact:true}).click();const single=page.getByRole('dialog',{name:'新建待办',exact:true});await single.getByLabel('标题',{exact:true}).fill('合成原单条待确认');await single.getByRole('button',{name:'保存待办',exact:true}).click();await expect(single.getByRole('button',{name:'重试同一请求',exact:true})).toBeEnabled();
-  assert.equal(calls.length,6);page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
-  await page.getByRole('button',{name:'重试同一请求',exact:true}).click();await expect(page.getByRole('button',{name:'重试同一请求',exact:true})).toHaveCount(0);assert.equal(calls.length,7);assert.deepEqual(calls[5],calls[6]);assert.equal(repo.rows.size,4);
-  await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,7);
-  assert.equal(Object.hasOwn(calls[5].body,'originalLine'),false);
+  assert.equal(calls.length,4);page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toHaveCount(0);
+  await page.getByRole('button',{name:'重试同一请求',exact:true}).click();await expect(page.getByRole('button',{name:'重试同一请求',exact:true})).toHaveCount(0);assert.equal(calls.length,5);assert.deepEqual(calls[3],calls[4]);assert.equal(repo.rows.size,4);
+  await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,5);
+  assert.equal(Object.hasOwn(calls[3].body,'originalLine'),false);
   const legacy=[...repo.rows.values()].find(row=>'title'in row.draft&&row.draft.title==='合成原单条待确认')!;
   await dialog.getByRole('button',{name:'清空批次'}).click();
   await dialog.getByLabel('原始输入（最多50行）').focus();await page.keyboard.press('Escape');
@@ -129,6 +137,14 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   await page.goto(origin+'/personal/edit?type=todo&id='+legacy.id,{waitUntil:'networkidle'});
   await expect(detail).toBeVisible();await detail.getByText('录入原文与初次确认',{exact:true}).click();
   await expect(detail.getByText('原始输入未记录。',{exact:true})).toBeVisible();
+  const prior=await seedTodoCapture(repo,ownerId,spaceId,'synthetic-prior-capture',
+   {title:'合成历史确认稿',notes:'',dueOn:null,status:'open'},{originalLine:' 合成历史原始行 ',channel:'owner-web',expression:'written'});
+  await page.goto(origin+'/personal/edit?type=todo&id='+prior.id,{waitUntil:'networkidle'});
+  await expect(detail).toBeVisible();
+  const capture=detail.locator('details').filter({has:page.getByText('录入原文与初次确认',{exact:true})});
+  await capture.locator('summary').click();
+  assert.deepEqual(await capture.locator('dd').allTextContents(),[' 合成历史原始行 ','合成历史确认稿','未设置']);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(errors,[]);console.log('TASK_BATCH_BROWSER_PASS '+JSON.stringify({calls:calls.length,records:repo.rows.size,readbacks,history:true,revocation:true,desktop:true,mobile:true,keyboard:true}));
  }finally{await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });

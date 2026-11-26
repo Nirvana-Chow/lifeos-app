@@ -125,3 +125,32 @@ test('Cooking scope wrapper and real session retain post-commit 401 through the 
  assert.deepEqual(f.requests[1],f.requests[0]);assert.equal(f.repository.rows.size,1);
  assert.equal(f.repository.receipts.size,1);assert.equal(f.repository.historyRows.length,1);
 });
+
+test('a known todo receipt survives reload and an unverified GET never authorizes repeat POST',async()=>{
+ const repository=new MemoryPort(),storage=store(),requests:string[]=[];
+ const handler=createPersonalPlatformHandler({repository,config,storageVerified:true,
+  sessions:{read:async()=>owner},assertWritable:async()=>{}});
+ let miss:404|503|null=503;
+ const fetcher:PersonalFetch=async(input,init)=>{
+  const url=new URL(String(input),baseURL);
+  const headers=new Headers(init?.headers);headers.set('host',url.host);headers.set('origin',baseURL);
+  requests.push((init?.method??'GET')+' '+url.pathname.split('/').at(-1));
+  if(!init?.method&&miss&&url.pathname.includes('/todo/'))return Response.json({}, {status:miss});
+  return handler(new Request(url,{...init,headers}));
+ };
+ const command=makePersonalCommand(binding,'todo',null,{title:'Synthetic committed todo',notes:'',dueOn:null,status:'open'},'synthetic-known-todo-receipt',true);
+ const resume=()=>new PersonalMutationSession({binding,storage:storage.port,fetcher,verifyReadback:true});
+ await resume().submit(command);
+ const id=[...repository.rows.keys()][0];
+ assert.deepEqual(requests,['POST todo','GET '+id]);
+ assert.deepEqual(JSON.parse(storage.values.get(storageKey)!),command);
+ miss=404;requests.length=0;
+ const held=resume();await held.retry();
+ assert.deepEqual(requests,['GET '+id]);assert.equal(held.getSnapshot().phase,'uncertain');
+ assert.equal(held.getSnapshot().saved,null);
+ miss=null;requests.length=0;
+ const settled=resume();await settled.retry();
+ assert.deepEqual(requests,['GET '+id,'GET status']);
+ assert.equal(settled.getSnapshot().saved?.id,id);
+ assert.equal(repository.events.length,1);assert.equal(storage.values.size,0);
+});

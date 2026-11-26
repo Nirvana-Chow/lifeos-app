@@ -8,7 +8,7 @@ import {reminderSourceDigest} from '../import-preview/reminders.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {normalizePersonalFields,personalTypes,personalReferences,type ObjectFields} from './business.ts';
 import {preserveOmittedPlanning} from './planning.ts';
-import {validateTodoOriginalLine} from './todo-capture.ts';
+import {readManualTodoSource,validateTodoExpression,validateTodoOriginalLine,type TodoCaptureChannel} from './todo-capture.ts';
 import {createHash,randomUUID} from 'node:crypto';
 import {PlatformError,object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox,type TodoDraft,type InboxDraft} from '../platform/domain.ts';
 import type {PlatformRepository,StoredEntry,PublicEntry,MutationResult,Transaction} from '../platform/contracts.ts';
@@ -16,7 +16,7 @@ import {compareWindowKeys,windowKey} from '../platform/window-domain.ts';
 import type {PersonalConfig,PersonalType} from './config.ts';
 export type PersonalGuard=()=>Promise<void>;
 export type PersonalFields=TodoDraft|ObjectFields|Pick<InboxDraft,'title'|'text'|'occurredOn'>;
-export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number;originalLine?:string};
+export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number;originalLine?:string;expression?:'written'|'spoken'};
 export type PersonalPage={items:PublicEntry[];truncated:boolean;scanned:number;limit:number;scope:'bounded-window';total:null};
 const fail=(status:number,code:string,message:string):never=>{throw new PlatformError(status,code,message);};
 const missing=():never=>fail(404,'NOT_FOUND','没有可访问的本人记录。');
@@ -59,14 +59,25 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
+ try{
+  validateId(entry.id);validateId(source.id);validateRevision(entry.revision);
+  if(type==='todo'){
+   readManualTodoSource(original,spaceId);validateTodo(entry.draft);
+  }else{
+   object(original,['marker','spaceId','type','input']);
+   const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;
+   const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;
+  }
+  return type;
+ }catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
- const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:type==='todo'?['originalLine']:[])]);
+ const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:type==='todo'?['originalLine','expression']:[])]);
  if(raw.spaceId!==spaceId||raw.confirmed!==true)return fail(403,'PERSONAL_CONFIRMATION_REQUIRED','需要核对本人空间并明确确认保存。');
  const fields=normalizePersonalFields(type,raw.fields);
  return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{}),
-  ...(Object.hasOwn(raw,'originalLine')?{originalLine:validateTodoOriginalLine(raw.originalLine)}:{})};
+  ...(Object.hasOwn(raw,'originalLine')?{originalLine:validateTodoOriginalLine(raw.originalLine)}:{}),
+  ...(Object.hasOwn(raw,'expression')?{expression:validateTodoExpression(raw.expression)}:{})};
 }
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
@@ -110,13 +121,24 @@ export class PersonalService{
   return{scope:'full-current-snapshot' as const,items,query,...range,coverage:{types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length}};
  }
  async referenceStates(owner:string,id:string){this.owner(owner);const entry=await this.repository.get(owner,'todo',validateId(id));if(!this.matches(entry,owner,'todo',id))return missing();return Promise.all(personalReferences(entry.draft as TodoDraft).map(async({type,link})=>{const target=await this.repository.get(owner,'inbox',link.id),allowed=this.matches(target,owner,type,link.id)&&target.source.id===link.sourceId;return{type,link,status:!allowed?'unavailable':target!.revision===link.revision?'current':'updated',current:allowed?publicEntry(target!):null};}));}
- async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<MutationResult>{
+ async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>,channel?:TodoCaptureChannel):Promise<MutationResult>{
   this.owner(owner);this.enabled(type);validateIdempotencyKey(key);if(id)id=validateId(id);validatePersonalBody(type,id,input,this.config.spaceId);const raw=structuredClone(input),body=validatePersonalBody(type,id,raw,this.config.spaceId),kind=type==='todo'?'todo':'inbox';
   const digest=createHash('sha256').update(canonical({action:'personal-manual-v1',owner,spaceId:this.config.spaceId,type,id,raw})).digest('hex');
   await guard();
   return this.repository.transaction(owner,key,async tx=>{
    await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
-   if(receipt){if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!personalEntryType(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
+   if(receipt){
+    if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');
+    const entry=receipt.result.entry;
+    if(personalEntryType(entry,this.config.spaceId)!==type)return missing();
+    if(type==='todo'&&!id){
+     const {channel:priorChannel}=readManualTodoSource(entry.source.original,this.config.spaceId);
+     if(priorChannel&&channel!==priorChannel)fail(409,'COMMAND_CONFLICT','该请求标识已用于另一录入通道。');
+    }
+    return{...structuredClone(receipt.result),duplicate:true};
+   }
+   // Reader-first rollout: an exact historical receipt is recoverable, but new source formats cannot be written.
+   if(body.originalLine!==undefined||body.expression!==undefined)fail(409,'TODO_CAPTURE_WRITE_DISABLED','当前只支持读取与核对已保存的录入来源。');
    const now=new Date().toISOString(),draft=type==='todo'?body.fields as TodoDraft:{...body.fields,disposition:'reference'} as InboxDraft;let entry:StoredEntry;
    const references=personalReferences(draft);
    const records=await lockPersonalRecords(tx,[...(id?[{kind,id} as const]:[]),...references.map(({link})=>({kind:'inbox' as const,id:link.id}))]);

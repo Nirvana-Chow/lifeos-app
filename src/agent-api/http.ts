@@ -275,13 +275,13 @@ export function createAgentHandler(options: Options) {
       }
 
       if (options.mountPath && options.fenceWrites !== true) return respond(503, {error: 'AGENT_WRITE_FENCE_UNAVAILABLE'});
-      const input = object(await readJSONBody(request), operation.id === 'updateTodo' ? ['fields', 'expectedRevision'] : ['fields', 'originalLine']);
+      const input = object(await readJSONBody(request), operation.id === 'updateTodo' ? ['fields', 'expectedRevision'] : ['fields', 'originalLine', 'expression']);
       const result = await service.mutate(grant.ownerId, 'todo', recordId ?? null,
         {...input, ...(operation.id === 'updateTodo' ? {fields: updateFields(input.fields)} : {}), spaceId: config.spaceId, confirmed: true}, request.headers.get('idempotency-key') ?? '',
         async () => {
           if (request.signal.aborted) throw new PlatformError(499, 'REQUEST_CANCELLED', '已取消。');
           await options.assertWritable(grant);
-        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant,operation.id) : undefined);
+        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant,operation.id) : undefined,'agent-api');
       return respond(operation.id === 'createTodo' && !result.duplicate ? 201 : 200,
         {entry: detail(result.entry), duplicate: result.duplicate});
     } catch (error) {

@@ -174,7 +174,7 @@ export class PersonalWorkspaceController{
   if(command.id&&(saved.id!==command.id||saved.revision!==command.body.expectedRevision!+1))throw Error('保存回执的记录或版本不符，请重新读取核对。');
   const baseline=context.base??current;
   if(baseline&&(saved.kind!==baseline.kind||canonical(saved.source)!==canonical(baseline.source)))throw Error('保存回执的来源或版本不符，请重新读取核对。');
-  let observed=saved;
+  let observed=command.type==='todo'&&!command.id?state.observed??saved:saved;
   if(command.id&&'status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
    this.planningReadbackRequired=true;
    try{
@@ -193,7 +193,7 @@ export class PersonalWorkspaceController{
   // A newer authoritative snapshot stays intact even after the original key resolves.
   if(current&&current.revision>saved.revision||command.id&&!current){this.pending=null;return clonePersonalJSON(saved);}
   const already=current&&canonical(current)===canonical(observed);
-  if(current&&!already&&(!command.id||current.revision!==command.body.expectedRevision))throw Error('本地版本或内容已变化，请重新读取核对。');
+  if(current&&!already&&(command.id?current.revision!==command.body.expectedRevision:canonical(current)!==canonical(saved)))throw Error('本地版本或内容已变化，请重新读取核对。');
   const entries=this.entries.map(e=>e.id===saved.id?clonePersonalJSON(observed):e);if(!current)entries.push(clonePersonalJSON(observed));
   const data=this.value.state.data,checked=workspaceData({items:entries,total:entries.length,scope:'full-current-snapshot',truncated:false,today:data.today,observedAt:data.asOf},this.binding.spaceId,data.today);
   this.entries=checked.entries;this.planningReadbackRequired=false;

@@ -1,6 +1,6 @@
 import {clonePersonalJSON} from './editor.ts';
 import {preserveOmittedPlanning} from './planning.ts';
-import {validateTodoOriginalLine} from './todo-capture.ts';
+import {readTodoClientEnvelope,validateTodoExpression,validateTodoOriginalLine} from './todo-capture.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {personalTypes,normalizePersonalFields} from './business.ts';
 import {object,validateId,validateIdempotencyKey,validateRevision,validateTodo,validateInbox} from '../platform/domain.ts';
@@ -21,11 +21,12 @@ function checked(value:unknown,binding:PersonalBinding):PersonalCommand{
  checkBinding(binding);const raw=object(value,['ownerId','spaceId','type','id','key','method','body']);
  if(raw.ownerId!==binding.ownerId||raw.spaceId!==binding.spaceId||!personalTypes.includes(raw.type as PersonalType)||raw.method!==(raw.id===null?'POST':'PATCH'))throw Error('请求与当前本人身份或空间不符。');
  validateIdempotencyKey(raw.key);if(raw.id!==null)validateId(raw.id);
- const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:raw.type==='todo'?['originalLine']:[])]);
+ const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:raw.type==='todo'?['originalLine','expression']:[])]);
  if(body.spaceId!==binding.spaceId||body.confirmed!==true)throw Error('请先确认本次本人手动保存。');
  normalizePersonalFields(raw.type as string,body.fields);
  if(raw.id!==null)validateRevision(body.expectedRevision);
  if(Object.hasOwn(body,'originalLine'))validateTodoOriginalLine(body.originalLine);
+ if(Object.hasOwn(body,'expression'))validateTodoExpression(body.expression);
  return freeze(clonePersonalJSON(raw) as PersonalCommand);
 }
 export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number,originalLine?:string):PersonalCommand{
@@ -33,8 +34,23 @@ export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id
 }
 function matches(command:PersonalCommand,value:unknown):value is PublicEntry{
  if(!obj(value)||!obj(value.source)||!obj(value.source.original)||!obj(value.draft)||'ownerId'in value)return false;
- const original=value.source.original;if(original.marker!=='personal-manual-v1'&&!(command.id&&command.type==='todo'&&original.marker===appleOriginMarker)||original.spaceId!==command.spaceId||original.type!==command.type||value.kind!==(command.type==='todo'?'todo':'inbox')||value.syncState!=='draft'||value.externalStatus!==null||value.source.externalId!==value.id||value.source.system!=='website'||value.source.version!==1)return false;
- try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else object(original,['marker','spaceId','type','input']);validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
+ const original=value.source.original;
+ if(original.marker!=='personal-manual-v1'&&!(command.id&&command.type==='todo'&&original.marker===appleOriginMarker)||
+  original.spaceId!==command.spaceId||original.type!==command.type||value.kind!==(command.type==='todo'?'todo':'inbox')||
+  value.syncState!=='draft'||value.externalStatus!==null||value.source.externalId!==value.id||value.source.system!=='website'||value.source.version!==1)return false;
+ try{
+  if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);
+  else if(command.type==='todo'){
+   const {channel}=readTodoClientEnvelope(original,command.spaceId);
+   if(command.id===null&&channel&&channel!=='owner-web')return false;
+  }else object(original,['marker','spaceId','type','input']);
+  validateId(value.id);validateId(value.source.id);validateRevision(value.revision);
+  const fields=command.body.fields;
+  const normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});
+  if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;
+  return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:
+   value.revision===1&&canonical(original.input)===canonical(command.body);
+ }catch{return false;}
 }
 function observedReadback(command:PersonalCommand,receipt:PublicEntry,value:unknown):value is PublicEntry{
  try{const row=object(value,['id','kind','draft','source','revision','createdAt','updatedAt','syncState','externalStatus']);validateRevision(row.revision);
@@ -47,32 +63,106 @@ function observedReadback(command:PersonalCommand,receipt:PublicEntry,value:unkn
 }
 const unknown='保存结果尚未确认。请保留原请求，恢复当前本人身份后重试同一内容。';
 export class PersonalMutationSession{
- private state:PersonalState=freeze({phase:'idle',pending:null,saved:null,error:''});private binding:PersonalBinding;private storage?:Store;private fetcher:PersonalFetch;private assertBinding:()=>boolean;private storageKey:string;private listeners=new Set<()=>void>();private onAuthorizationLost?:()=>void;private verifyReadback=false;private uncertain=false;private invalidated=false;private controller:AbortController|null=null;private attemptGeneration=0;
+ private state:PersonalState=freeze({phase:'idle',pending:null,saved:null,error:''});private binding:PersonalBinding;private storage?:Store;private fetcher:PersonalFetch;private assertBinding:()=>boolean;private storageKey:string;private receiptKey:string;private knownTodoReceipt:PublicEntry|null=null;private listeners=new Set<()=>void>();private onAuthorizationLost?:()=>void;private verifyReadback=false;private uncertain=false;private invalidated=false;private controller:AbortController|null=null;private attemptGeneration=0;
  constructor(options:{binding:PersonalBinding;storage?:Store;fetcher?:PersonalFetch;assertBinding?:()=>boolean;verifyReadback?:boolean;onAuthorizationLost?:()=>void}){
   this.onAuthorizationLost=options.onAuthorizationLost;this.verifyReadback=options.verifyReadback===true;checkBinding(options.binding);this.binding=freeze(clonePersonalJSON(options.binding));this.storage=options.storage;this.fetcher=options.fetcher??((input,init)=>fetch(input,init));this.assertBinding=options.assertBinding??(()=>true);this.storageKey='lifeos.personal.pending.v1:'+encodeURIComponent(this.binding.ownerId)+':'+encodeURIComponent(this.binding.spaceId);
-  try{const saved=this.storage?.getItem(this.storageKey);if(saved){if(saved.length>150000)throw Error();this.uncertain=true;this.state=freeze({phase:'uncertain',pending:checked(JSON.parse(saved),this.binding),saved:null,error:unknown});}}catch{this.uncertain=true;this.state=freeze({phase:'uncertain',pending:null,saved:null,error:'保留的请求无法核对，请保留当前页面。'});}
+  // Keep the v1 command wire format readable by the previous build.
+  this.receiptKey=this.storageKey+':todo-create-receipt';
+  try{
+   const saved=this.storage?.getItem(this.storageKey);
+   if(saved){
+    if(saved.length>150000)throw Error();
+    const pending=checked(JSON.parse(saved),this.binding);
+    if(this.isTodoCreate(pending))this.loadTodoReceipt(pending);
+    this.uncertain=true;this.state=freeze({phase:'uncertain',pending,saved:null,error:unknown});
+   }
+  }catch{this.uncertain=true;this.state=freeze({phase:'uncertain',pending:null,saved:null,error:'保留的请求无法核对，请保留当前页面。'});}
  }
  getSnapshot=():PersonalState=>this.state;
  subscribe=(listener:()=>void):(()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
  private update(state:PersonalState){this.state=freeze(state);this.listeners.forEach(listener=>listener());}
  private active(){return !this.invalidated&&this.assertBinding();}
+ private isTodoCreate(command:PersonalCommand){return command.type==='todo'&&command.id===null;}
+ private loadTodoReceipt(command:PersonalCommand){
+  const saved=this.storage?.getItem(this.receiptKey);
+  if(!saved)return;
+  if(saved.length>350000)throw Error();
+  const receipt=object(JSON.parse(saved),['key','entry']);
+  // An older build can settle the v1 command without touching the sidecar.
+  if(receipt.key!==command.key)return;
+  if(!matches(command,receipt.entry))throw Error();
+  this.knownTodoReceipt=freeze(receipt.entry);
+ }
+ private keepTodoReceipt(command:PersonalCommand,entry:PublicEntry){
+  this.knownTodoReceipt=freeze(entry);
+  if(!this.storage)return;
+  const serialized=JSON.stringify({key:command.key,entry});
+  this.storage.setItem(this.receiptKey,serialized);
+  if(this.storage.getItem(this.receiptKey)!==serialized)throw Error();
+ }
+
  private keep(command:PersonalCommand){if(!this.storage)return;const serialized=JSON.stringify(command),prior=this.storage.getItem(this.storageKey);if(prior&&prior!==serialized)throw Error('当前本人空间另有未确认请求。');this.storage.setItem(this.storageKey,serialized);if(this.storage.getItem(this.storageKey)!==serialized)throw Error('无法保留本次请求，尚未发送。');}
  private clear(command:PersonalCommand){if(!this.storage)return;const prior=this.storage.getItem(this.storageKey);if(prior!==JSON.stringify(command))throw Error('保留的请求已变化。');this.storage.removeItem(this.storageKey);if(this.storage.getItem(this.storageKey)!==null)throw Error('保存回执仍未确认。');}
  invalidateBinding(){this.invalidated=true;this.attemptGeneration++;this.controller?.abort();this.controller=null;if(this.state.pending){this.uncertain=true;this.update({...this.state,phase:'uncertain',saved:null,error:unknown});}}
  cancel(){if(this.state.phase==='saving'){this.attemptGeneration++;this.controller?.abort();this.controller=null;this.uncertain=true;this.update({...this.state,phase:'uncertain',saved:null,error:unknown});}else if(this.state.phase!=='uncertain')this.update({phase:'idle',pending:null,saved:null,error:''});}
- async submit(value:PersonalCommand,verifyReadback=false){if(this.state.phase==='saving'||this.state.phase==='uncertain')return;let command:PersonalCommand;try{if(!this.active())throw Error('当前本人身份或空间已变化，未发送。');command=checked(value,this.binding);this.keep(command);}catch(error){this.update({phase:'rejected',pending:null,saved:null,error:error instanceof Error?error.message:'请求未发送。'});return;}this.uncertain=false;this.update({phase:'saving',pending:command,saved:null,error:''});await this.send(command,verifyReadback);}
+ async submit(value:PersonalCommand,verifyReadback=false){if(this.state.phase==='saving'||this.state.phase==='uncertain')return;let command:PersonalCommand;try{if(!this.active())throw Error('当前本人身份或空间已变化，未发送。');command=checked(value,this.binding);this.keep(command);}catch(error){this.update({phase:'rejected',pending:null,saved:null,error:error instanceof Error?error.message:'请求未发送。'});return;}this.knownTodoReceipt=null;this.uncertain=false;this.update({phase:'saving',pending:command,saved:null,error:''});await this.send(command,verifyReadback);}
  async retry(verifyReadback=false){if(this.state.phase!=='uncertain'||!this.state.pending||!this.active())return;const command=this.state.pending;this.update({...this.state,phase:'saving',error:''});await this.send(command,verifyReadback);}
  private authorizationLost(response:Response,enabled:boolean){if(enabled&&(response.status===401||response.status===403)){this.onAuthorizationLost?.();throw Error('当前会话权限已失效。');}}
  private async send(command:PersonalCommand,verifyReadback=false){
   if(this.state.phase!=='saving'||this.state.pending!==command)return;
   const generation=++this.attemptGeneration,controller=new AbortController(),current=()=>generation===this.attemptGeneration;this.controller=controller;
-  try{if(!this.active())throw Error();const response=await this.fetcher('/api/platform/personal/'+command.type+(command.id?'/'+command.id:''),{method:command.method,headers:{'content-type':'application/json','idempotency-key':command.key},credentials:'same-origin',body:JSON.stringify(command.body),signal:controller.signal});if(!current()||!this.active())return;this.authorizationLost(response,verifyReadback);const value:unknown=await response.json();if(!current())return;if(!this.active()||controller.signal.aborted)throw Error();
-   // Authentication can be lost after commit, so it cannot release the original command.
-   if(response.status>=400&&response.status<500&&obj(value)&&obj(value.error)&&typeof value.error.code==='string'){if(this.uncertain||response.status===401||response.status===403)throw Error();this.clear(command);this.update({phase:'rejected',pending:null,saved:null,...(command.type==='article'&&value.error.code==='REVISION_CONFLICT'?{articleRevisionConflict:true as const}:{}),error:value.error.code==='REVISION_CONFLICT'?'版本冲突：请重新读取当前记录，核对后再保存。':value.error.code==='REFERENCE_CONFLICT'?'关联版本冲突：请重新选择当前来源后保存。':'请求未被接受，请重新核对本人身份、内容或版本。'});return;}
-   if(!(response.status===200||command.method==='POST'&&response.status===201)||!obj(value)||typeof value.duplicate!=='boolean'||!matches(command,value.entry))throw Error();
+  const live=()=>current()&&this.active()&&!controller.signal.aborted;
+  try{
+   if(!live())return;
+   const needsReadback=this.verifyReadback||verifyReadback;
+   let receipt=this.isTodoCreate(command)?this.knownTodoReceipt:null;
+   if(!receipt){
+    const response=await this.fetcher('/api/platform/personal/'+command.type+(command.id?'/'+command.id:''),{method:command.method,headers:{'content-type':'application/json','idempotency-key':command.key},credentials:'same-origin',body:JSON.stringify(command.body),signal:controller.signal});
+    if(!live())return;
+    this.authorizationLost(response,verifyReadback);
+    const value:unknown=await response.json();
+    if(!live())return;
+    // Authentication can be lost after commit, so it cannot release the original command.
+    if(response.status>=400&&response.status<500&&obj(value)&&obj(value.error)&&typeof value.error.code==='string'){
+     if(this.uncertain||response.status===401||response.status===403)throw Error();
+     this.clear(command);
+     this.update({phase:'rejected',pending:null,saved:null,...(command.type==='article'&&value.error.code==='REVISION_CONFLICT'?{articleRevisionConflict:true as const}:{}),error:value.error.code==='REVISION_CONFLICT'?'版本冲突：请重新读取当前记录，核对后再保存。':value.error.code==='REFERENCE_CONFLICT'?'关联版本冲突：请重新选择当前来源后保存。':'请求未被接受，请重新核对本人身份、内容或版本。'});
+     return;
+    }
+    if(!(response.status===200||command.method==='POST'&&response.status===201)||!obj(value)||typeof value.duplicate!=='boolean'||!matches(command,value.entry))throw Error();
+    receipt=value.entry;
+    if(needsReadback&&this.isTodoCreate(command))this.keepTodoReceipt(command,receipt);
+   }
    let observed:PublicEntry|undefined;
-   if(this.verifyReadback||verifyReadback){const read=await this.fetcher('/api/platform/personal/'+command.type+'/'+(value.entry as PublicEntry).id,{credentials:'same-origin',cache:'no-store',signal:controller.signal});if(!current()||!this.active())return;this.authorizationLost(read,verifyReadback);const detail:unknown=await read.json();if(!current())return;if(!this.active()||controller.signal.aborted||!read.ok||!obj(detail)||!observedReadback(command,value.entry as PublicEntry,detail.entry))throw Error();observed=detail.entry;const check=await this.fetcher('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store',signal:controller.signal});if(!current()||!this.active())return;this.authorizationLost(check,verifyReadback);const status:unknown=await check.json();if(!current())return;if(verifyReadback&&(!obj(status)||status.scope!=='personal-manual-candidate'||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true||status.writable!==true||(command.type==='article'?status.articleEnabled!==true:!Array.isArray(status.allowedTypes)||!status.allowedTypes.includes(command.type)))){this.onAuthorizationLost?.();throw Error('当前身份或空间已变化。');}if(!this.active()||!check.ok||!obj(status)||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true)throw Error();}
-   this.clear(command);this.update({phase:'saved',pending:null,saved:value.entry,...(observed?{observed}:{}),error:''});
-  }catch{if(current()){this.uncertain=true;this.update({phase:'uncertain',pending:command,saved:null,error:unknown});}}finally{if(current()&&this.controller===controller)this.controller=null;}
+   if(needsReadback||this.knownTodoReceipt){
+    const read=await this.fetcher('/api/platform/personal/'+command.type+'/'+receipt.id,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+    if(!live())return;
+    this.authorizationLost(read,verifyReadback);
+    const detail:unknown=await read.json();
+    if(!live())return;
+    if(!read.ok||!obj(detail)||!observedReadback(command,receipt,detail.entry))throw Error();
+    observed=detail.entry;
+    const check=await this.fetcher('/api/platform/personal/status',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+    if(!live())return;
+    this.authorizationLost(check,verifyReadback);
+    const status:unknown=await check.json();
+    if(!live())return;
+    if(verifyReadback&&(!obj(status)||status.scope!=='personal-manual-candidate'||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true||status.writable!==true||(command.type==='article'?status.articleEnabled!==true:!Array.isArray(status.allowedTypes)||!status.allowedTypes.includes(command.type)))){
+     this.onAuthorizationLost?.();throw Error('当前身份或空间已变化。');
+    }
+    if(!check.ok||!obj(status)||status.ownerId!==this.binding.ownerId||status.spaceId!==this.binding.spaceId||status.storageVerified!==true)throw Error();
+   }
+   this.clear(command);
+   if(this.knownTodoReceipt){
+    this.knownTodoReceipt=null;
+    // The command was settled first. A leftover sidecar is ignored on reload.
+    try{this.storage?.removeItem(this.receiptKey);}catch{/* The old command is already cleared. */}
+   }
+   this.update({phase:'saved',pending:null,saved:receipt,...(observed?{observed}:{}),error:''});
+  }catch{
+   if(current()){this.uncertain=true;this.update({phase:'uncertain',pending:command,saved:null,error:unknown});}
+  }finally{
+   if(current()&&this.controller===controller)this.controller=null;
+  }
  }
 }

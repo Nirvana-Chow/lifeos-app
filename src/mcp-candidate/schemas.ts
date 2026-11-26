@@ -30,7 +30,11 @@ function envelopeSchema(operation:Operation){
  else if(operation.id==='commitTodoClassification'){shape.planId=z.string();shape.digest=z.string();shape.confirmed=z.literal(true);shape.idempotencyKey=z.string();}
  else if(operation.method!=='GET'){
   shape.fields=fields;shape.idempotencyKey=z.string();
-  if(operation.id==='createTodo')shape.originalLine=originalLine;
+  // Accept only for recovery of a historical receipt. Discovery keeps the previous create schema.
+  if(operation.id==='createTodo'){
+   shape.originalLine=originalLine;
+   shape.expression=z.enum(['written','spoken']).optional();
+  }
   if(operation.method==='PATCH')shape.expectedRevision=z.number();
   if(operation.id==='updateRequirement')shape.baselineBinding=z.union([fields,z.null()]);
  }
@@ -47,7 +51,6 @@ export function argumentSchema(operation:Operation):z.ZodType{
  else if(operation.id==='commitTodoClassification'){shape.planId=recordId;shape.digest=digest;shape.confirmed=z.literal(true);shape.idempotencyKey=commandKey;}
  else if(operation.method!=='GET'){
   shape.idempotencyKey=commandKey;
-  if(operation.id==='createTodo')shape.originalLine=originalLine;
   if(operation.method==='PATCH')shape.expectedRevision=operation.module==='requirements'?z.number().int().min(0).max(2147483647).describe('CAS revision from GET; zero only for the first edit of a public LO-ID.'):revision;
   if(operation.id==='updateRequirement')shape.baselineBinding=baselineBinding;
   if(operation.module==='organization'){

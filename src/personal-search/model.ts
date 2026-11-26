@@ -4,7 +4,7 @@ import type {CalendarPersonal} from '../calendar-candidate/personal-domain.ts';
 import {object,validateId,validateRevision,validateTodo} from '../platform/domain.ts';
 import {normalizePersonalFields,personalTypes,type ObjectFields} from '../personal-candidate/business.ts';
 import {appleOriginMarker,readAppleOrigin} from '../personal-candidate/apple-origin.ts';
-import {validateTodoOriginalLine} from '../personal-candidate/todo-capture.ts';
+import {readManualTodoSource} from '../personal-candidate/todo-capture.ts';
 import type {PersonalType} from '../personal-candidate/config.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
 export const searchTypeLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',article:'文章',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
@@ -20,8 +20,8 @@ export function searchRow(value:unknown,spaceId:string,query:string):SearchRow{
  if(!source||!original||source.system!=='website'||source.externalId!==entry.id||source.version!==1||entry.syncState!=='draft'||entry.externalStatus!==null||original.spaceId!==spaceId)throw Error('记录来源无法核对。');
  const id=validateId(entry.id),sourceId=validateId(source.id),revision=validateRevision(entry.revision),type=original.type as PersonalType;
  if(!personalTypes.includes(type)||entry.kind!==(type==='todo'?'todo':'inbox'))throw Error('记录类别无法核对。');
- if(original.marker===appleOriginMarker){if(type!=='todo')throw Error('记录来源无法核对。');readAppleOrigin(original,spaceId);}else{
-  object(original,['marker','spaceId','type','input']);const initial=object(original.input,['spaceId','confirmed','fields',...(type==='todo'?['originalLine']:[])]);if(Object.hasOwn(initial,'originalLine'))validateTodoOriginalLine(initial.originalLine);if(original.marker!=='personal-manual-v1'||initial.spaceId!==spaceId||initial.confirmed!==true)throw Error('记录来源无法核对。');normalizePersonalFields(type,initial.fields);
+ if(original.marker===appleOriginMarker){if(type!=='todo')throw Error('记录来源无法核对。');readAppleOrigin(original,spaceId);}else if(type==='todo'){readManualTodoSource(original,spaceId);}else{
+  object(original,['marker','spaceId','type','input']);const initial=object(original.input,['spaceId','confirmed','fields']);if(original.marker!=='personal-manual-v1'||initial.spaceId!==spaceId||initial.confirmed!==true)throw Error('记录来源无法核对。');normalizePersonalFields(type,initial.fields);
  }
  let title:string,text:string,recordDate:ReturnType<typeof personalSearchRecordDate>;
  if(type==='todo'){const draft=validateTodo(entry.draft);title=draft.title;text=draft.notes;recordDate=personalSearchRecordDate(draft);}
