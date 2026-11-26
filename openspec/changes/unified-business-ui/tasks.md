@@ -233,3 +233,7 @@ Migration inventory for the existing personal app:
 | OAuth continuation, login, session recovery and external routes | Preserve their current security and document boundaries. |
 
 Use synthetic browser evidence at desktop, 390px and 430px to distinguish document and shell-node preservation from identical-looking markup. Keep existing fixed-main CI, published version and owner experience gates open.
+
+### Storage review workspace entry (EXEC-STORAGE-ENTRY-001)
+
+Continue 1.2/3.1/3.2 and [Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41#issuecomment-7182201330). The storage content shares the existing checklist, decision and note controller with the standalone response. Its review is loaded on mount after verifying the owner and space. The shared personal layout owns canonical navigation, history, focus, scroll restoration and the active content guard. Keep the current direct entry until the host is qualified. Preserve the standalone CSP and the existing save, receipt and independent readback rules. Fixed-source integration, production readback and owner experience remain pending.
