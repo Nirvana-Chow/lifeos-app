@@ -123,7 +123,10 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   await page.getByRole('button',{name:'多行录入',exact:true}).click();await expect(dialog.getByRole('textbox',{name:'第1项标题',exact:true})).toHaveValue('合成保留未尝试批次');assert.equal(calls.length,7);
   assert.equal(Object.hasOwn(calls[5].body,'originalLine'),false);
   const legacy=[...repo.rows.values()].find(row=>'title'in row.draft&&row.draft.title==='合成原单条待确认')!;
-  page.once('dialog',d=>d.accept());await page.goto(origin+'/personal/edit?type=todo&id='+legacy.id,{waitUntil:'networkidle'});
+  await dialog.getByRole('button',{name:'清空批次'}).click();
+  await dialog.getByLabel('原始输入（最多50行）').focus();await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await page.goto(origin+'/personal/edit?type=todo&id='+legacy.id,{waitUntil:'networkidle'});
   await expect(detail).toBeVisible();await detail.getByText('录入原文与初次确认',{exact:true}).click();
   await expect(detail.getByText('原始输入未记录。',{exact:true})).toBeVisible();
   assert.deepEqual(errors,[]);console.log('TASK_BATCH_BROWSER_PASS '+JSON.stringify({calls:calls.length,records:repo.rows.size,readbacks,history:true,revocation:true,desktop:true,mobile:true,keyboard:true}));
