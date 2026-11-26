@@ -78,7 +78,7 @@ export function mountTaskGridEditor(
     void commit(event.key === 'Tab' ? event.shiftKey ? 'previous' : 'next' : null);
   };
   const isSearchFocus = (target: EventTarget | null) =>
-    target instanceof Element && !!target.closest('[data-personal-search-focus]');
+    !!target && target instanceof Element && !!target.closest('[data-personal-search-focus]');
   // WebKit can blur the input with no relatedTarget before activating a
   // header button. Capture the initiating press before that native blur.
   let searchPress = false;
@@ -89,11 +89,11 @@ export function mountTaskGridEditor(
   const endPress = () => { searchPress = false; };
   const gestures = new AbortController();
   const capture = {capture: true, signal: gestures.signal};
-  const document = input.ownerDocument;
-  document.addEventListener('pointerdown', rememberPress, capture);
-  document.addEventListener('mousedown', rememberPress, capture);
+  const ownerDocument = input.ownerDocument;
+  ownerDocument?.addEventListener('pointerdown', rememberPress, capture);
+  ownerDocument?.addEventListener('mousedown', rememberPress, capture);
   for (const type of ['pointerup', 'pointercancel', 'mouseup', 'click', 'keydown']) {
-    document.addEventListener(type, endPress, capture);
+    ownerDocument?.addEventListener(type, endPress, capture);
   }
   const blur = (event: Event) => {
     const target = (event as FocusEvent).relatedTarget;
