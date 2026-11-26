@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {chromium,expect} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
-import {PersonalService} from '../src/personal-candidate/service.ts';
+import {personalEntryType,PersonalService} from '../src/personal-candidate/service.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {calendarFields} from './helpers/personal-calendar-port.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
@@ -33,7 +33,16 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    if(dialog.type()==='beforeunload'){await dialog.accept();return;}
    discardPrompts.push(dialog.message());await dialog.dismiss();
   });
-  const config:PersonalConfig={ownerId:'search-browser-owner',ownerEmail:'search@example.invalid',spaceId:'search-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','calendar'],calendarEnabled:true,approval:'personal-manual-v1',baseURL:origin};const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
+  const config:PersonalConfig={ownerId:'search-browser-owner',ownerEmail:'search@example.invalid',spaceId:'search-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','calendar'],calendarEnabled:true,approval:'personal-manual-v1',baseURL:origin};const repo=Object.assign(new MemoryPort(),{
+   async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly string[]){
+    return structuredClone([...repo.rows.values()].filter(row=>{
+     const type=personalEntryType(row,spaceId);
+     return row.ownerId===owner&&type!==null&&types.includes(type);
+    }));
+   },
+  });
+  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
+  const service=new PersonalService(repo,config);
   const entry=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic search diary',text:'Original needle diary body',occurredOn:null}},'browser-search-journal')).entry;const calendar=(await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic calendar',text:'Calendar needle body'}},'browser-search-calendar')).entry;const dated=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic December diary',text:'Boundary needle prose',occurredOn:'2025-12-31'}},'browser-search-december')).entry;
   await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic Shanghai calendar',text:'Boundary needle',personal:{...calendarFields.personal,schedule:{kind:'timed',startAt:'2025-12-31T16:00:00Z',endAt:'2025-12-31T17:00:00Z',timeZone:'UTC'}}}},'browser-search-shanghai');
   const todo=(await service.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic workspace task',notes:'Keep as-is',dueOn:null,status:'open'}},'browser-search-workspace-task')).entry;
