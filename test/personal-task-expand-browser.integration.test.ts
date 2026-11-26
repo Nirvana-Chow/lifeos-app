@@ -92,6 +92,9 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   const boundary=page.getByRole('heading',{name:'本人工作台暂不可用',exact:true});
   assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  // Next dev may start and cancel an extra request during React Strict Mode's initial remount.
+  const initialReads=workspaceReads;
+  assert.ok(initialReads===1||initialReads===2);
   for(let iteration=0;iteration<2;iteration++){
    await expand.tap();
    await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
@@ -102,6 +105,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(reminderTitle);
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
+  assert.equal(workspaceReads,initialReads,'repeat expands do not request a snapshot');
   await expand.tap();
   holdSnapshot=true;
   await page.evaluate(()=>{
@@ -115,6 +119,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(workspace).toHaveAttribute('data-workspace-state','error',{timeout:12_000});
   await expect(page.getByText('本人空间读取超时，请重试。',{exact:true})).toBeVisible();
   const attempts=workspaceReads;
+  assert.equal(attempts,initialReads+1,'resuming requests one snapshot');
   holdSnapshot=false;
   releaseSnapshot();
   await expect(workspace).toHaveAttribute('data-workspace-state','error');
@@ -125,7 +130,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
   await expect(boundary).toHaveCount(0);
   assert.equal(wideReads,0);
-  assert.equal(workspaceReads,3,'initial load, held resume, and explicit retry each request one workspace read');
+  assert.equal(workspaceReads,attempts+1,'explicit retry requests one snapshot');
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{
