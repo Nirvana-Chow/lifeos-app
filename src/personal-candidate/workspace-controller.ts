@@ -174,7 +174,7 @@ export class PersonalWorkspaceController{
   if(command.id&&(saved.id!==command.id||saved.revision!==command.body.expectedRevision!+1))throw Error('保存回执的记录或版本不符，请重新读取核对。');
   const baseline=context.base??current;
   if(baseline&&(saved.kind!==baseline.kind||canonical(saved.source)!==canonical(baseline.source)))throw Error('保存回执的来源或版本不符，请重新读取核对。');
-  let observed=saved;
+  let observed=command.type==='todo'&&!command.id?state.observed??saved:saved;
   if(command.id&&'status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
    this.planningReadbackRequired=true;
    try{
@@ -193,7 +193,7 @@ export class PersonalWorkspaceController{
   // A newer authoritative snapshot stays intact even after the original key resolves.
   if(current&&current.revision>saved.revision||command.id&&!current){this.pending=null;return clonePersonalJSON(saved);}
   const already=current&&canonical(current)===canonical(observed);
-  if(current&&!already&&(!command.id||current.revision!==command.body.expectedRevision))throw Error('本地版本或内容已变化，请重新读取核对。');
+  if(current&&!already&&(command.id?current.revision!==command.body.expectedRevision:canonical(current)!==canonical(saved)))throw Error('本地版本或内容已变化，请重新读取核对。');
   const entries=this.entries.map(e=>e.id===saved.id?clonePersonalJSON(observed):e);if(!current)entries.push(clonePersonalJSON(observed));
   const data=this.value.state.data,checked=workspaceData({items:entries,total:entries.length,scope:'full-current-snapshot',truncated:false,today:data.today,observedAt:data.asOf},this.binding.spaceId,data.today);
   this.entries=checked.entries;this.planningReadbackRequired=false;
@@ -223,7 +223,7 @@ export class PersonalWorkspaceController{
    for(const {type,link} of personalReferences(draft)){const target=this.entries.find(e=>e.id===link.id);if(!target||target.source.id!==link.sourceId||target.revision!==link.revision||editorFromEntry(target,binding.spaceId).type!==type)throw Error('关联记录或版本已变化，请重新选择后保存。');}
    const check=await this.json('/api/platform/personal/status',preflight.signal);if(token!==this.generation||session!==this.session)return null;
    if(!check.response.ok||!obj(check.body)||check.body.scope!=='personal-manual-candidate'||check.body.ownerId!==binding.ownerId||check.body.spaceId!==binding.spaceId||check.body.storageVerified!==true||check.body.writable!==true||!Array.isArray(check.body.allowedTypes)||!check.body.allowedTypes.includes('todo')){this.suspend();this.emit({state:{status:'forbidden',message:'会话或写入权限已变化，请重新登录核对。'}});return null;}
-   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision);
+   const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision,batchCommand?.body.originalLine);
    if(batchCommand&&canonical(command)!==canonical(batchCommand))throw Error('保留的行请求内容不符，未发送。');
    this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,command.id===null);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
   }catch(error){if(token===this.generation)this.emit({mutationError:error instanceof Error?error.message:'操作未确认，请重新读取核对。'});return null;}

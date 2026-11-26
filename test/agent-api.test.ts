@@ -3,6 +3,8 @@ import test from 'node:test';
 import {MemoryPort} from './helpers/platform.ts';
 import {createAgentHandler} from '../src/agent-api/http.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
+import {searchRow} from '../src/personal-search/model.ts';
+import {seedTodoCapture} from './helpers/todo-capture-fixture.ts';
 
 const baseURL = 'http://127.0.0.1:3190';
 const ownerId = 'synthetic-owner-a';
@@ -245,4 +247,57 @@ test('mounted handler never advertises writes without its transaction fence', as
   const response=await handler(new Request(baseURL+'/api/platform/agent/v2/capabilities',{headers:{host:'127.0.0.1:3190',authorization:'Bearer fixture'}}));
   const body=await response.json();
   assert.equal(body.operations.some((item:{id:string})=>item.id==='createTodo'),false);
+});
+
+test('createTodo can recover historical source only with its existing scope and channel', async () => {
+ const {send,repository,denyWrite}=fixture();
+ const originalLine='  明天核对合成事项 📋  ';
+ const request={fields,originalLine};
+ const key='synthetic-capture-original';
+ for(const identity of ['reader','foreign','wrong-space']){
+  assert.equal((await send('/v1/todos','POST',identity,request,key)).status,403);
+ }
+ const discovery=await send('/v2/capabilities','GET','writer');
+ assert.doesNotMatch(discovery.body.operations.find((op:{id:string})=>op.id==='createTodo').description,/originalLine|expression/);
+ for(const invalid of ['two\nlines','\ud800']){
+  assert.equal((await send('/v1/todos','POST','writer',{...request,originalLine:invalid},key)).status,400);
+ }
+ assert.equal(repository.rows.size,0);
+ assert.equal(repository.receipts.size,0);
+ const closed=await send('/v1/todos','POST','writer',request,key);
+ assert.equal(closed.status,409);
+ assert.equal(repository.rows.size,0);
+ assert.equal(repository.receipts.size,0);
+ const {id}=await seedTodoCapture(repository,ownerId,spaceId,key,fields,{originalLine});
+ const webKey='synthetic-owner-web-capture';
+ await seedTodoCapture(repository,ownerId,spaceId,webKey,fields,{expression:'written',channel:'owner-web'});
+ assert.equal((await send('/v1/todos','POST','writer',{fields,expression:'written'},webKey)).status,409);
+ const agentKey='synthetic-agent-capture';
+ const agent=await seedTodoCapture(repository,ownerId,spaceId,agentKey,fields,{originalLine,expression:'spoken',channel:'agent-api'});
+ const agentReplay=await send('/v1/todos','POST','writer',{...request,expression:'spoken'},agentKey);
+ assert.equal(agentReplay.status,200);assert.equal(agentReplay.body.entry.id,agent.id);
+ const path='/v1/todos/'+id;
+ const publicRead=await send(path);
+ assert.equal(publicRead.status,200);
+ assert.equal(publicRead.body.fields.title,fields.title);
+ assert.equal(JSON.stringify(publicRead.body).includes(originalLine),false);
+ const ownerRead=new PersonalService(repository,config);
+ const stored=await ownerRead.get(ownerId,'todo',id);
+ const projected=searchRow(stored,spaceId,fields.title);
+ assert.equal(projected.title,fields.title);assert.equal(JSON.stringify(projected).includes(originalLine),false);
+ assert.deepEqual(stored.source.original,{marker:'personal-manual-v1',spaceId,type:'todo',input:{...request,spaceId,confirmed:true}});
+ assert.equal((await send('/v1/todos','POST','writer',{...request,originalLine:'changed'},key)).status,409);
+ assert.equal((await send(path,'PATCH','writer',{...request,expectedRevision:1},'synthetic-capture-no-edit')).status,400);
+ const changed=await send(path,'PATCH','writer',{fields:{...fields,title:'Revised synthetic task',personal:null},expectedRevision:1},'synthetic-capture-cas');
+ assert.equal(changed.status,200);
+ const history=await ownerRead.history(ownerId,'todo',id);
+ assert.deepEqual(history.items.map(entry=>entry.revision),[2,1]);
+ assert.ok(history.items.every(entry=>JSON.stringify(entry.source)===JSON.stringify(stored.source)));
+ const replay=await send('/v1/todos','POST','writer',request,key);
+ assert.equal(replay.status,200);assert.equal(replay.body.entry.revision,1);
+ assert.equal((await ownerRead.get(ownerId,'todo',id)).revision,2);
+ assert.equal(repository.rows.size,3);assert.equal(repository.events.length,4);
+ denyWrite();
+ assert.equal((await send('/v1/todos','POST','writer',request,key)).status,503);
+ assert.equal(repository.events.length,4);
 });

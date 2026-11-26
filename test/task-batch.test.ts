@@ -10,3 +10,22 @@ test('expired authorization stops sequential dispatch and preserves pending comm
 test('raw input survives closing before preview, while known rejection stops later rows',async()=>{const f=setup();f.batch.draft('尚未预检\n第二行');const restored=new TaskBatch(binding,f.storage,()=>crypto.randomUUID());assert.equal(restored.raw,'尚未预检\n第二行');restored.preview(restored.raw);let sent=0;await restored.run(async()=>{sent++;return null;},()=>{},()=>false);assert.equal(sent,1);assert.equal(restored.rows[0].state,'failed');assert.equal(restored.rows[1].state,'pending');});
 test('verified titles remain duplicate candidates when editing later pending rows after partial save',async()=>{const f=setup();f.batch.preview('A\nB\nC');let writes=0;await f.batch.run(async()=>++writes===1?{id:'11111111-1111-4111-8111-111111111111',revision:1} as any:null);f.batch.edit(2,'A',true);assert.match(batchIssues(f.batch.rows)[2]??'',/重复/);await f.batch.run(async()=>{writes++;return null;});assert.equal(writes,2);});
 test('inconsistent recovered row state command and receipt fail closed without replacing saved evidence',async()=>{for(const patch of [{state:'pending',command:null},{state:'unknown',receipt:null,command:null},{state:'verified',receipt:null},{state:'verified',selected:false},{state:'verified',receipt:{id:'not-an-id',revision:1}}]){const f=setup();f.batch.preview('A');await f.batch.run(async()=>({id:'11111111-1111-4111-8111-111111111111',revision:1} as any));const key=[...f.data.keys()][0],stored=JSON.parse(f.data.get(key)!);Object.assign(stored.rows[0],patch);const damaged=JSON.stringify(stored);f.data.set(key,damaged);assert.throws(()=>new TaskBatch(binding,f.storage,()=>crypto.randomUUID()));assert.equal(f.data.get(key),damaged);}});
+test('reader-first preserves a previous preview command and creates later rows in the old format',async()=>{
+ const f=setup();
+ f.batch.preview('  明天带资料  \r\n下一行');
+ f.batch.edit(0,'带确认后的资料',true);
+ await f.batch.run(async()=>null);
+ const key=[...f.data.keys()][0],stored=JSON.parse(f.data.get(key)!);
+ const prior=stored.rows[0].command;
+ prior.body.originalLine='  明天带资料  ';
+ f.data.set(key,JSON.stringify(stored));
+ const restored=new TaskBatch(binding,f.storage,()=>crypto.randomUUID());
+ const commands:typeof prior[]=[];
+ await restored.run(async command=>{
+  commands.push(command);
+  return {id:crypto.randomUUID(),revision:1} as never;
+ });
+ assert.deepEqual(commands[0],prior);
+ assert.equal(Object.hasOwn(commands[1].body,'originalLine'),false);
+ assert.equal(commands[1].body.fields.dueOn,null);
+});
