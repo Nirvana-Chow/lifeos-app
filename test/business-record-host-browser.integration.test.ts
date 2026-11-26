@@ -49,6 +49,12 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   if(match&&/Ready in\b/.test(output)){origin=match;break;}
  }
  assert.ok(origin);
+ // Compile fixture routes before asserting browser navigation and rendering.
+ for(const route of Object.keys(businessPaths)){
+  const response=await fetch(origin+'/personal/'+route,{headers:{cookie:'synthetic-owner=1'},signal:AbortSignal.timeout(90_000)});
+  assert.equal(response.status,200);
+  await response.arrayBuffer();
+ }
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
  browserProcess=trackAuthThemeProcess(browserServer.process());
  browser=await chromium.connect(browserServer.wsEndpoint());
@@ -65,7 +71,7 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
  const media=(await seed('media','Synthetic film',emptyMediaPersonal('film'),'media')).entry;
  await seed('portfolio','Synthetic account',emptyPortfolioPersonal('account'),'portfolio');
 
- for(const width of [1365,390]){
+ for(const width of [1365,390,430]){
   const page:Page=await browser.newPage({viewport:{width,height:850}});
   const writes:string[]=[],documents:string[]=[],errors:string[]=[],reads:string[]=[];
   const mediaRead=Promise.withResolvers<void>(),mediaRequested=Promise.withResolvers<void>();
@@ -111,16 +117,16 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   },nodeSelectors);
   async function go(name:BusinessPath){
    const mobile=page.getByRole('button',{name:'打开导航',exact:true});
-   if(width===390)await mobile.click();
+   if(width!==1365)await mobile.click();
    const header=page.locator('header.lo-header');
-   const nav=width===390?page.getByRole('dialog',{name:'LifeOS',exact:true}):header;
+   const nav=width!==1365?page.getByRole('dialog',{name:'LifeOS',exact:true}):header;
    if(name==='portfolio'){
     const finance=nav.getByRole('link',{name:'财务',exact:true});
     await finance.click();
    }else{
     const tab=nav.getByRole('button',{name:name==='media'?'兴趣学习':'职业成长',exact:true});
     if(await tab.isVisible())await tab.click();
-    const sidebar=width===390?nav:page.locator('aside.lo-sidebar');
+    const sidebar=width!==1365?nav:page.locator('aside.lo-sidebar');
     await sidebar.getByRole('link',{name:businessPaths[name],exact:true}).click();
    }
    await expect(page).toHaveURL(origin+'/personal/'+name);
@@ -143,7 +149,7 @@ test('OPT-IN the four business records use one authorized shell when explicitly 
   await expect(page).toHaveURL(origin+'/personal/career');
   await expect(heading('career')).toBeVisible();
   assert.equal(await sameShell(),true);
-  const focus=width===390?page.getByRole('button',{name:'打开导航',exact:true}):
+  const focus=width!==1365?page.getByRole('button',{name:'打开导航',exact:true}):
    page.locator('aside.lo-sidebar').getByRole('link',{name:'简历',exact:true});
   await expect(focus).toBeFocused();
   await viewport.waitFor();
