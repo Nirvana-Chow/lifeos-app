@@ -7,6 +7,7 @@
 .rows li { padding: 10px 0; }
 .thoughts li { display: grid; gap: 4px; }
 .thoughtHeading a { font-weight: 550; }
+.timestamps { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .excerpt {
   display: -webkit-box;
   -webkit-box-orient: vertical;

@@ -56,7 +56,7 @@ function recordSources(history:JournalHistory,topics:PublicEntry[]){
  }
  return {diary:historyOf(diary,history.observedAt),memos:historyOf(memos,history.observedAt),unclassified};
 }
-export async function readJournalHistory(fetcher:Fetcher=fetch){
+export async function readJournalHistory(fetcher:Fetcher=fetch,{includeRecordedTimes=false}={}){
  const {binding:before,canReadTopics}=await journalAccess(fetcher),snapshot=await read(fetcher,'journal/snapshot');
  if(snapshot.scope!=='full-current-snapshot'||snapshot.truncated!==false||!Array.isArray(snapshot.items)||snapshot.total!==snapshot.items.length||snapshot.items.length>10000||typeof snapshot.observedAt!=='string')return invalid();
  const entries=snapshot.items.map(entry=>ownerRecord(entry,'journal',before.spaceId));
@@ -74,7 +74,9 @@ export async function readJournalHistory(fetcher:Fetcher=fetch){
  }
  const {binding:after,canReadTopics:topicsStillAllowed}=await journalAccess(fetcher);
  if(bindingKey(before)!==bindingKey(after))throw Error('本人空间已变化，请重新读取。');
- return {binding:after,history,sources:recordSources(history,topicsStillAllowed?topics:[])};
+ return {binding:after,history,sources:recordSources(history,topicsStillAllowed?topics:[]),
+  ...(includeRecordedTimes&&{recordedAtById:new Map(entries.map(entry=>[entry.id,entry.createdAt]))}),
+ };
 }
 export type JournalOriginal={entry:PublicEntry;current:RecordFields;original:RecordFields;history:PublicEntry[];historyTruncated:boolean};
 export async function readJournalOriginal(fetcher:Fetcher,id:string,expected:JournalBinding,reference?:JournalReference):Promise<JournalOriginal>{
