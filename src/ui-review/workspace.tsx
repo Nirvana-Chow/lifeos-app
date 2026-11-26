@@ -1,5 +1,6 @@
 "use client";
 
+import {isWorkspaceRoute} from "../personal-candidate/workspace-route-context";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {Popover} from "radix-ui";
 import {
@@ -157,24 +158,27 @@ function DataState({
   );
 }
 
+type RouteFocus={control:HTMLElement|null;link:{region:'header.lo-header'|'aside.lo-sidebar';href:string}|null};
+
 export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const ownerModules=useOwnerModules(access.authenticated===true,props.viewPreferenceScope??null);
-  const journalNavigationReady=ownerModules.links.some(link=>link.id==='journal');
+  const navigationHrefs=ownerModules.links.map(link=>link.href).join("\n");
   const routePath=props.unifiedRoute?.path;
+  const contentRoute=!!routePath&&routePath!=='/personal';
   const modulePath=routePath??ownerModules.path;
   const [workspacePage, setPage] = useState<WorkspacePage>(
     props.initialModal==='settings' ? 'settings' : props.initialPage ?? "overview",
   );
-  const page=routePath==='/personal/journal'?'overview':workspacePage;
+  const page=contentRoute?'overview':workspacePage;
   const settingsOpen=page==='settings';
   const [classificationPlanId,setClassificationPlanId]=useState<string|null>(props.initialModal==='classification'?props.initialClassificationPlanId??null:null);
   const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??defaultSettingsPanel);
   const locationState=useRef({page,settingsOpen,settingsPanel,classificationPlanId});
   locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
-  const settingsSection=page==='settings'||page==='requirements'||modulePath.startsWith('/personal/requirements/');
+  const settingsSection=routePath==='/personal/storage-review'||page==='settings'||page==='requirements'||modulePath.startsWith('/personal/requirements/');
   const settingsSubpage=settingsOpen&&(settingsPanel==='security'||settingsPanel==='api-keys');
   const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
   const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
@@ -223,7 +227,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
   const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
-  const currentFilterScope=routePath==='/personal/journal'?ownerModules.scope:verifiedPrivateScope??null;
+  const currentFilterScope=contentRoute?ownerModules.scope:verifiedPrivateScope??null;
   const scopeRevoked=routePath==='/personal'&&access.authenticated===false;
   if(routePath&&(currentFilterScope||scopeRevoked)&&currentFilterScope!==filterScope){
     setFilterScope(currentFilterScope);
@@ -247,27 +251,28 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const currentHref = useRef("");
   const committedRoute=useRef(routePath);
   const pendingRoutePush=useRef(false);
-  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:{control:HTMLElement|null;sidebarLink:string|null}}>());
+  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:RouteFocus}>());
   const restoreRouteScroll=useRef(false);
-  const restoreRouteFocus=useRef<{control:HTMLElement|null;sidebarLink:string|null}|null>(null);
+  const restoreRouteFocus=useRef<RouteFocus|null>(null);
   const fallbackRouteFocus=useRef<HTMLElement|null>(null);
   const mainRegion=useRef<HTMLElement>(null);
   function scrollRegions(main:HTMLElement){
     return [main,...main.querySelectorAll<HTMLElement>(':scope > .lo-content, .lo-list-rows, .lo-board-cards, [data-slot="data-grid-table-viewport"]')];
   }
-  function rememberRoutePosition(){
+  function rememberRoutePosition(trigger?:HTMLAnchorElement){
     const main=mainRegion.current;
-    const focused=document.activeElement;
+    const focused=trigger??document.activeElement;
     const control=mobileOpen?menuButton.current:focused instanceof HTMLElement&&focused!==document.body?focused:null;
-    const sidebarLink=control instanceof HTMLAnchorElement&&control.closest('aside.lo-sidebar')?control.getAttribute('href'):null;
+    const region=control?.closest('header.lo-header')?'header.lo-header':control?.closest('aside.lo-sidebar')?'aside.lo-sidebar':null;
+    const href=control instanceof HTMLAnchorElement?control.getAttribute('href'):null;
     if(main&&currentHref.current)routePositions.current.set(currentHref.current,{
       windowY:window.scrollY,regions:scrollRegions(main).map(region=>({x:region.scrollLeft,y:region.scrollTop})),
-      focus:{control,sidebarLink},
+      focus:{control,link:region&&href?{region,href}:null},
     });
   }
-  function pushUnifiedRoute(destination:string){
+  function pushUnifiedRoute(destination:string,trigger?:HTMLAnchorElement){
     if(!props.unifiedRoute||window.location.pathname+window.location.search===destination)return;
-    rememberRoutePosition();
+    rememberRoutePosition(trigger);
     pendingRoutePush.current=true;
     setMobileOpen(false);
     props.unifiedRoute.push(destination);
@@ -378,7 +383,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     const old=currentHistory.current;
     const entry=pendingRoutePush.current&&old?{scope:old.scope,index:old.index+1}:
       workspaceHistoryEntry(window.history.state)??{scope:old?.scope??crypto.randomUUID(),index:old?.index??0};
-    restoreRouteFocus.current=(pendingRoutePush.current?null:routePositions.current.get(href)?.focus)??{control:null,sidebarLink:null};
+    restoreRouteFocus.current=(pendingRoutePush.current?null:routePositions.current.get(href)?.focus)??{control:null,link:null};
     fallbackRouteFocus.current=null;
     pendingRoutePush.current=false;
     window.history.replaceState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
@@ -406,35 +411,52 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       restoreRouteFocus.current=null;
       const previousFallback=fallbackRouteFocus.current;
       if(previousFallback&&document.activeElement!==previousFallback&&document.activeElement!==document.body)return;
-      const {control,sidebarLink}=position;
-      // The owner capability check may restore the sidebar link after task rows load.
-      const link=sidebarLink&&journalNavigationReady
-        ?document.querySelector<HTMLElement>(`aside.lo-sidebar a[href="${CSS.escape(sidebarLink)}"]`)
-        :null;
-      const target=sidebarLink?link:control;
+      const {control,link}=position;
+      const authorized=link&&navigationHrefs.split('\n').includes(link.href)&&
+        (routePath!=='/personal'||state.status==='ready'&&verifiedPrivateScope===ownerModules.scope);
+      let target=link?null:control;
+      if(authorized){
+        target=mainRegion.current?.closest('.lo-shell')?.querySelector<HTMLElement>(
+          `${link.region} a[href="${CSS.escape(link.href)}"]`
+        )??null;
+      }
       if(target?.isConnected&&target.getClientRects().length){target.focus({preventScroll:true});return;}
       const heading=mainRegion.current?.querySelector<HTMLElement>('h1')??null;
       heading?.focus({preventScroll:true});
-      if(sidebarLink&&routePath==='/personal'&&state.status!=='forbidden'&&state.status!=='error'){
+      if(link&&routePath&&state.status!=='forbidden'&&state.status!=='error'){
         fallbackRouteFocus.current=heading;
         restoreRouteFocus.current=position;
       }
     });
     return()=>cancelAnimationFrame(frame);
-  },[routePath,state.status,page,journalNavigationReady]);
+  },[routePath,state.status,page,navigationHrefs,verifiedPrivateScope,ownerModules.scope]);
   useLayoutEffect(()=>{
     if(!restoreRouteScroll.current)return;
     const main=mainRegion.current;
     if(!main)return;
     const position=routePositions.current.get(currentHref.current);
-    scrollRegions(main).forEach((region,index)=>region.scrollTo(position?.regions[index]?.x??0,position?.regions[index]?.y??0));
-    window.scrollTo(0,position?.windowY??0);
-    if(routePath!=='/personal'||state.status==='ready')restoreRouteScroll.current=false;
+    const restore=()=>{
+      scrollRegions(main).forEach((region,index)=>region.scrollTo(position?.regions[index]?.x??0,position?.regions[index]?.y??0));
+      window.scrollTo(0,position?.windowY??0);
+      if(routePath!=='/personal'||state.status==='ready')restoreRouteScroll.current=false;
+    };
+    // The review list acquires its height only after the owner check and read.
+    if(routePath==='/personal/storage-review'&&position&&!main.querySelector('#storage-review-body:not([hidden])')){
+      const observer=new MutationObserver(()=>{
+        if(main.querySelector('#storage-review-body:not([hidden])')){
+          observer.disconnect();
+          restore();
+        }
+      });
+      observer.observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
+      return ()=>observer.disconnect();
+    }
+    restore();
   },[routePath,state.status,page]);
   useEffect(() => {
     if (!props.syncUrl) return;
     const initialLocation=readWorkspaceLocation(Object.fromEntries(new URLSearchParams(window.location.search)));
-    if(committedRoute.current!=='/personal/journal'&&initialLocation.page==='settings')window.history.replaceState(window.history.state,'',workspaceLocationHref(initialLocation));
+    if((!committedRoute.current||committedRoute.current==='/personal')&&initialLocation.page==='settings')window.history.replaceState(window.history.state,'',workspaceLocationHref(initialLocation));
     if (!currentHistory.current) {
       const entry = workspaceHistoryEntry(window.history.state) ?? {scope: crypto.randomUUID(), index: 0};
       window.history.replaceState({...window.history.state, [workspaceHistoryKey]: entry}, '', window.location.href);
@@ -455,7 +477,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const url = new URL(window.location.href);
       const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
       const crossUnifiedRoute=!!committedRoute.current&&url.pathname!==committedRoute.current&&
-        (url.pathname==='/personal'||url.pathname==='/personal/journal');
+        isWorkspaceRoute(url.pathname);
       if (url.pathname !== "/personal" && !isTaskLink && !crossUnifiedRoute) return;
       const nextLocation = readWorkspaceLocation(Object.fromEntries(url.searchParams));
       const historyPage=nextLocation.page;
@@ -468,10 +490,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       else if (locationState.current.classificationPlanId && classificationCloseGuard?.current?.()===false) allowed=false;
       else if (locationState.current.settingsOpen&&settingsCloseGuard?.current?.()===false) allowed=false;
       else if (overlayChange || locationState.current.settingsOpen&&historyPage==='settings') allowed = saving||uncertain ? false : onBeforeSettingsChange?.();
+      else if (crossUnifiedRoute) allowed=onBeforeNavigate?.();
       else if (task && onOpenTask) allowed = onOpenTask(task);
       else if (wantsCreate && onCreateTask) allowed = onCreateTask();
       else allowed = onBeforeNavigate?.();
       if (allowed === false) {
+        if(crossUnifiedRoute)event.stopImmediatePropagation();
         const active = currentHistory.current;
         const nativeIndex = browserHistoryIndex();
         const delta = nativeIndex !== null && currentBrowserIndex.current !== null
@@ -514,8 +538,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       historyLimit.current=Math.max(historyLimit.current,currentHistory.current.index);
       updateHistoryControls();
     };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    // Next handles same-document traversal in its window bubble listener.
+    // Check a shared route before Next can unmount the current editor.
+    const handled=new WeakSet<PopStateEvent>();
+    const capture=(event:PopStateEvent)=>{
+      const path=window.location.pathname;
+      if(!committedRoute.current||path===committedRoute.current||!isWorkspaceRoute(path))return;
+      handled.add(event);
+      onPopState(event);
+    };
+    const bubble=(event:PopStateEvent)=>{if(!handled.has(event))onPopState(event);};
+    window.addEventListener('popstate',capture,true);
+    window.addEventListener('popstate',bubble);
+    return()=>{
+      window.removeEventListener('popstate',capture,true);
+      window.removeEventListener('popstate',bubble);
+    };
   }, [props.syncUrl]);
   function settingsAllowed() {
     return !restoringHistory.current&&(!classificationPlanId||props.classificationCloseGuard?.current?.()!==false)&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
@@ -551,7 +589,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   ) {
     if (restoringHistory.current || page==='requirements'&&next!==page&&requirementNavigationGuard.current?.()===false || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     const destination=next==='settings'?workspaceLocationHref({page:'settings',panel:nextSettingsPanel}):workspaceHref(next);
-    if(routePath==='/personal/journal'){
+    if(contentRoute){
       pushUnifiedRoute(destination);
       return true;
     }
@@ -826,9 +864,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           event.stopPropagation();
           return;
         }
-        if(routePath&&href==='/personal/journal'){
+        if(routePath&&href&&href!=='/personal'&&isWorkspaceRoute(href)){
           event.preventDefault();
-          pushUnifiedRoute(href);
+          pushUnifiedRoute(href,link instanceof HTMLAnchorElement?link:undefined);
         }
       }}
       ref={setPortalContainer}

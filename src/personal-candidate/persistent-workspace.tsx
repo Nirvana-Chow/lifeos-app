@@ -4,7 +4,7 @@ import {useContext,useState,useSyncExternalStore,type ReactNode} from 'react';
 import {readWorkspaceLocation} from '../workbench/private-navigation';
 import {PersonalWorkspaceView} from './live-workspace';
 import {PrivacyBoundary,useOwnerPageVerification} from './privacy';
-import {WorkspaceRouteContext,type TaskShellFrame,type WorkspaceRoutePath} from './workspace-route-context';
+import {isWorkspaceRoute,WorkspaceRouteContext,type TaskShellFrame,type WorkspaceRoutePath} from './workspace-route-context';
 
 function createTaskFrame(){
  let current:TaskShellFrame|null=null;
@@ -25,7 +25,7 @@ type Options={children:ReactNode};
 
 export function PersistentPersonalWorkspace(props:Options){
  const path=usePathname();
- if(path!=='/personal'&&path!=='/personal/journal')return props.children;
+ if(!isWorkspaceRoute(path))return props.children;
  return <PrivacyBoundary><WorkspaceRoutes path={path} {...props}/></PrivacyBoundary>;
 }
 
@@ -33,11 +33,11 @@ function WorkspaceRoutes({path,children}:Options&{path:WorkspaceRoutePath}){
  const router=useRouter(),query=useSearchParams();
  const location=readWorkspaceLocation(path==='/personal'?Object.fromEntries(query):{});
  const [store]=useState(createTaskFrame);
- const [route]=useState(()=>({journalGuard:{current:null as (()=>boolean)|null},publishTaskFrame:store.publish}));
+ const [route]=useState(()=>({activeContentGuard:{current:null as (()=>boolean)|null},publishTaskFrame:store.publish}));
  return <WorkspaceRouteContext.Provider value={route}>
   <PersistentFrame path={path} store={store} location={location}
    push={href=>router.push(href,{scroll:false})}>
-   {path==='/personal/journal'?children:null}
+   {path!=='/personal'?children:null}
   </PersistentFrame>
   {path==='/personal'&&children}
  </WorkspaceRouteContext.Provider>;
@@ -47,18 +47,18 @@ function PersistentFrame({path,store,location,push,children}:Options&{
  path:WorkspaceRoutePath;store:Frame;location:ReturnType<typeof readWorkspaceLocation>;push:(href:string)=>void;
 }){
  const task=useSyncExternalStore(store.subscribe,store.read,emptyFrame);
- const journal=useContext(WorkspaceRouteContext);
+ const route=useContext(WorkspaceRouteContext);
  const verified=useOwnerPageVerification();
- const isJournal=path==='/personal/journal';
- return <PersonalWorkspaceView {...(isJournal||!task?{
-  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true?true:null,writable:null,loginAllowed:true},
+ const isContentRoute=path!=='/personal';
+ return <PersonalWorkspaceView {...(isContentRoute||!task?{
+  state:{status:'unknown'},access:{authenticated:isContentRoute&&verified===true?true:null,writable:null,loginAllowed:true},
  }:task)}
   initialPage={location.page} initialModal={location.page==='settings'?'settings':location.modal}
   initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
   unifiedRoute={{path,push}}
-  {...(isJournal?{
-   contentPage:{wide:true,title:'记录',content:children},
-   onBeforeNavigate:()=>journal?.journalGuard.current?.()!==false,
+  {...(isContentRoute?{
+   contentPage:{wide:true,title:path==='/personal/storage-review'?'存储审核':'记录',content:children},
+   onBeforeNavigate:()=>route?.activeContentGuard.current?.()!==false,
   }:{})}
  />;
 }

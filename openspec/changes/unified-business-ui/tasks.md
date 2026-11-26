@@ -237,3 +237,5 @@ Use synthetic browser evidence at desktop, 390px and 430px to distinguish docume
 ### Storage review workspace entry (EXEC-STORAGE-ENTRY-001)
 
 Continue 1.2/3.1/3.2 and [Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41#issuecomment-7182201330). The storage content shares the existing checklist, decision and note controller with the standalone response. Its review is loaded on mount after verifying the owner and space. The shared personal layout owns canonical navigation, history, focus, scroll restoration and the active content guard. Keep the current direct entry until the host is qualified. Preserve the standalone CSP and the existing save, receipt and independent readback rules. Fixed-source integration, production readback and owner experience remain pending.
+
+The storage host candidate connects the Settings link at the canonical URL to the reviewed body during workspace navigation. Direct document requests keep the standalone response. Browser qualification uses synthetic owners and independently verifies both paths. Fixed-main integration, deployment and owner acceptance remain pending.

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {spawn,execFileSync} from 'node:child_process';
 import {on} from 'node:events';
 import {cp,mkdir,mkdtemp,readFile,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -15,26 +16,33 @@ import {MemoryPort} from './helpers/platform.ts';
 
 test('OPT-IN authoritative storage route in the personal workspace preserves shell, drafts and server fences',{
  skip:process.env.RUN_STORAGE_REVIEW_WORKSPACE_BROWSER_TESTS!=='1'&&'Requires the composed storage route and disposable Next/Chromium',
- timeout:180_000,
+ timeout:300_000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-storage-workspace-'));
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browser:Browser|undefined,browserServer:BrowserServer|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,server,browserProcess,browser,browserServer}));
- const files=['app/layout.tsx','app/globals.css','app/theme.css','app/personal/layout.tsx','app/personal/page.tsx','app/personal/storage-review/page.tsx','postcss.config.mjs'];
+ const files=['app/layout.tsx','app/globals.css','app/theme.css','app/personal/layout.tsx','app/personal/page.tsx','app/personal/storage-review/route.ts','app/personal/storage-review/document.ts','app/personal/storage-review/response.ts','app/personal/storage-review/workbench/page.tsx','next.config.ts','postcss.config.mjs'];
  for(const file of files){await mkdir(join(root,file,'..'),{recursive:true});await cp(join(source,file),join(root,file));}
  await mkdir(join(root,'app/login'),{recursive:true});
  await cp(join(source,'src'),join(root,'src'),{recursive:true});
  await symlink(join(source,'node_modules'),join(root,'node_modules'));
  await symlink(join(source,'components'),join(root,'components'));
+ await cp(join(source,'package.json'),join(root,'package.json'));
+
  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>Synthetic login</h1>}');
- await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};');
+ const compiler=JSON.parse(await readFile(join(source,'tsconfig.json'),'utf8'));
+ await writeFile(join(root,'tsconfig.json'),JSON.stringify({...compiler,include:['app/**/*','next-env.d.ts']}));
  await writeFile(join(root,'src/platform/runtime.ts'),`
- export const readPlatformLoginCapability=async()=>({sessionDuration:false});
+ export const readPlatformLoginCapability=async()=>({sessionDuration:true});
  export const readPlatformPasswordCapability=async()=>false;
- export const readPlatformPagePrincipal=async(headers)=>headers.get('cookie')?.includes('storage-fixture=1')?{userId:'storage-synthetic-owner'}:null;
+ export const readPlatformPagePrincipal=async(headers:Headers)=>headers.get('cookie')?.includes('storage-fixture=1')?{userId:'storage-synthetic-owner'}:null;
  `);
- const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
-  cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],
+ const next=join(source,'node_modules/next/dist/bin/next');
+ // Compile the disposable server so the real script CSP applies to every browser visit.
+ const env:NodeJS.ProcessEnv={PATH:process.env.PATH,NODE_ENV:'production',NEXT_TELEMETRY_DISABLED:'1'};
+ execFileSync(process.execPath,[next,'build','--webpack'],{cwd:root,env,stdio:'inherit',timeout:150_000});
+ const child=spawn(process.execPath,[next,'start','--hostname','127.0.0.1','--port','0'],{
+  cwd:root,detached:true,env,stdio:['ignore','pipe','pipe'],
  });
  server=trackAuthThemeProcess(child,true);
  child.stderr.resume();
@@ -64,7 +72,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   memory.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{}}));
   const service=new StorageReviewService(memory,{ownerId,spaceId});
   await service.saveChecklist(ownerId,{expectedRevision:null,checklist},'synthetic-workspace-seed');
-  let denied=false,unavailable=false,currentSpace=spaceId,alternate=false;
+  let mfaVerified=true,denied=false,unavailable=false,currentSpace=spaceId,alternate=false;
   const documents:string[]=[],errors:string[]=[],egress:string[]=[],wire:{method:string;path:string;status:number}[]=[];
   page.on('request',request=>{if(request.resourceType()==='document')documents.push(new URL(request.url()).pathname);});
   page.on('pageerror',error=>errors.push(error.message));
@@ -78,13 +86,19 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    if(url.origin!==origin){egress.push(url.origin);return route.abort();}
    if(!url.pathname.startsWith('/api/'))return route.continue();
    const path=url.pathname,method=input.method();
+   if(path==='/api/platform/auth/get-session')return route.fulfill({json:{
+    user:{id:ownerId},session:{mfaVerified,sessionDurationMode:'fixed',sessionDurationSeconds:1800,expiresAt:new Date(Date.now()+600000).toISOString()},
+   }});
    if(path==='/api/platform/status')return route.fulfill({status:denied?401:200,json:{}});
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
+   const access={scope:'personal-manual-candidate',ownerId,spaceId:currentSpace,storageVerified:true,writable:true,allowedTypes:['todo']};
    if(path.endsWith('/status'))return route.fulfill({
-    status:denied?401:unavailable?503:200,
-    json:{scope:'personal-manual-candidate',ownerId,spaceId:currentSpace,storageVerified:true,storageReviewEnabled:true,writable:true,allowedTypes:['todo']},
+    status:denied?401:unavailable?503:200,json:{...access,storageReviewEnabled:true},
    });
-   if(path.endsWith('/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
+   if(path==='/api/platform/personal/todo/workspace-snapshot')return route.fulfill({status:denied?401:unavailable?503:200,json:{
+    ...(url.searchParams.get('include')==='access'?{access}:{}),scope:'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,
+    today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z',
+   }});
    if(path!==endpoint&&path!==endpoint+'/notes')return route.fulfill({status:404,json:{}});
    const headers=new Headers(await input.allHeaders());
    headers.set('host',url.host);
@@ -202,12 +216,16 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   console.log('STORAGE_SCROLL_PROBE '+JSON.stringify({width,measured,scrolled:180,restoration}));
   await expect.poll(storageScroll,gate).toBe(180);
 
-  await page.goto(origin+canonical+'?review=storage-shell-v1',{waitUntil:'domcontentloaded'});
-  await expect(note).toHaveValue(raw,gate);
-  await page.reload({waitUntil:'domcontentloaded'});
-  await expect(note).toHaveValue(raw,gate);
-  assert.equal(new URL(page.url()).searchParams.get('review'),checklist.revision);
   if(width===1365){
+   mfaVerified=false;
+   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+   await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible(gate);
+   await expect(note).toBeHidden();
+   const reauth=page.getByRole('link',{name:'重新登录',exact:true});
+   assert.equal(new URL((await reauth.getAttribute('href'))!,origin).searchParams.get('return_to'),canonical);
+   mfaVerified=true;
+   await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();
+   await expect(note).toHaveValue(raw,gate);
    await note.fill('合成旧空间草稿');
    unavailable=true;
    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -223,6 +241,28 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    await expect(page.getByRole('button',{name:'重新核对'})).toBeVisible(gate);
    await expect(childRow).toHaveCount(0);
   }
+  denied=false;unavailable=false;alternate=false;currentSpace=spaceId;
+  const direct=await page.goto(origin+canonical+'?review=storage-shell-v1',{waitUntil:'domcontentloaded'});
+  assert.equal(direct?.status(),200,'direct storage document at '+page.url());
+  await expect(page.locator('header.mast')).toHaveCount(1,gate);
+  assert.match(direct!.headers()['content-security-policy'],/default-src 'none'/);
+  const policy=direct!.headers()['content-security-policy'];
+  assert.doesNotMatch(policy,/unsafe-inline/);
+  assert.equal(direct!.headers()['referrer-policy'],'no-referrer');
+  for(const tag of ['style','script']){
+   const inline=await page.locator(tag+':not([type])').first().textContent();
+   const hash=createHash('sha256').update(inline!).digest('base64');
+   assert.ok(policy.includes(tag+"-src 'sha256-"+hash+"'"));
+  }
+  assert.match(direct!.headers()['cache-control'],/private, no-store/);
+  const standaloneNote=page.locator('#list [data-id="G43.01"]').getByLabel('备注与处理要求');
+  // On desktop this same owner/space still has its own recoverable, unsaved note.
+  const sameOwnerNote=width===1365?'合成旧空间草稿':raw;
+  await expect(standaloneNote).toHaveValue(sameOwnerNote,gate);
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(standaloneNote).toHaveValue(sameOwnerNote,gate);
+  assert.equal(new URL(page.url()).searchParams.get('review'),checklist.revision);
+  assert.deepEqual((await service.get(ownerId))?.notes,[{id:'G43.01',note:raw}]);
   console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,settingsScroll:returnScroll,storageForwardScroll:180,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true,focusRestored:!focusFailures.some(record=>record.width===width)}));
   assert.deepEqual(errors,[]);assert.deepEqual(egress,[]);
   await page.close();
