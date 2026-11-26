@@ -3,6 +3,7 @@
 import { ArrowRight, ChevronLeft, ChevronRight, RefreshCw, Shuffle, Utensils } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
+import { Frame, FramePanel } from '../business-reui/frame';
 import { Button } from '../ui-review/ui/button';
 import type { RecipeSummary } from './catalog';
 import { ingredientTerms, rankRecipes, suggestionGroup } from './filter';
@@ -45,86 +46,90 @@ export function CookingWorkspace({ recipes, categories }: {
 
   return (
     <div className={styles.workspace}>
-      <section className={styles.pickPanel} aria-labelledby="cooking-suggestion-heading">
-        <div className={styles.sectionHead}>
-          <div className={styles.sectionIntro}>
-            <h2 id="cooking-suggestion-heading"><Utensils aria-hidden="true" size={19} />今天做什么</h2>
-            <p>第一次做，先挑一道 1–2 星的菜。读完步骤，切好食材、备齐调料再开火。</p>
-          </div>
-          <div className={styles.actions}>
-            <Button type="button" variant="outline" className={styles.control} disabled={!catalog.length}
-              onClick={() => setRandomPick(catalog[Math.floor(Math.random() * catalog.length)]?.recipe ?? null)}>
-              <Shuffle aria-hidden="true" />随机选一道
-            </Button>
-          {matches.length > 3 && (
-            <Button type="button" variant="outline" className={styles.control}
-              onClick={() => setGroup(current => current + 1)}>
-              <RefreshCw aria-hidden="true" />换一批
-            </Button>
-          )}
-          </div>
-        </div>
+      <Frame asChild spacing="sm" dense>
+        <section aria-labelledby="cooking-suggestion-heading">
+          <FramePanel className={styles.pickPanel}>
+            <div className={styles.sectionHead}>
+              <div className={styles.sectionIntro}>
+                <h2 id="cooking-suggestion-heading"><Utensils aria-hidden="true" size={19} />今天做什么</h2>
+                <p>第一次做，先挑一道 1–2 星的菜。读完步骤，切好食材、备齐调料再开火。</p>
+              </div>
+              <div className={styles.actions}>
+                <Button type="button" variant="outline" className={styles.control} disabled={!catalog.length}
+                  onClick={() => setRandomPick(catalog[Math.floor(Math.random() * catalog.length)]?.recipe ?? null)}>
+                  <Shuffle aria-hidden="true" />随机选一道
+                </Button>
+              {matches.length > 3 && (
+                <Button type="button" variant="outline" className={styles.control}
+                  onClick={() => setGroup(current => current + 1)}>
+                  <RefreshCw aria-hidden="true" />换一批
+                </Button>
+              )}
+              </div>
+            </div>
 
-        <div className={styles.categories} role="group" aria-label="菜谱分类">
-          {[{id: '', label: '全部菜谱'}, ...categories].map(item => (
-            <Button key={item.id} type="button" variant="outline" className={styles.category}
-              aria-pressed={category === item.id} onClick={() => {
-                setCategory(item.id);
-                setGroup(0);
-                setPage(0);
-                setRandomPick(null);
-              }}>
-              <span>{item.label}</span><span className={styles.meta}>{item.id ? categoryCounts.get(item.id) ?? 0 : recipes.length}</span>
-            </Button>
-          ))}
-        </div>
-        <div className={styles.filters}>
-          <label>
-            手头食材
-            <input type="search" maxLength={160} placeholder="例如：鸡蛋、番茄、土豆" value={ingredientInput}
-              onChange={event => {
-                setIngredientInput(event.target.value);
-                setGroup(0);
-                setPage(0);
-                setRandomPick(null);
-              }} />
-          </label>
-        </div>
+            <div className={styles.categories} role="group" aria-label="菜谱分类">
+              {[{id: '', label: '全部菜谱'}, ...categories].map(item => (
+                <Button key={item.id} type="button" variant="outline" className={styles.category}
+                  aria-pressed={category === item.id} onClick={() => {
+                    setCategory(item.id);
+                    setGroup(0);
+                    setPage(0);
+                    setRandomPick(null);
+                  }}>
+                  <span>{item.label}</span><span className={styles.meta}>{item.id ? categoryCounts.get(item.id) ?? 0 : recipes.length}</span>
+                </Button>
+              ))}
+            </div>
+            <div className={styles.filters}>
+              <label>
+                手头食材
+                <input type="search" maxLength={160} placeholder="例如：鸡蛋、番茄、土豆" value={ingredientInput}
+                  onChange={event => {
+                    setIngredientInput(event.target.value);
+                    setGroup(0);
+                    setPage(0);
+                    setRandomPick(null);
+                  }} />
+              </label>
+            </div>
 
-        {randomPick && (
-          <div className={styles.randomResult} role="status" aria-label="随机选菜结果">
-            <span className={styles.meta}>这次试试</span>
-            <Link href={`/personal/cooking/${randomPick.id}`} prefetch={false}>
-              <strong>{randomPick.name}</strong><span>查看做法 <ArrowRight aria-hidden="true" size={16} /></span>
-            </Link>
-          </div>
-        )}
-
-        {suggestions.length ? (
-          <ul className={styles.suggestions}>
-            {suggestions.map(({ recipe, matchedIngredients }) => (
-              <li key={recipe.id}>
-                <Link className={styles.pick} href={`/personal/cooking/${recipe.id}`} prefetch={false}>
-                  <span className={styles.pickCopy}>
-                    <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
-                    <strong>{recipe.name}</strong>
-                    {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
-                    {matchedIngredients.length > 0 && (
-                      <span className={styles.match}>匹配 {matchedIngredients.join('、')}</span>
-                    )}
-                  </span>
-                  <ArrowRight aria-hidden="true" size={17} className={styles.pickArrow} />
+            {randomPick && (
+              <div className={styles.randomResult} role="status" aria-label="随机选菜结果">
+                <span className={styles.meta}>这次试试</span>
+                <Link href={`/personal/cooking/${randomPick.id}`} prefetch={false}>
+                  <strong>{randomPick.name}</strong><span>查看做法 <ArrowRight aria-hidden="true" size={16} /></span>
                 </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={styles.empty}>暂时没有匹配的菜谱。可以给食材换个叫法，或切回全部分类。</p>
-        )}
-        {ingredients.length > 0 && matches.length > 0 && (
-          <p className={styles.hint}>匹配仅供选菜，开做前请核对菜谱里的完整用料。</p>
-        )}
-      </section>
+              </div>
+            )}
+
+            {suggestions.length ? (
+              <ul className={styles.suggestions}>
+                {suggestions.map(({ recipe, matchedIngredients }) => (
+                  <li key={recipe.id}>
+                    <Link className={styles.pick} href={`/personal/cooking/${recipe.id}`} prefetch={false}>
+                      <span className={styles.pickCopy}>
+                        <span className={styles.meta}>{categoryLabels.get(recipe.category)} · 难度 {recipe.difficulty}/5</span>
+                        <strong>{recipe.name}</strong>
+                        {recipe.cuisine && <span className={styles.meta}>{recipe.cuisine}</span>}
+                        {matchedIngredients.length > 0 && (
+                          <span className={styles.match}>匹配 {matchedIngredients.join('、')}</span>
+                        )}
+                      </span>
+                      <ArrowRight aria-hidden="true" size={17} className={styles.pickArrow} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={styles.empty}>暂时没有匹配的菜谱。可以给食材换个叫法，或切回全部分类。</p>
+            )}
+            {ingredients.length > 0 && matches.length > 0 && (
+              <p className={styles.hint}>匹配仅供选菜，开做前请核对菜谱里的完整用料。</p>
+            )}
+          </FramePanel>
+        </section>
+      </Frame>
 
       <section className={styles.catalog} aria-labelledby="cooking-catalog-heading">
         <div className={styles.sectionHead}>

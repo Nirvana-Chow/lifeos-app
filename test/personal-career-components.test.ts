@@ -16,7 +16,7 @@ function load(file:string):any{
  new Function('require','module','exports',compiled)((name:string)=>{
   if(name.endsWith('.module.css'))return{default:{}};
   if(name.startsWith('.')){
-   const target=resolve(dirname(path),name);for(const suffix of ['','.ts','.tsx'])if(existsSync(target+suffix))return name.endsWith('.tsx')||existsSync(target+'.tsx')?load((target+suffix).split('/personal-career/')[1]):nativeRequire(target+suffix);
+   const target=resolve(dirname(path),name);for(const suffix of ['','.ts','.tsx'])if(existsSync(target+suffix))return (target+suffix).endsWith('.tsx')?load(target+suffix):nativeRequire(target+suffix);
   }
   return nativeRequire(name);
  },module,module.exports);return module.exports;
