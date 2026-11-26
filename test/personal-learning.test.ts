@@ -91,3 +91,26 @@ test('word cards and immutable events are isolated and replay from durable, cont
   });
   assert.equal((await service.detail(binding,created.id,null)).card.revision,1);
 });
+
+test('a pending browser command keeps exact bytes across reload, scoped to one verified workspace', async()=>{
+  const {retainPending,readPending,clearPending}=await import('../src/personal-learning/pending.ts');
+  const map=new Map<string,string>();
+  const storage={
+    getItem:(key:string)=>map.get(key)??null,
+    setItem:(key:string,value:string)=>{map.set(key,value);},
+    removeItem:(key:string)=>{map.delete(key);},
+  };
+  const scope='a'.repeat(64);
+  const command={kind:'create',confirmed:true,front:'Word',back:'Meaning'} as const;
+  const pending={scope,command,key:'learning-99edc2d0-46ba-435c-98fc-26dc16a4d195',
+    body:'{ "kind":"create","confirmed":true,"front":"Word","back":"Meaning" }'};
+  retainPending(storage,pending);
+  assert.deepEqual(readPending(storage,scope),pending);
+  assert.equal(readPending(storage,'b'.repeat(64)),null);
+  const mismatch={...pending,body:JSON.stringify({...command,front:'Other'})};
+  assert.throws(()=>retainPending(storage,mismatch),/待确认/);
+  assert.equal(clearPending(storage,mismatch),false);
+  assert.equal(clearPending(storage,pending),true);
+  assert.equal(readPending(storage,scope),null);
+  assert.throws(()=>retainPending({...storage,setItem:()=>{}},pending),/未保留/);
+});

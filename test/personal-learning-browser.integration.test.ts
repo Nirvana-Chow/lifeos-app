@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {once} from 'node:events';
 import {cp,mkdir,mkdtemp,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -11,8 +12,9 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   skip:process.env.RUN_LEARNING_BROWSER!=='1'&&'Requires isolated Next and Chromium', timeout:180000,
 },async t=>{
   const source=resolve(import.meta.dirname,'..'), root=await mkdtemp(join(tmpdir(),'lifeos-learning-browser-'));
+  const pgPort=process.env.LEARNING_FIXTURE_PG_PORT;
   const files=['app/layout.tsx','app/globals.css','app/theme.css','app/personal/layout.tsx','postcss.config.mjs',
-    'test/helpers/learning-sqlite.ts'];
+    pgPort?'test/helpers/learning-pg.ts':'test/helpers/learning-sqlite.ts'];
   await Promise.all(['app/personal','app/login','test/helpers'].map(path=>mkdir(join(root,path),{recursive:true})));
   await Promise.all([
     ...files.map(path=>cp(join(source,path),join(root,path))),
@@ -28,21 +30,32 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   `);
   await writeFile(join(root,'src/personal-learning/runtime.ts'),`
     import {PlatformError} from '../platform/domain';
-    import {LearningSQLiteFixture} from '../../test/helpers/learning-sqlite';
     import {LearningService} from './service';
-    const service=new LearningService(new LearningSQLiteFixture(process.env.LEARNING_FIXTURE_DB!));
+    ${pgPort?`
+      import {learningFixturePool} from '../../test/helpers/learning-pg';
+      import {PostgresLearningRepository,verifyLearningPostgres} from './postgres';
+      const pool=learningFixturePool(process.env.LEARNING_FIXTURE_PG_PORT);
+      const ready=verifyLearningPostgres(pool);
+      const service=new LearningService(new PostgresLearningRepository(pool));
+    `:`
+      import {LearningSQLiteFixture} from '../../test/helpers/learning-sqlite';
+      const ready=Promise.resolve();
+      const service=new LearningService(new LearningSQLiteFixture(process.env.LEARNING_FIXTURE_DB!));
+    `}
     export async function readLearningRuntime(request:Request){
+      await ready;
       const baseURL='http://127.0.0.1:'+new URL(request.url).port;
       return {service,baseURL,authorize:async()=>{
         const value=request.headers.get('cookie')?.match(/(?:^|; )learning-fixture=(owner|foreign)(?:;|$)/)?.[1];
         if(!value)throw new PlatformError(401,'DENIED','Synthetic identity required');
-        return {binding:{ownerId:'synthetic-'+value,spaceId:'synthetic-space'},writable:true};
+        return {binding:{ownerId:'learning-fixture-'+value,spaceId:process.env.LEARNING_FIXTURE_SPACE!},writable:true};
       }};
     }
   `);
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
     cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1',
-      LEARNING_FIXTURE_DB:join(root,'learning.sqlite')},stdio:['ignore','pipe','pipe'],
+      LEARNING_FIXTURE_DB:join(root,'learning.sqlite'),
+      LEARNING_FIXTURE_SPACE:'learning-browser-'+randomUUID(),...(pgPort?{LEARNING_FIXTURE_PG_PORT:pgPort}:{})},stdio:['ignore','pipe','pipe'],
   });
   const stopped=once(server,'exit');
   let browser:Awaited<ReturnType<typeof chromium.launch>>|undefined;
@@ -98,11 +111,19 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   await expect(page.getByRole('alert').filter({hasText:'请重新验证词卡访问权限'})).toBeVisible();
   await expect(card).toHaveCount(0);
   await expect(page.getByRole('button',{name:'重试原请求'})).toHaveCount(0);
-  await page.getByRole('button',{name:'重新核对词卡权限'}).click();
-  await expect(page.getByRole('alert').filter({hasText:'保存结果尚未确认'})).toBeVisible();
+  // A different verified identity in this exact tab cannot see or retry the frozen request.
+  await context.addCookies([{name:'learning-fixture',value:'foreign',url:origin}]);
+  await page.reload({waitUntil:'domcontentloaded',timeout:90000});
+  await expect(page.getByText('还没有词卡。',{exact:true})).toBeVisible({timeout:30000});
+  await expect(page.getByRole('button',{name:'重试原请求'})).toHaveCount(0);
+  assert.equal(commands.length,2);
+  await context.addCookies([{name:'learning-fixture',value:'owner',url:origin}]);
+  await page.reload({waitUntil:'domcontentloaded',timeout:90000});
+  await expect(page.getByRole('alert').filter({hasText:'保存结果尚未确认'})).toBeVisible({timeout:30000});
   await page.getByRole('button',{name:'重试原请求'}).click();
   await expect(card).toContainText('最近复习：记得');
   assert.deepEqual(commands[1],commands[2]);
+  assert.equal(await page.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('lifeos.learning.pending.v1:')).length),0);
   await page.reload({waitUntil:'domcontentloaded',timeout:90000});
   await card.getByText('复习历史（1）',{exact:true}).click({timeout:30000});
   const firstAt=await card.locator('ol time').getAttribute('datetime');

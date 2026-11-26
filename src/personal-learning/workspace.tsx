@@ -5,11 +5,11 @@ import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import type {CardView, Command, Receipt, Review, Snapshot} from './domain';
+import {clearPending, readPending, retainPending, type Pending} from './pending';
 import styles from './workspace.module.css';
 
 const endpoint = '/personal/learning/data';
 type Data = Snapshot & {writable: boolean; scope: string};
-type Pending = {command: Command; key: string; scope: string};
 const labels = {again:'再练', recalled:'记得'};
 class RequestError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -35,7 +35,6 @@ export function LearningWorkspace() {
   const [revealed, setRevealed] = useState<string | null>(null);
   const epoch = useRef(0);
   const writing = useRef(false);
-  const frozen = useRef<Pending | null>(null);
 
   useEffect(() => {
     let controller: AbortController;
@@ -48,11 +47,10 @@ export function LearningWorkspace() {
       controller = new AbortController();
       void load<Data>('', {signal:controller.signal}).then(data => {
         if (id !== epoch.current) return;
+        const original = data.writable ? readPending(sessionStorage,data.scope) : null;
         setView(data);
-        if (frozen.current?.scope !== data.scope) {
-          frozen.current = null;
-        } else if (data.writable) {
-          setPending(frozen.current);
+        if (original) {
+          setPending(original);
           setError('保存结果尚未确认。可在当前页面重试原请求。');
         }
       }).catch(reason => {
@@ -69,14 +67,20 @@ export function LearningWorkspace() {
   async function send(command: Command, retained?: Pending) {
     if (verified !== true || !view?.writable || busy || writing.current || (pending && !retained)) return;
     const id = epoch.current;
-    const original = retained ?? {command, key:'learning-'+crypto.randomUUID(), scope:view.scope};
+    const original = retained ?? {command, body:JSON.stringify(command), key:'learning-'+crypto.randomUUID(), scope:view.scope};
     if (original.scope !== view.scope) return;
-    frozen.current = original;
+    try {
+      retainPending(sessionStorage,original);
+    } catch {
+      setError('无法安全保留本次请求，请重新核对词卡权限。');
+      setView(null);
+      return;
+    }
     writing.current = true;setBusy(true);setError('');setNotice('');
     try {
       const receipt = await load<Receipt>('', {
         method:'POST', headers:{'content-type':'application/json', 'idempotency-key':original.key, 'x-learning-scope':original.scope},
-        body:JSON.stringify(original.command),
+        body:original.body,
       });
       if (id !== epoch.current) return;
       const query = new URLSearchParams({card:receipt.cardId});
@@ -98,7 +102,7 @@ export function LearningWorkspace() {
       if (!current || (receipt.kind === 'review' && !current.history.some(item => item.id === receipt.id))) {
         throw new Error('复习投影尚未核对。');
       }
-      frozen.current = null;
+      if (!clearPending(sessionStorage,original)) throw new Error('词卡请求仍待确认。');
       setView(next);setPending(null);setRevealed(null);
       if (command.kind === 'create') {setFront('');setBack('');}
       setNotice(command.kind === 'create' ? '词卡已保存。' : '复习已保存。');
@@ -106,12 +110,10 @@ export function LearningWorkspace() {
       if (id !== epoch.current) return;
       if (reason instanceof RequestError && [401,403].includes(reason.status)) {
         // Authorization can change after commit. Keep the exact command concealed until this scope is verified.
-
         setView(null);setPending(null);setRevealed(null);setFront('');setBack('');
         setError('请重新验证词卡访问权限。');
       } else if (!retained && reason instanceof RequestError && reason.status === 409 &&
-          reason.code === 'LEARNING_REVISION_CONFLICT') {
-        frozen.current = null;
+          reason.code === 'LEARNING_REVISION_CONFLICT' && clearPending(sessionStorage,original)) {
         setError('复习记录已更新，请重新读取。');
         setRevealed(null);
         try {
@@ -120,8 +122,7 @@ export function LearningWorkspace() {
         } catch {
           if (id === epoch.current) setView(null);
         }
-      } else if (!retained && reason instanceof RequestError && reason.status === 400) {
-        frozen.current = null;
+      } else if (!retained && reason instanceof RequestError && reason.status === 400 && clearPending(sessionStorage,original)) {
         setError(reason.message);
       } else {
         setPending(original);setError('保存结果尚未确认。可在当前页面重试原请求。');
@@ -137,7 +138,7 @@ export function LearningWorkspace() {
     {busy && !view && <p role="status">正在读取词卡…</p>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {!view && !busy && error && frozen.current && <div><Button type="button" variant="outline"
+    {!view && !busy && error && <div><Button type="button" variant="outline"
       onClick={()=>setRecheck(value=>value+1)}>重新核对词卡权限</Button></div>}
     {pending && <div><Button type="button" variant="outline" disabled={busy}
       onClick={()=>void send(pending.command,pending)}>重试原请求</Button></div>}

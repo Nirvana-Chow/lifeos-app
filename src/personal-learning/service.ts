@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {object, PlatformError, validateId, validateIdempotencyKey, validateRevision} from '../platform/domain.ts';
-import {projectSchedule, projectSnapshot, scheduleVersion, type Binding, type Card, type CardView, type Command, type Receipt, type Review} from './domain.ts';
+import {commandOf} from './command.ts';
+import {PlatformError, validateId, validateIdempotencyKey} from '../platform/domain.ts';
+import {projectSchedule, projectSnapshot, scheduleVersion, type Binding, type Card, type CardView, type Receipt, type Review} from './domain.ts';
 
 export interface LearningReader {
   cards(): Promise<Card[]>;
@@ -21,27 +22,7 @@ export interface LearningRepository {
   write<T>(binding: Binding, run: (transaction: LearningTransaction) => Promise<T>): Promise<T>;
 }
 
-const invalid = () => new PlatformError(400, 'INVALID_LEARNING_COMMAND', '请核对词卡或复习内容。');
 const missing = () => new PlatformError(404, 'LEARNING_NOT_FOUND', '词卡或复习事件不可访问。');
-function field(value: unknown, max: number): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw invalid();
-  return value.trim();
-}
-function commandOf(value: unknown): Command {
-  const kind = (value as {kind?: unknown} | null)?.kind;
-  if (kind === 'create') {
-    const row = object(value, ['kind','confirmed','front','back']);
-    if (row.confirmed !== true) throw invalid();
-    return {kind, confirmed: true, front: field(row.front, 240), back: field(row.back, 4000)};
-  }
-  if (kind === 'review') {
-    const row = object(value, ['kind','confirmed','cardId','cardRevision','previousId','rating']);
-    if (row.confirmed !== true || (row.rating !== 'again' && row.rating !== 'recalled')) throw invalid();
-    return {kind, confirmed: true, cardId: validateId(row.cardId), cardRevision: validateRevision(row.cardRevision),
-      previousId: row.previousId === null ? null : validateId(row.previousId), rating: row.rating};
-  }
-  throw invalid();
-}
 
 export class LearningService {
   private readonly repository: LearningRepository;
