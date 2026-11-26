@@ -12,8 +12,8 @@ test('OPT-IN mobile Expand survives missing native clone and recovers after a st
 },async()=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-task-expand-'));
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browserServer:BrowserServer|undefined,browser:Browser|undefined;
- let holdStatus=false,releaseStatus!:()=>void;
- const heldStatus=new Promise<void>(resolve=>releaseStatus=resolve);
+ let holdSnapshot=false,releaseSnapshot!:()=>void;
+ const heldSnapshot=new Promise<void>(resolve=>releaseSnapshot=resolve);
  try{
   await mkdir(join(root,'app/personal'),{recursive:true});
   await Promise.all([
@@ -66,7 +66,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     initialDraft:reminderFields,
    }},
   };
-  let heldReads=0,statusReads=0,workspaceReads=0,wideReads=0;
+  let heldReads=0,workspaceReads=0,wideReads=0;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),path=url.pathname;
    if(url.origin!==origin)return route.abort();
@@ -74,14 +74,14 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405});}
    if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/personal/status')){
-    statusReads++;
-    if(holdStatus){heldReads++;await heldStatus;if(page.isClosed())return;}
     return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
    }
    if(path.endsWith('/personal/overview')){wideReads++;return route.fulfill({status:500});}
    if(path.endsWith('/personal/todo/workspace-snapshot')){
     workspaceReads++;
-    return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
+    assert.equal(url.searchParams.get('include'),'access');
+    if(holdSnapshot){heldReads++;await heldSnapshot;if(page.isClosed())return;}
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:true,allowedTypes:['todo']},truncated:false,total:2,items:[task,reminder],today:url.searchParams.get('today'),observedAt:at}});
    }
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
   });
@@ -103,7 +103,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expand.tap();
-  holdStatus=true;
+  holdSnapshot=true;
   await page.evaluate(()=>{
    for(const visibilityState of ['hidden','visible']){
     Object.defineProperty(document,'visibilityState',{configurable:true,value:visibilityState});
@@ -114,22 +114,22 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect.poll(()=>heldReads).toBeGreaterThan(0);
   await expect(workspace).toHaveAttribute('data-workspace-state','error',{timeout:12_000});
   await expect(page.getByText('本人空间读取超时，请重试。',{exact:true})).toBeVisible();
-  const attempts=statusReads;
-  holdStatus=false;
-  releaseStatus();
+  const attempts=workspaceReads;
+  holdSnapshot=false;
+  releaseSnapshot();
   await expect(workspace).toHaveAttribute('data-workspace-state','error');
-  assert.equal(statusReads,attempts);
+  assert.equal(workspaceReads,attempts);
   await workspace.getByRole('button',{name:'重新读取',exact:true}).tap();
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
   await expand.tap();
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
   await expect(boundary).toHaveCount(0);
   assert.equal(wideReads,0);
-  assert.equal(workspaceReads,2,'only initial load and the successful manual retry read the workspace');
+  assert.equal(workspaceReads,3,'initial load, held resume, and explicit retry each request one workspace read');
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{
-  releaseStatus();
+  releaseSnapshot();
   await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server});
  }
 });

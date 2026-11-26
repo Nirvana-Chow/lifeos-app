@@ -41,7 +41,7 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
    }
    if(url.pathname.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin},headers});
    if(url.pathname.endsWith('/status'))return route.fulfill({status:expired?401:200,json:expired?{}:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,writable:true,allowedTypes:['todo']},headers});
-   if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'},headers});
+   if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill(expired?{status:401,json:{error:{code:'LOGIN_REQUIRED'}},headers}:{json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:ownerId,spaceId:spaceId,storageVerified:true,writable:true,allowedTypes:['todo']},truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'},headers});
    const entry=entries.find(e=>url.pathname.endsWith('/'+e.id));
    if(entry){readbacks++;if(loseSecond&&entries.indexOf(entry)===1)return route.abort();return route.fulfill({json:{entry},headers});}
    return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});

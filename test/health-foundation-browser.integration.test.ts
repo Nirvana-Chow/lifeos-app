@@ -105,7 +105,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
       if(denied)return route.fulfill({status:403,json:{error:{message:'合成读取拒绝'}}});
       return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated,items,observedAt}});
     }
-    if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
+    if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']},total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     const record = items.find(item=>url.pathname.endsWith('/health/'+item.id));
     if(record)return route.fulfill({json:{entry:record}});

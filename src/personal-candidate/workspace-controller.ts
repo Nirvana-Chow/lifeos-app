@@ -12,6 +12,12 @@ export type ControllerSnapshot={singleTask?:{entry:PublicEntry;spaceId:string};s
 const canonical=(v:unknown):string=>JSON.stringify(v,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value);
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const errorCode=(v:unknown)=>obj(v)&&obj(v.error)?v.error.code:null;
+function snapshotFailure(status:number,code:unknown):string|null{
+ if(status===409&&code==='DATA_READER_INCOMPATIBLE')return '当前版本无法读取部分记录。请更新页面后重试。';
+ if(status===503&&(code==='PERSONAL_SNAPSHOT_UNAVAILABLE'||code==='TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'))
+  return '暂时无法读取完整待办列表，请重试。';
+ return null;
+}
 const workspaceReadTimeoutMs=10_000;
 export class PersonalWorkspaceController{
  private value:ControllerSnapshot={state:{status:'unknown'},access:{authenticated:null,writable:null,loginAllowed:null},pendingTaskIds:[],mutationError:null,uncertain:false,saving:false,undoDeadline:null};
@@ -61,10 +67,20 @@ export class PersonalWorkspaceController{
   };
   let failure='未能读取本人空间状态，请重试。';
   try{
-   const {response,body:status}=await this.json('/api/platform/personal/status',read.signal);
+   const taskWorkspace=this.options.taskWorkspace===true;
+   const requestedDay=taskWorkspace?this.options.today():null;
+   const bundled=requestedDay!==null?await this.json('/api/platform/personal/todo/workspace-snapshot?today='+encodeURIComponent(requestedDay)+'&include=access',read.signal):undefined;
+   if(token!==this.generation)return;
+   const recoverable=bundled?snapshotFailure(bundled.response.status,errorCode(bundled.body)):null;
+   if(recoverable&&!linkedTaskId){unavailable(recoverable);return;}
+   // The linked-record recovery needs a fresh binding when the complete list could not be read.
+   const {response,body:status}=!bundled||recoverable
+    ?await this.json('/api/platform/personal/status',read.signal)
+    :bundled.response.ok?{response:bundled.response,body:obj(bundled.body)?bundled.body.access:null}:bundled;
    if(token!==this.generation)return;
    if(!response.ok){
     const code=errorCode(status);
+    if(bundled&&code==='PERSONAL_TYPE_DENIED'){unavailable('当前访问范围未确认包含待办。');return;}
     unavailable(response.status===401?'请登录本人账号。':response.status===403?'当前账号没有访问本人空间的权限。':
      code==='AUTH_UNAVAILABLE'?'身份服务暂不可用，请重试。':
      code==='PLATFORM_UNAVAILABLE'?'本人空间服务暂不可用，请稍后重试。':failure,response.status);
@@ -88,14 +104,12 @@ export class PersonalWorkspaceController{
    }
    this.emit({access:{authenticated:true,writable:status.writable===true,loginAllowed:this.value.access.loginAllowed,allowedTypes:[...status.allowedTypes] as PersonalType[],displayName:'本人空间'}});this.readMutation();
    failure='待办数据未能读取，请重试。';
-   const today=this.options.today(),taskWorkspace=this.options.taskWorkspace===true;
-   const path=taskWorkspace?'/api/platform/personal/todo/workspace-snapshot':'/api/platform/personal/overview';
-   const v=await this.json(path+'?today='+encodeURIComponent(today),read.signal);
+   const today=requestedDay??this.options.today();
+   const v=bundled??await this.json('/api/platform/personal/overview?today='+encodeURIComponent(today),read.signal);
    if(token!==this.generation)return;
    if(!v.response.ok){
-    const code=errorCode(v.body);
-    if((v.response.status===503&&(code==='PERSONAL_SNAPSHOT_UNAVAILABLE'||(taskWorkspace&&code==='TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE')))||(v.response.status===409&&code==='DATA_READER_INCOMPATIBLE')){
-     const message=code==='DATA_READER_INCOMPATIBLE'?'当前版本无法读取部分记录。请更新页面后重试。':'暂时无法读取完整待办列表，请重试。';
+    const message=snapshotFailure(v.response.status,errorCode(v.body));
+    if(message){
      unavailable(message);
      if(linkedTaskId)await this.readLinkedTask(linkedTaskId,next.spaceId,today,token,message,read.signal);
      return;
