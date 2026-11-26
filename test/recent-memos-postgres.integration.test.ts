@@ -109,7 +109,7 @@ test('OPT-IN restricted PostgreSQL recent memos match the #164 sources and rank;
   // These rows pass the SQL pin prefilter, but the native validator rejects
   // them. Each consumes a candidate slot and forces the next keyset page.
   const rejectDraft=async(id:string)=>admin.query(
-   "UPDATE lifeos_platform.platform_record SET draft=jsonb_set(draft,'{text}','42'::jsonb) WHERE owner_id=$1 AND id=$2",[ownerId,id]);
+   "UPDATE lifeos_platform.platform_record SET draft=jsonb_set(draft,'{text}',to_jsonb(''::text)) WHERE owner_id=$1 AND id=$2",[ownerId,id]);
   for(const index of [0,1]){
    const bad=journalWithTopic({...journalFixture(907+index,null),createdAt:'2027-01-01T00:00:00.000100Z'},topic);
    await seed(ownerId,bad);await rejectDraft(bad.id);
