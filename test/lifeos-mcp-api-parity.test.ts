@@ -40,6 +40,10 @@ test('native request seam verifies actual synthetic Agent projections and inheri
    assert.equal(result.ok,true,operationId+JSON.stringify(result));assert.equal(result.verification?.verified,true,operationId+JSON.stringify(result));saved[operationId]=result.data!.entry;
   }
   const todo=saved.createTodo;
+  const explicit=await client.execute('createTodo',{fields:{title:'Synthetic expressed Todo',notes:'Same written material',dueOn:null,status:'open'},
+   expression:'spoken',idempotencyKey:'synthetic-explicit-todo-capture'});
+  assert.equal(explicit.verification?.verified,true,JSON.stringify(explicit));
+  assert.deepEqual((explicit.data!.entry as any).provenance,{version:1,channel:'agent-api',expression:'spoken'});
   const todoUpdated=await client.execute('updateTodo',{id:todo.id,expectedRevision:1,fields:{title:todo.fields.title,notes:'Edited',dueOn:null,status:'open',personal:null},idempotencyKey:'synthetic-preserve-todo'});
   assert.equal(todoUpdated.verification?.verified,true,JSON.stringify(todoUpdated));assert.equal((todoUpdated.data!.entry as any).fields.plannedStartOn,'2026-11-06');
   const req=saved.createRequirement,{workflow,...requiredFields}=req.fields;

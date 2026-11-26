@@ -27,7 +27,7 @@ export function searchRow(value:unknown,spaceId:string,query:string):SearchRow{
  if(type==='todo'){const draft=validateTodo(entry.draft);title=draft.title;text=draft.notes;recordDate=personalSearchRecordDate(draft);}
  else{const raw=object(entry.draft,['title','text','occurredOn','disposition','personal']);if(raw.disposition!=='reference')throw Error('记录类别无法核对。');const{disposition,...fields}=raw;void disposition;const draft=normalizePersonalFields(type,fields) as ObjectFields;title=draft.title;text=draft.text;recordDate=personalSearchRecordDate(draft);}
  const excerpt=proseExcerpt(text,query);
- return{type,id,sourceId,revision,title,text,...recordDate,excerpt,sourceLabel:original.marker===appleOriginMarker?'Apple 提醒事项导入':type==='todo'?('输入渠道 '+captureLabels(original).channel+' · 表达 '+captureLabels(original).expression):'本人记录'};
+ return{type,id,sourceId,revision,title,text,...recordDate,excerpt,sourceLabel:original.marker===appleOriginMarker?'Apple 提醒事项导入':type==='todo'?('输入渠道 '+captureLabels(original).channel+' · 表达 '+captureLabels(original).expression):'本人手工记录'};
 }
 
 function proseExcerpt(text:string,query:string):string{const q=query.trim().toLowerCase(),match=q?text.toLowerCase().indexOf(q):0,start=Math.max(0,match-48);return(start?'…':'')+text.slice(start,start+180)+(text.length>start+180?'…':'');}

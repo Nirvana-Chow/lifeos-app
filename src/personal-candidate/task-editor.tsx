@@ -100,6 +100,7 @@ export function TaskEditor({
   approvedDocumentLeave.current=true;
  }}>{projectName}</a>:projectName;
  const heading=target.mode==='create'?'新建待办':missing?'待办不可用':'待办详情';
+ const sourceHistory=entry&&spaceId&&target.mode==='edit'?<TaskSourceHistory key={entry.id+':'+entry.revision} entry={entry} spaceId={spaceId}/>:null;
  const content=missing?<p role="alert">无法读取这条待办，未创建新记录。</p>:viewing?<div className={styles.form}>
    <div className={`${styles.body} ${styles.detail}`}>
     <h3>{shown.title}</h3>
@@ -112,6 +113,7 @@ export function TaskEditor({
      <div><dt>项目</dt><dd>{relatedProject}</dd></div>
      <div><dt>标签</dt><dd>{relation.topics.length?relation.topics.map(topic=>relationName('topic',topic)).join('、'):'未设置'}</dd></div>
     </dl>
+    {sourceHistory}
    </div>
   </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
@@ -126,13 +128,12 @@ export function TaskEditor({
     <PlanningInputs className={styles.row} value={{plannedStartOn:fields.plannedStartOn||null,plannedEndOn:fields.plannedEndOn||null}} onChange={(field,value)=>setFields({...fields,[field]:value??''})}/>
     <div className={styles.row}>{(['domain','project'] as const).map(type=><label key={type}>{type==='domain'?'领域':'项目'}<select value={relation[type]?.id??''} onChange={e=>{const entry=relations[type]?.find(v=>v.id===e.target.value);setRelation({[type]:entry?reference(entry):null});}}><option value="">不分类</option>{relation[type]&&!relations[type]?.some(v=>v.id===relation[type]?.id)&&<option value={relation[type]!.id}>原关联（待核对）</option>}{relations[type]?.map(v=><option key={v.id} value={v.id}>{'title'in v.draft?v.draft.title:''}{relation[type]?.id===v.id&&relation[type]?.revision!==v.revision?'（版本已变化，重新选择核对）':''}</option>)}</select></label>)}
      </div>{project&&<p>关联项目 {relatedProject}</p>}{target.mode!=='create'&&<details><summary>标签（可选）</summary><fieldset><legend>标签</legend>{!relations.topic?.length&&<p>暂无可选标签</p>}{relation.topics.filter(t=>!relations.topic?.some(v=>v.id===t.id)).map(t=><label className={styles.topic} key={t.id}><input type="checkbox" checked onChange={e=>{if(!e.target.checked)setRelation({topics:relation.topics.filter(v=>v.id!==t.id)});}}/>不可用标签（取消勾选以移除）</label>)}{relations.topic?.map(v=><label className={styles.topic} key={v.id}><input type="checkbox" checked={relation.topics.some(t=>t.id===v.id)} onChange={e=>setRelation({topics:e.target.checked?[...relation.topics.filter(t=>t.id!==v.id),reference(v)]:relation.topics.filter(t=>t.id!==v.id)})}/>{'title'in v.draft?v.draft.title:''}</label>)}</fieldset></details>}
-   </fieldset></div>
+   </fieldset>{sourceHistory}</div>
    {(localError||error)&&<p role="alert">{localError||error}</p>}{uncertain&&<p role="alert">结果尚未确认，请保留输入并重试原请求。</p>}
    <footer className={styles.footer}>{target.mode==='create'&&onBatch&&<button type="button" disabled={busy||dirty||!writable} onClick={onBatch}>多行录入</button>}{uncertain&&<button type="button" disabled={saving} onClick={async()=>{const saved=await onRetry();if(saved&&taskReceiptMatchesSubmission(editTask?{mode:'edit',task:editTask}:target,submitted.current,saved,spaceId))onClose();}}>重试同一请求</button>}{saving&&<button type="button" onClick={onStopWaiting}>停止等待并保留请求</button>}<button type="button" disabled={busy} onClick={close}>{dirty?'取消':'关闭'}</button><button type="submit" disabled={blocked}>{saving||submitting?'正在保存…':'保存待办'}</button></footer>
   </form>;
  return <div data-lifeos-surface="personal"><Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className={styles.editor} data-lifeos-surface="personal" onCloseAutoFocus={event=>{event.preventDefault();onRestoreFocus?.();}} showCloseButton={false} onEscapeKeyDown={event=>{if(busy)event.preventDefault();}} onPointerDownOutside={event=>{event.preventDefault();close();}}>
   <header className={styles.header}><div><DialogTitle>{heading}</DialogTitle><DialogDescription className={styles.accessibleDescription}>{missing?'无法读取所选待办。':!writable?'当前为只读，可查看内容。':viewing?'查看待办内容及分类。':'待办内容'}</DialogDescription>{!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}</div><button type="button" aria-label={target.mode==='create'?'关闭待办编辑':'关闭待办详情'} disabled={busy} onClick={close}>关闭</button></header>
   {content}
-  {entry&&spaceId&&target.mode==='edit'&&<TaskSourceHistory key={entry.id+':'+entry.revision} entry={entry} spaceId={spaceId}/>}
  </DialogContent></Dialog></div>;
 }

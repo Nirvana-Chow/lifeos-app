@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import type {PublicEntry} from '../platform/contracts';
 import {editorFromEntry} from '../personal-candidate/editor';
 import {captureLabels} from './domain';
+import styles from '../personal-candidate/task-editor.module.css';
 
 export function TaskSourceHistory({entry,spaceId}:{entry:PublicEntry;spaceId:string}){
  const [history,setHistory]=useState<PublicEntry[]|null>(null),[error,setError]=useState(false);
@@ -30,7 +31,7 @@ export function TaskSourceHistory({entry,spaceId}:{entry:PublicEntry;spaceId:str
   return()=>controller.abort();
  },[open,id,revision,source,spaceId]);
  const labels=captureLabels(source.original);
- return <details onToggle={event=>setOpen(event.currentTarget.open)}>
+ return <details className={styles.sourceHistory} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary>来源与修订历史</summary>
   <dl><div><dt>输入渠道</dt><dd>{labels.channel}</dd></div>
    <div><dt>表达类型</dt><dd>{labels.expression}</dd></div>

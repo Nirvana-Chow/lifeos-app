@@ -11,6 +11,7 @@ import {searchRow} from '../src/personal-search/model.ts';
 import {DraftService} from '../src/platform/service.ts';
 import {captureLabels,pinnedInboxOrigin,todoCapture} from '../src/todo-provenance/domain.ts';
 import {TasksClient} from '../src/tasks-workbench/client.ts';
+import {verifyReceipt} from '../src/mcp-candidate/semantic.mjs';
 import {MemoryPort} from './helpers/platform.ts';
 
 test('real HTTP owner and Agent routes preserve independent channel, expression, source and revisions',async t=>{
@@ -62,6 +63,9 @@ test('real HTTP owner and Agent routes preserve independent channel, expression,
  const made=await native.json();
  assert.deepEqual(todoCapture(created.entry.source.original),{version:1,channel:'owner-web',expression:'spoken'});
  assert.deepEqual(made.entry.provenance,{version:1,channel:'agent-api',expression:'written'});
+ const agentOperation={id:'createTodo',module:'todo',method:'POST'};
+ const inconsistent={...made,entry:{...made.entry,provenance:{...made.entry.provenance,expression:'spoken'}}};
+ assert.throws(()=>verifyReceipt(agentOperation,{fields,expression:'written'},undefined,inconsistent),/TODO_CAPTURE_RECEIPT_MISMATCH/);
  assert.equal(made.entry.fields.notes,created.entry.draft.notes);
  const unknown=await (await send(webPath,body,'source-web-no-expression')).json();
  assert.deepEqual(todoCapture(unknown.entry.source.original),{version:1,channel:'owner-web',expression:null});
