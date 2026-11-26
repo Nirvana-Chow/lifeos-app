@@ -71,6 +71,11 @@ test('OPT-IN owner file map opens the exact project and conceals rows on revocat
     await page.goto(origin+'/personal/files',{waitUntil:'domcontentloaded',timeout:60_000});
     const panel = page.getByRole('region',{name:'文件索引',exact:true});
     await expect(panel.getByRole('button',{name:'打开项目：同名合成项目'})).toHaveCount(1,{timeout:30_000});
+    await expect(panel.getByRole('link',{name:'合成索引甲',exact:true})).toBeVisible();
+    const multiline = panel.getByRole('button',{name:'打开项目：合成项目第一行 第二行 <strong>示例</strong>',exact:true});
+    await expect(multiline).toBeVisible();
+    await expect(multiline.locator('strong')).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({hasText:'文件索引读取失败。'})).toHaveCount(0);
     await expect(panel.getByText('示例不可打开')).toBeVisible();
     await expect(panel.getByText('关联项目已升版或修订不一致，待核')).toBeVisible();
     await expect(panel.getByText('关联项目不可用',{exact:true})).toHaveCount(2);
@@ -84,6 +89,8 @@ test('OPT-IN owner file map opens the exact project and conceals rows on revocat
     await page.setViewportSize({width:390,height:844});
     await page.goto(origin+'/personal/files',{waitUntil:'domcontentloaded',timeout:60_000});
     await expect(panel.getByRole('button',{name:'打开项目：同名合成项目'})).toBeVisible();
+    await expect(multiline).toBeVisible();
+    await expect(panel.getByRole('link',{name:'合成索引甲',exact:true})).toBeVisible();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     fixture.setPrincipal(null);
     await panel.getByRole('button',{name:'打开项目：同名合成项目'}).click();
@@ -92,7 +99,7 @@ test('OPT-IN owner file map opens the exact project and conceals rows on revocat
     await expect(page).toHaveURL(origin+'/personal/files');
     assert.deepEqual(writes,[]);
     assert.equal(fixture.repository.events.length,initialWrites);
-    console.log('FILE_INDEX_BROWSER_PASS desktop=1365 mobile=390 exact_project=true revoked_hidden=true navigation_writes=0');
+    console.log('FILE_INDEX_BROWSER_PASS desktop=1365 mobile=390 exact_project=true mixed_multiline=true revoked_hidden=true navigation_writes=0');
   } finally {
     await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server});
   }

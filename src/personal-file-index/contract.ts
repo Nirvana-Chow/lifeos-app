@@ -4,6 +4,8 @@ export const fileIndexPath = '/api/platform/personal/files';
 const id = z.uuid().transform(value => value.toLowerCase());
 const revision = z.number().int().min(1).max(2147483647);
 const label = z.string().trim().min(1).max(240).regex(/^[^\u0000-\u001f\u007f]+$/u);
+// Native project titles preserve internal whitespace, including newlines.
+const projectTitle = z.string().max(240).refine(value => !!value.trim() && !value.includes('\0'));
 export const indexLimit = 80;
 export const projectPinSchema = z.strictObject({id, sourceId: id, revision});
 const locationSchema = z.discriminatedUnion('state', [
@@ -21,7 +23,7 @@ export const manifestSchema = z.strictObject({
   new Set(value.entries.map(row => row.sourceId)).size === value.entries.length);
 const projectSchema = z.discriminatedUnion('state', [
   z.strictObject({state: z.enum(['unlinked', 'unavailable', 'changed'])}),
-  z.strictObject({state: z.literal('current'), pin: projectPinSchema, title: label}),
+  z.strictObject({state: z.literal('current'), pin: projectPinSchema, title: projectTitle}),
 ]);
 const rowSchema = z.strictObject({...metadataFields, project: projectSchema});
 export const indexResponseSchema = z.discriminatedUnion('state', [

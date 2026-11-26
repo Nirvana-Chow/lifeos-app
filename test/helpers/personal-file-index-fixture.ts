@@ -5,6 +5,7 @@ import {MemoryPort} from './platform.ts';
 
 const ownerId = 'file-index-fixture-owner';
 const spaceId = 'file-index-fixture-space';
+export const multilineProjectTitle = '合成项目第一行\n第二行 <strong>示例</strong>';
 const ownerEmail = 'fixture@example.invalid';
 
 export async function fileIndexFixture(baseURL = 'http://127.0.0.1:3111') {
@@ -15,13 +16,14 @@ export async function fileIndexFixture(baseURL = 'http://127.0.0.1:3111') {
   const fields = {title: '同名合成项目', text: '', occurredOn: null, personal: {
     type: 'project', stage: 'active', purpose: null, nextStep: '', domain: null, topics: [],
   }};
-  async function project(space: string, key: string): Promise<ProjectPin> {
+  async function project(space: string, key: string, title = fields.title): Promise<ProjectPin> {
     const service = new PersonalService(repository, {...config, spaceId: space});
-    const {entry} = await service.mutate(ownerId, 'project', null, {spaceId: space, confirmed: true, fields}, key);
+    const {entry} = await service.mutate(ownerId, 'project', null, {spaceId: space, confirmed: true, fields: {...fields, title}}, key);
     return {id: entry.id, sourceId: entry.source.id, revision: entry.revision};
   }
   const exact = await project(spaceId, 'fixture-index-exact');
   const other = await project(spaceId, 'fixture-index-other');
+  const multiline = await project(spaceId, 'fixture-index-multiline', multilineProjectTitle);
   const foreign = await project('other-space', 'fixture-index-foreign');
   await new PersonalService(repository, config).mutate(ownerId, 'project', other.id, {
     spaceId, confirmed: true, expectedRevision: other.revision, fields: {...fields, text: 'New revision of the second project'},
@@ -32,6 +34,7 @@ export async function fileIndexFixture(baseURL = 'http://127.0.0.1:3111') {
     {title: '合成异空间', project: foreign, location: {state: 'unverified', label: null}},
     {title: '合成示例', project: exact, location: {state: 'example', label: 'fixture://example.invalid'}},
     {title: '合成错误来源', project: {...exact, sourceId: other.sourceId}, location: {state: 'verified', label: '合成位置', verifiedAt: '2031-03-10T00:00:00Z'}},
+    {title: '合成多行项目索引', project: multiline, location: {state: 'unverified', label: '合成多行位置'}},
   ].map((row, index) => ({...row, id: nextId(index + 1), sourceId: nextId(index + 101), revision: 1}));
   const manifest = {version: 1, ownerId, spaceId, entries};
   let principal: {userId: string; email: string} | null = {userId: ownerId, email: ownerEmail};
@@ -40,7 +43,7 @@ export async function fileIndexFixture(baseURL = 'http://127.0.0.1:3111') {
     repository, config, fileIndexManifest: manifestInput, storageVerified,
     sessions: {read: async () => principal}, assertWritable: async () => { writableChecks++; throw Error('Read only'); },
   });
-  return {config, repository, manifest, entries, exact, other, fields, handler, writableChecks: () => writableChecks,
+  return {config, repository, manifest, entries, exact, other, multiline, fields, handler, writableChecks: () => writableChecks,
     setPrincipal: (value: typeof principal) => { principal = value; }};
 }
 
