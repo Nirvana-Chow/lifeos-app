@@ -92,6 +92,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   const boundary=page.getByRole('heading',{name:'本人工作台暂不可用',exact:true});
   assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  assert.equal(workspaceReads,1,'cold entry reads the narrow workspace once');
   for(let iteration=0;iteration<2;iteration++){
    await expand.tap();
    await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
@@ -102,14 +103,19 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(reminderTitle);
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
-  await expand.tap();
-  holdStatus=true;
-  await page.evaluate(()=>{
+  assert.equal(workspaceReads,1,'opening details does not reload the workspace');
+  const returnToForeground=()=>page.evaluate(()=>{
    for(const visibilityState of ['hidden','visible']){
     Object.defineProperty(document,'visibilityState',{configurable:true,value:visibilityState});
     document.dispatchEvent(new Event('visibilitychange'));
    }
   });
+  await returnToForeground();
+  await expect.poll(()=>workspaceReads).toBe(2);
+  await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  await expand.tap();
+  holdStatus=true;
+  await returnToForeground();
   await expect(details).toHaveCount(0);
   await expect.poll(()=>heldReads).toBeGreaterThan(0);
   await expect(workspace).toHaveAttribute('data-workspace-state','error',{timeout:12_000});
@@ -125,7 +131,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
   await expect(boundary).toHaveCount(0);
   assert.equal(wideReads,0);
-  assert.equal(workspaceReads,2,'only initial load and the successful manual retry read the workspace');
+  assert.equal(workspaceReads,3,'only cold entry, verified foreground return and manual retry read the workspace');
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);
  }finally{
