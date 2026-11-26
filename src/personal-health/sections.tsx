@@ -30,6 +30,41 @@ function initialBrowse(section:HealthSection) {
   };
 }
 
+function exerciseBrowse(url:URL):ReturnType<typeof initialBrowse> {
+  const view=url.searchParams.get('exerciseView');
+  const category=url.searchParams.get('exerciseCategory');
+  const status=url.searchParams.get('exerciseStatus');
+  return {
+    ...initialBrowse('exercise'),
+    view:view==='table'||view==='trend'?view:'training',
+    category:category==='training'||category==='frisbee'?category:'all',
+    status:status==='planned'||status==='completed'?status:'all',
+  };
+}
+
+const exerciseDetailKey='lifeosExerciseDetail';
+
+export function exerciseHistoryRecord():string|null {
+  const value=window.history.state?.[exerciseDetailKey];
+  return window.location.hash==='#exercise'&&typeof value==='string'?value:null;
+}
+
+export function pushExerciseHistoryRecord(id:string,url=window.location.href) {
+  window.history.pushState({...window.history.state,[exerciseDetailKey]:id},'',url);
+}
+
+function writeExerciseBrowse({view,category,status}:ReturnType<typeof initialBrowse>) {
+  const url=new URL(window.location.href);
+  url.hash='exercise';
+  for(const [key,value,defaultValue] of [
+    ['exerciseView',view,'training'],['exerciseCategory',category,'all'],['exerciseStatus',status,'all'],
+  ]) {
+    if(value===defaultValue)url.searchParams.delete(key);
+    else url.searchParams.set(key,value);
+  }
+  if(url.href!==window.location.href)window.history.pushState({...window.history.state,[exerciseDetailKey]:null},'',url);
+}
+
 export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|null>) {
   const [browse,setBrowse] = useState(() => initialBrowse('body'));
   const [compact,setCompact] = useState(false);
@@ -45,14 +80,19 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
   useEffect(() => {
     if (!enabled) return;
     function syncSection() {
-      const hash = window.location.hash;
+      const url=new URL(window.location.href);
+      const {hash}=url;
       const section = hash==='#exercise' ? 'exercise' : hash==='#sleep' ? 'sleep' : hash===''||hash==='#body' ? 'body' : null;
       if (!section) return;
-      setBrowse(current => current.section===section ? current : initialBrowse(section));
+      setBrowse(current => section==='exercise' ? exerciseBrowse(url) : current.section===section ? current : initialBrowse(section));
     }
     syncSection();
     window.addEventListener('hashchange',syncSection);
-    return () => window.removeEventListener('hashchange',syncSection);
+    window.addEventListener('popstate',syncSection);
+    return () => {
+      window.removeEventListener('hashchange',syncSection);
+      window.removeEventListener('popstate',syncSection);
+    };
   },[enabled]);
   useEffect(() => {
     if (!enabled) return;
@@ -79,14 +119,20 @@ export function useHealthBrowse(enabled:boolean,root:RefObject<HTMLDivElement|nu
     };
   },[enabled,root]);
 
+  function setExerciseBrowse(change:Partial<Pick<typeof browse,'view'|'category'|'status'>>) {
+    const next={...browse,...change};
+    writeExerciseBrowse(next);
+    setBrowse(next);
+  }
+
   return {
     ...browse,
     ...sections[browse.section],
     compact,
-    setView:(view:HealthView) => setBrowse(current => ({...current,view})),
+    setView:(view:HealthView) => browse.section==='exercise' ? setExerciseBrowse({view}) : setBrowse(current => ({...current,view})),
     setMetric:(metric:HealthMetric) => setBrowse(current => ({...current,metric})),
-    setCategory:(category:ExerciseCategory) => setBrowse(current => current.category===category ? current : ({...current,category,status:'all'})),
-    setStatus:(status:HealthRecordStatus) => setBrowse(current => ({...current,status})),
+    setCategory:(category:ExerciseCategory) => setExerciseBrowse({view:'table',category,status:browse.category===category?browse.status:'all'}),
+    setStatus:(status:HealthRecordStatus) => setExerciseBrowse({view:'table',category:browse.view==='table'?browse.category:'all',status}),
   };
 }
 
@@ -120,11 +166,11 @@ export const compactHealthVirtualizerOptions = {
   scrollToFn:elementScroll,
 };
 
-export function CompactHealthRow({title,summary,date,onOpen}:{
-  title:string; summary:string; date:string|null; onOpen:()=>void;
+export function CompactHealthRow({title,summary,date,exerciseId,onOpen}:{
+  title:string; summary:string; date:string|null; exerciseId?:string; onOpen:()=>void;
 }) {
   return <div className={s.compactRow}>
-    <Button type="button" variant="link" onClick={onOpen}>{title}</Button>
+    <Button type="button" variant="link" data-exercise-record={exerciseId} onClick={onOpen}>{title}</Button>
     <p>{summary}</p>
     {date && <time dateTime={date}>{date}</time>}
   </div>;
