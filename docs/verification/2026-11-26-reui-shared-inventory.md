@@ -144,6 +144,8 @@ RUN_REUI_ALERT_BROWSER_TESTS=1 LIFEOS_TEST_CHROMIUM_PATH=/usr/bin/chromium \
 | 已改 | 总览三栏采用共同 Frame，日程与随手记不可用提示采用 Alert，已有 Apple 日历状态使用 Badge。待办网格状态、看板列计数、记录保存回执和媒体状态使用共同 Badge。做饭、履历、财务、健康动作库、媒体、人物和开发项目的分组采用共同 Frame。 |
 | 本就适用 | 待办、记录以及日程、财务等有直接 ReUI Data Grid 引用的入口仍沿用既有实现和编辑合同。既有 ReUI Kanban 继续负责拖放。Button、Input、Dialog 和 Card 仍按实际来源记为共享 shadcn/Radix。 |
 | 官方无直接等价 | 财务资金流、总览与训练图表、领域关系图以及原生文件选择、独立存储审查文档和身份流程自带业务语义，沿用各自现有实现。 |
+| 可评估 · 待办与项目甘特 | [官方 Radix Gantt](https://reui.io/docs/components/radix/gantt#api-reference) 的结束日期为排他边界，起止相同会画成菱形里程碑。后续先在 390px 做只读验证，分别确认已保存的当日计划仍是条、跨日计划仍是条、仅有截止日期时显示菱形、未排期条目可达且不补造日期。固定名称列，沿用原详情入口，禁用拖动、调整日期和新建，验证零写入。固定上游源码的依赖尚未核验，首批保留现有实现，本项不阻塞首批集成。 |
+| 仍待逐入口验收 · 登录 | `/login` 纳入覆盖盘点。将来调整控件时，验证用户名、当前密码和一次性验证码仍可自动填充，分别保留 `username`、`current-password`、`one-time-code`。会话行为保持原样。 |
 | 仍待逐入口验收 | 共享设置和导航目前保有原路由与控件。搜索、日程和账户等仍有其他原生控件和候选调用点。尚未对文章、学习、文件索引、项目报告以及每个模块的所有状态做 ReUI 覆盖复验。 |
 
 下一项建议选固定官方 [DataGridColumnVisibility](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/reui/data-grid/data-grid-column-visibility.tsx)，让 390px 待办的列显示选择在现有列设置内以键盘可操作的菜单展开。沿用当前 TanStack 可见性状态、工作区隔离和本地保存，保留标题列与完成列、列顺序、恢复默认和编辑期间禁用。这项选择留在后续评审。
