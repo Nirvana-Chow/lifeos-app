@@ -10,7 +10,7 @@
 | 普通动作和标准文本字段 | 使用 `src/ui-review/ui/button.tsx` 和 `input.tsx` 中已采用的 shadcn 基础控件。保持 button type、禁用、按下态、无障碍名称、label、name、本地约束及自动填充。交互链接保留原 href 与浏览器原生链接行为，适合统一外观时可使用 `Button asChild`。 |
 | 对话框、浮层、卡片 | 复用现有 shadcn Dialog 与 Card，以及已经使用的 Radix Popover。Dialog 保留作用域容器、标题、关闭行为、焦点回归及保存保护。保留源内容的标题级别。 |
 | 表格与看板 | 已有官方 ReUI Data Grid 和 Kanban，沿用表格行 ID、ARIA 行位置、虚拟化、分类、拖拽、键盘及原始写入回执。网格目录下 Checkbox、Spinner 分别是本地 Radix 和 Lucide 适配。 |
-| 提示、分组面板 | 固定官方源码中有 Alert 和 Frame。纳入时先确认对应业务调用、语义色与 live-region 行为。Frame 用于分组面板，现有 Card 可继续承载简单内容。 |
+| 提示、分组面板 | 固定官方 ReUI Alert 与 #229 的 Frame 共用接口详见下节。Frame 用于分组面板，现有 Card 可继续承载简单内容。 |
 | 表单专用输入 | 原生 `select`、日期、邮箱、密码、文件、复选框、数字、`textarea` 及 `datalist` 承担平台键盘、自动填充、IME、验证、文件选择、表单提交和辅助技术行为。已核对上游 Date Selector、Number Field、Phone Input、Autocomplete，允许单独证明行为等价后迁移。 |
 | 专用视图和安全文档 | 日历网格、训练及总览 ECharts、待办/项目甘特、要求交付证据、日历同步、媒体进度、烹饪记录、存储审查 HTML、OAuth/MFA/恢复等保留各自语义和交互。上游虽有 Gantt、Event Calendar、File Upload，仍须各自对齐日期尺度、时区、重复规则、原始浏览器文件提交、CSP 及业务保存回执后再讨论替换。 |
 
@@ -26,7 +26,27 @@
 | 搜索 | `src/personal-search/view.tsx` 继续导入 `src/ui-review/ui/input.tsx`，`dialog.tsx` 继续用共享 Radix Dialog。ReUI [`c-input-30`](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/components/input/c-input-30.tsx) 是 stock Input 的外观例子。[`c-input-group-20`](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/components/input-group/c-input-group-20.tsx) 组合 stock InputGroup 和搜索图标。搜索词、过滤、提交、结果焦点及 #225 的月日与翻页约定沿用搜索接口。 |
 | 标题 | 表单新采用共享 `Input` 时沿用 `src/ui-review/ui/input.tsx`。ReUI [`c-input-1`](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/components/input/c-input-1.tsx) 组合 stock Field 和 Input。网格内联编辑沿用既有首字符、IME、Enter/F2/Escape 与写入回执契约。`#227` 的 stock Input 过渡头 `df08257b8641ae9257b7429b91692ceadd6e3f25` 已暂停，盘点未计作 ReUI 采用。 |
 
-本轮可以直接接线的新增 ReUI 出口是 `src/ui-review/ui/badge.tsx`；其实现位于 `src/ui-review/reui/badge.tsx`。上游其余专用控件按现有来源和依赖预算逐项采纳。
+徽标出口为 `src/ui-review/ui/badge.tsx`，实现位于 `src/ui-review/reui/badge.tsx`。
+
+### Alert 与 Frame 接线合同
+
+追加候选从 #228 的 `0bdaa67d615f0fdf9a5f7901521882d1ee12e1cd` 开始。Alert 与 #229 的 Frame 均来自相同的 ReUI Radix Registry 提交，使用现有 CVA、`cn` 和 LifeOS 主题变量。Alert 业务调用保留给各组独立验证。
+
+| 出口 | 现有调用与接线 |
+| --- | --- |
+| `src/ui-review/reui/alert.tsx` | `Alert`、`AlertTitle`、`AlertDescription`、`AlertAction`。搜索 `view.tsx` 的失败与登录提示、日历 `personal-workbench.tsx` 的读取失败与待核对提示、设置 `account-api-keys.tsx` 的读取错误与现有重试动作都可以采用。只替换现有完整提示。使用 `AlertDescription` 放原内容，按需用 `AlertAction` 放原动作。已有 `role="alert"`、`role="status"`、`aria-live`、`aria-atomic`、ref 和 tabIndex 原样传递。默认外观没有隐式播报。已具有错误颜色的提示可用 `variant="destructive"` 复用现有危害色，其他用默认外观。已有纯文本播报节点继续使用其原标记。 |
+| #229 的 `src/business-reui/frame.tsx` | `Frame`、`FrameHeader`、`FrameTitle`、`FrameDescription`、`FramePanel`、`FrameFooter`。Frame 通过 `asChild` 保留已有 `section`、`article` 或 `li`。日历查看、编辑、详情及设置分组各自验证标题级别、键盘顺序和滚动关系。FramePanel 默认裁切溢出，若现有浮层或焦点轮廓依赖面板外空间，可由调用处显式传入 `className="overflow-visible"` 后复验。 |
+
+Frame 固定接线头为 [#229 `b25ff435`](https://github.com/Nirvana-Chow/lifeos-app/blob/b25ff435ad211f158c7625a5f974109a168f8c07/src/business-reui/frame.tsx)，共七个业务导入点。组合评审从 #228 取 Alert，从 #229 取 Frame 及其既有调用。两项来源合入同一个 `third-party/reui/provenance.json`，沿用目录里的同一份 MIT 全文。
+
+固定源码与 MIT 哈希见 [provenance.json](../../third-party/reui/provenance.json)。[Alert 源码](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/reui/alert.tsx) · [Frame 源码](https://github.com/keenthemes/reui/blob/067aa0dc7f8bbfec1cd76fc5ad31f842be5f569a/registry-reui/bases/radix/reui/frame.tsx)
+
+独立浏览器复验命令
+
+```sh
+RUN_REUI_ALERT_BROWSER_TESTS=1 LIFEOS_TEST_CHROMIUM_PATH=/usr/bin/chromium \
+  node --test test/reui-alert-browser.integration.test.ts
+```
 
 ## 固定基线的模块明细
 
