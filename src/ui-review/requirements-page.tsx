@@ -56,7 +56,10 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const opener=useRef<HTMLButtonElement|null>(null),viewButton=useRef<HTMLButtonElement|null>(null),dirty=useRef(false),currentPhase=useRef(mutation.phase),activeBinding=useRef<RequirementBinding|null>(null),sessionRef=useRef<RequirementMutationSession|null>(null),generation=useRef(0),detailGeneration=useRef(0);
  currentPhase.current=mutation.phase;
  const mayDepart=useCallback(()=>requirementDepartureAllowed({dirty:dirty.current,phase:currentPhase.current},()=>window.confirm('需求内容尚未保存，确定放弃这些修改并离开？'),()=>window.alert('需求保存结果尚未确认，请先恢复原请求并读取结果。')),[]);
- const closePrivate=useCallback((allowPublic:boolean,message:string)=>{generation.current++;detailGeneration.current++;activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;setCheckingSave(false);sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setSelected(null);setEditorItem(null);setCreating(false);setDetailLoading(false);dirty.current=false;setPublicOnly(allowPublic);setWritable(false);setAvailability(message);},[]);
+ const closeDetail=useCallback(()=>{
+  detailGeneration.current++;dirty.current=false;setSelected(null);setEditorItem(null);setCreating(false);setDetailLoading(false);
+ },[]);
+ const closePrivate=useCallback((allowPublic:boolean,message:string)=>{generation.current++;closeDetail();activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;setCheckingSave(false);sessionRef.current?.invalidateBinding();setSession(null);setBinding(null);setPool(null);setPublicOnly(allowPublic);setWritable(false);setAvailability(message);},[closeDetail]);
  const reload=useCallback(async(afterSave=false)=>{
   const epoch=++generation.current;
   const previous=verifiedSnapshot.current;
@@ -76,13 +79,6 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    if(value.writable!==true)setWritable(false);
    const observation=pendingObservation.current;
    let snapshot=bound&&afterSave&&observation&&!observation.created?updateVerifiedSnapshot(previous,observation.entry):null;
-   if(observation&&bound&&observation.entry.id===observation.entry.requirement.id){
-    const {entry,created,detail}=observation;
-    pendingObservation.current=null;
-    setCheckingSave(false);
-    if(created){setRange('pending');setSummaryRange('all');setFilters({});setProgressFilter('all');}
-    if(detail===detailGeneration.current){dirty.current=false;setCreating(false);setEditorItem(entry);setSelected(entry.requirement);}
-   }
    if(!snapshot){
     const result=await fetch('/api/platform/personal/requirements/snapshot',{credentials:'same-origin',cache:'no-store'});
     if(epoch!==generation.current)return;
@@ -96,16 +92,22 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
     const storage={getItem:(key:string)=>window.localStorage.getItem(key),setItem:(key:string,text:string)=>window.localStorage.setItem(key,text),removeItem:(key:string)=>window.localStorage.removeItem(key)};
     const writer=new RequirementMutationSession({binding:next,storage,assertBinding:()=>activeBinding.current?.ownerId===next.ownerId&&activeBinding.current?.spaceId===next.spaceId});sessionRef.current=writer;setSession(writer);
    }
-   if(pendingObservation.current){
-    // An inconsistent detail projection cannot be used to rebase the editor.
-    const {detail}=pendingObservation.current;
-    pendingObservation.current=null;setCheckingSave(false);
-    if(detail===detailGeneration.current){dirty.current=false;setCreating(false);setEditorItem(null);setSelected(null);}
+   if(observation){
+    const {entry,created,detail}=observation;
+    pendingObservation.current=null;
+    setCheckingSave(false);
+    const latest=bound&&entry.requirement.id===entry.id&&snapshot.items.find(item=>item.id===entry.id&&item.sourceId===entry.sourceId&&item.revision>=entry.revision);
+    if(latest&&created){setRange('pending');setSummaryRange('all');setFilters({});setProgressFilter('all');}
+    if(detail===detailGeneration.current){
+     if(latest){
+      detailGeneration.current++;dirty.current=false;setDetailLoading(false);setCreating(false);setEditorItem(latest);setSelected(latest.requirement);
+     }else closeDetail();
+    }
    }
    verifiedSnapshot.current=snapshot;
    setBinding(next);setPool(snapshot);setPublicOnly(false);setWritable(value.writable===true);setAvailability(value.writable===true?'':'当前仅可查看需求。');
-  }catch{if(epoch===generation.current){setPool(null);setWritable(false);setAvailability(readError);}}
- },[closePrivate,scope]);
+  }catch{if(epoch===generation.current){setPool(null);setWritable(false);setCheckingSave(false);setAvailability(readError);}}
+ },[closeDetail,closePrivate,scope]);
  useEffect(()=>{if(concealed){setPool(null);setWritable(false);setDetailLoading(false);setCheckingSave(false);return;}void reload();const focus=()=>{void reload();};window.addEventListener('focus',focus);return()=>{generation.current++;detailGeneration.current++;activeBinding.current=null;verifiedSnapshot.current=null;pendingObservation.current=null;sessionRef.current?.invalidateBinding();window.removeEventListener('focus',focus);};},[concealed,reload]);
  useEffect(()=>{if(!navigationGuard)return;navigationGuard.current=mayDepart;return()=>{if(navigationGuard.current===mayDepart)navigationGuard.current=null;};},[navigationGuard,mayDepart]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty.current||currentPhase.current==='saving'||currentPhase.current==='uncertain'){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
@@ -136,9 +138,30 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  }),[visible,filters,range,progressFilter,delivery]);
  const open=useCallback((item:Requirement,trigger:HTMLButtonElement)=>{
   if(!mayDepart())return;dirty.current=false;opener.current=trigger;setExpanded(false);setSelected(item);setCreating(false);setEditorItem(null);
-  if(!activeBinding.current)return;const epoch=++detailGeneration.current;setDetailLoading(true);
-  void fetch('/api/platform/personal/requirements/'+item.id,{credentials:'same-origin',cache:'no-store'}).then(async response=>{if(epoch!==detailGeneration.current)return;if(response.status===401||response.status===403){closePrivate(false,'当前账号不能读取本人需求，请恢复本人登录。');return;}if(response.status!==200)throw Error();const value=await response.json();if(epoch!==detailGeneration.current)return;const entry=readRequirementItem(value.entry);setEditorItem(entry);setSelected(entry.requirement);}).catch(()=>{if(epoch===detailGeneration.current)setAvailability('需求详情读取失败，请刷新后重试。');}).finally(()=>{if(epoch===detailGeneration.current)setDetailLoading(false);});
- },[mayDepart,closePrivate]);
+  const epoch=++detailGeneration.current;
+  if(!activeBinding.current)return;
+  const before=verifiedSnapshot.current?.items.find(row=>row.id===item.id);
+  setDetailLoading(true);
+  void fetch('/api/platform/personal/requirements/'+item.id,{credentials:'same-origin',cache:'no-store'}).then(async response=>{
+   if(epoch!==detailGeneration.current)return;
+   if(response.status===401||response.status===403){closePrivate(false,'当前账号不能读取本人需求，请恢复本人登录。');return;}
+   if(response.status===404){closeDetail();return;}
+   if(response.status!==200)throw Error();
+   const value=await response.json();
+   if(epoch!==detailGeneration.current)return;
+   const entry=readRequirementItem(value.entry);
+   const snapshot=verifiedSnapshot.current;
+   const known=snapshot?snapshot.items.find(row=>row.id===item.id):before;
+   if(entry.id!==item.id||entry.requirement.id!==item.id||snapshot&&!known||
+      (known?.sourceId&&entry.sourceId&&known.sourceId!==entry.sourceId)){closeDetail();return;}
+   const useKnown=known&&(known.revision>entry.revision||known.revision===entry.revision&&
+    (known.requirement.version>entry.requirement.version||known!==before&&known.requirement.version===entry.requirement.version));
+   const latest=useKnown?known:entry;
+   setEditorItem(latest);setSelected(latest.requirement);
+  }).catch(()=>{if(epoch===detailGeneration.current)setAvailability('需求详情读取失败，请刷新后重试。');}).finally(()=>{
+   if(epoch===detailGeneration.current)setDetailLoading(false);
+  });
+ },[mayDepart,closeDetail,closePrivate]);
  const linkedRequirementOpened=useRef(false);
  useEffect(()=>{
   if(!pool||!binding||linkedRequirementOpened.current)return;
@@ -192,6 +215,6 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
    </div>}
   </div>
  </section>}
-  <RequirementDetail concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={selected?delivery.get(selected.id):undefined} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;detailGeneration.current++;dirty.current=false;setCreating(false);setSelected(null);setEditorItem(null);}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
+  <RequirementDetail concealed={concealed} editor={selected&&(creating||editorItem)?{editorId:creating?'new':editorItem!.id+':'+editorItem!.revision,fields:mutation.phase==='uncertain'&&mutation.pending?mutation.pending.body.fields:creating?emptyFields():editorItem!.fields,phases,writable,busy:mutation.phase==='saving'||checkingSave,unknown:mutation.phase==='uncertain',error:mutation.error,conflict:editorItem?.baselineConflict??false,onSave:save,onDirty:value=>{dirty.current=value;},onRetry:()=>{void session?.retry();},onRefresh:()=>{if(selected&&opener.current)open(selected,opener.current);}}:undefined} loading={detailLoading} container={container} item={selected} delivery={selected?delivery.get(selected.id):undefined} phaseTitle={phases.find(phase=>phase.id===selected?.roadmap?.phaseId)?.title??'未排阶段'} expanded={expanded} onExpandedChange={()=>setExpanded(value=>!value)} onClose={()=>{if(currentPhase.current==='saving')session?.cancel();if(currentPhase.current!=='uncertain'&&currentPhase.current!=='saving'&&!mayDepart())return;closeDetail();}} returnFocus={()=>{(opener.current?.isConnected?opener.current:viewButton.current)?.focus();}}/>
  </>;
 }

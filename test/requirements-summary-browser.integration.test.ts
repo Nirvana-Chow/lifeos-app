@@ -65,6 +65,9 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   const errors:string[]=[],writes:string[]=[],outside:string[]=[],details:string[]=[];
   let snapshotReads=0, writable=true, ownerId='synthetic-owner';
   let switchAccountOnObservation=false, awaitingObservation=false;
+  let fallback:'latest'|'missing'|null=null;
+  let singleObservation:RequirementItem|null=null, delayedDetail:RequirementItem|null=null;
+  let holdSnapshot:ReturnType<typeof Promise.withResolvers<void>>|null=null, holdDetail:ReturnType<typeof Promise.withResolvers<void>>|null=null;
   let currentItems=items;
   page.on('pageerror',error=>errors.push(error.message));
   let mode:'full'|'empty'|'error'|'partial'='full';
@@ -84,7 +87,11 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
      fields:{...command.fields,title},requirement:{...previous.requirement,title}});
     const receipt=project(command.fields.title,previous.revision+1);
     const observed=project('合成需求 独立读回',receipt.revision+1);
-    currentItems=currentItems.map(item=>item.id===previous.id?observed:item);
+    singleObservation=fallback?{...observed,baselineConflict:true}:observed;
+    const latest={...observed,fields:{...observed.fields,title:'合成需求 全量最新'},
+     requirement:{...observed.requirement,title:'合成需求 全量最新'}};
+    currentItems=fallback==='missing'?currentItems.filter(item=>item.id!==previous.id):
+     currentItems.map(item=>item.id===previous.id?fallback?latest:observed:item);
     awaitingObservation=true;
     return route.fulfill({json:{entry:receipt,duplicate:false}});
    }
@@ -94,17 +101,23 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
    if(path.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:0,items:[],observedAt:snapshot.observedAt,today:url.searchParams.get('today')}});
    if(path.endsWith('/requirements/snapshot')){
     snapshotReads++;
+    const snapshotItems=currentItems;
+    if(holdSnapshot)await holdSnapshot.promise;
     if(mode==='error')return route.fulfill({status:503,json:{}});
-    return route.fulfill({json:mode==='empty'?{...snapshot,total:0,items:[]}:mode==='partial'?{...snapshot,truncated:true}:{...snapshot,items:currentItems}});
+    return route.fulfill({json:mode==='empty'?{...snapshot,total:0,items:[]}:mode==='partial'?{...snapshot,truncated:true}:{...snapshot,total:snapshotItems.length,items:snapshotItems}});
+   }
+   if(awaitingObservation&&singleObservation&&path.endsWith('/requirements/'+singleObservation.id)){
+    awaitingObservation=false;
+    if(switchAccountOnObservation)ownerId='foreign-owner';
+    details.push(singleObservation.id);
+    return route.fulfill({json:{entry:singleObservation}});
    }
    const entry=currentItems.find(item=>path.endsWith('/requirements/'+item.id));
    if(entry){
     details.push(entry.id);
-    if(awaitingObservation){
-     awaitingObservation=false;
-     if(switchAccountOnObservation)ownerId='foreign-owner';
-    }
-    return route.fulfill({json:{entry}});
+    const responseEntry=delayedDetail?.id===entry.id?delayedDetail:entry;
+    if(responseEntry===delayedDetail&&holdDetail)await holdDetail.promise;
+    return route.fulfill({json:{entry:responseEntry}});
    }
    return route.fulfill({status:404,json:{}});
   });
@@ -150,6 +163,64 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   await expect(list.getByRole('button',{name:'合成需求 独立读回',exact:true})).toBeVisible();
   await expect(list.getByRole('button',{name:'合成需求 PATCH 回执',exact:true})).toHaveCount(0);
   assert.equal(snapshotReads,readsBeforePatch,'verified PATCH should use the observed row without another snapshot read');
+  const readsBeforeFallback=snapshotReads;
+  const title=detail.getByRole('textbox',{name:'需求标题',exact:true});
+  const saveButton=detail.getByRole('button',{name:'保存需求',exact:true});
+  await list.getByRole('button',{name:'合成需求 独立读回',exact:true}).click();
+  await expect(title).toHaveValue('合成需求 独立读回');
+  const olderRow=currentItems.find(item=>item.id===items[1].id)!;
+  fallback='latest';
+  await title.fill('合成需求 回退保存');
+  await saveButton.click();
+  await expect(page.locator('[data-requirements-page] button').filter({hasText:'合成需求 全量最新'})).toBeAttached();
+  await expect(detail.getByRole('heading',{name:'合成需求 全量最新',exact:true})).toBeVisible();
+  await expect(title).toHaveValue('合成需求 全量最新');
+  assert.equal(snapshotReads,readsBeforeFallback+1);
+  await page.keyboard.press('Escape');
+  await expect(detail).toHaveCount(0);
+
+  delayedDetail=olderRow;
+  holdDetail=Promise.withResolvers<void>();
+  try{
+   await list.getByRole('button',{name:'合成需求 全量最新',exact:true}).click();
+   await expect(detail.getByText('正在读取当前需求…',{exact:true})).toBeVisible();
+  }finally{
+   holdDetail.resolve();
+   holdDetail=null;
+   delayedDetail=null;
+  }
+  await expect(title).toHaveValue('合成需求 全量最新');
+
+  // A delayed refresh for the saved item must not replace a different detail.
+  holdSnapshot=Promise.withResolvers<void>();
+  try{
+   await title.fill('合成需求 延迟回退');
+   await saveButton.click();
+   await expect.poll(()=>snapshotReads).toBe(readsBeforeFallback+2);
+   const dismiss=async(dialog:import('@playwright/test').Dialog)=>{await dialog.accept();};
+   page.on('dialog',dismiss);
+   await page.keyboard.press('Escape');
+   await expect(detail).toHaveCount(0);
+   page.off('dialog',dismiss);
+   await list.getByRole('button',{name:'合成需求 已上线待验收',exact:true}).click();
+   await expect(title).toHaveValue('合成需求 已上线待验收');
+  }finally{
+   holdSnapshot.resolve();
+   holdSnapshot=null;
+  }
+  await expect(saveButton).toBeEnabled();
+  await expect(title).toHaveValue('合成需求 已上线待验收');
+
+  fallback='missing';
+  await title.fill('合成需求 已失效');
+  await saveButton.click();
+  await expect(detail).toHaveCount(0);
+  await expect(counts.getByRole('button',{name:'总需求 5',exact:true})).toBeVisible();
+  currentItems=[...currentItems,items[2]];
+  fallback=null;
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(all).toBeVisible();
+
   await all.click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   if(process.env.LIFEOS_REQUIREMENTS_EVIDENCE)await page.screenshot({path:join(process.env.LIFEOS_REQUIREMENTS_EVIDENCE,'requirements-'+width+'.png'),animations:'disabled'});
@@ -166,7 +237,7 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   writable=false;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(pool.getByText('当前仅可查看需求。',{exact:true})).toBeVisible();
-  await list.getByRole('button',{name:'合成需求 独立读回',exact:true}).click();
+  await list.getByRole('button',{name:'合成需求 全量最新',exact:true}).click();
   await expect(detail.getByRole('button',{name:'保存需求',exact:true})).toBeDisabled();
   await page.keyboard.press('Escape');
   await pool.getByRole('button',{name:'管理视图',exact:true}).click();
@@ -191,7 +262,7 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   await expect(list).toHaveCount(0);
   await expect(detail).toHaveCount(0);
   assert.equal(snapshotReads,readsBeforeAccountSwitch,'account change clears the existing snapshot before requesting any new rows');
-  assert.deepEqual(writes,[items[1].id,items[0].id].map(id=>'/api/platform/personal/requirements/'+id));
+  assert.deepEqual(writes,[items[1].id,items[1].id,items[1].id,items[2].id,items[0].id].map(id=>'/api/platform/personal/requirements/'+id));
   assert.deepEqual(outside,[]);
   await page.close();
  }
