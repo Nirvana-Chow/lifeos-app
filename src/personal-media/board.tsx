@@ -1,6 +1,7 @@
 'use client';
 import {useId,useMemo,useState} from 'react';
 import {BookOpen,Clapperboard,Tv} from 'lucide-react';
+import {Frame,FramePanel} from '../business-reui/frame';
 import {mediaStates,type MediaState} from './domain';
 import {projectMediaBoard,mediaKindLabels,mediaKindFilterLabels,mediaStateLabels,mediaProgressLabel,mediaProgressPercent,type MediaEntry,type MediaKindFilter} from './projection';
 import styles from './media.module.css';
@@ -19,7 +20,8 @@ export function MediaBoard({records,onOpenRecord,onMoveRecord,disabled=false,sho
   <p className={styles.hint} role="status">当前显示 {board.total} 部作品 · {board.inProgress} 部进行中 · {board.completed} 部已完成</p>
   {board.total===0?<p className={styles.empty}>{records.length||kind!=='all'||search.trim()?'没有匹配的作品，试试其他类型或关键词。':'暂无阅读与观影记录。添加想读的书、想看的电影或剧集后，会在这里按状态排列。'}</p>:<div className={styles.columns}>{board.columns.map(column=><section className={styles.column} key={column.state} aria-labelledby={identity+column.state}>
    <h3 id={identity+column.state}>{column.label}<span aria-label={`${column.records.length} 部作品`}>{column.records.length}</span></h3>
-   {column.records.length===0?<p className={styles.columnEmpty}>暂无作品</p>:<ul>{column.records.map(record=>{const p=record.fields.personal,Icon=icons[p.mediaKind],progress=mediaProgressLabel(p),percent=mediaProgressPercent(p);return <li className={styles.card} key={record.id} data-media-state={p.state}>
+   {column.records.length===0?<p className={styles.columnEmpty}>暂无作品</p>:<ul>{column.records.map(record=>{const p=record.fields.personal,Icon=icons[p.mediaKind],progress=mediaProgressLabel(p),percent=mediaProgressPercent(p);return <Frame asChild key={record.id} dense spacing="sm"><li data-media-state={p.state}>
+    <FramePanel className={styles.card}>
     <div className={styles.kind}><Icon size={16} aria-hidden="true"/>{mediaKindLabels[p.mediaKind]}</div>
     <button data-slot="personal-record-action" type="button" className={styles.open} aria-label={`打开作品：${record.fields.title}`} onClick={()=>onOpenRecord(record.id)}>{record.fields.title}</button>
     {p.creators.length>0&&<p className={styles.creators}>{p.creators.join(' / ')}</p>}
@@ -27,7 +29,8 @@ export function MediaBoard({records,onOpenRecord,onMoveRecord,disabled=false,sho
     {p.rating!==null&&<p className={styles.rating}>个人评分 {p.rating} / 10</p>}
     {p.finishedOn&&<p className={styles.date}>完成于 {p.finishedOn}</p>}
     {onMoveRecord&&<label className={styles.move}>更新状态<select aria-label={`${record.fields.title}的状态`} disabled={disabled} value={p.state} onChange={event=>onMoveRecord(record.id,event.target.value as MediaState)}>{mediaStates.map(state=><option key={state} value={state}>{mediaStateLabels[state]}</option>)}</select></label>}
-   </li>;})}</ul>}
+    </FramePanel>
+   </li></Frame>;})}</ul>}
   </section>)}</div>}
  </section>;
 }

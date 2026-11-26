@@ -1,6 +1,7 @@
 'use client';
 
 import {useEffect, useState} from 'react';
+import {Frame,FramePanel} from '../business-reui/frame';
 import {workspaceHref} from '../workbench/private-navigation';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import type {readLifeOSDevelopmentProgress} from './development-project-progress';
@@ -74,25 +75,29 @@ export function DevelopmentProjects() {
   if (verified !== true) return null;
 
   const progress = reading?.progress;
-  return <section className={`lo-panel ${styles.card}`} aria-label="LifeOS 网站需求进度">
-    <header className="lo-panel-heading">
-      <h2>LifeOS 网站</h2>
-      {reading && <Button asChild variant="ghost" data-workspace-nav>
-        <a href={workspaceHref('requirements')}>打开需求池</a>
-      </Button>}
-    </header>
-    {progress ? <>
-      <dl className={styles.counts}>
-        {Object.entries(deliveryLabels).map(([state, label]) => <div key={state}>
-          <dt>{label}</dt>
-          <dd>{progress.counts[state as keyof typeof progress.counts]}</dd>
-        </div>)}
-      </dl>
-      {progress.observedAt && <p className={styles.date}>
-        读取时间 <time dateTime={progress.observedAt}>{formatDeliveryTime(progress.observedAt)}</time>（北京时间）
-      </p>}
-    </> : <p className="lo-empty-compact" role="status">
-      {reading === undefined ? '正在读取需求进度…' : '需求进度暂不可用。'}
-    </p>}
-  </section>;
+  return <Frame asChild dense spacing="sm">
+    <section className={styles.card} aria-label="LifeOS 网站需求进度">
+      <FramePanel className="overflow-visible p-0">
+        <header className="lo-panel-heading">
+          <h2>LifeOS 网站</h2>
+          {reading && <Button asChild variant="ghost" data-workspace-nav>
+            <a href={workspaceHref('requirements')}>打开需求池</a>
+          </Button>}
+        </header>
+        {progress ? <>
+          <dl className={styles.counts}>
+            {Object.entries(deliveryLabels).map(([state, label]) => <div key={state}>
+              <dt>{label}</dt>
+              <dd>{progress.counts[state as keyof typeof progress.counts]}</dd>
+            </div>)}
+          </dl>
+          {progress.observedAt && <p className={styles.date}>
+            读取时间 <time dateTime={progress.observedAt}>{formatDeliveryTime(progress.observedAt)}</time>（北京时间）
+          </p>}
+        </> : <p className="lo-empty-compact" role="status">
+          {reading === undefined ? '正在读取需求进度…' : '需求进度暂不可用。'}
+        </p>}
+      </FramePanel>
+    </section>
+  </Frame>;
 }

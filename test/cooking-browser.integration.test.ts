@@ -67,11 +67,18 @@ test('OPT-IN mobile owner can pick a dish and follow the original recipe', {
   await desktop.screenshot({path:join(folder,'cooking-desktop.png'),fullPage:true});
   await desktop.close();
  }
- await expect(page.getByRole('button',{name:'打开导航'})).toBeHidden();
- const menu=page.locator('aside').getByRole('navigation',{name:'主导航'});
+ const openMenu=page.getByRole('button',{name:'打开导航',exact:true});
+ await openMenu.click();
+ const drawer=page.getByRole('dialog',{name:'LifeOS'});
+ await expect(drawer).toBeVisible();
+ const menu=drawer.getByRole('navigation',{name:'主导航'});
  await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('href','/personal/cooking');
  await expect(menu.getByRole('link',{name:'做饭',exact:true})).toHaveAttribute('aria-current','page');
+ await drawer.getByRole('button',{name:'关闭导航'}).click();
+ await expect(openMenu).toBeFocused();
  const picks=page.getByRole('region',{name:'今天做什么'});
+ await expect(picks).toHaveAttribute('data-slot','frame');
+ await expect(picks.locator('[data-slot=frame-panel]')).toBeVisible();
  await expect(picks.getByRole('link')).toHaveCount(3);
  const first=await picks.getByRole('link').allTextContents();
  await picks.getByRole('button',{name:'换一批'}).click();
