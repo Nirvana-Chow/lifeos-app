@@ -1,4 +1,4 @@
-import type { PersonalEditorFields } from './editor.ts';
+import { clonePersonalJSON, type PersonalEditorFields } from './editor.ts';
 import type { PublicEntry } from '../platform/contracts.ts';
 import type { TaskCellDraft, TaskCellField } from './task-cell-draft.ts';
 import { receiptEditor, type NativeReceiptEditor, type TaskIdentity } from './task-editor-state.ts';
@@ -35,7 +35,7 @@ export function mountTaskGridEditor(
   };
   const editor = receiptEditor(native, {
     field: options.field,
-    capture: () => ({ task: { ...options.task }, fields: structuredClone(options.fields) }),
+    capture: () => ({ task: { ...options.task }, fields: clonePersonalJSON(options.fields) }),
     canSave: () => options.canSave() && !composing,
     active: () => active && !closed,
     save: options.save,
@@ -77,7 +77,34 @@ export function mountTaskGridEditor(
     event.stopPropagation();
     void commit(event.key === 'Tab' ? event.shiftKey ? 'previous' : 'next' : null);
   };
-  const blur = () => { void commit(); };
+  const isSearchFocus = (target: EventTarget | null) =>
+    !!target && target instanceof Element && !!target.closest('[data-personal-search-focus]');
+  // WebKit can blur the input with no relatedTarget before activating a
+  // header button. Capture the initiating press before that native blur.
+  let searchPress = false;
+  const rememberPress = (event: MouseEvent) => {
+    if ('isPrimary' in event && !event.isPrimary) return;
+    searchPress = event.button === 0 && isSearchFocus(event.target);
+  };
+  const endPress = () => { searchPress = false; };
+  const gestures = new AbortController();
+  const capture = {capture: true, signal: gestures.signal};
+  const ownerDocument = input.ownerDocument;
+  ownerDocument?.addEventListener('pointerdown', rememberPress, capture);
+  ownerDocument?.addEventListener('mousedown', rememberPress, capture);
+  for (const type of ['pointerup', 'pointercancel', 'mouseup', 'click', 'keydown']) {
+    ownerDocument?.addEventListener(type, endPress, capture);
+  }
+  const blur = (event: Event) => {
+    const target = (event as FocusEvent).relatedTarget;
+    const keepDraft = (target === null && searchPress) || isSearchFocus(target);
+    endPress();
+    if (keepDraft) {
+      editor.captureDraft();
+      return;
+    }
+    void commit();
+  };
   input.addEventListener('compositionstart', compositionStart);
   input.addEventListener('compositionend', compositionEnd);
   input.addEventListener('keydown', keydown);
@@ -107,6 +134,7 @@ export function mountTaskGridEditor(
     dispose() {
       if (!active) return;
       active = false;
+      gestures.abort();
       editor.onEnd();
       input.removeEventListener('compositionstart', compositionStart);
       input.removeEventListener('compositionend', compositionEnd);

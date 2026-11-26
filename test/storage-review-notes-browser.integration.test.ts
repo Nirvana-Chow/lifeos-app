@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
 import {chromium,expect} from '@playwright/test';
 import {storageReviewResponse} from '../app/personal/storage-review/response.ts';
 import {handleStorageReviewRequest} from '../src/storage-review/http.ts';
@@ -15,13 +16,14 @@ test('OPT-IN original storage route saves notes, retains drafts/CAS/unknown and 
  memory.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{}}));
  const service=new StorageReviewService(memory,{ownerId:owner,spaceId:space}),checklist={schema:1 as const,revision:'synthetic-browser-notes-v1',context:{summary:'Synthetic only'},items:['pending','processed','protected'].map((status,index)=>({id:'N-'+index,title:'Synthetic '+status,body:'Preserved original body',question:'',group:'Synthetic',kind:'file' as const,status:status as 'pending'|'processed'|'protected'}))};
  await service.saveChecklist(owner,{expectedRevision:null,checklist},'synthetic-browser-note-create');
- await service.saveDecision(owner,{expectedRevision:1,checklistRevision:checklist.revision,id:'N-0',decision:'keep'},'synthetic-browser-note-decision');
  let lose=false,offline=false,conflict=false,denied=false;
  const wire:{url:string;body:string;key:string|null}[]=[];
  const responseTrace:{method:string|undefined;status:number;path:string}[]=[];
+ const businessWrites:string[]=[];
  const server=createServer(async(req,res)=>{
   try{
    const url=new URL(req.url!,origin);let response:Response;
+   if(url.pathname.startsWith('/api/')&&req.method!=='GET')businessWrites.push(url.pathname);
    if(url.pathname==='/personal/storage-review')response=await storageReviewResponse(async()=>denied?null:{id:owner});
    else if(url.pathname==='/personal'||url.pathname==='/login')response=new Response('Synthetic return page');
    else if(url.pathname==='/api/platform/personal/status')response=denied?Response.json({error:'denied'},{status:401}):Response.json({scope:'personal-manual-candidate',storageVerified:true,storageReviewEnabled:true,ownerId:owner,spaceId:space});
@@ -42,6 +44,29 @@ test('OPT-IN original storage route saves notes, retains drafts/CAS/unknown and 
  const origin='http://127.0.0.1:32141';await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(32141,'127.0.0.1',resolve);});
  t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());
+ const draftPage=await browser.newPage();
+ try{
+  await draftPage.goto(origin+'/personal/storage-review');
+  await expect(draftPage.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
+  const exportButton=draftPage.getByRole('button',{name:'导出决定',exact:true});
+  const initial=(await service.get(owner))!;
+  assert.deepEqual(initial.decisions,[]);
+  assert.deepEqual(initial.notes??[],[]);
+  await expect(exportButton).toBeDisabled();
+  const draft='  合成备注第一行\n第二行保留换行和空白。  ';
+  const writesBeforeDraft=businessWrites.length;
+  await draftPage.locator('[data-id="N-0"]').getByLabel('备注与处理要求').fill(draft);
+  assert.equal(await exportButton.isEnabled(),true,'the first draft enables export without another interaction');
+  const [download]=await Promise.all([draftPage.waitForEvent('download'),exportButton.click()]);
+  assert.deepEqual(JSON.parse(await readFile(await download.path(),'utf8')),{
+   schema:1,revision:checklist.revision,choices:[],notes:[],
+   noteDrafts:[{id:'N-0',note:draft,checklistRevision:checklist.revision,expectedRevision:initial.revision}],
+  });
+  assert.equal(businessWrites.length,writesBeforeDraft);
+  assert.deepEqual(await service.get(owner),initial);
+  console.log('STORAGE_NOTE_ONLY_EXPORT_PASS '+JSON.stringify({drafts:1,originalRevision:initial.revision,exactMultiline:true,businessWrites:0}));
+ }finally{await draftPage.close();}
+ await service.saveDecision(owner,{expectedRevision:1,checklistRevision:checklist.revision,id:'N-0',decision:'keep'},'synthetic-browser-note-decision');
  const page=await browser.newPage();page.setDefaultTimeout(5000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/personal/storage-review');await expect(page.locator('.row-note textarea')).toHaveCount(3);await expect(page.locator('#sync-state')).toHaveText('LifeOS 已保存清单');
  const row=(id:string)=>page.locator('[data-id="'+id+'"]'),text='  原文用途\n先核对备份，再决定。  ';

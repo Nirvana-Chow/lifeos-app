@@ -44,3 +44,26 @@ test('date-filtered client preserves URL context and rejects a mismatched or out
   },range),{kind:'unavailable'});
  }
 });
+
+test('one dialog result rereads only its bound original, and a changed owner or source releases no details',async()=>{
+ assert.ok(mod);
+ const f=await fixture(),signal=new AbortController().signal;
+ const results=await mod.loadPersonalSearch('needle',null,signal,f.fetcher);
+ const row=results.rows[0];
+ const visits=f.paths.length;
+ const detail=await mod.loadPersonalSearchOriginal(results,row,signal,f.fetcher);
+ assert.equal(detail.detail?.sourceId,row.sourceId);
+ assert.deepEqual(f.paths.slice(visits),['/api/platform/personal/status','/api/platform/personal/todo/'+row.id,'/api/platform/personal/status']);
+ await assert.rejects(mod.loadPersonalSearchOriginal(results,{...row,sourceId:'11111111-1111-4111-8111-111111111111'},signal,f.fetcher),{kind:'unavailable'});
+ for(const changedAt of [1,2]){
+  const paths:string[]=[];
+  let checks=0;
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const path=String(input);paths.push(path);
+   if(path.endsWith('/status')&&++checks===changedAt)return Response.json({scope:'personal-manual-candidate',storageVerified:true,ownerId:'changed-owner',spaceId:config.spaceId});
+   return f.fetcher(input,init);
+  };
+  await assert.rejects(mod.loadPersonalSearchOriginal(results,row,signal,fetcher),{kind:'auth'});
+  assert.equal(paths.includes('/api/platform/personal/todo/'+row.id),changedAt===2);
+ }
+});

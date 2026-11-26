@@ -1,3 +1,4 @@
+import * as navigationIcons from '../src/workbench/navigation-icons.ts';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
 import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import {ownerModules,verifiedModuleScope} from '../src/ui-review/owner-modules.ts';
@@ -30,7 +31,7 @@ test('workspace settings navigation keeps the three legacy routes outside the de
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const scope=JSON.stringify(['owner','space']);
  const status={scope:'personal-manual-candidate',storageVerified:true,ownerId:'owner',spaceId:'space',requirementsEnabled:true,requirementSupportEnabled:true};
- const jsxOnly=new Set(['lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page','./daily-overview']);
+ const jsxOnly=new Set(['../personal-search/dialog','lucide-react','./ui/button','./ui/input','./ui/badge','./ui/dialog','./task-table','./task-project-gantt','./task-board','./task-grid','./overview-chart','../workbench/theme-switch','./category-grid','./owner-release-notice','../personal-candidate/privacy','./requirements-page','./daily-overview']);
  const components=new Proxy({},{get:(_target,name)=>String(name)});
  function settings(value:unknown,preferenceScope=scope){
   const navigated:string[]=[],module={exports:{} as any};
@@ -39,6 +40,7 @@ test('workspace settings navigation keeps the three legacy routes outside the de
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
    '../personal-candidate/project-detail-href':{projectDetailHref},
+   '../workbench/navigation-icons':navigationIcons,
    './selectors':selectors,'./workspace-hierarchy':workspaceHierarchy,'../workbench/private-navigation':privateNavigation,
    './owner-module-navigation':{useOwnerModules:(enabled:boolean,currentScope:string|null)=>({links:enabled?ownerModules(value,currentScope):[],scope:verifiedModuleScope(value),path:'/personal/requirements/updates'}),OwnerModuleLinks:'owner-links'},
   };

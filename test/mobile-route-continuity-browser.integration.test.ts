@@ -76,7 +76,7 @@ test('OPT-IN signed-in mobile routes keep the shared shell, layout preference an
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   const go=async(path:string)=>{await page.goto(origin+path,{waitUntil:'domcontentloaded',timeout:80000});};
   const awaitMobile=async(title:string)=>{await expect(main.getByRole('heading',{name:title,level:1,exact:true})).toBeVisible({timeout:20000});await expect(header.getByRole('button',{name:'切换到桌面版'})).toBeVisible({timeout:20000});};
-  const readyHome=async()=>{await go('/personal');await awaitMobile('总览');await expect(header.getByRole('link',{name:'搜索本人记录'})).toBeVisible({timeout:20000});};
+  const readyHome=async()=>{await go('/personal');await awaitMobile('总览');await expect(header.getByRole('button',{name:'搜索本人记录'})).toBeVisible({timeout:20000});};
   const openDrawer=async()=>{await header.getByRole('button',{name:'打开导航',exact:true}).click();await expect(drawer).toBeVisible();};
   const checkBox=async(path:string,title:string,mode='mobile')=>{
    await expect(page).toHaveURL(origin+path,{timeout:50000});
