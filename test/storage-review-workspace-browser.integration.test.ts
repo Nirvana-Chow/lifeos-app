@@ -17,7 +17,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
  skip:process.env.RUN_STORAGE_REVIEW_WORKSPACE_BROWSER_TESTS!=='1'&&'Requires the composed storage route and disposable Next/Chromium',
  timeout:180_000,
 },async t=>{
- const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-storage-workspace-'));
+ const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-auth-theme-storage-workspace-'));
  let server:FixtureProcess|undefined,browserProcess:FixtureProcess|undefined,browser:Browser|undefined,browserServer:BrowserServer|undefined;
  t.after(()=>cleanupAuthThemeFixture({root,server,browserProcess,browser,browserServer}));
  const files=['app/layout.tsx','app/globals.css','app/theme.css','app/personal/layout.tsx','app/personal/page.tsx','app/personal/storage-review/page.tsx','postcss.config.mjs'];
@@ -100,11 +100,12 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   });
   await page.goto(origin+tasksHref,{waitUntil:'domcontentloaded',timeout:60_000});
   await expect(page.getByRole('heading',{name:'待办',exact:true,level:1})).toBeVisible(gate);
+  await expect(page.locator('[data-workspace-state=ready]')).toHaveCount(1,gate);
   await page.getByRole('button',{name:'列表',exact:true}).click();
   const taskRows=page.locator('.lo-list-rows');
   await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasks.length,gate);
   await taskRows.evaluate(region=>{region.scrollTop=210;});
-  const selectors=['.lo-shell','.lo-header','aside.lo-sidebar','#personal-main'];
+  const selectors=['.lo-shell','.lo-header','aside.lo-sidebar','.lo-header nav[aria-label="切换模块"]','#personal-main'];
   await page.evaluate(names=>{Object.assign(window,{storageShellProof:[document,...names.map(name=>document.querySelector(name))]});},selectors);
   const compare=()=>page.evaluate(names=>{
    const refs=Reflect.get(window,'storageShellProof');
@@ -128,7 +129,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   const note=childRow.getByLabel('备注与处理要求');
   await expect(note).toBeVisible(gate);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  assert.deepEqual(await compare(),[true,true,true,true,true]);
+  assert.deepEqual(await compare(),[true,true,true,true,true,true]);
   assert.deepEqual(documents,['/personal']);
   const style=await page.locator('[data-storage-review-body]').evaluate(node=>({
    color:getComputedStyle(node).color,
@@ -167,7 +168,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await expect(keep).not.toBeChecked(gate);
   await page.goBack();
   await expect(page).toHaveURL(origin+tasksHref,gate);
-  assert.deepEqual(await compare(),[true,true,true,true,true]);
+  assert.deepEqual(await compare(),[true,true,true,true,true,true]);
   await expect.poll(()=>taskRows.evaluate(region=>region.scrollTop),gate).toBe(210);
   await expect(width===1365?link:navButton).toBeFocused(gate);
   assert.deepEqual(documents,['/personal']);
