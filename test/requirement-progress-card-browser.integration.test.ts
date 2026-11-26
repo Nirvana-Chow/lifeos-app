@@ -144,12 +144,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await firstSnapshot;
  const card=page.getByRole('region',{name:'需求交付与验收',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
- for(const [label,value] of [['计划','2'],['推进中','1'],['工程审查','1'],['受阻','1'],['标记开发完成','2'],['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
+ for(const [label,value] of [['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
   await expect(count(label)).toHaveText(value);
  }
  await expect(page.getByRole('region',{name:'需求进度',exact:true})).toHaveCount(0);
  await expect(card.getByText('待交付或验收 6 / 7 项',{exact:false})).toBeVisible();
- await expect(card.locator('dl[aria-label="推进状态"]')).toHaveCount(1);
+ await expect(card.getByRole('heading',{name:/推进状态/})).toHaveCount(0);
+ await expect(card.getByText('标记开发完成',{exact:true})).toHaveCount(0);
  await expect(card.locator('dl[aria-label="交付证据"]')).toHaveCount(1);
  await expect(card.locator('time')).toHaveAttribute('datetime','2026-11-25T00:00:00Z');
  await expect(card.locator('time')).toContainText('08:00');
@@ -234,6 +235,12 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  const pool=page.getByRole('region',{name:'需求池',exact:true});
+ await expect(pool.getByRole('button',{name:'总需求 7',exact:true})).toBeVisible();
+ await expect(pool.getByRole('button',{name:'未完成 6',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'已完成 1',exact:true}).click();
+ const summaryRows=pool.getByRole('list',{name:'需求清单'}).getByRole('listitem');
+ await expect(summaryRows).toHaveCount(1);
+ await expect(summaryRows.first()).toHaveText('Synthetic private requirement 6');
  await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  const range=pool.getByLabel('显示范围',{exact:true});
  const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});

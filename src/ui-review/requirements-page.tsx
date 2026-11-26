@@ -124,9 +124,12 @@ export function RequirementsPage({container,navigationGuard,scope,concealed=fals
  const summary=useMemo(()=>{
   if(!pool)return null;
   const completed:RequirementItem[]=[],pending:RequirementItem[]=[];
-  for(const item of pool.items)(item.fields.workflow?.state==='done'?completed:pending).push(item);
+  for(const item of pool.items){
+   const complete=requirementIsComplete(item.requirement,delivery.get(item.id));
+   (complete?completed:pending).push(item);
+  }
   return {all:pool.items,completed,pending};
- },[pool]);
+ },[pool,delivery]);
  const rows=useMemo(()=>selectRequirements(visible,filters).filter(item=>{
   const evidence=delivery.get(item.id);
   return requirementIsComplete(item,evidence)===(range==='completed')&&(progressFilter==='all'||evidence?.state===progressFilter);

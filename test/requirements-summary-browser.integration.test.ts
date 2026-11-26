@@ -6,14 +6,24 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
-import {requirements} from '../src/platform/requirements.ts';
+import {requirements,type Requirement} from '../src/platform/requirements.ts';
 import {requirementBinding,type RequirementItem,type RequirementsSnapshot} from '../src/requirements-candidate/service.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
 const baseline=requirements();
-const states=['done','planned','in_progress','blocked','awaiting_review',null] as const;
+const sha='a'.repeat(40),commit='https://github.com/Nirvana-Chow/lifeos-app/commit/'+sha;
+const publishedEvidence:Requirement['evidence']=[
+ {scope:'delivery-merged',ref:commit},
+ {scope:'delivery-production-verified',ref:commit,resultHref:'https://lifeos.nirvanachow.com/personal?page=projects',
+  verificationHref:`https://github.com/Nirvana-Chow/lifeos-app/blob/${sha}/docs/verification/fixture.md`},
+];
+const states=['done','planned','done','blocked','awaiting_review',null] as const;
+const titles=['开发完成待上线','待开发','已上线待验收','上线且已验收','待工程审查','未标记'];
 const items:RequirementItem[]=states.map((state,index)=>{
- const requirement={...baseline.requirements[index],title:'合成需求 '+(state??'未标记')};
+ const requirement:Requirement={...baseline.requirements[index],title:'合成需求 '+titles[index],
+  status:index===3?'accepted':index===2?'awaiting_acceptance':'not_started',
+  acceptance:index===3?{by:'user',baselineVersion:baseline.baselineVersion,ref:'synthetic-owner-acceptance'}:undefined,
+  evidence:index===2||index===3?publishedEvidence:[]};
  return {id:requirement.id,requirement,sourceId:null,revision:0,baselineConflict:false,baselineBinding:requirementBinding(baseline,requirement.id),
   fields:{title:requirement.title,body:'合成说明',phaseId:requirement.roadmap!.phaseId,priority:requirement.roadmap!.priority,plannedStartOn:null,plannedEndOn:null,
    ...(state?{workflow:{state,purpose:'合成用途',nextStep:'合成下一步'}}:{})}};
@@ -113,29 +123,32 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   await expect(pool.getByRole('button',{name:'管理视图',exact:true})).toHaveCount(1);
   await counts.getByRole('button',{name:'已完成 1',exact:true}).click();
   await expect(list.getByRole('listitem')).toHaveCount(1);
-  await list.getByRole('button',{name:'合成需求 done',exact:true}).click();
+  await list.getByRole('button',{name:'合成需求 上线且已验收',exact:true}).click();
   const detail=page.getByRole('dialog');
-  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 done');
+  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 上线且已验收');
   await expect(detail.getByRole('button',{name:'保存需求',exact:true})).toBeEnabled();
-  assert.ok(details.includes(items[0].id));
+  assert.ok(details.includes(items[3].id));
   await page.keyboard.press('Escape');
   await expect(detail).toHaveCount(0);
   await counts.getByRole('button',{name:'未完成 5',exact:true}).click();
   await expect(list.getByRole('listitem')).toHaveCount(5);
-  await expect(list.getByRole('button',{name:'合成需求 未标记',exact:true})).toBeVisible();
+  for(const title of ['开发完成待上线','已上线待验收','未标记']){
+   await expect(list.getByRole('button',{name:'合成需求 '+title,exact:true})).toBeVisible();
+  }
+  await expect(list.getByRole('button',{name:'合成需求 上线且已验收',exact:true})).toHaveCount(0);
   const readsBeforePatch=snapshotReads;
-  await list.getByRole('button',{name:'合成需求 planned',exact:true}).click();
-  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 planned');
+  await list.getByRole('button',{name:'合成需求 待开发',exact:true}).click();
+  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 待开发');
   await detail.getByLabel('推进状态',{exact:true}).selectOption('done');
   await detail.getByLabel('需求标题',{exact:true}).fill('合成需求 PATCH 回执');
   await detail.getByRole('button',{name:'保存需求',exact:true}).click();
   await expect(detail.getByRole('heading',{name:'合成需求 独立读回',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(detail).toHaveCount(0);
-  await expect(counts.getByRole('button',{name:'未完成 4',exact:true})).toBeVisible();
-  await expect(list.getByRole('button',{name:'合成需求 独立读回',exact:true})).toHaveCount(0);
-  await counts.getByRole('button',{name:'已完成 2',exact:true}).click();
+  await expect(counts.getByRole('button',{name:'未完成 5',exact:true})).toBeVisible();
+  await expect(counts.getByRole('button',{name:'已完成 1',exact:true})).toBeVisible();
   await expect(list.getByRole('button',{name:'合成需求 独立读回',exact:true})).toBeVisible();
+  await expect(list.getByRole('button',{name:'合成需求 PATCH 回执',exact:true})).toHaveCount(0);
   assert.equal(snapshotReads,readsBeforePatch,'verified PATCH should use the observed row without another snapshot read');
   await all.click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -168,8 +181,8 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   writable=true;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(all).toBeVisible();
-  await list.getByRole('button',{name:'合成需求 done',exact:true}).click();
-  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 done');
+  await list.getByRole('button',{name:'合成需求 开发完成待上线',exact:true}).click();
+  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 开发完成待上线');
   const readsBeforeAccountSwitch=snapshotReads;
   switchAccountOnObservation=true;
   await detail.getByLabel('需求标题',{exact:true}).fill('合成需求 切换前保存');
