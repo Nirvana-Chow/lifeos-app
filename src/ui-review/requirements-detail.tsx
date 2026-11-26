@@ -7,7 +7,7 @@ import {Button} from './ui/button';
 import {Input} from './ui/input';
 import {implementationLabels,acceptanceLabels,workflowLabels,RequirementWorkflowSummary,RequirementDeliveryTime,RequirementResultLink} from './requirements-views';
 import type {RequirementFields,RequirementWorkflow} from '../requirements-candidate/domain';
-import {deliveryLabels,type RequirementDelivery} from './requirements-delivery';
+import {deliveryLabels,requirementEvidenceObserved,type RequirementDelivery} from './requirements-delivery';
 import styles from './requirements-page.module.css';
 
 const publicRoot = 'https://github.com/Nirvana-Chow/lifeos-app/';
@@ -24,9 +24,10 @@ function Reference({value, label}: {value: string; label?: string}) {
  const href = referenceHref(value);
  return href ? <a href={href}>{label ?? value}</a> : <span>{label ?? value}</span>;
 }
-function RequirementDetailBody({item,showDescription=true}: {item: Requirement;showDescription?:boolean}) {
+function RequirementDetailBody({item,showDescription=true,observedAt}: {item: Requirement;showDescription?:boolean;observedAt:string|null}) {
  const m = item.roadmap;
- const sourceRefs = [...new Set([...item.sourceRefs, ...item.evidence.map(e => e.ref)])].filter(ref => !m?.issueRefs.includes(ref) && !m?.prRefs.includes(ref));
+ const evidence=item.evidence.filter(e=>e.scope!=='delivery-merged'&&e.scope!=='delivery-production-verified'||observedAt!==null&&requirementEvidenceObserved(e.at,observedAt));
+ const sourceRefs = [...new Set([...item.sourceRefs, ...evidence.map(e => e.ref)])].filter(ref => !m?.issueRefs.includes(ref) && !m?.prRefs.includes(ref));
  return <div className={styles.detailBody}>
    {showDescription?<p>{item.description}</p>:null}
    <h4>验收条件</h4><ul>{item.acceptanceCriteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul>
@@ -38,15 +39,15 @@ function RequirementDetailBody({item,showDescription=true}: {item: Requirement;s
     {m.specTaskRefs.map(ref => <li key={ref}><Reference value={ref} label={'OpenSpec ' + ref.split('#')[1]}/></li>)}
    </ul> : <p>沿原始需求与来源记录推进。</p>}
    <h4>来源与源码依据</h4>
-   <ul>{sourceRefs.map(ref => <li key={ref}>{item.evidence.some(e => e.ref === ref && e.scope === 'source') ? '源码：' : ''}<Reference value={ref}/></li>)}</ul>
-   {item.evidence.length === 0 ? <p>尚无实现证据。</p> : null}
+   <ul>{sourceRefs.map(ref => <li key={ref}>{evidence.some(e => e.ref === ref && e.scope === 'source') ? '源码：' : ''}<Reference value={ref}/></li>)}</ul>
+   {evidence.length === 0 ? <p>尚无实现证据。</p> : null}
    <p>源码依据说明已有实现范围，不代表部署或本人验收。</p>
-   {item.acceptance ? <p>本人验收：<Reference value={item.acceptance.ref}/></p> : null}
+   {item.acceptance && observedAt!==null && requirementEvidenceObserved(item.acceptance.at,observedAt) ? <p>本人验收：<Reference value={item.acceptance.ref}/></p> : null}
  </div>;
 }
 
 
-export function RequirementDetail({container,item,delivery,phaseTitle,expanded,onExpandedChange,onClose,returnFocus,editor,loading=false,concealed=false}:{container?:HTMLElement|null;item:Requirement|null;delivery?:RequirementDelivery;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void;editor?:RequirementEditorProps;loading?:boolean;concealed?:boolean}){
+export function RequirementDetail({container,item,delivery,phaseTitle,expanded,onExpandedChange,onClose,returnFocus,editor,loading=false,concealed=false,observedAt}:{container?:HTMLElement|null;item:Requirement|null;delivery?:RequirementDelivery;phaseTitle:string;expanded:boolean;onExpandedChange:()=>void;onClose:()=>void;returnFocus:()=>void;editor?:RequirementEditorProps;loading?:boolean;concealed?:boolean;observedAt:string|null}){
  const title=useRef<HTMLHeadingElement>(null);
  const [bounds,setBounds]=useState<{left:number;top:number;width:number;height:number}|null>(null);
  useEffect(()=>{if(!expanded||!container){setBounds(null);return;}const update=()=>{const r=container.getBoundingClientRect();setBounds({left:r.left,top:r.top,width:r.width,height:r.height});};update();const observer=new ResizeObserver(update);observer.observe(container);window.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);};},[expanded,container]);
@@ -59,7 +60,7 @@ export function RequirementDetail({container,item,delivery,phaseTitle,expanded,o
  if(concealed)return null;
  return <Dialog open={item!==null} onOpenChange={open=>{if(!open)onClose();}}><DialogContent container={container} style={expanded&&bounds?{...bounds,maxWidth:bounds.width,maxHeight:bounds.height,transform:'none',translate:'none'}:undefined} className={`${styles.dialog} ${expanded?styles.fullscreen:''}`} showCloseButton={false} aria-describedby={undefined} onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus();}} onCloseAutoFocus={event=>{event.preventDefault();returnFocus();}}>
   <header className={styles.dialogHeader}><div><span className={styles.id}>{item?.id}</span><DialogTitle ref={title} tabIndex={-1}>{item?.title}</DialogTitle></div><div className={styles.dialogActions}><Button variant="outline" onClick={onExpandedChange}>{expanded?'收起详情':'展开到内容区'}</Button><DialogClose asChild><Button variant="outline">关闭</Button></DialogClose></div></header>
-  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{delivery?deliveryLabels[delivery.state]:item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status]}</span>{delivery&&<RequirementDeliveryTime delivery={delivery}/>}</div><RequirementResultLink delivery={delivery}/>{delivery?.result?.evidence&&<p><a href={delivery.result.evidence} target="_blank" rel="noreferrer">查看正式站验证记录</a></p>}<RequirementWorkflowSummary workflow={editor?.fields.workflow}/><p><strong>{editor?.fields.workflow?'推进下一步：':'工程下一步：'}</strong>{editor?.fields.workflow?.nextStep??item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<>{currentEdit&&<RequirementEditor {...editor} draft={currentEdit.draft} dirty={dirty} changeDraft={update=>setEdit(previous=>previous?{...previous,draft:update(previous.draft)}:null)}/>}<details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} showDescription={false}/></details></>:<RequirementDetailBody item={item}/>}</>:null}</div>
+  <div className={styles.dialogBody}>{item?<><div className={styles.detailMeta}><span>{phaseTitle}</span><span>{item.roadmap?.priority}</span><span>{delivery?deliveryLabels[delivery.state]:item.roadmap?implementationLabels[item.roadmap.implementation]:'待核验'}</span><span>{acceptanceLabels[item.status==='accepted'&&(observedAt===null||!requirementEvidenceObserved(item.acceptance?.at,observedAt))?'awaiting_acceptance':item.status]}</span>{delivery&&<RequirementDeliveryTime delivery={delivery}/>}</div><RequirementResultLink delivery={delivery}/>{delivery?.result?.evidence&&<p><a href={delivery.result.evidence} target="_blank" rel="noreferrer">查看正式站验证记录</a></p>}<RequirementWorkflowSummary workflow={editor?.fields.workflow}/><p><strong>{editor?.fields.workflow?'推进下一步：':'工程下一步：'}</strong>{editor?.fields.workflow?.nextStep??item.roadmap?.nextStep??'按验收条件逐项验证。'}</p>{item.roadmap?<p>{item.roadmap.summary}</p>:null}{loading?<p role="status">正在读取当前需求…</p>:editor?<>{currentEdit&&<RequirementEditor {...editor} draft={currentEdit.draft} dirty={dirty} changeDraft={update=>setEdit(previous=>previous?{...previous,draft:update(previous.draft)}:null)}/>}<details className={styles.evidenceDisclosure}><summary>验收与工程依据</summary><RequirementDetailBody item={item} observedAt={observedAt} showDescription={false}/></details></>:<RequirementDetailBody item={item} observedAt={observedAt}/>}</>:null}</div>
  </DialogContent></Dialog>;
 }
 

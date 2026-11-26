@@ -32,9 +32,10 @@ export type RequirementDelivery = {
  result?: {label:string; href:string; evidence?:string};
 };
 
-export function requirementIsComplete(item:Requirement, delivery:RequirementDelivery|undefined):boolean {
+export function requirementIsComplete(item:Requirement, delivery:RequirementDelivery|undefined, observedAt?:string):boolean {
  return delivery?.state==='live' && item.status==='accepted' && item.acceptance?.by==='user' &&
-  typeof item.acceptance.ref==='string' && item.acceptance.ref.trim().length>0;
+  typeof item.acceptance.ref==='string' && item.acceptance.ref.trim().length>0 &&
+  requirementEvidenceObserved(item.acceptance.at,observedAt);
 }
 
 const dateFormat = new Intl.DateTimeFormat('zh-CN',{
@@ -42,21 +43,31 @@ const dateFormat = new Intl.DateTimeFormat('zh-CN',{
 });
 export function formatDeliveryTime(at:string){return dateFormat.format(new Date(at));}
 
-function evidenceTime(at:string|undefined,label:DeliveryTime['label']):DeliveryTime|undefined {
- if (!at || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(at)) return;
+export function isRequirementEvidenceTime(at:unknown):at is string {
+ if (typeof at!=='string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(at)) return false;
  const date = new Date(at);
- if (!Number.isFinite(date.valueOf()) || date.toISOString()!==at.replace(/(?<!\.\d{3})Z$/,'.000Z')) return;
- return {at,label};
+ return Number.isFinite(date.valueOf()) && date.toISOString()===at.replace(/(?<!\.\d{3})Z$/,'.000Z');
+}
+
+function evidenceTime(at:string|undefined,label:DeliveryTime['label']):DeliveryTime|undefined {
+ return isRequirementEvidenceTime(at)?{at,label}:undefined;
+}
+
+// Undated receipts retain their existing meaning. An explicit date must be
+// valid and no later than the server observation bound to this display.
+export function requirementEvidenceObserved(at:string|undefined, observedAt?:string):boolean {
+ return observedAt===undefined || at===undefined ||
+  (isRequirementEvidenceTime(at) && Date.parse(at)<=Date.parse(observedAt));
 }
 
 // Delivery evidence is read from the engineering baseline. Private descriptions,
 // workflow selections, ordinary PR references and build qualification cannot
 // supply a receipt. Production evidence cites both a fixed source and the
 // corresponding verified official route.
-export function requirementDelivery(item:Requirement, workflow?:RequirementWorkflow|null, savedBody=''):RequirementDelivery {
- const merged = item.evidence.findLast(evidence => evidence.scope==='delivery-merged' && commitRef.test(evidence.ref));
+export function requirementDelivery(item:Requirement, workflow?:RequirementWorkflow|null, savedBody='', observedAt?:string):RequirementDelivery {
+ const merged = item.evidence.findLast(evidence => evidence.scope==='delivery-merged' && commitRef.test(evidence.ref) && requirementEvidenceObserved(evidence.at,observedAt));
  const production = item.evidence.find(evidence =>
-  evidence.scope==='delivery-production-verified' &&
+  evidence.scope==='delivery-production-verified' && requirementEvidenceObserved(evidence.at,observedAt) &&
   evidence.ref===merged?.ref &&
   typeof evidence.resultHref==='string' && productionRoute.test(evidence.resultHref) &&
   typeof evidence.verificationHref==='string' && verificationRef.test(evidence.verificationHref));
@@ -64,9 +75,10 @@ export function requirementDelivery(item:Requirement, workflow?:RequirementWorkf
   return {state:'live',time:evidenceTime(production.at,'上线核验'),result:{label:'打开正式站结果',href:production.resultHref,evidence:production.verificationHref}};
  }
  if (merged) return {state:'merged',time:evidenceTime(merged.at,'合并'),result:{label:'查看合并结果',href:merged.ref}};
- const slice = mergedSlices.get(item.id);
+ const partial = mergedSlices.get(item.id);
+ const slice = requirementEvidenceObserved(partial?.at,observedAt) ? partial : undefined;
  const result = slice && {href:slice.href,label:slice.label+'（合并记录）'};
- const followUp = savedProgressEntries(savedBody)[0];
+ const followUp = savedProgressEntries(savedBody).find(entry=>observedAt===undefined || Date.parse(entry.at)<=Date.parse(observedAt));
  const time = followUp && (!slice || Date.parse(followUp.at)>=Date.parse(slice.at))
   ? {at:followUp.at,label:'跟进' as const}
   : evidenceTime(slice?.at,'部分合并');
