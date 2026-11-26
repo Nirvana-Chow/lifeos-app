@@ -107,8 +107,12 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   });
   await page.goto(entry,{waitUntil:'domcontentloaded',timeout:90000});
   await expect(page.getByRole('heading',{name:'新建词卡'})).toBeVisible({timeout:30000});
-  await page.getByLabel('词条').fill('Synthetic word');
+  await page.getByLabel('词条').fill('   ');
   await page.getByLabel('释义').fill('Synthetic definition');
+  await page.getByRole('button',{name:'创建词卡'}).click();
+  await expect(page.getByRole('alert').filter({hasText:'请核对词卡或复习内容'})).toBeVisible();
+  assert.equal(commands.length,0);
+  await page.getByLabel('词条').fill('Synthetic word');
   await page.getByRole('button',{name:'创建词卡'}).click();
   const card=page.getByRole('article',{name:'Synthetic word'});
   await expect(card).toContainText('掌握度未知');

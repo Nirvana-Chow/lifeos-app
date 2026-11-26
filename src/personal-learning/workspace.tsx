@@ -5,6 +5,7 @@ import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import {useOwnerPageVerification} from '../personal-candidate/privacy';
 import type {CardView, Command, Receipt, Review, Snapshot} from './domain';
+import {commandOf} from './command';
 import {clearPending, readPending, retainPending, type Pending} from './pending';
 import styles from './workspace.module.css';
 
@@ -67,7 +68,15 @@ export function LearningWorkspace() {
   async function send(command: Command, retained?: Pending) {
     if (verified !== true || !view?.writable || busy || writing.current || (pending && !retained)) return;
     const id = epoch.current;
-    const original = retained ?? {command, body:JSON.stringify(command), key:'learning-'+crypto.randomUUID(), scope:view.scope};
+    let original: Pending;
+    try {
+      const validated = retained?.command ?? commandOf(command);
+      original = retained ?? {command:validated, body:JSON.stringify(validated), key:'learning-'+crypto.randomUUID(), scope:view.scope};
+    } catch {
+      setNotice('');
+      setError('请核对词卡或复习内容。');
+      return;
+    }
     if (original.scope !== view.scope) return;
     try {
       retainPending(sessionStorage,original);
