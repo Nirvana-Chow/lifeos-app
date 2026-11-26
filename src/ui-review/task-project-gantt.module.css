@@ -1,30 +1,167 @@
-.gantt{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:var(--lo-radius-surface);background:var(--card);font:var(--lo-font-body);color:var(--foreground)}
-.gantt>header{flex:none;padding:16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}.gantt h2,.gantt h3{margin:0;font-size:var(--lo-font-section);font-weight:600}.gantt p{margin:0;color:var(--muted-foreground)}.gantt>header p{flex-basis:100%;order:2}.gantt>header button{margin-left:auto}
-.viewport{min-height:0;min-width:0;overflow:auto;flex:1;overscroll-behavior:contain}.timeline{min-width:620px;padding:16px}.scale{display:flex;justify-content:space-between;margin-left:244px;color:var(--muted-foreground)}.row{display:grid;grid-template-columns:224px minmax(0,1fr);gap:20px;align-items:center;min-height:64px;border-bottom:1px solid var(--border)}.track{position:relative;height:48px;margin-right:5px;background:linear-gradient(to right,var(--border) 1px,transparent 1px);background-size:25% 100%}.bar{position:absolute;top:5px;height:12px;border-radius:3px;background:var(--lo-link);max-width:100%}.dates{position:absolute;bottom:3px;left:0;right:0;white-space:nowrap;color:var(--muted-foreground)}
-.gantt :is(a,button){font:inherit}.gantt a,.gantt article button{text-align:left;color:var(--lo-link);overflow-wrap:anywhere}.gantt :is(a,button):focus-visible{outline:2px solid var(--ring);outline-offset:2px}.empty{padding:24px}
-@media(max-width:680px){.gantt>header{padding:12px}.gantt>header h2{flex-basis:100%}.gantt>header button{margin-left:0}}
+.gantt {
+  --label-width: clamp(8.5rem, 18vw, 13rem);
+  --column-gap: 8px;
+  --track-inset: 8px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--lo-radius-surface);
+  background: var(--card);
+  color: var(--foreground);
+  font: var(--lo-font-body);
+}
 
-.row :is(a,button){display:flex;align-items:center;min-height:var(--lo-control-height);padding:4px 0}
+.gantt > header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
 
-.todo .timeline{min-width:0}.todo .row>*{min-width:0}.milestone{position:absolute;top:6px;width:12px;height:12px;transform:translateX(-50%) rotate(45deg);background:var(--lo-link);border:1px solid var(--foreground)}.unscheduled{padding:16px}.metadata{color:var(--muted-foreground);overflow-wrap:anywhere}
-@media(max-width:680px){.todo .row{grid-template-columns:minmax(0,1fr);gap:0;padding:8px 0}.todo .scale{margin-left:0}.todo .timeline,.todo .unscheduled{padding:12px}.todo .metadata{padding:4px 0}}
+.gantt h2, .gantt h3 {
+  margin: 0;
+  font-size: var(--lo-font-section);
+  font-weight: 600;
+}
+
+.gantt p { margin: 0; color: var(--muted-foreground); }
+.gantt > header p { flex-basis: 100%; }
+
+.viewport {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.viewport:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+
+.timeline { min-width: calc(var(--label-width) + var(--column-gap) + 304px); }
+.timeline + .timeline, .unscheduled { border-top: 1px solid var(--border); }
+
+.timeline h3, .unscheduled h3, .empty {
+  position: sticky;
+  inset-inline-start: 0;
+  width: fit-content;
+  max-width: min(100%, 32ch);
+  padding: 8px 12px;
+}
+
+.axis, .row {
+  display: grid;
+  grid-template-columns: var(--label-width) minmax(0, 1fr);
+  column-gap: var(--column-gap);
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.row { min-height: 40px; }
+
+.label {
+  position: sticky;
+  z-index: 1;
+  inset-inline-start: 0;
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+  padding-inline: 10px 0;
+  background: var(--card);
+}
+
+.gantt .row .label :is(a, button) {
+  display: -webkit-box;
+  align-content: center;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  width: 100%;
+  min-height: var(--lo-control-height);
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--lo-link);
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.gantt .row .label :is(a, button):hover { text-decoration: underline; }
+.gantt .row .label :is(a, button):focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+
+.scale, .track {
+  position: relative;
+  margin-inline: var(--track-inset);
+}
 
 .scale {
-  margin-right: 5px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
+  min-height: 28px;
+  color: var(--muted-foreground);
   font-size: var(--lo-font-meta);
   font-variant-numeric: tabular-nums;
+}
+
+.scale time {
+  position: absolute;
+  bottom: 4px;
+  padding-bottom: 2px;
+  white-space: nowrap;
+}
+
+.scale time[data-position='middle'] { transform: translateX(-50%); }
+.scale time[data-position='end'] { transform: translateX(-100%); }
+
+.scale time::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 1px;
+  height: 4px;
+  background: currentColor;
+}
+
+.scale time[data-position='start']::after { left: 0; }
+.scale time[data-position='end']::after { left: 100%; }
+
+.track { height: 34px; }
+.bar, .milestone { position: absolute; background: var(--lo-link); }
+.bar { top: 5px; height: 8px; border-radius: 3px; }
+.milestone {
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%) rotate(45deg);
+  border: 1px solid var(--foreground);
 }
 
 .dates {
+  position: absolute;
+  inset: auto 0 1px;
+  color: var(--muted-foreground);
   font-size: var(--lo-font-meta);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-@media (min-width: 1024px) and (pointer: fine) {
-  .todo .row { min-height: 44px; }
-  .todo .row :is(a, button) { min-height: 36px; }
-  .todo .track { height: 38px; }
-  .todo .timeline, .todo .unscheduled { padding-block: 8px; }
+.metadata {
+  min-width: 0;
+  padding: 4px var(--track-inset);
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .gantt { --label-width: 118px; }
+  .row { min-height: 44px; }
 }

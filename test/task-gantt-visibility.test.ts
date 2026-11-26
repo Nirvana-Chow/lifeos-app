@@ -25,7 +25,7 @@ function render(rows:Record<string,unknown>[],label='待办',partial=false){
 test('a deadline-only todo stays visible as one dated milestone without an invented duration',()=>{
  const html=render([{id:'due',title:'Deadline only',dueOn:'2030-11-05',createdAt:'2020-01-01',sourceCapturedAt:'2021-01-01'}]);
  assert.match(html,/data-gantt-milestone/);assert.doesNotMatch(html,/data-gantt-bar/);
- assert.match(html,/data-gantt-scale=""><time dateTime="2030-11-05">2030-11-05<\/time><\/div>/);
+ assert.match(html,/data-gantt-scale=""><time dateTime="2030-11-05" data-position="start" style="left:0%">2030-11-05<\/time><\/div>/);
  assert.match(html,/aria-label="截止 2030-11-05"/);assert.match(html,/dateTime="2030-11-05"/);assert.match(html,/data-open-id="due"/);
  assert.doesNotMatch(html,/2020-01-01|2021-01-01/);
 });
@@ -50,4 +50,11 @@ test('partial coverage stays explicit and untrusted titles stay escaped in visib
 test('project Gantt keeps the existing count-only incomplete behavior and ignores arbitrary due metadata',()=>{
  const html=render([{id:'project',title:'Project',dueOn:'2030-11-05'}],'项目');
  assert.match(html,/1 项项目未完整排期/);assert.doesNotMatch(html,/data-open-id|data-gantt-milestone|<time/);
+});
+
+test('a cross-month scale positions its dated midpoint within the same saved range',()=>{
+ const html=render([{id:'range',title:'Cross-month plan',plannedStartOn:'2030-10-28',plannedEndOn:'2030-11-08'}]);
+ assert.match(html,/dateTime="2030-10-28" data-position="start" style="left:0%"/);
+ assert.match(html,/dateTime="2030-11-03" data-position="middle" style="left:54\.545\d+%"/);
+ assert.match(html,/dateTime="2030-11-08" data-position="end" style="left:100%"/);
 });
