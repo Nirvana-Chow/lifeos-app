@@ -310,7 +310,7 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const finance=modules.getByRole('link',{name:'财务',exact:true});
  await expect(finance).toHaveAttribute('href','/personal/finance');
  await expect(nav.getByRole('link',{name:'账户资产投资',exact:true})).toHaveCount(0);
- await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
  const mainNav=nav.getByRole('button').or(nav.getByRole('link'));
  for(const [module,items] of expected){
   const tab=modules.getByRole('button',{name:module,exact:true});

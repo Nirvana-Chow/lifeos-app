@@ -186,7 +186,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(title).toHaveCSS('font-size','14px');
  await expect(page.locator('main .lo-page-heading')).toHaveCount(0);
  await expect(page.locator('main').getByRole('button',{name:/^(新建待办|刷新数据)$/})).toHaveCount(0);
- await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
  await expect(thoughts.getByText('合成正式日记')).toHaveCount(0);
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);

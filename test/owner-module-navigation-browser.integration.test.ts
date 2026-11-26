@@ -64,7 +64,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  };
  const switcher=drawer.getByRole('navigation',{name:'切换模块',exact:true}).or(page.locator('header nav[aria-label="切换模块"]:visible'));
  const nav=menu.getByRole('navigation',{name:'主导航',exact:true});
- const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录','/personal/search']] as const;
+ const planning=[['总览'],['待办'],['日程','/personal/schedule'],['记录','/personal/journal'],['搜索本人记录']] as const;
  const records=[['做饭','/personal/cooking']] as const;
  await readyMenu();
  await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习']);
@@ -109,7 +109,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  await page.goto(origin+'/personal?page=settings',{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{name:'设置',exact:true,level:1})).toBeVisible();await readyMenu();const settings=page.getByRole('navigation',{name:'设置分类'});await expect(settings.getByRole('group',{name:'资料与工具'}).getByRole('link',{name:'存储审核',exact:true})).toHaveAttribute('href','/personal/storage-review');
  await settings.getByRole('link',{name:'存储审核',exact:true}).click();await expect(page).toHaveURL(origin+'/personal/storage-review');await expect(page.getByRole('heading',{name:'存储审核',exact:true,level:1})).toBeVisible();await expect(page.locator('#notice')).toContainText('LifeOS 暂无保存的清单');await expect(page.locator('#open-server')).toBeEnabled();await page.getByRole('link',{name:'← LifeOS 主站',exact:true}).click();await expect(page).toHaveURL(origin+'/personal');await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
  enabled=false;await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});await readyMenu();
- await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录','/personal/search']]);
+ await assertWorkspaceModule(nav,'日常',[['总览'],['待办'],['记录','/personal/journal'],['搜索本人记录']]);
  await page.goto(origin+'/personal?page=settings',{waitUntil:'domcontentloaded'});await expect(page.getByRole('heading',{name:'设置',exact:true,level:1})).toBeVisible();await readyMenu();for(const label of ['阶段路线图','反馈 Inbox','更新记录'])await expect(settings.getByRole('link',{name:label,exact:true})).toHaveCount(0);
  storageAvailable=false;
  const unavailableStatus=page.waitForResponse(response=>response.url()===origin+'/api/platform/personal/status');

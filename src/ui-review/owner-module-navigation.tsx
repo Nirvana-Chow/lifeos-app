@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {FileDown,FolderCheck,FolderGit2,Search,CalendarDays,NotebookPen,HeartPulse,Users,Wallet,BookOpen,ChefHat,BriefcaseBusiness,FileText,Landmark,Map as MapIcon,MessageSquare,History} from 'lucide-react';
 import {ownerModules,verifiedModuleScope,type OwnerModuleLink} from './owner-modules';
 import {supportJSON} from './requirement-support-hooks';
+import {PersonalSearchDialogTrigger} from '../personal-search/dialog';
 const icons={'file-handoffs':FileDown,'storage-review':FolderCheck,'development-projects':FolderGit2,search:Search,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,resume:FileText,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:CalendarDays,roadmap:MapIcon,feedback:MessageSquare,updates:History};
 /** Status composes existing owner capabilities; it grants no write authority. */
 export function useOwnerModules(enabled:boolean,scope:string|null){
@@ -16,4 +17,4 @@ export function useOwnerModules(enabled:boolean,scope:string|null){
  },[enabled,scope]);
  return {links:enabled?ownerModules(value,scope):[],scope:enabled?verifiedModuleScope(value):null,path};
 }
-export function OwnerModuleLinks({links,path,collapsed}:{links:OwnerModuleLink[];path:string;collapsed:boolean}){return <>{links.map(link=>{const Icon=icons[link.id];return <a key={link.id} href={link.href} aria-label={link.label} title={collapsed?link.label:undefined} data-workspace-nav aria-current={path===link.href?'page':undefined}><Icon size={19}/><span>{link.label}</span></a>;})}</>;}
+export function OwnerModuleLinks({links,path,collapsed}:{links:OwnerModuleLink[];path:string;collapsed:boolean}){return <>{links.map(link=>{const Icon=icons[link.id];if(link.id==='search')return <PersonalSearchDialogTrigger key={link.id} href={link.href} aria-label={link.label} title={collapsed?link.label:undefined} data-workspace-nav><Icon size={19} aria-hidden="true"/><span>{link.label}</span></PersonalSearchDialogTrigger>;return <a key={link.id} href={link.href} aria-label={link.label} title={collapsed?link.label:undefined} data-workspace-nav aria-current={path===link.href?'page':undefined}><Icon size={19}/><span>{link.label}</span></a>;})}</>;}

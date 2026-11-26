@@ -138,7 +138,7 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
  }}));
  const card=page.getByRole('region',{name:'未完待办',exact:true});
  await page.goto(origin+'/personal',{waitUntil:'load',timeout:70000});
- await expect(header.getByRole('link',{name:'搜索本人记录'})).toHaveAttribute('href','/personal/search',{timeout:25000});
+ await expect(header.getByRole('button',{name:'搜索本人记录'})).toHaveAttribute('aria-haspopup','dialog',{timeout:25000});
  await expect(page.locator('.lo-sidebar')).toBeVisible();
  await expect(card.getByRole('button',{name:'查看全部未完待办'})).toBeInViewport();
  const desktopHeight=(await header.boundingBox())!.height;
