@@ -4,16 +4,15 @@ import {once} from 'node:events';
 import {cp,mkdir,mkdtemp,readFile,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import test from 'node:test';
+import test,{type TestContext} from 'node:test';
 import {chromium,expect,type Browser,type Page} from '@playwright/test';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
 const source=resolve(import.meta.dirname,'..');
-test('OPT-IN native Article route reads, saves, recovers and edits private articles', {
-  skip:process.env.RUN_PERSONAL_ARTICLE_BROWSER_TEST!=='1'&&'Requires disposable Next fixture and Chromium',
-  timeout:150_000,
-},async t=>{
+const browserGate=process.env.RUN_PERSONAL_ARTICLE_BROWSER_TEST!=='1'&&'Requires disposable Next fixture and Chromium';
+
+async function startArticleFixture(t:TestContext,articleEnabled:boolean){
   const relative=join('app','personal','articles','page.tsx');
   const routeSource=await readFile(join(source,relative),'utf8');
   const root=await mkdtemp(join(tmpdir(),'lifeos-article-browser-'));
@@ -33,7 +32,19 @@ test('OPT-IN native Article route reads, saves, recovers and edits private artic
     "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;",
   ));
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
-    cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],
+    cwd:root,env:{
+      PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1',
+      LIFEOS_PLATFORM_CANDIDATE:'1',LIFEOS_PLATFORM_TARGET:'isolated-test',
+      LIFEOS_PLATFORM_TRANSPORT:'https-origin',LIFEOS_PLATFORM_BASE_URL:'https://article.example.test',
+      LIFEOS_PLATFORM_HTTPS_HOST:'article.example.test',LIFEOS_PLATFORM_OWNER_ID:'article-browser-owner',
+      LIFEOS_PLATFORM_OWNER_EMAIL:'article@example.test',LIFEOS_PLATFORM_SECRET:'synthetic-article-fixture-secret-never-live',
+      LIFEOS_PLATFORM_TEST_DATABASE_URL:'postgres://lifeos_platform_candidate_runtime:unused@127.0.0.1:55432/lifeos_platform_test_local',
+      LIFEOS_PERSONAL_ENABLED:'1',LIFEOS_PERSONAL_APPROVED:'personal-manual-v1',
+      LIFEOS_PERSONAL_OWNER_ID:'article-browser-owner',LIFEOS_PERSONAL_OWNER_EMAIL:'article@example.test',
+      LIFEOS_PERSONAL_SPACE_ID:'article-browser-space',LIFEOS_PERSONAL_DATABASE_NAME:'lifeos_platform_test_local',
+      LIFEOS_PERSONAL_ALLOWED_TYPES:'todo,journal',
+      ...(articleEnabled?{LIFEOS_PERSONAL_ARTICLE:'personal-article-v1'}:{}),
+    },stdio:['ignore','pipe','pipe'],
   });
   const stopped=once(server,'exit');
   let browser:Browser|undefined;
@@ -59,6 +70,71 @@ test('OPT-IN native Article route reads, saves, recovers and edits private artic
   assert.equal(anonymous.headers.get('location'),'/login');
 
   browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
+  for(const headers of [{},{'x-fixture-owner':'foreign'}] as Record<string,string>[]){
+    const denied=await browser.newPage({extraHTTPHeaders:headers});
+    await denied.goto(origin+'/personal/articles',{waitUntil:'domcontentloaded'});
+    await expect(denied).toHaveURL(origin+'/login');
+    await denied.close();
+  }
+  return {origin,browser};
+}
+
+test('OPT-IN disabled native Article retains the legacy tabs and local preview', {
+  skip:browserGate,timeout:150_000,
+},async t=>{
+  const {origin,browser}=await startArticleFixture(t,false);
+  const page=await browser.newPage({viewport:{width:1280,height:860},extraHTTPHeaders:{'x-fixture-owner':'confirmed'}});
+  const writes:string[]=[];
+  const nativeReads:string[]=[];
+  await page.route('**/*',async route=>{
+    const request=route.request(),url=new URL(request.url());
+    if(url.origin!==origin)return route.abort();
+    if(url.pathname==='/api/platform/auth/get-session')return route.fulfill({json:{
+      session:{mfaVerified:true,sessionDurationMode:'fixed',sessionDurationSeconds:3600,
+        expiresAt:new Date(Date.now()+3600000).toISOString()},
+    }});
+    if(url.pathname.startsWith('/api/platform/personal/article'))nativeReads.push(url.pathname);
+    if(!['GET','HEAD'].includes(request.method()))writes.push(request.method()+' '+url.pathname);
+    return route.continue();
+  });
+  await page.goto(origin+'/personal/articles',{waitUntil:'domcontentloaded'});
+  const resources=page.getByRole('button',{name:'阅读资料',exact:true});
+  const articles=page.getByRole('button',{name:'文章',exact:true});
+  const resourceHeading=page.getByRole('heading',{name:'阅读资料列表'});
+  await expect(async()=>{
+    await resources.click({timeout:2000});
+    await expect(resourceHeading).toBeVisible({timeout:1000});
+  }).toPass({timeout:15000});
+  await articles.click();
+  const article=page.getByRole('form',{name:'文章未保存草稿'});
+  const title=article.getByLabel('草稿：标题',{exact:true});
+  const body=article.getByLabel('草稿：正文 / 原文',{exact:true});
+  await title.fill('合成旧草稿');
+  await body.fill('未保存的原正文');
+  await article.getByLabel('草稿：内容归属',{exact:true}).selectOption({label:'原创'});
+  await resources.click();
+  await expect(resourceHeading).toBeVisible();
+  await articles.click();
+  await expect(title).toHaveValue('合成旧草稿');
+  await expect(body).toHaveValue('未保存的原正文');
+  await article.getByRole('button',{name:'预览草稿'}).click();
+  await expect(article).toContainText('未保存的原正文');
+  await article.getByRole('button',{name:'继续编辑'}).click();
+  await expect(body).toHaveValue('未保存的原正文');
+  await expect(article.getByRole('button',{name:'保存 · 未接入'})).toBeDisabled();
+  await article.getByRole('button',{name:'取消草稿'}).click();
+  await expect(title).toHaveValue('');
+  await expect(page.getByRole('status').filter({hasText:'草稿已取消，没有保存'})).toBeVisible();
+  assert.deepEqual(nativeReads,[]);
+  assert.deepEqual(writes,[]);
+  const stored=await page.evaluate(()=>[...Object.values(localStorage),...Object.values(sessionStorage)].join('\n'));
+  assert.doesNotMatch(stored,/合成旧草稿|未保存的原正文/);
+});
+
+test('OPT-IN native Article route reads, saves, recovers and edits private articles', {
+  skip:browserGate,timeout:150_000,
+},async t=>{
+  const {origin,browser}=await startArticleFixture(t,true);
   const page=await browser.newPage({viewport:{width:390,height:860},colorScheme:'dark',extraHTTPHeaders:{'x-fixture-owner':'confirmed'}});
   const config={ownerId:'article-browser-owner',ownerEmail:'article@example.invalid',spaceId:'article-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal'],approval:'personal-manual-v1',baseURL:origin,articleEnabled:true} as const;
   const repo=new MemoryPort();
@@ -92,6 +168,7 @@ test('OPT-IN native Article route reads, saves, recovers and edits private artic
   await mount(page,'main');
   await page.goto(origin+'/personal/articles',{waitUntil:'domcontentloaded'});
   const create=page.getByRole('button',{name:'新建文章',exact:true});
+  await expect(page.getByRole('button',{name:'阅读资料',exact:true})).toHaveCount(0);
   await create.click();
   await page.getByRole('button',{name:'取消',exact:true}).click();
   assert.equal(writes.length,0);
