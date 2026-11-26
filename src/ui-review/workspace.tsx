@@ -228,8 +228,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const currentHref = useRef("");
   const committedRoute=useRef(routePath);
   const pendingRoutePush=useRef(false);
-  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:HTMLElement|null}>());
+  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:{control:HTMLElement|null;sidebarLink:string|null}}>());
   const restoreRouteScroll=useRef(false);
+  const restoreRouteFocus=useRef<{control:HTMLElement|null;sidebarLink:string|null}|null>(null);
   const mainRegion=useRef<HTMLElement>(null);
   function scrollRegions(main:HTMLElement){
     return [main,...main.querySelectorAll<HTMLElement>(':scope > .lo-content, .lo-list-rows, .lo-board-cards, [data-slot="data-grid-table-viewport"]')];
@@ -237,9 +238,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   function rememberRoutePosition(){
     const main=mainRegion.current;
     const focused=document.activeElement;
+    const control=mobileOpen?menuButton.current:focused instanceof HTMLElement&&focused!==document.body?focused:null;
+    const sidebarLink=control instanceof HTMLAnchorElement&&control.closest('aside.lo-sidebar')?control.getAttribute('href'):null;
     if(main&&currentHref.current)routePositions.current.set(currentHref.current,{
       windowY:window.scrollY,regions:scrollRegions(main).map(region=>({x:region.scrollLeft,y:region.scrollTop})),
-      focus:mobileOpen?menuButton.current:focused instanceof HTMLElement&&focused!==document.body?focused:null,
+      focus:{control,sidebarLink},
     });
   }
   function pushUnifiedRoute(destination:string){
@@ -356,7 +359,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     const old=currentHistory.current;
     const entry=pendingRoutePush.current&&old?{scope:old.scope,index:old.index+1}:
       workspaceHistoryEntry(window.history.state)??{scope:old?.scope??crypto.randomUUID(),index:old?.index??0};
-    const returnFocus=pendingRoutePush.current?null:routePositions.current.get(href)?.focus;
+    restoreRouteFocus.current=(pendingRoutePush.current?null:routePositions.current.get(href)?.focus)??{control:null,sidebarLink:null};
     pendingRoutePush.current=false;
     window.history.replaceState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
     currentHistory.current=entry;
@@ -374,13 +377,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     }
     restoreRouteScroll.current=true;
     updateHistoryControls();
+  },[routePath]);
+  useLayoutEffect(()=>{
+    if(!restoreRouteFocus.current)return;
     const frame=requestAnimationFrame(()=>{
-      const heading=mainRegion.current?.querySelector<HTMLElement>('h1');
-      const target=returnFocus?.isConnected&&returnFocus.getClientRects().length?returnFocus:heading;
+      const position=restoreRouteFocus.current;
+      if(!position)return;
+      restoreRouteFocus.current=null;
+      const {control,sidebarLink}=position;
+      const link=sidebarLink?document.querySelector<HTMLElement>(`aside.lo-sidebar a[href="${CSS.escape(sidebarLink)}"]`):null;
+      const target=[control,link,mainRegion.current?.querySelector<HTMLElement>('h1')].find(element=>element?.isConnected&&element.getClientRects().length);
       target?.focus({preventScroll:true});
+      // The previous sidebar action may return only after owner navigation loads.
+      if(sidebarLink&&!control?.isConnected&&!link&&routePath==='/personal'&&state.status==='unknown')restoreRouteFocus.current=position;
     });
     return()=>cancelAnimationFrame(frame);
-  },[routePath]);
+  },[routePath,state.status,page]);
   useLayoutEffect(()=>{
     if(!restoreRouteScroll.current)return;
     const main=mainRegion.current;
