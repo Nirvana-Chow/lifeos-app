@@ -349,6 +349,7 @@ async function requestReview(method='GET',body,command) {
   if (body && !command) command = freezeReviewCommand(method,body);
   const generation = reviewGeneration, scope = reviewScope;
   if (command && (!scope || scope!==pendingDecision?.scope || await readReviewScope()!==scope)) throw Object.assign(Error('本人空间已变化。'),{status:403});
+  if (generation!==reviewGeneration || scope!==reviewScope) throw Object.assign(Error('本人空间已变化。'),{status:403});
   const options = {method:command?.method ?? method,credentials:'same-origin',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(12000)};
   if (body) {
     options.headers = {'Content-Type':'application/json','Idempotency-Key':command.key};
@@ -357,6 +358,7 @@ async function requestReview(method='GET',body,command) {
   const response = await fetch(command?.url ?? REVIEW_API,options);
   if (!response.ok) throw Object.assign(Error('LifeOS 请求未成功。'),{status:response.status});
   const data = await response.json();
+  if (generation!==reviewGeneration || scope!==reviewScope) throw Object.assign(Error('本人空间已变化。'),{status:403});
   const currentScope = scope ? await readReviewScope() : null;
   if (generation!==reviewGeneration || scope!==reviewScope || currentScope!==scope) throw Object.assign(Error('本人空间已变化。'),{status:403});
   return parseSnapshot(data.review);
@@ -391,6 +393,10 @@ function syncControls() {
   byId('note-draft-state').textContent = noteDrafts.size ? noteDrafts.size+' 份本机备注草稿，尚未保存到 LifeOS。'+(noteDraftsReliable ? '' : ' 本机保留失败，请勿关闭页面。')+(missingDrafts.length ? ' 不在当前清单：'+missingDrafts.join('、')+'；草稿仍保留。' : '') : '';
 }
 const isSessionDenial = error => error?.status === 401 || error?.status === 403;
+function invalidateReview() {
+  reviewGeneration++;
+  busy = false;
+}
 function hideDeniedServerReview(status) {
   if (host) {
     clearPrivateState();
@@ -398,7 +404,7 @@ function hideDeniedServerReview(status) {
     conceal(status===401 ? '登录已失效。请重新登录后核对。' : '当前会话无权读取存储审核。',status===401);
     return;
   }
-  reviewGeneration++;
+  invalidateReview();
   reviewScope = null;
   remote = undefined;
   uncertain = !!pendingDecision && !['new','rejected'].includes(pendingDecision.outcome);
@@ -411,6 +417,7 @@ function hideDeniedServerReview(status) {
     byId('copy-text').value = '';
     useReview(parseReview({schema:1,revision:'empty',items:[]}));
   }
+  syncControls();
   announce(status === 401
     ? '登录已失效。请重新登录 LifeOS 后读取清单。仍可审核和导出本机清单。'
     : '当前会话无权读取 LifeOS 清单。仍可审核和导出本机清单。');
@@ -449,30 +456,30 @@ async function openServer(automatic=false,verifiedScope) {
     if (isSessionDenial(error)) hideDeniedServerReview(error.status);
     else announce('暂时无法读取 LifeOS。可导入本机清单，稍后再读回。');
   } finally {
-    if (generation===reviewGeneration || sessionDenied) { busy = false; syncControls(); }
+    if (generation===reviewGeneration) { busy = false; syncControls(); }
   }
 }
 async function writeServer(method,body,match,command) {
+  const generation = ++reviewGeneration;
   busy = true;
   syncStatus = 'saving';
   syncControls();
   announce('正在保存并读回 LifeOS…');
   let failure;
-  const generation = typeof reviewGeneration === 'number' ? reviewGeneration : undefined;
   const pending = pendingDecision;
   const priorUnknown = pending?.outcome === 'unknown';
   try {
     const receipt = await requestReview(method,body,command);
-    if (generation!==undefined && generation!==reviewGeneration) return;
+    if (generation!==reviewGeneration) return;
     if (pending) { pending.outcome = match(receipt) ? 'confirmed' : 'unknown'; retainPendingDecision(); }
   } catch (error) {
-    if (generation!==undefined && generation!==reviewGeneration) return;
+    if (generation!==reviewGeneration) return;
     failure = error;
     if (pending) { pending.outcome = !priorUnknown && error?.status === 409 ? 'rejected' : 'unknown'; retainPendingDecision(); }
   }
   try {
     const fresh = await requestReview();
-    if (generation!==undefined && generation!==reviewGeneration) return;
+    if (generation!==reviewGeneration) return;
     remote = fresh;
     uncertain = false;
     sessionDenied = false;
@@ -493,7 +500,7 @@ async function writeServer(method,body,match,command) {
       announce('已读回 LifeOS，但未确认本次保存。请核对后重试。');
     }
   } catch (error) {
-    if (generation!==undefined && generation!==reviewGeneration) return;
+    if (generation!==reviewGeneration) return;
     syncStatus = 'error';
     if (isSessionDenial(error)) hideDeniedServerReview(error.status);
     else if (isSessionDenial(failure)) hideDeniedServerReview(failure.status);
@@ -502,7 +509,7 @@ async function writeServer(method,body,match,command) {
       announce('尚未确认保存结果。请先打开 LifeOS 清单读回，再继续。');
     }
   } finally {
-    if (generation===undefined || generation===reviewGeneration || sessionDenied) { busy = false; syncControls(); }
+    if (generation===reviewGeneration) { busy = false; syncControls(); }
   }
 }
 async function savePreview() {
@@ -806,7 +813,7 @@ function conceal(message,login=false) {
   byId('copy-text').value = '';
 }
 function clearPrivateState() {
-  reviewGeneration++;
+  invalidateReview();
   reviewScope = noteDraftScope = null;
   pendingDecision = null; pendingRetained = false; recoveryBlocked = false;
   noteDrafts.clear(); noteDraftsReliable = true; noteDraftCorrupt = false;
@@ -833,10 +840,7 @@ async function verifyWorkspace() {
   try {
     const scope = await readReviewScope();
     if (token!==verification || controller.signal.aborted) return;
-    if (reviewScope && scope!==reviewScope) {
-      clearPrivateState();
-      busy = false;
-    }
+    if (reviewScope && scope!==reviewScope) clearPrivateState();
     if (!reviewScope || remote===undefined) {
       await openServer(true,scope);
       if (token!==verification || controller.signal.aborted) return;
@@ -883,7 +887,7 @@ return {
     if (host) {
       background();
       clearPrivateState();
-    }
+    } else invalidateReview();
   },
 };
 }

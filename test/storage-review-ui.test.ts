@@ -91,6 +91,42 @@ test('owner generation changes reject a late review response without reviving ol
  const response=request();context.reviewGeneration++;context.reviewScope=null;finish(Response.json({review:{private:'synthetic old owner'}}));
  await assert.rejects(response,{status:403});
 });
+test('an invalidated write waiting on owner verification never reaches the API',async()=>{
+ let verified!:(value:string)=>void;
+ let writes=0;
+ const command={url:'/api/platform/personal/storage-review',method:'PATCH',key:'synthetic-key',body:'{}'};
+ const context={reviewScope:'owner-scope',reviewGeneration:1,pendingDecision:{scope:'owner-scope'},
+  readReviewScope:()=>new Promise<string>(resolve=>{verified=resolve;}),fetch:()=>{writes++;},AbortSignal};
+ const request=runInNewContext(fn('requestReview')+'; requestReview',context);
+ const result=request('PATCH',{},command);
+ // The same scope can be verified again while the old check is in flight.
+ context.reviewGeneration++;
+ verified('owner-scope');
+ await assert.rejects(result,{status:403});
+ assert.equal(writes,0);
+});
+test('a stale write completion leaves the newer operation busy and skips readback',async()=>{
+ let finish!:(value:unknown)=>void;
+ let reads=0,syncs=0;
+ const context={reviewGeneration:0,busy:false,sessionDenied:false,syncStatus:'saved',pendingDecision:null,
+  syncControls:()=>{syncs++;},announce(){},
+  requestReview:(method='GET')=>{
+   if(method==='PATCH')return new Promise(resolve=>{finish=resolve;});
+   reads++;
+  }};
+ const api=runInNewContext([fn('writeServer'),fn('invalidateReview')].join('\n')+'; ({writeServer,invalidateReview})',context);
+ const original=api.writeServer('PATCH',{},()=>true);
+ assert.equal(context.busy,true);
+ api.invalidateReview();
+ assert.equal(context.busy,false);
+ context.reviewGeneration++;
+ context.busy=true;
+ finish({});
+ await original;
+ assert.equal(context.busy,true);
+ assert.equal(reads,0);
+ assert.equal(syncs,1);
+});
 test('group parents and unknown identities cannot send a decision while standalone folders remain writable',async()=>{
  const records=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'LEAF'}];let writes=0;
  const context:any={review:{items:records,revision:'v1'},pendingDecision:null,choices:new Map([['G43','trash']]),canEdit:()=>true,synced:false,store(){writes++;},render(){},focusDecision(){}};
@@ -109,7 +145,7 @@ test('selected and group filters distinguish undecided from defer',()=>{
 async function writeCase(status:number|null,readbackFails=false){
  const original={revision:1,checklist:{revision:'synthetic-v1'},decisions:[]};
  const fresh={...original,revision:2};const notices:string[]=[];let shown:unknown;
- const context:any={busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',retainPendingDecision:()=>true,clearPendingDecision(){context.pendingDecision=null;},syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
+ const context:any={reviewGeneration:0,busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',retainPendingDecision:()=>true,clearPendingDecision(){context.pendingDecision=null;},syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
  await runInNewContext(fn('writeServer')+'; writeServer',context)('PATCH',{},()=>false);
  return {context,notices,shown};
 }
