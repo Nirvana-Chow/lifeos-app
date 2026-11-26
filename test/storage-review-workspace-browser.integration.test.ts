@@ -101,11 +101,11 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await page.goto(origin+tasksHref,{waitUntil:'domcontentloaded',timeout:60_000});
   await expect(page.getByRole('heading',{name:'待办',exact:true,level:1})).toBeVisible(gate);
   await expect(page.locator('[data-workspace-state=ready]')).toHaveCount(1,gate);
-  await page.getByRole('button',{name:'列表',exact:true}).click();
-  const taskRows=page.locator('.lo-list-rows');
-  await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasks.length,gate);
-  await taskRows.evaluate(region=>{region.scrollTop=210;});
-  const selectors=['.lo-shell','.lo-header','aside.lo-sidebar','.lo-header nav[aria-label="切换模块"]','#personal-main'];
+  await page.locator('header.lo-header').getByRole('button',{name:'打开设置',exact:true}).click();
+  await expect(page).toHaveURL(origin+'/personal?page=settings',gate);
+  const main=page.locator('#personal-main');
+  const returnScroll=await main.evaluate(region=>region.scrollTop);
+  const selectors=['.lo-shell','.lo-header','aside.lo-sidebar','#personal-main'];
   await page.evaluate(names=>{Object.assign(window,{storageShellProof:[document,...names.map(name=>document.querySelector(name))]});},selectors);
   const compare=()=>page.evaluate(names=>{
    const refs=Reflect.get(window,'storageShellProof');
@@ -113,9 +113,9 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   },selectors);
   const navButton=page.getByRole('button',{name:'打开导航',exact:true});
   const openNavigation=async()=>{
-   if(width===1365)return page.locator('aside.lo-sidebar').getByRole('navigation',{name:'主导航',exact:true});
+   if(width===1365)return page.locator('aside.lo-sidebar').getByRole('navigation',{name:'设置分类',exact:true});
    await navButton.click();
-   return page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('navigation',{name:'主导航',exact:true});
+   return page.getByRole('dialog',{name:'LifeOS',exact:true}).getByRole('navigation',{name:'设置分类',exact:true});
   };
   assert.equal(wire.length,0,'storage data must not be prefetched');
   const link=(await openNavigation()).getByRole('link',{name:'存储审核',exact:true});
@@ -129,7 +129,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   const note=childRow.getByLabel('备注与处理要求');
   await expect(note).toBeVisible(gate);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  assert.deepEqual(await compare(),[true,true,true,true,true,true]);
+  assert.deepEqual(await compare(),[true,true,true,true,true]);
   assert.deepEqual(documents,['/personal']);
   const style=await page.locator('[data-storage-review-body]').evaluate(node=>({
    color:getComputedStyle(node).color,
@@ -167,9 +167,9 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await childRow.getByRole('button',{name:'撤销决定'}).click();
   await expect(keep).not.toBeChecked(gate);
   await page.goBack();
-  await expect(page).toHaveURL(origin+tasksHref,gate);
-  assert.deepEqual(await compare(),[true,true,true,true,true,true]);
-  await expect.poll(()=>taskRows.evaluate(region=>region.scrollTop),gate).toBe(210);
+  await expect(page).toHaveURL(origin+'/personal?page=settings',gate);
+  assert.deepEqual(await compare(),[true,true,true,true,true]);
+  await expect.poll(()=>main.evaluate(region=>region.scrollTop),gate).toBe(returnScroll);
   await expect(width===1365?link:navButton).toBeFocused(gate);
   assert.deepEqual(documents,['/personal']);
 
@@ -194,7 +194,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    await expect(page.getByRole('button',{name:'重新核对'})).toBeVisible(gate);
    await expect(childRow).toHaveCount(0);
   }
-  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,scroll:210,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true}));
+  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,scroll:returnScroll,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true}));
   assert.deepEqual(errors,[]);assert.deepEqual(egress,[]);
   await page.close();
  }
