@@ -1,6 +1,6 @@
 import {agentCapabilityOperations as agentOperations} from './capabilities.ts';
 import {normalizeAgentScopes,agentScopes} from './scopes.ts';
-import type {OperationScope} from './personal-operation-registry.ts';
+import {requiresExplicitArticlePermission,type OperationScope} from './personal-operation-registry.ts';
 import {decodeAgentPermissions} from './scopes.ts';
 import {filePermissionSchema,type FilePermission} from '../file-handoff/permission-contracts.ts';
 
@@ -21,6 +21,7 @@ export function policyOperationScopes(operation:PolicyOperation):readonly string
 }
 /** Grant authorization closes legacy todo writes to read+write without changing advertisements or SQL operation claims. */
 export function policyAuthorizationScopes(operation:PolicyOperation):readonly string[]|null {
+ if(requiresExplicitArticlePermission(operation.id,operation.requiredScopes))return null;
  const scopes=policyOperationScopes(operation);
  return scopes?.length===1&&scopes[0]==='todo:write'?['todo:read','todo:write']:scopes;
 }
@@ -36,7 +37,7 @@ export function resolveBusinessPolicyGrant(row:PolicyGrantRow,options:PolicyReso
   if(!Number.isFinite(options.now)||row.referenceId!==options.ownerId||!metadata||typeof metadata!=='object'||Array.isArray(metadata)||metadata.spaceId!==options.spaceId||row.enabled!==true&&row.enabled!==null||expires!==null&&(!Number.isFinite(expires)||expires<=options.now)||!scopes)return null;
   if(!Object.hasOwn(metadata,'businessDataPolicy'))return {scopes,allowedOperationIds:options.registry.filter(op=>op.requiredScopes.every(scope=>scopes.includes(scope as typeof scopes[number]))&&options.operationAvailable(op.id)).map(op=>op.id)};
   if(metadata.businessDataPolicy!==allPersonalBusinessPolicy||options.policyEnabled!==true||row.enabled!==true||expires===null)return null;
-  const operations=options.registry.filter(op=>policyOperationScopes(op)!==null&&options.operationAvailable(op.id));
+  const operations=options.registry.filter(op=>policyAuthorizationScopes(op)!==null&&options.operationAvailable(op.id));
   return {businessDataPolicy:allPersonalBusinessPolicy,scopes:[...new Set(operations.flatMap(op=>policyAuthorizationScopes(op)!))],allowedOperationIds:operations.map(op=>op.id)};
  }catch{return null;}
 }

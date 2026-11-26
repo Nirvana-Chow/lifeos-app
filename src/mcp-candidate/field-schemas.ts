@@ -115,6 +115,10 @@ export function writeFieldsSchema(module:string,patch:boolean):z.ZodType{
   case 'health':return record(health).describe('Complete manual health record; occurredOn must match measuredAt/startedAt in the selected zone when both are known.');
   case 'person':return record(person);
   case 'media':return record(media);
+  case 'article':return record(z.strictObject({
+    type:z.literal('article'),schemaVersion:z.literal(1),author:text(240).nullable(),
+    sourceURL:address,attribution:z.enum(['original','excerpt','summary']),
+  })).extend({text:text(16384,true)}).describe('Provide at least one author or absolute HTTP(S) source URL.');
   case 'career':return record(career);
   case 'portfolio':return record(portfolio);
   case 'cooking':return record(cooking,date);

@@ -3,7 +3,7 @@ import {projectPostgresExecution,admitPostgresExecution} from '../requirement-ev
 import {readExecutionCommand} from '../requirement-events/command-postgres.ts';
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
-import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
+import {requiresExplicitArticlePermission,type OperationScope} from '../agent-api/personal-operation-registry.ts';
 import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
@@ -52,7 +52,7 @@ export async function readPlatformEntryOnClient(client:SqlClient,owner:string,ki
  const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3'+(lock?' FOR UPDATE OF r':''),[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;
 }
 export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false):Promise<boolean>{
- if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled)return false;
+ if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled||requiresExplicitArticlePermission(grant.operationId,requiredScopes))return false;
  if(grant.oauthFence){
   if(grant.oauthFence.policy!==undefined&&(grant.oauthFence.policy!=='all-personal-business-v1'||grant.businessDataPolicy!=='all-personal-business-v1'))return false;
   const fn=grant.oauthFence.policy==='all-personal-business-v1'?'assert_policy_oauth_business_grant':'assert_oauth_business_grant';

@@ -45,7 +45,7 @@ import {recordModuleLabels as labels,recordModuleDescriptions,emptyRecordFields,
 import s from './record-workbench.module.css';
 import type {PersonalType} from './config';
 import {journalRoutineTemplate,readJournalRoutine} from '../personal-journal/routine';
-const recordLabels={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业记录',portfolio:'账户资产投资',cooking:'做饭'};
+const recordLabels={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业记录',portfolio:'账户资产投资',cooking:'做饭',article:'文章'};
 const zone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch{return'UTC';}};
 const emptyLinks=()=>({project:null,domain:null,topics:[],people:[]});
 const fresh=(type:RecordModule,kind?:PortfolioKind)=>emptyRecordFields(type,zone(),kind);
