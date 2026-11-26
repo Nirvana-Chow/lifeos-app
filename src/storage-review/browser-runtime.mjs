@@ -395,7 +395,7 @@ function hideDeniedServerReview(status) {
   if (host) {
     clearPrivateState();
     sessionDenied = true;
-    conceal(status===401 ? '登录已失效。请重新登录后核对。' : '当前会话无权读取存储审核。');
+    conceal(status===401 ? '登录已失效。请重新登录后核对。' : '当前会话无权读取存储审核。',status===401);
     return;
   }
   reviewGeneration++;
@@ -693,7 +693,7 @@ function render() {
   }
   syncControls();
 }
-for (const link of root.querySelectorAll('.return-nav a,#sync-login')) { link.addEventListener('click',guardNoteNavigation,ownEvent); link.addEventListener('click',guardReviewNavigation,ownEvent); }
+for (const link of root.querySelectorAll('.return-nav a,#sync-login,#storage-relogin')) { link.addEventListener('click',guardNoteNavigation,ownEvent); link.addEventListener('click',guardReviewNavigation,ownEvent); }
 function beforeUnload(event) { if (noteDrafts.size && !noteDraftsReliable || pendingDecision && !pendingRetained) { event.preventDefault(); event.returnValue=''; } }
 window.addEventListener('beforeunload',beforeUnload);
 byId('search').addEventListener('input',render,ownEvent);
@@ -794,12 +794,13 @@ try {
   announce(error.message);
 }
 
-function conceal(message) {
+function conceal(message,login=false) {
   const body = byId('storage-review-body');
   if (body) { body.hidden = true; body.inert = true; }
   const verification = byId('storage-verification');
   verification.hidden = false;
   byId('storage-verification-message').textContent = message;
+  byId('storage-relogin').hidden = !login;
   const dialog = byId('copy-dialog');
   if (dialog.open) dialog.close();
   byId('copy-text').value = '';
@@ -824,6 +825,8 @@ async function verifyWorkspace() {
   if (document.visibilityState==='hidden' || controller.signal.aborted || verifying) return;
   verifying = true;
   const token = ++verification;
+  const previousScope = reviewScope;
+  const previousFocus = byId('storage-review-body').contains(document.activeElement) ? document.activeElement : null;
   conceal('正在核对本人空间…');
   const button = byId('storage-verify');
   button.disabled = true;
@@ -842,10 +845,11 @@ async function verifyWorkspace() {
     const body = byId('storage-review-body');
     byId('storage-verification').hidden = true;
     body.hidden = body.inert = false;
+    if (scope===previousScope && previousFocus?.isConnected) previousFocus.focus({preventScroll:true});
   } catch (error) {
     if (token!==verification || controller.signal.aborted) return;
     if (isSessionDenial(error)) clearPrivateState();
-    conceal('暂时无法核对本人空间。清单已隐藏。');
+    conceal(error?.status===401 ? '登录已失效。请重新登录后核对。' : '暂时无法核对本人空间。清单已隐藏。',error?.status===401);
   } finally {
     verifying = false;
     if (token===verification && !controller.signal.aborted) button.disabled = false;

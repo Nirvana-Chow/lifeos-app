@@ -25,7 +25,10 @@ export function StorageReviewBody() {
   return <div ref={root} className="storage-review-body" data-storage-review-body>
     <section id="storage-verification">
       <p id="storage-verification-message" role="status">正在核对本人空间…</p>
-      <Button id="storage-verify" type="button" variant="outline">重新核对</Button>
+      <div className="actions">
+        <Button id="storage-verify" type="button" variant="outline">重新核对</Button>
+        <a href="/login" id="storage-relogin" hidden>重新登录</a>
+      </div>
     </section>
     <section id="storage-review-body" hidden inert>
       <div className="review-summary">

@@ -51,6 +51,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
  const endpoint='/api/platform/personal/storage-review',canonical='/personal/storage-review',tasksHref='/personal?page=tasks';
  const ownerId='storage-synthetic-owner',spaceId='storage-synthetic-space';
  const gate={timeout:20_000};
+ const focusFailures:string[]=[];
  const item=(id:string,title:string,status:'pending'|'protected'='pending')=>({id,title,status,kind:'file' as const,group:'合成归档',body:'仅供审核测试',question:''});
  const checklist={schema:1 as const,revision:'storage-shell-v1',context:{summary:'合成清单'},items:[
   {...item('G43','合成父目录'),kind:'folder' as const},item('G43.01','合成子项'),item('SAFE','合成受保护项','protected'),
@@ -84,9 +85,11 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    });
    if(path.endsWith('/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
    if(path!==endpoint&&path!==endpoint+'/notes')return route.fulfill({status:404,json:{}});
+   const headers=new Headers(await input.allHeaders());
+   headers.set('host',url.host);
    let response:Response;
    try{
-    response=alternate?Response.json({review:null}):(await handleStorageReviewRequest(new Request(url,{method,headers:await input.allHeaders(),...(input.postData()?{body:input.postData()}: {})}),{
+    response=alternate?Response.json({review:null}):(await handleStorageReviewRequest(new Request(url,{method,headers,...(input.postData()?{body:input.postData()}: {})}),{
      ownerId,baseURL:origin,service,
      assertOwner:async()=>{if(denied)throw new PlatformError(401,'OWNER_ONLY','Synthetic denial');},
      assertWritable:async()=>{},
@@ -127,7 +130,10 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await expect(heading).toBeFocused(gate);
   const childRow=page.locator('[data-storage-review-body] [data-id="G43.01"]');
   const note=childRow.getByLabel('备注与处理要求');
-  await expect(note).toBeVisible(gate);
+  try{await expect(note).toBeVisible(gate);}catch(error){
+   t.diagnostic(JSON.stringify({wire,errors,storageRoot:await page.locator('[data-storage-review-body]').count(),verification:await page.locator('#storage-verification-message').allTextContents()}));
+   throw error;
+  }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   assert.deepEqual(await compare(),[true,true,true,true,true]);
   assert.deepEqual(documents,['/personal']);
@@ -135,7 +141,8 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    color:getComputedStyle(node).color,
    theme:getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim(),
   }));
-  assert.ok(style.color&&style.theme);
+  assert.equal(style.color,width===390?'rgb(237, 238, 240)':'rgb(28, 32, 36)');
+  assert.equal(style.theme,width===390?'#edeef0':'#1c2024');
   const filter=page.getByRole('searchbox',{name:'搜索资料'});
   await filter.fill('合成子项');
   await expect(page.locator('[data-id="G43"]')).toHaveAttribute('data-context','true');
@@ -145,7 +152,9 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   const before=wire.filter(row=>row.method!=='GET').length;
   const exportButton=page.getByRole('button',{name:'导出决定',exact:true});
   const [download]=await Promise.all([page.waitForEvent('download'),exportButton.click()]);
-  const exported=JSON.parse(await readFile(await download.path(),'utf8'));
+  const exportPath=join(root,'synthetic-review-'+width+'.json');
+  await download.saveAs(exportPath);
+  const exported=JSON.parse(await readFile(exportPath,'utf8'));
   assert.deepEqual(exported.noteDrafts,[{id:'G43.01',note:raw,checklistRevision:checklist.revision,expectedRevision:1}]);
   assert.equal(wire.filter(row=>row.method!=='GET').length,before);
   const backPrompt=page.waitForEvent('dialog');
@@ -170,7 +179,11 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await expect(page).toHaveURL(origin+'/personal?page=settings',gate);
   assert.deepEqual(await compare(),[true,true,true,true,true]);
   await expect.poll(()=>main.evaluate(region=>region.scrollTop),gate).toBe(returnScroll);
-  await expect(width===1365?link:navButton).toBeFocused(gate);
+  const expectedFocus=width===1365?link:navButton;
+  try{await expect(expectedFocus).toBeFocused({timeout:4000});}catch{
+   const actual=await page.evaluate(()=>({tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),id:document.activeElement?.id,title:document.activeElement?.getAttribute('title')}));
+   focusFailures.push(JSON.stringify({width,actual}));
+  }
   assert.deepEqual(documents,['/personal']);
 
   await page.goto(origin+canonical+'?review=storage-shell-v1',{waitUntil:'domcontentloaded'});
@@ -194,7 +207,7 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
    await expect(page.getByRole('button',{name:'重新核对'})).toBeVisible(gate);
    await expect(childRow).toHaveCount(0);
   }
-  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,scroll:returnScroll,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true}));
+  console.log('STORAGE_WORKSPACE_PROOF '+JSON.stringify({width,softDocuments:1,sameShell:true,scroll:returnScroll,keyboard:true,writeReadback:true,draftCancel:true,deepReload:true,focusRestored:!focusFailures.some(record=>record.includes('"width":'+width+','))}));
   assert.deepEqual(errors,[]);assert.deepEqual(egress,[]);
   await page.close();
  }
@@ -203,4 +216,5 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
  await expect(anonymous).toHaveURL(origin+'/login');
  await expect(anonymous.locator('[data-storage-review-body]')).toHaveCount(0);
  await anonymous.close();
+ assert.deepEqual(focusFailures,[],'Settings return should restore the original control');
 });
