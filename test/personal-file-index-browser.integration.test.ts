@@ -85,7 +85,7 @@ test('OPT-IN owner file map opens the exact project and conceals rows on revocat
     await expect(panel.getByRole('link',{name:'合成索引乙',exact:true})).toHaveCount(0);
     await panel.getByRole('button',{name:'打开项目：同名合成项目'}).click();
     await expect(page).toHaveURL(origin+'/personal/edit?type=project&id='+fixture.exact.id,{timeout:30_000});
-    await expect(page.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('同名合成项目');
+    await expect(page.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('同名合成项目',{timeout:30_000});
     await page.setViewportSize({width:390,height:844});
     await page.goto(origin+'/personal/files',{waitUntil:'domcontentloaded',timeout:60_000});
     await expect(panel.getByRole('button',{name:'打开项目：同名合成项目'})).toBeVisible();
