@@ -112,8 +112,10 @@ export function LearningWorkspace() {
         // Authorization can change after commit. Keep the exact command concealed until this scope is verified.
         setView(null);setPending(null);setRevealed(null);setFront('');setBack('');
         setError('请重新验证词卡访问权限。');
-      } else if (!retained && reason instanceof RequestError && reason.status === 409 &&
+      } else if (reason instanceof RequestError && reason.status === 409 &&
           reason.code === 'LEARNING_REVISION_CONFLICT' && clearPending(sessionStorage,original)) {
+        // This conflict is returned only after the serialized scoped receipt lookup found no prior commit.
+        setPending(null);
         setError('复习记录已更新，请重新读取。');
         setRevealed(null);
         try {

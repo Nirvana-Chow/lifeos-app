@@ -80,6 +80,7 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   await context.addCookies([{name:'learning-fixture',value:'owner',url:origin}]);
   const commands:{key:string;body:string}[]=[];
   let denyReviewReceipt = false;
+  let loseConflictResponse = false;
   await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.origin!==origin)return route.abort();
@@ -89,6 +90,15 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
     }});
     if(request.method()!=='POST'||url.pathname!=='/personal/learning/data')return route.continue();
     commands.push({key:request.headers()['idempotency-key'],body:request.postData()!});
+    if(loseConflictResponse){
+      loseConflictResponse=false;
+      const competitor=await route.fetch({headers:{...request.headers(),'idempotency-key':'fixture-competing-'+randomUUID()}});
+      assert.equal(competitor.status(),200);
+      const stale=await route.fetch();
+      assert.equal(stale.status(),409);
+      await route.abort('failed');
+      return;
+    }
     if(!denyReviewReceipt)return route.continue();
     denyReviewReceipt=false;
     const result=await route.fetch();
@@ -121,6 +131,7 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   await page.reload({waitUntil:'domcontentloaded',timeout:90000});
   await expect(page.getByRole('alert').filter({hasText:'保存结果尚未确认'})).toBeVisible({timeout:30000});
   await page.getByRole('button',{name:'重试原请求'}).click();
+  await expect(page.getByText('复习已保存。',{exact:true})).toBeVisible();
   await expect(card).toContainText('最近复习：记得');
   assert.deepEqual(commands[1],commands[2]);
   assert.equal(await page.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('lifeos.learning.pending.v1:')).length),0);
@@ -145,6 +156,18 @@ test('OPT-IN learning route saves a card and reloads independent durable review 
   assert.equal(Date.parse(result.cards[0].schedule.nextDueAt)-Date.parse(newer.reviewedAt),6*86400000);
   await page.reload({waitUntil:'domcontentloaded',timeout:90000});
   await expect(card.getByText('复习历史（2）',{exact:true})).toBeVisible({timeout:30000});
+  loseConflictResponse=true;
+  await card.getByRole('button',{name:'查看释义并复习'}).click();
+  await card.getByRole('button',{name:'记得',exact:true}).click();
+  await expect(page.getByRole('alert').filter({hasText:'保存结果尚未确认'})).toBeVisible();
+  await page.reload({waitUntil:'domcontentloaded',timeout:90000});
+  await page.getByRole('button',{name:'重试原请求'}).click({timeout:30000});
+  await expect(page.getByRole('alert').filter({hasText:'复习记录已更新'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'重试原请求'})).toHaveCount(0);
+  await expect(card.getByText('复习历史（3）',{exact:true})).toBeVisible();
+  await expect(card.getByRole('button',{name:'查看释义并复习'})).toBeEnabled();
+  assert.deepEqual(commands.at(-1),commands.at(-2));
+  assert.equal(await page.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('lifeos.learning.pending.v1:')).length),0);
   const foreign=await browser.newContext();
   await foreign.addCookies([{name:'learning-fixture',value:'foreign',url:origin}]);
   assert.equal((await foreign.request.get(data+'?card='+first.cardId+'&review='+first.id)).status(),404);
