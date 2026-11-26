@@ -54,7 +54,7 @@ test('OPT-IN restricted PostgreSQL recent memos match the #164 sources and rank;
   const handler=createPersonalPlatformHandler({config,repository,storageVerified:true,
    sessions:{read:async()=>++sessionReads>1&&failAfterRead?null:{userId:ownerId,email:config.ownerEmail}},assertWritable:async()=>{throw Error('Read only');}});
   const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>handler(new Request(new URL(String(input),baseURL),{...init,headers:{host:new URL(baseURL).host,...init?.headers}}));
-  const measure=async<T>(fn:(fetch:typeof fetch)=>Promise<T>)=>{
+  const measure=async<T>(fn:(fetcher:typeof globalThis.fetch)=>Promise<T>)=>{
    const bodies:Promise<ArrayBuffer>[]=[];
    const start=performance.now();
    const result=await fn(async(input,init)=>{
