@@ -26,7 +26,7 @@ export default async function Page({params,searchParams}:{params:Promise<{sectio
  if(module.id==='schedule')return <PrivacyBoundary><PersonalCalendarPage/></PrivacyBoundary>;
  if(module.id==='people')return <PrivacyBoundary><PersonalRecordPage type="person" linkedPersonId={personRecordId((await searchParams).record)??undefined}/></PrivacyBoundary>;
  if(module.id==='health'||module.id==='journal')return <PrivacyBoundary><PersonalRecordPage type={module.id}/></PrivacyBoundary>;
- if(module.id==='finance')return <PrivacyBoundary><PersonalFinancePage/></PrivacyBoundary>;
+ if(module.id==='finance')return <PersonalFinancePage protect/>;
  if(module.id==='database'){
   const unavailablePage={title:'数据库与数据',message:'数据管理入口已收起。'};
   return <PrivacyBoundary><LifeOSWorkspace state={{status:'unknown'}} access={{authenticated:true,writable:null,loginAllowed:true}} unavailablePage={unavailablePage}/></PrivacyBoundary>;

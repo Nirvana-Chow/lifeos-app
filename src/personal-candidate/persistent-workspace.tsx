@@ -57,7 +57,7 @@ function PersistentFrame({path,store,location,push,children}:Options&{
   initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
   unifiedRoute={{path,push}}
   {...(isContentRoute?{
-   contentPage:{wide:true,title:path==='/personal/storage-review'?'存储审核':'记录',content:children},
+   contentPage:{wide:true,title:path==='/personal/storage-review'?'存储审核':path==='/personal/finance'?'财务':'记录',content:children},
    onBeforeNavigate:()=>route?.activeContentGuard.current?.()!==false,
   }:{})}
  />;
