@@ -1,9 +1,7 @@
 .view{--calendar-rule:color-mix(in oklab,var(--border) 60%,var(--card));--calendar-tint:color-mix(in oklab,var(--lo-selected) 32%,var(--card));display:flex;flex-direction:column;gap:8px;min-width:0;width:100%}
 .calendar{width:100%;max-width:100%;min-width:0;table-layout:fixed;border-collapse:collapse}
 .calendar th{font-size:var(--lo-font-meta);padding:6px 4px;background:var(--calendar-tint);color:var(--foreground)}
-.calendar td{height:80px;padding:3px;vertical-align:top;border-block-end:1px solid var(--calendar-rule)}
-.calendar td:not(:last-child){border-inline-end:1px solid var(--calendar-rule)}
-.calendar tr:last-child td{border-block-end:0}
+.calendar td{height:80px;padding:3px;vertical-align:top}
 .calendar td[data-selected]{background:var(--lo-selected);color:var(--lo-selected-foreground)}
 .calendar .outside{background:var(--muted);color:var(--muted-foreground);padding:10px 8px}
 .date,.chip{width:100%;min-width:0;text-align:left;font:inherit;color:inherit;border:0;background:transparent;border-radius:var(--lo-radius-control);cursor:pointer}
