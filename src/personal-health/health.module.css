@@ -11,10 +11,14 @@
 .quantity{display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:8px;min-width:0}
 .hint{margin:0;color:var(--muted-foreground);font-size:var(--lo-font-meta);line-height:1.6;overflow-wrap:anywhere}
 .empty{padding:16px 0;color:var(--muted-foreground);line-height:1.6}
-.filters{display:grid;gap:8px}
+.sectionNav,.viewControls{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0}
+.sectionNav{padding-bottom:6px;border-bottom:1px solid var(--border)}
+.viewControls{padding:2px;border:1px solid var(--border);border-radius:var(--lo-radius-control)}
+.filters{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.filters>p{flex-basis:100%}
 .filterControls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .status{display:flex;align-items:center;gap:8px}
-.status select{border:1px solid var(--input);border-radius:var(--lo-radius-control);background:var(--background);color:var(--foreground);font:inherit;padding:4px 8px}
+.status select{border:1px solid var(--input);border-radius:var(--lo-radius-control);background:var(--background);color:var(--foreground);font:inherit;min-height:40px;padding:4px 8px}
 .recordSummary{display:grid;gap:8px;overflow-wrap:anywhere}
 .recordSummary p{margin:0}
 .summary{display:grid;gap:12px;color:var(--foreground)}
