@@ -7,6 +7,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '../ui-review/u
 import {Button} from '../ui-review/ui/button';
 import {dateInCalendarZone,shiftCalendarDate,calendarDayNumber,calendarWeekStart,validateCalendarWindow,type CalendarRecord} from './personal-projection';
 import {normalizeCalendarPersonalFields,type CalendarPersonalFields,type CalendarPersonal,type CalendarReference} from './personal-domain';
+import {validateCalendarZone} from './domain';
 import {readPersonalCalendarReferences,readPersonalCalendarStatus,readPersonalCalendarSnapshot,readPersonalCalendarRecord,readPersonalCalendarCommand,freezePersonalCalendarCommand,keepPersonalCalendarCommand,clearPersonalCalendarCommand,sendPersonalCalendarCommand,PersonalCalendarClientError,type PersonalCalendarStatus,type CalendarSnapshot,type PersonalCalendarCommand,type CalendarBinding} from './personal-client';
 import {PersonalCalendarGrid} from './personal-calendar-grid';
 import layout from './personal-calendar-grid.module.css';
@@ -19,7 +20,12 @@ const emptyOptions:CalendarReferenceOptions={projects:[],domains:[],people:[]};
 const labels:Record<Kind,string>={event:'日程',anniversary:'生日 / 纪念日',countdown:'倒计时','life-stage':'人生阶段'};
 const errorText=(error:unknown)=>error instanceof Error?error.message:'操作未完成，请保留输入。';
 const scopeOf=(owner:CalendarBinding)=>JSON.stringify([owner.ownerId,owner.spaceId]);
-const initialZone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch{return'UTC';}};
+function initialZone(){
+ try{
+  // The runtime can report a legacy identifier outside the supported calendar format.
+  return validateCalendarZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+ }catch{return 'UTC';}
+}
 const fresh=(kind:Kind='event',timeZone='UTC'):CalendarPersonalFields=>({title:'',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,links:{project:null,domain:null,people:[]},...kind==='event'?{calendarKind:kind,schedule:null}:kind==='anniversary'?{calendarKind:kind,occasion:'anniversary',originOn:null,monthDay:null,calendarSystem:'gregorian',repeat:'yearly',timeZone}:kind==='countdown'?{calendarKind:kind,targetOn:null,timeZone}:{calendarKind:kind,startOn:null,endOn:null}} as CalendarPersonal});
 function dateLabel(record:CalendarRecord){const p=record.fields.personal;if(p.calendarKind==='event')return!p.schedule?'未排期':p.schedule.kind==='all-day'?`${p.schedule.startDate} 至 ${p.schedule.endDate}（结束日不含）`:`${p.schedule.startAt} → ${p.schedule.endAt} · ${p.schedule.timeZone}`;if(p.calendarKind==='anniversary')return(p.originOn??p.monthDay??'日期未知')+(p.repeat==='yearly'?' · 每年':'');if(p.calendarKind==='countdown')return p.targetOn??'目标日期未设置';return`${p.startOn??'开始未知'} 至 ${p.endOn??'结束未设置'}`;}
 function shiftMonth(month:string, offset:number) {
@@ -29,7 +35,7 @@ export function PersonalCalendarWorkbench({navigationGuard,referenceOptions:prov
  const [rowEstimate,setRowEstimate]=useState(52);
  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
  const [status,setStatus]=useState<PersonalCalendarStatus|null>(null),[snapshot,setSnapshot]=useState<{scope:string;requestKey:string;value:CalendarSnapshot}|null>(null),[view,setView]=useState<View|'week'>('calendar');
- const [zone,setZone]=useState(initialZone),[day,setDay]=useState(()=>dateInCalendarZone(new Date().toISOString(),initialZone())),[search,setSearch]=useState(''),[kind,setKind]=useState('all');
+ const [zone,setZone]=useState(initialZone),[day,setDay]=useState(()=>dateInCalendarZone(new Date().toISOString(),zone)),[search,setSearch]=useState(''),[kind,setKind]=useState('all');
  const [referenceNotice,setReferenceNotice]=useState<{scope:string;text:string}|null>(null);
  const [loadedReferences,setLoadedReferences]=useState<{scope:string;value:CalendarReferenceOptions}|null>(null);
  const [editor,setEditor]=useState<Editor|null>(null),[pending,setPending]=useState<PersonalCalendarCommand|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[conflict,setConflict]=useState(false);

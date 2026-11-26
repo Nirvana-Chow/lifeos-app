@@ -29,7 +29,7 @@ test('OPT-IN owner schedule keeps actual records across readable month and week 
   ]);
   await writeFile(join(path,'page.tsx'),"import {PersonalCalendarPage} from '../../../src/calendar-candidate/personal-page';export default function Page(){return <PersonalCalendarPage/>;}");
   const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],
-    {cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+    {cwd:root,detached:true,env:{PATH:process.env.PATH,NODE_ENV:'development',TZ:'PST8PDT',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
   server=trackAuthThemeProcess(child,true);
   const origin=await new Promise<string>((accept,reject)=>{
     let log='';
@@ -68,7 +68,12 @@ test('OPT-IN owner schedule keeps actual records across readable month and week 
   assert.equal(shell.status,200);
   await shell.text();
   for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
-    const page:Page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai'});
+    const page:Page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:width===390?'PST8PDT':'Asia/Shanghai'});
+    if(width===390)await page.addInitScript(()=>{
+      const resolved=Intl.DateTimeFormat.prototype.resolvedOptions;
+      Intl.DateTimeFormat.prototype.resolvedOptions=function(){return {...resolved.call(this),timeZone:'PST8PDT'};};
+    });
+    let failDetailOnce=true;
     const requests:{method:string;url:URL}[]=[],errors:string[]=[];
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('**/*',async route=>{
@@ -77,6 +82,10 @@ test('OPT-IN owner schedule keeps actual records across readable month and week 
       if(!url.pathname.startsWith('/api/'))return route.continue();
       requests.push({method:request.method(),url});
       if(request.method()!=='GET')return route.abort();
+      if(failDetailOnce&&url.pathname==='/api/platform/personal/calendar/'+timed.id){
+        failDetailOnce=false;
+        return route.fulfill({status:503,json:{error:{message:'合成单项读取暂不可用'}}});
+      }
       const result=await handler(new Request(request.url(),{headers:{host:url.host}}));
       return route.fulfill({status:result.status,headers:Object.fromEntries(result.headers),body:await result.text()});
     });
@@ -85,6 +94,9 @@ test('OPT-IN owner schedule keeps actual records across readable month and week 
     const availability=await firstStatus;
     assert.equal(availability.status(),200);
     assert.equal((await availability.json()).configured,true);
+    const timeZone=page.getByLabel('查看时区',{exact:true});
+    await expect(timeZone).toHaveValue(width===390?'UTC':'Asia/Shanghai');
+    if(width===390)await timeZone.fill('Asia/Shanghai');
     const views=page.getByRole('group',{name:'日程视图'});
     await expect(views.getByRole('button',{name:'月历',exact:true})).toHaveAttribute('aria-pressed','true');
     await page.getByLabel('月历月份').fill('2030-11');
@@ -110,7 +122,11 @@ test('OPT-IN owner schedule keeps actual records across readable month and week 
     await week.getByRole('button',{name:'查看 2030-11-02 的日程',exact:true}).click();
     await expect(agenda).toContainText('至 01:05');
     await expect(agenda.getByRole('button',{name:allDay.title,exact:true})).toHaveCount(0);
-    await agenda.getByRole('button',{name:timed.title,exact:true}).click();
+    const openTimed=agenda.getByRole('button',{name:timed.title,exact:true});
+    await openTimed.click();
+    await expect(page.getByRole('alert').filter({hasText:'合成单项读取暂不可用'})).toBeVisible();
+    await expect(agenda).toBeVisible();
+    await openTimed.click();
     await expect(page.getByRole('dialog').getByLabel('名称',{exact:true})).toHaveValue(timed.title);
     await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();
 
