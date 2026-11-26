@@ -7,7 +7,6 @@ import {join,resolve} from 'node:path';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
-import {currentReleaseSummary} from '../src/release-notes-candidate/records.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 import {assertWorkspaceModule} from './helpers/private-business-browser-fixture.ts';
 
@@ -24,7 +23,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  let output='';const collect=(chunk:Buffer)=>{output=(output+String(chunk)).slice(-3000);};child.stdout.on('data',collect);child.stderr.on('data',collect);
  const origin=await new Promise<string>((accept,reject)=>{const timer=setTimeout(()=>reject(Error('fixture-start-timeout')),30000);const check=()=>{const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);child.stdout.off('data',check);accept(match[0]);}};child.stdout.on('data',check);child.once('exit',()=>{clearTimeout(timer);reject(Error('fixture-start-exit'));});check();});
  const repo=new MemoryPort(),native=repo.transaction.bind(repo);repo.transaction=(owner,key,fn)=>native(owner,key,tx=>fn({...tx,lockRecordIdentity:async()=>{}}));
- let enabled=false,lose=false,storageAvailable=true;const sha='a'.repeat(40),config={ownerId:'module-owner',ownerEmail:'fixture@example.invalid',spaceId:'module-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
+ let enabled=false,lose=false,storageAvailable=true;const sha='2d0c8df0d83a39a01984f72bcb217de4de3caf7b',config={ownerId:'module-owner',ownerEmail:'fixture@example.invalid',spaceId:'module-space',databaseName:'fixture',baseURL:origin,approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true} as const;
  browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());const page=await browser.newPage({viewport:{width:390,height:844}});page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  const writes:string[]=[];
  await page.route('**/api/platform/**',async route=>{const request=route.request(),url=new URL(request.url());if(request.method()!=='GET')writes.push(request.method());const handler=createPersonalPlatformHandler({config:{...config,...(enabled?{calendarEnabled:true,requirementSupportEnabled:true}:{})},repository:Object.assign(repo,{readTaskWorkspaceSnapshot:async()=>[]}),storageVerified:storageAvailable,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{},releaseArtifact:()=>({sourceSha:sha,sourceTreeDigest:'b'.repeat(64),buildId:'synthetic-build'})});const response=await handler(new Request(request.url(),{method:request.method(),headers:{...request.headers(),host:new URL(origin).host},...(request.postData()?{body:request.postData()!}:{})}));if(lose&&request.method()==='POST'){lose=false;await route.abort();return;}await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
@@ -35,7 +34,7 @@ test('OPT-IN owner module links and opt-in updates preserve recovery and server 
  await expect(page.getByRole('heading',{name:'总览',exact:true})).toBeVisible();
  await expect(page.getByRole('dialog',{name:'LifeOS 已更新'})).toHaveCount(0);
  await page.goto(origin+'/personal/requirements/updates',{waitUntil:'domcontentloaded'});
- await expect(page.getByRole('heading',{name:currentReleaseSummary.title,exact:true})).toBeVisible();
+ await expect(page.getByRole('region',{name:'当前版本说明',exact:true}).getByRole('heading',{name:'财务、日记复盘与时间线',exact:true})).toBeVisible();
  lose=true;await page.getByRole('button',{name:'知道了，此版本不再提示',exact:true}).click();
  const retryRead=page.getByRole('button',{name:'恢复原请求并回读',exact:true});
  await expect(retryRead).toBeVisible();assert.equal(repo.rows.size,1);
