@@ -12,6 +12,8 @@ test('OPT-IN career fields, JD board and pinned resume render and operate at des
  skip:process.env.RUN_PERSONAL_CAREER_BROWSER_TESTS!=='1'&&'Requires an isolated internal fixture and native Chrome',timeout:180_000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-personal-career-'));
+ const normalRequirement='提供最近一次项目交付的原始记录';
+ const normalAction='核对验收报告';
  const requirement='核对跨部门交付与整合证据，'.repeat(9)+'岗位要求末尾';
  const gap='当前仍需进一步核对原报告与交付范围。'.repeat(11)+'缺口末尾';
  const action='联系项目负责人，获取训练环境下的原始材料。'.repeat(11)+'行动末尾';
@@ -44,7 +46,14 @@ return <main style={{maxWidth:1100,margin:'auto',padding:16,font:'var(--lo-font-
  await page.getByLabel('记录名称',{exact:true}).fill('合成经历');await page.getByLabel('原文',{exact:true}).fill('内部事实原文');await page.getByLabel('学校 / 机构',{exact:true}).fill('内部学校');await page.getByLabel('学历 / 学位（未知可留空）',{exact:true}).fill('内部学位');await page.getByLabel('开始日期（已知的年、月或日）',{exact:true}).fill('2020');await page.getByLabel('经历状态',{exact:true}).selectOption('current');await page.getByRole('button',{name:'内部保存',exact:true}).click();
  let saved=JSON.parse(await page.getByLabel('内部已保存字段',{exact:true}).innerText());assert.deepEqual(saved[0].fields.personal.period,{startOn:'2020',endOn:null,status:'current'});assert.equal(saved[0].fields.personal.fieldOfStudy,null);
  await page.getByLabel('记录类别',{exact:true}).selectOption('resume');await page.getByLabel('记录名称',{exact:true}).fill('内部简历版本');await page.getByLabel('原文',{exact:true}).fill('内部简历摘要');await page.getByRole('checkbox',{name:'合成经历 · 版本 1',exact:true}).check();await page.getByRole('button',{name:'内部保存',exact:true}).click();await expect(page.getByRole('region',{name:'简历预览'}).getByRole('heading',{name:'合成经历'})).toBeVisible();await expect(page.getByRole('region',{name:'简历预览'})).toContainText('2020 – 至今');
- await page.getByLabel('记录类别',{exact:true}).selectOption('opportunity');await page.getByLabel('记录名称',{exact:true}).fill('内部职位 JD');await page.getByLabel('原文',{exact:true}).fill('内部 JD 原文：要求可核对的交付经历');await page.getByLabel('目标公司（可留空）',{exact:true}).fill('内部公司');await page.getByLabel('目标岗位（可留空）',{exact:true}).fill('内部岗位');await page.getByRole('button',{name:'添加岗位要求',exact:true}).click();await page.getByLabel('岗位要求 1',{exact:true}).fill(requirement);await page.getByRole('checkbox',{name:'合成经历 · 版本 1',exact:true}).check();await page.getByLabel('缺口 / 未知 1',{exact:true}).fill(gap);await page.getByLabel('补证或行动 1',{exact:true}).fill(action);await page.getByRole('button',{name:'内部保存',exact:true}).click();
+ await page.getByLabel('记录类别',{exact:true}).selectOption('opportunity');await page.getByLabel('记录名称',{exact:true}).fill('内部职位 JD');await page.getByLabel('原文',{exact:true}).fill('内部 JD 原文：要求可核对的交付经历');await page.getByLabel('目标公司（可留空）',{exact:true}).fill('内部公司');await page.getByLabel('目标岗位（可留空）',{exact:true}).fill('内部岗位');await page.getByRole('button',{name:'添加岗位要求',exact:true}).click();
+ await page.getByLabel('岗位要求 1',{exact:true}).fill(normalRequirement);
+ await page.getByLabel('补证或行动 1',{exact:true}).fill(normalAction);
+ await page.getByRole('button',{name:'添加岗位要求',exact:true}).click();
+ await page.getByLabel('岗位要求 2',{exact:true}).fill(requirement);
+ await page.getByRole('group',{name:'关联事实 2',exact:true}).getByRole('checkbox',{name:'合成经历 · 版本 1',exact:true}).check();
+ await page.getByLabel('缺口 / 未知 2',{exact:true}).fill(gap);
+ await page.getByLabel('补证或行动 2',{exact:true}).fill(action);await page.getByRole('button',{name:'内部保存',exact:true}).click();
  const evidence=page.getByRole('region',{name:'JD 要求与事实证据'});
  await expect(evidence.getByText(gap,{exact:true})).toBeVisible();
  await expect(evidence.getByRole('table')).toHaveAttribute('data-slot','data-grid-table');
@@ -87,7 +96,7 @@ return <main style={{maxWidth:1100,margin:'auto',padding:16,font:'var(--lo-font-
 
  for(const width of [1366,390,430]){
   await page.setViewportSize({width,height:844});
-  await page.goto(origin+'/personal/career');
+  await page.goto(origin+'/personal/career',{waitUntil:'domcontentloaded',timeout:60_000});
   await expect(page).toHaveURL(origin+'/personal/career');
   const opening=page.getByRole('button',{name:'内部职位 JD',exact:true});
   await expect(opening).toBeVisible();
@@ -97,9 +106,22 @@ return <main style={{maxWidth:1100,margin:'auto',padding:16,font:'var(--lo-font-
   const report=dialog.getByRole('region',{name:'JD 要求与事实证据'});
   const table=report.getByRole('table');
   await expect(table).toHaveAttribute('data-slot','data-grid-table');
-  await expect(table.getByRole('columnheader')).toHaveCount(width===1366?4:2);
-  await expect(table.getByRole('rowheader',{name:requirement,exact:true})).toBeVisible();
-  for(const complete of [requirement,gap,action]){
+  await expect(table.getByRole('columnheader')).toHaveCount(width===1366?4:0);
+  for(const title of [normalRequirement,requirement]){
+   const header=table.getByRole('rowheader',{name:title,exact:true});
+   await expect(header).toBeVisible();
+   await expect(header).toHaveAttribute('scope',width===1366?'row':'rowgroup');
+   if(width!==1366) assert.deepEqual(await header.evaluate(node=>{
+    const table=node.closest('table')!;
+    const detail=node.closest('tr')?.nextElementSibling?.querySelector('td');
+    return {
+     fullWidth:node.getBoundingClientRect().width>=table.getBoundingClientRect().width-2,
+     associated:!!node.id&&detail?.getAttribute('headers')===node.id,
+     labels:[...detail?.querySelectorAll('dt')??[]].map(label=>label.textContent),
+    };
+   }),{fullWidth:true,associated:true,labels:['已关联原事实','缺口 / 未知','补证或行动']});
+  }
+  for(const complete of [normalRequirement,normalAction,requirement,gap,action]){
    const value=table.getByText(complete,{exact:true});
    await value.scrollIntoViewIfNeeded();
    await expect(value).toBeVisible();

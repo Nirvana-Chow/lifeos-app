@@ -43,7 +43,7 @@ export function CareerMatch({record,records,onOpenRecord}:{
 
  const columns=useMemo<ColumnDef<typeof dataGridFeatures,CareerRequirementRow>[]>(()=>{
   const requirement={id:'requirement',header:labels.requirement,accessorKey:'requirement'} as const;
-  if(compact) return [requirement,{id:'details',header:'事实与补证',cell:({row:{original}})=><dl className={s.evidenceDetails}>
+  if(compact) return [{id:'details',cell:({row:{original}})=><dl className={s.evidenceDetails}>
    <dt>{labels.facts}</dt><dd><EvidenceFacts row={original} onOpenRecord={onOpenRecord}/></dd>
    <dt>{labels.gap}</dt><dd>{original.gap??'未填写'}</dd>
    <dt>{labels.nextAction}</dt><dd>{original.nextAction??'未填写'}</dd>
@@ -68,22 +68,32 @@ export function CareerMatch({record,records,onOpenRecord}:{
      tableClassNames={{base:tableClassName}}>
      <DataGridTableViewport>
       <DataGridTableBase>
-       <DataGridTableHead>
-        {table.getHeaderGroups().map(group=><DataGridTableHeadRow key={group.id} rowId={group.id}>
-         {group.headers.map(header=><DataGridTableHeadRowCell key={header.id} header={header}>
-          {flexRender(header.column.columnDef.header,header.getContext())}
-         </DataGridTableHeadRowCell>)}
-        </DataGridTableHeadRow>)}
-       </DataGridTableHead>
-       <DataGridTableBody>
-        {table.getRowModel().rows.map(row=><DataGridTableBodyRow row={row} key={row.id}>
-         {row.getVisibleCells().map(cell=>cell.column.id==='requirement'
-          ? <th key={cell.id} scope="row" className={s.evidenceRowHeader}>{row.original.requirement}</th>
-          : <DataGridTableBodyRowCell cell={cell} key={cell.id}>
-             {flexRender(cell.column.columnDef.cell,cell.getContext())}
-            </DataGridTableBodyRowCell>)}
-        </DataGridTableBodyRow>)}
-       </DataGridTableBody>
+       {compact ? table.getRowModel().rows.map(row=>{
+        const headerId=`${description}-requirement-${row.id}`;
+        return <DataGridTableBody key={row.id}>
+         <tr><th id={headerId} scope="rowgroup" className={s.evidenceRowHeader}>{row.original.requirement}</th></tr>
+         <tr>{row.getVisibleCells().map(cell=><td key={cell.id} headers={headerId}>
+          {flexRender(cell.column.columnDef.cell,cell.getContext())}
+         </td>)}</tr>
+        </DataGridTableBody>;
+       }) : <>
+        <DataGridTableHead>
+         {table.getHeaderGroups().map(group=><DataGridTableHeadRow key={group.id} rowId={group.id}>
+          {group.headers.map(header=><DataGridTableHeadRowCell key={header.id} header={header}>
+           {flexRender(header.column.columnDef.header,header.getContext())}
+          </DataGridTableHeadRowCell>)}
+         </DataGridTableHeadRow>)}
+        </DataGridTableHead>
+        <DataGridTableBody>
+         {table.getRowModel().rows.map(row=><DataGridTableBodyRow row={row} key={row.id}>
+          {row.getVisibleCells().map(cell=>cell.column.id==='requirement'
+           ? <th key={cell.id} scope="row" className={s.evidenceRowHeader}>{row.original.requirement}</th>
+           : <DataGridTableBodyRowCell cell={cell} key={cell.id}>
+              {flexRender(cell.column.columnDef.cell,cell.getContext())}
+             </DataGridTableBodyRowCell>)}
+         </DataGridTableBodyRow>)}
+        </DataGridTableBody>
+       </>}
       </DataGridTableBase>
      </DataGridTableViewport>
     </DataGrid>

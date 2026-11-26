@@ -12,15 +12,17 @@
 .match .evidenceTable{width:100%;table-layout:fixed;text-align:left;line-height:1.6}
 .evidenceTable col:first-child{width:26%}
 .evidenceTable col:nth-child(2){width:30%}
-.compactEvidence col:first-child{width:34%}
-.compactEvidence col:nth-child(2){width:66%}
+.compactEvidence col:first-child{width:100%}
 .match .evidenceTable :is(th,td){padding:10px;vertical-align:top;overflow-wrap:anywhere;white-space:pre-wrap}
 .evidenceRowHeader{text-align:left;font-weight:600}
-.evidenceTable tbody tr:not(:last-child) .evidenceRowHeader{border-bottom:1px solid var(--border)}
+.evidenceTable:not(.compactEvidence) tbody tr:not(:last-child) .evidenceRowHeader{border-bottom:1px solid var(--border)}
+.match .compactEvidence .evidenceRowHeader{padding:12px 12px 3px;font-weight:550}
+.match .compactEvidence td{padding:6px 12px 14px}
+.compactEvidence tbody+tbody .evidenceRowHeader{border-top:1px solid var(--border)}
 .match :is(ul,dl,p){margin:0}
 .match ul{padding-left:17px}
-.evidenceDetails dt{font-weight:600}
-.evidenceDetails dd{margin:0}
+.evidenceDetails dt{font-weight:600;color:var(--muted-foreground);font-size:13px}
+.evidenceDetails dd{margin:2px 0 0}
 .evidenceDetails dd:not(:last-child){margin-bottom:8px}
 .match .factAction{height:auto;max-width:100%;justify-content:flex-start;padding-inline:0;text-align:left;white-space:normal;overflow-wrap:anywhere}
 @media(max-width:900px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
