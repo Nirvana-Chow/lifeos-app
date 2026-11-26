@@ -33,7 +33,7 @@ test('OPT-IN project history uses the saved revision on the owner detail route',
  const apiRoute='app/api/platform/[[...resource]]/route.ts';
  await Promise.all(['app/personal/edit','app/api/platform/[[...resource]]','test/helpers'].map(dir=>mkdir(join(root,dir),{recursive:true})));
  await Promise.all([
-  ...['app/layout.tsx','app/globals.css','app/theme.css','app/personal/edit/page.tsx',apiRoute,'postcss.config.mjs','test/helpers/platform.ts'].map(file=>cp(join(source,file),join(root,file))),
+  ...['app/layout.tsx','app/globals.css','app/theme.css','app/personal/layout.tsx','app/personal/edit/page.tsx',apiRoute,'postcss.config.mjs','test/helpers/platform.ts'].map(file=>cp(join(source,file),join(root,file))),
   cp(join(source,'src'),join(root,'src'),{recursive:true}),
   ...['node_modules','components'].map(file=>symlink(join(source,file),join(root,file))),
  ]);
@@ -51,6 +51,7 @@ test('OPT-IN project history uses the saved revision on the owner detail route',
   const principal=(headers:Headers)=>headers.get('cookie')?.includes('project-fixture=owner')?{userId:ownerId,email:ownerEmail}:null;
   export const readPlatformPagePrincipal=async(headers:Headers)=>principal(headers);
   export const readPlatformPasswordCapability=async()=>false;
+  export const readPlatformLoginCapability=async()=>({sessionDuration:false});
 
   async function prepare(){
    const repo=new MemoryPort();
@@ -109,9 +110,8 @@ test('OPT-IN project history uses the saved revision on the owner detail route',
  const status=await page.request.get(origin+'/api/platform/personal/status',{timeout:60_000});
  assert.equal(status.status(),200,(await status.text()).slice(0,300)+'\n'+output);
  await page.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
- const firstOverview=page.waitForResponse(reply=>reply.url().startsWith(origin+'/api/platform/personal/overview?'));
  await page.goto(origin+'/personal/edit?type=project',{waitUntil:'domcontentloaded',timeout:60_000});
- assert.equal((await firstOverview).status(),200);
+ await expect(page.getByRole('button',{name:title,exact:true})).toBeVisible();
  const ids=JSON.parse(await readFile(manifest,'utf8')) as {
   project:string;legacy:string;journal:string;todo:string;
   domain:{id:string;sourceId:string;revision:number};duplicate:{id:string;sourceId:string;revision:number};
@@ -162,7 +162,7 @@ test('OPT-IN project history uses the saved revision on the owner detail route',
  await expect(value(initial,'领域引用')).not.toContainText(ids.duplicate.id);
  await expect(value(initial,'主题引用')).toContainText(ids.topic.id);
  await expect(value(initial,'主题引用')).toContainText(ids.topic.sourceId);
- await page.getByLabel('阶段',{exact:true}).selectOption('active');
+ await page.getByRole('combobox',{name:'阶段',exact:true}).selectOption('active');
  const afterStage=await save(2);
  assert.deepEqual(afterStage.draft,{...before.draft,personal:{...before.draft.personal,stage:'active'}});
  assert.deepEqual(afterStage.source,before.source);
