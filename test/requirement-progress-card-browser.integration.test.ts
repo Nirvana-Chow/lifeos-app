@@ -142,11 +142,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  const firstSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/requirements/snapshot')&&response.ok(),{timeout:45000});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
  await firstSnapshot;
- const card=page.getByRole('region',{name:'需求进度',exact:true});
+ const card=page.getByRole('region',{name:'需求交付与验收',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
  for(const [label,value] of [['计划','2'],['推进中','1'],['工程审查','1'],['受阻','1'],['标记开发完成','2'],['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
   await expect(count(label)).toHaveText(value);
  }
+ await expect(page.getByRole('region',{name:'需求进度',exact:true})).toHaveCount(0);
+ await expect(card.getByText('待交付或验收 6 / 7 项',{exact:false})).toBeVisible();
  await expect(card.locator('dl[aria-label="推进状态"]')).toHaveCount(1);
  await expect(card.locator('dl[aria-label="交付证据"]')).toHaveCount(1);
  await expect(card.locator('time')).toHaveAttribute('datetime','2026-11-25T00:00:00Z');
@@ -207,8 +209,8 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  try{
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await refreshing;
-  await expect(card.getByText('待处理 6 / 7 项', {exact:false})).toBeVisible();
-  await expect(card.getByText('正在读取需求进度…',{exact:true})).toHaveCount(0);
+  await expect(card.getByText('待交付或验收 6 / 7 项', {exact:false})).toBeVisible();
+  await expect(card.getByText('正在读取需求交付与验收…',{exact:true})).toHaveCount(0);
  }finally{holdSnapshot=false;snapshotGate.resolve();}
  for(const invalid of ['truncated','wrong-space','disabled','denied'] as const){
   mode='ok';
@@ -216,7 +218,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   await expect(count('已上线且本人验收')).toHaveText('1');
   const before=reads;mode=invalid;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  await expect(card.getByText('需求进度暂不可用')).toBeVisible();
+  await expect(card.getByText('需求交付与验收暂不可用')).toBeVisible();
   await expect(card.locator('dd')).toHaveCount(0);
   if(invalid==='wrong-space'){
    assert.equal(reads,before);
@@ -275,19 +277,22 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  exerciseCreate=true;
  writable=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await expect(pool.getByRole('group',{name:'需求统计'})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await pool.getByRole('button',{name:'新增需求',exact:true}).click();
  await detail.getByLabel('需求标题',{exact:true}).fill('Synthetic newly saved requirement');
  await detail.getByLabel('需求描述',{exact:true}).fill('Check the same owner snapshot in the pool and overview.');
  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
  await expect(detail.getByRole('heading',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await pool.getByRole('button',{name:'返回需求清单',exact:true}).click();
  await expect(pool.getByRole('button',{name:'总需求 8',exact:true})).toBeVisible();
  await expect(pool.getByRole('list',{name:'需求清单'}).getByRole('button',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
  await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await expect(pool.getByText('7 / 8 项',{exact:true})).toBeVisible();
  await expect(pool.getByRole('button',{name:/查看需求 .* Synthetic newly saved requirement$/})).toBeVisible();
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
- await expect(card.getByText('待处理 7 / 8 项',{exact:false})).toBeVisible();
+ await expect(card.getByText('待交付或验收 7 / 8 项',{exact:false})).toBeVisible();
 
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});

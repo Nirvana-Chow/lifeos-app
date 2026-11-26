@@ -64,9 +64,9 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
     return () => { request?.abort(); window.removeEventListener('focus', refresh); };
   }, [scope]);
 
-  return <section className={`lo-panel ${styles.card}`} aria-label="需求进度">
+  return <section className={`lo-panel ${styles.card}`} aria-label="需求交付与验收">
     <div className="lo-panel-heading">
-      <h2>需求进度</h2>
+      <h2>需求交付与验收</h2>
       <Button variant="ghost" aria-label="查看全部需求" data-workspace-nav onClick={onOpen}>
         查看全部<ArrowUpRight size={18} aria-hidden="true" />
       </Button>
@@ -84,9 +84,9 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
             .map(([key,count])=><div key={key}><dt>{deliveryLabels[key as keyof typeof deliveryLabels]}</dt><dd>{count}</dd></div>)}
         </dl>
       </>}
-      <p className={styles.date}>{summary.total>0 && <>待处理 {summary.total-summary.delivery.completed} / {summary.total} 项 · </>}{summary.observedAt
+      <p className={styles.date}>{summary.total>0 && <>待交付或验收 {summary.total-summary.delivery.completed} / {summary.total} 项 · </>}{summary.observedAt
         ? <>读取时间 <time dateTime={summary.observedAt}>{formatDeliveryTime(summary.observedAt)}</time>（北京时间）</>
         : '读取时间待核实'}</p>
-    </> : <p className="lo-empty-compact" role="status">{reading?.scope!==scope ? '正在读取需求进度…' : '需求进度暂不可用'}</p>}
+    </> : <p className="lo-empty-compact" role="status">{reading?.scope!==scope ? '正在读取需求交付与验收…' : '需求交付与验收暂不可用'}</p>}
   </section>;
 }

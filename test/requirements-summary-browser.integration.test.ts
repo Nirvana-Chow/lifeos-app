@@ -7,12 +7,12 @@ import {join,resolve} from 'node:path';
 import test from 'node:test';
 import {chromium,expect,type Browser,type BrowserServer} from '@playwright/test';
 import {requirements} from '../src/platform/requirements.ts';
-import {requirementBinding,type RequirementsSnapshot} from '../src/requirements-candidate/service.ts';
+import {requirementBinding,type RequirementItem,type RequirementsSnapshot} from '../src/requirements-candidate/service.ts';
 import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from './helpers/auth-theme-fixture-lifecycle.ts';
 
 const baseline=requirements();
 const states=['done','planned','in_progress','blocked','awaiting_review',null] as const;
-const items=states.map((state,index)=>{
+const items:RequirementItem[]=states.map((state,index)=>{
  const requirement={...baseline.requirements[index],title:'合成需求 '+(state??'未标记')};
  return {id:requirement.id,requirement,sourceId:null,revision:0,baselineConflict:false,baselineBinding:requirementBinding(baseline,requirement.id),
   fields:{title:requirement.title,body:'合成说明',phaseId:requirement.roadmap!.phaseId,priority:requirement.roadmap!.priority,plannedStartOn:null,plannedEndOn:null,
@@ -53,22 +53,49 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
  for(const width of [1365,390]){
   const page=await browser.newPage({viewport:{width,height:844},colorScheme:width===390?'dark':'light'});
   const errors:string[]=[],writes:string[]=[],outside:string[]=[],details:string[]=[];
+  let snapshotReads=0, writable=true, ownerId='synthetic-owner';
+  let switchAccountOnObservation=false, awaitingObservation=false;
+  let currentItems=items;
   page.on('pageerror',error=>errors.push(error.message));
   let mode:'full'|'empty'|'error'|'partial'='full';
   await page.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url()),path=url.pathname;
    if(url.origin!==origin){outside.push(url.origin);return route.abort();}
    if(!path.startsWith('/api/'))return route.continue();
+   if(req.method()==='PATCH'){
+    writes.push(path);
+    const previous=currentItems.find(item=>path.endsWith('/requirements/'+item.id));
+    assert.ok(previous);
+    const command=req.postDataJSON();
+    assert.equal(command.expectedRevision,previous.revision);
+    assert.deepEqual(command.baselineBinding,previous.baselineBinding);
+    assert.equal(command.spaceId,'synthetic-space');
+    const project=(title:string,revision:number)=>({...previous,sourceId:previous.sourceId??'c4940508-10f1-4ee7-a5e1-6501b9be7411',revision,
+     fields:{...command.fields,title},requirement:{...previous.requirement,title}});
+    const receipt=project(command.fields.title,previous.revision+1);
+    const observed=project('合成需求 独立读回',receipt.revision+1);
+    currentItems=currentItems.map(item=>item.id===previous.id?observed:item);
+    awaitingObservation=true;
+    return route.fulfill({json:{entry:receipt,duplicate:false}});
+   }
    if(req.method()!=='GET'){writes.push(path);return route.fulfill({status:405});}
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(path.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,requirementsEnabled:true,allowedTypes:['todo']}});
+   if(path.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId:'synthetic-space',storageVerified:true,writable,requirementsEnabled:true,allowedTypes:['todo']}});
    if(path.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:0,items:[],observedAt:snapshot.observedAt,today:url.searchParams.get('today')}});
    if(path.endsWith('/requirements/snapshot')){
+    snapshotReads++;
     if(mode==='error')return route.fulfill({status:503,json:{}});
-    return route.fulfill({json:mode==='empty'?{...snapshot,total:0,items:[]}:mode==='partial'?{...snapshot,truncated:true}:snapshot});
+    return route.fulfill({json:mode==='empty'?{...snapshot,total:0,items:[]}:mode==='partial'?{...snapshot,truncated:true}:{...snapshot,items:currentItems}});
    }
-   const entry=items.find(item=>path.endsWith('/requirements/'+item.id));
-   if(entry){details.push(entry.id);return route.fulfill({json:{entry}});}
+   const entry=currentItems.find(item=>path.endsWith('/requirements/'+item.id));
+   if(entry){
+    details.push(entry.id);
+    if(awaitingObservation){
+     awaitingObservation=false;
+     if(switchAccountOnObservation)ownerId='foreign-owner';
+    }
+    return route.fulfill({json:{entry}});
+   }
    return route.fulfill({status:404,json:{}});
   });
   await page.goto(origin+'/personal?page=requirements',{waitUntil:'networkidle',timeout:60000});
@@ -81,6 +108,9 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   await expect(list.getByRole('listitem')).toHaveCount(6);
   await expect(pool.getByRole('group',{name:'需求视图'})).toHaveCount(0);
   await expect(pool.getByLabel('阶段',{exact:true})).toHaveCount(0);
+  await expect(pool.getByRole('button',{name:'刷新需求',exact:true})).toHaveCount(0);
+  await expect(pool.getByRole('button',{name:'新增需求',exact:true})).toHaveCount(0);
+  await expect(pool.getByRole('button',{name:'管理视图',exact:true})).toHaveCount(1);
   await counts.getByRole('button',{name:'已完成 1',exact:true}).click();
   await expect(list.getByRole('listitem')).toHaveCount(1);
   await list.getByRole('button',{name:'合成需求 done',exact:true}).click();
@@ -93,12 +123,26 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
   await counts.getByRole('button',{name:'未完成 5',exact:true}).click();
   await expect(list.getByRole('listitem')).toHaveCount(5);
   await expect(list.getByRole('button',{name:'合成需求 未标记',exact:true})).toBeVisible();
+  const readsBeforePatch=snapshotReads;
+  await list.getByRole('button',{name:'合成需求 planned',exact:true}).click();
+  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 planned');
+  await detail.getByLabel('推进状态',{exact:true}).selectOption('done');
+  await detail.getByLabel('需求标题',{exact:true}).fill('合成需求 PATCH 回执');
+  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
+  await expect(detail.getByRole('heading',{name:'合成需求 独立读回',exact:true})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(detail).toHaveCount(0);
+  await expect(counts.getByRole('button',{name:'未完成 4',exact:true})).toBeVisible();
+  await expect(list.getByRole('button',{name:'合成需求 独立读回',exact:true})).toHaveCount(0);
+  await counts.getByRole('button',{name:'已完成 2',exact:true}).click();
+  await expect(list.getByRole('button',{name:'合成需求 独立读回',exact:true})).toBeVisible();
+  assert.equal(snapshotReads,readsBeforePatch,'verified PATCH should use the observed row without another snapshot read');
   await all.click();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   if(process.env.LIFEOS_REQUIREMENTS_EVIDENCE)await page.screenshot({path:join(process.env.LIFEOS_REQUIREMENTS_EVIDENCE,'requirements-'+width+'.png'),animations:'disabled'});
   for(const next of ['error','partial'] as const){
    mode=next;
-   await pool.getByRole('button',{name:'刷新需求',exact:true}).click();
+   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
    await expect(pool.getByText('需求读取暂不可用，当前内容尚未刷新。',{exact:true})).toBeVisible();
    await expect(counts).toHaveCount(0);
    await expect(list).toHaveCount(0);
@@ -106,12 +150,35 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
    await pool.getByRole('button',{name:'刷新需求',exact:true}).click();
    await expect(all).toBeVisible();
   }
+  writable=false;
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(pool.getByText('当前仅可查看需求。',{exact:true})).toBeVisible();
+  await list.getByRole('button',{name:'合成需求 独立读回',exact:true}).click();
+  await expect(detail.getByRole('button',{name:'保存需求',exact:true})).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await pool.getByRole('button',{name:'管理视图',exact:true}).click();
+  await expect(pool.getByRole('button',{name:'新增需求',exact:true})).toBeDisabled();
+  await pool.getByRole('button',{name:'返回需求清单',exact:true}).click();
   mode='empty';
-  await pool.getByRole('button',{name:'刷新需求',exact:true}).click();
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   for(const label of ['总需求','已完成','未完成'])await expect(counts.getByRole('button',{name:label+' 0',exact:true})).toBeVisible();
   await expect(pool.getByText('暂无需求。',{exact:true})).toBeVisible();
   assert.deepEqual(errors,[]);
-  assert.deepEqual(writes,[]);
+  mode='full';
+  writable=true;
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect(all).toBeVisible();
+  await list.getByRole('button',{name:'合成需求 done',exact:true}).click();
+  await expect(detail.getByRole('textbox',{name:'需求标题',exact:true})).toHaveValue('合成需求 done');
+  const readsBeforeAccountSwitch=snapshotReads;
+  switchAccountOnObservation=true;
+  await detail.getByLabel('需求标题',{exact:true}).fill('合成需求 切换前保存');
+  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
+  await expect(counts).toHaveCount(0);
+  await expect(list).toHaveCount(0);
+  await expect(detail).toHaveCount(0);
+  assert.equal(snapshotReads,readsBeforeAccountSwitch,'account change clears the existing snapshot before requesting any new rows');
+  assert.deepEqual(writes,[items[1].id,items[0].id].map(id=>'/api/platform/personal/requirements/'+id));
   assert.deepEqual(outside,[]);
   await page.close();
  }
