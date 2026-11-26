@@ -1,3 +1,4 @@
+import {clonePersonalJSON} from './editor.ts';
 import {preserveOmittedPlanning} from './planning.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
 import {personalTypes,normalizePersonalFields} from './business.ts';
@@ -23,7 +24,7 @@ function checked(value:unknown,binding:PersonalBinding):PersonalCommand{
  if(body.spaceId!==binding.spaceId||body.confirmed!==true)throw Error('请先确认本次本人手动保存。');
  normalizePersonalFields(raw.type as string,body.fields);
  if(raw.id!==null)validateRevision(body.expectedRevision);
- return freeze(structuredClone(raw) as PersonalCommand);
+ return freeze(clonePersonalJSON(raw) as PersonalCommand);
 }
 export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number):PersonalCommand{
  return checked({...binding,type,id,key,method:id===null?'POST':'PATCH',body:{spaceId:binding.spaceId,confirmed,fields,...(id===null?{}:{expectedRevision})}},binding);
@@ -46,7 +47,7 @@ const unknown='保存结果尚未确认。请保留原请求，恢复当前本�
 export class PersonalMutationSession{
  private state:PersonalState=freeze({phase:'idle',pending:null,saved:null,error:''});private binding:PersonalBinding;private storage?:Store;private fetcher:PersonalFetch;private assertBinding:()=>boolean;private storageKey:string;private listeners=new Set<()=>void>();private onAuthorizationLost?:()=>void;private verifyReadback=false;private uncertain=false;private invalidated=false;private controller:AbortController|null=null;private attemptGeneration=0;
  constructor(options:{binding:PersonalBinding;storage?:Store;fetcher?:PersonalFetch;assertBinding?:()=>boolean;verifyReadback?:boolean;onAuthorizationLost?:()=>void}){
-  this.onAuthorizationLost=options.onAuthorizationLost;this.verifyReadback=options.verifyReadback===true;checkBinding(options.binding);this.binding=freeze(structuredClone(options.binding));this.storage=options.storage;this.fetcher=options.fetcher??((input,init)=>fetch(input,init));this.assertBinding=options.assertBinding??(()=>true);this.storageKey='lifeos.personal.pending.v1:'+encodeURIComponent(this.binding.ownerId)+':'+encodeURIComponent(this.binding.spaceId);
+  this.onAuthorizationLost=options.onAuthorizationLost;this.verifyReadback=options.verifyReadback===true;checkBinding(options.binding);this.binding=freeze(clonePersonalJSON(options.binding));this.storage=options.storage;this.fetcher=options.fetcher??((input,init)=>fetch(input,init));this.assertBinding=options.assertBinding??(()=>true);this.storageKey='lifeos.personal.pending.v1:'+encodeURIComponent(this.binding.ownerId)+':'+encodeURIComponent(this.binding.spaceId);
   try{const saved=this.storage?.getItem(this.storageKey);if(saved){if(saved.length>150000)throw Error();this.uncertain=true;this.state=freeze({phase:'uncertain',pending:checked(JSON.parse(saved),this.binding),saved:null,error:unknown});}}catch{this.uncertain=true;this.state=freeze({phase:'uncertain',pending:null,saved:null,error:'保留的请求无法核对，请保留当前页面。'});}
  }
  getSnapshot=():PersonalState=>this.state;

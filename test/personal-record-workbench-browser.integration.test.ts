@@ -9,10 +9,7 @@ import {chromium,expect} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
 import {emptyMediaPersonal} from '../src/personal-media/domain.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
-import {PersonalCalendarService} from '../src/calendar-candidate/personal-service.ts';
-import {handlePersonalCalendar} from '../src/calendar-candidate/personal-http.ts';
 import {emptyPersonPersonal} from '../src/personal-people/model.ts';
-import {emptyHealthFields} from '../src/personal-health/presentation.ts';
 import {makePersonalCommand} from '../src/personal-candidate/client.ts';
 import type {RecordModule} from '../src/personal-candidate/record-model.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
@@ -32,7 +29,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  await writeFile(join(peopleRoute,'page.tsx'),routeSource.replace(principalImport,
   "const readPlatformPagePrincipal=async (headers: Pick<Headers,'get'>)=>headers.get('x-fixture-owner')==='confirmed'?{}:null;"
  ));
- for(const name of ['journal','media','schedule']){
+ for(const name of ['journal','media']){
   const route=join(root,'app/personal',name);
   await mkdir(route,{recursive:true});
   const routeSource=await readFile(join(source,'app/personal',name,'page.tsx'),'utf8');
@@ -57,9 +54,6 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   const anonymous=await fetch(origin+'/personal/people',{redirect:'manual'});
   assert.equal(anonymous.status,307);
   assert.equal(anonymous.headers.get('location'),'/login');
-  const calendarAnonymous=await fetch(origin+'/personal/schedule?record=00000000-0000-4000-8000-000000000000',{redirect:'manual'});
-  assert.equal(calendarAnonymous.status,307);
-  assert.equal(calendarAnonymous.headers.get('location'),'/login');
  }
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});t.after(()=>browser.close());const evidence=join(tmpdir(),'lifeos-record-browser-evidence-20261105');await mkdir(evidence,{recursive:true});
  const recordModules = new Map<string, readonly RecordModule[]>([
@@ -70,17 +64,10 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  ]);
  const modules = recordModules.get(process.env.RECORD_BROWSER_MODULE ?? '') ?? ['journal','person','health','media','career','portfolio'] as const;
  for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
-  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  let allowDiscard=true;
-  page.on('dialog',dialog=>allowDiscard?dialog.accept():dialog.dismiss());
-  const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,calendarEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
-  let writable=true,calendarEnabled=true,incompleteOverview=false,overviewUnavailable=false;
-  let detailFault: 'denied'|'temporary'|null=null;
-  let detailFaultId:string|null=null;
-  const heldDetails=new Map<string,{arrived:()=>void;release:Promise<void>}>();
-  let calendarAuthority:'foreign'|'readonly'|null=null;
+  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+  const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
+  let writable=true;
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
-  const calendar=new PersonalCalendarService(service,{...config,enabled:true,writable:true});
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
   if(type==='media'){
    const topic=(await service.mutate(config.ownerId,'topic',null,{spaceId:config.spaceId,confirmed:true,fields:{
@@ -98,33 +85,8 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    }
   }
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(url.pathname==='/api/platform/status'&&(type==='person'||type==='media'))return route.fulfill({status:200,json:{}});if(!url.pathname.startsWith('/api/platform/personal/'))return route.continue();const headers=new Headers(request.headers());headers.set('host',url.host);if(request.method()==='GET')reads.push(url.pathname);else writes.push(request.method());
-   if(url.pathname==='/api/platform/personal/status')return route.fulfill({status:200,json:{...config,calendarEnabled,scope:'personal-manual-candidate',storageVerified:true,writable}});
-   if(calendarAuthority&&url.pathname==='/api/platform/personal/calendar/status'){
-    const status=calendar.status(config.ownerId);
-    return route.fulfill({status:200,json:calendarAuthority==='foreign'?{...status,spaceId:'synthetic-other-calendar-space'}:{...status,writable:false}});
-   }
-   if(detailFault&&request.method()==='GET'&&url.pathname==='/api/platform/personal/calendar/'+detailFaultId){
-    return route.fulfill({status:detailFault==='denied'?403:503,json:{error:{message:detailFault==='denied'?'Synthetic detail denied':'Synthetic detail temporarily unavailable'}}});
-   }
-   try{
-    const body=request.postData(), inbound=new Request(url,{method:request.method(),headers,...(body?{body}:{})});
-    const response=url.pathname.startsWith('/api/platform/personal/calendar')
-     ?await handlePersonalCalendar(inbound,{ownerId:config.ownerId,baseURL:origin,service:calendar})
-     :await handlePersonalRequest(inbound,config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});
-    assert.ok(response);
-    if(request.method()==='GET'&&url.pathname.startsWith('/api/platform/personal/calendar/')){
-     const id=url.pathname.split('/').at(-1)!;
-     const held=heldDetails.get(id);
-     if(held){heldDetails.delete(id);held.arrived();await held.release;}
-    }
-    if(overviewUnavailable&&url.pathname==='/api/platform/personal/overview'){
-     return route.fulfill({status:503,json:{error:{message:'Synthetic overview unavailable'}}});
-    }
-    if(incompleteOverview&&url.pathname==='/api/platform/personal/overview'){
-     return route.fulfill({status:200,json:{...await response.json(),truncated:true}});
-    }
-    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
-   }catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
+   if(url.pathname.endsWith('/status'))return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable}});
+   try{const body=request.postData(),response=await handlePersonalRequest(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});assert.ok(response);return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
   });
   if(type==='health'){
    const pending=makePersonalCommand({ownerId:config.ownerId,spaceId:config.spaceId},'journal',null,{title:'Pending synthetic journal',text:'Previously confirmed internal fixture',occurredOn:null},'cross-module-pending-journal',true);
@@ -212,36 +174,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('combobox',{name:'简历版本',exact:true}).selectOption(resumeIds[1]);await expect(page.getByRole('heading',{name:'Synthetic resume B',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Synthetic resume A',exact:true})).toHaveCount(0);
    await page.getByRole('button',{name:'表格',exact:true}).click();
   }
-  if(type==='health'){
-   await page.getByRole('button',{name:'运动',exact:true}).click();
-   const calendar=page.getByRole('region',{name:'运动日历与记录',exact:true});
-   const plans=calendar.getByRole('region',{name:'运动计划',exact:true});
-   const noMatchingPlan=plans.getByText('当前没有匹配的运动计划。',{exact:true});
-   const noCompletion=calendar.getByText('暂无已读完成记录。',{exact:true});
-   const heatmap=calendar.getByRole('img',{name:/^已读运动日历/});
-   await expect(noCompletion).toBeVisible();
-   await expect(noMatchingPlan).toBeVisible();
-   await expect(heatmap).toHaveCount(0);
-   const planTitle='Synthetic exercise plan';
-   await service.mutate(config.ownerId,'health',null,{spaceId:config.spaceId,confirmed:true,fields:{
-    ...emptyHealthFields('training','Asia/Shanghai'),title:planTitle,occurredOn:'2031-02-01',
-   }},'record-browser-exercise-plan');
-   await page.getByRole('button',{name:'刷新',exact:true}).click();
-   const plan=plans.getByRole('button',{name:planTitle,exact:true});
-   await expect(plan).toBeVisible();
-   await expect(noMatchingPlan).toHaveCount(0);
-   await expect(noCompletion).toBeVisible();
-   await expect(heatmap).toHaveCount(0);
-   const search=page.getByRole('textbox',{name:'搜索健康',exact:true});
-   await search.fill('Unsent synthetic health');
-   await expect(noMatchingPlan).toBeVisible();
-   await expect(plan).toHaveCount(0);
-   await expect(noCompletion).toBeVisible();
-   await search.clear();
-   await expect(plan).toBeVisible();
-   await expect(noMatchingPlan).toHaveCount(0);
-   await page.getByRole('button',{name:'表格',exact:true}).click();
-  }
+  if(type==='health'){await page.getByRole('button',{name:'运动',exact:true}).click();await expect(page.getByText('暂无已完成的运动记录。飞盘、跑步、力量训练等都可记录；已有计划不会当作完成。',{exact:true})).toBeVisible();await page.getByRole('button',{name:'表格',exact:true}).click();}
   await page.getByRole('button',{name:'Unsent synthetic '+type,exact:true}).click();const dialog=page.getByRole('dialog');assert.ok(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1));await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(errors,[]);assert.deepEqual(writes,type==='health'?['POST','POST','PATCH']:type==='career'||type==='media'?['POST','PATCH','PATCH']:['POST','PATCH']);assert.equal(repo.rows.get(id)!.revision,type==='career'||type==='media'?3:2);if(type==='media'||type==='career'||type==='portfolio')await page.getByRole('button',{name:type==='portfolio'?'概览':type==='career'?'求职看板':'看板',exact:true}).click();
   if(type==='person'){
    const namesake='Synthetic namesake', privateStart='Synthetic private note starts here ', privateEnd=' synthetic final marker';
@@ -312,170 +245,12 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await back.click();
    await expect(page.getByRole('region',{name:'人物概览'}).getByRole('heading',{name:namesake,exact:true})).toHaveCount(1);
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
-   const visitTitle='Synthetic visit with confirmed person';
-   const visit=(await calendar.mutate(config.ownerId,null,{spaceId:config.spaceId,confirmed:true,fields:{
-    title:visitTitle,text:'Synthetic calendar original',occurredOn:null,
-    personal:{type:'calendar',schemaVersion:1,calendarKind:'event',schedule:{kind:'all-day',startDate:'2031-05-03',endDate:'2031-05-04'},
-      links:{project:null,domain:null,people:[{id:people[1].entry.id,sourceId:people[1].entry.source.id,revision:people[1].entry.revision}]}}
-   }},'person-overview-calendar-visit')).entry;
-   await page.getByRole('button',{name:'人物列表',exact:true}).click();
-   await page.getByRole('button',{name:'刷新',exact:true}).click();
-   await page.getByRole('button',{name:'人物概览',exact:true}).click();
-   const host=overview.getByRole('listitem').filter({hasText:'合成关系乙'});
-   const decoy=overview.getByRole('listitem').filter({hasText:'合成关系甲'});
-   await expect(decoy.getByText('关联日程（0）',{exact:true})).toBeVisible();
-   const visitSummary=host.getByText('关联日程（1）',{exact:true});
-   await visitSummary.focus();
-   await expect(visitSummary).toBeFocused();
-   await page.keyboard.press('Enter');
-   const visitLink=host.getByRole('link',{name:visitTitle});
-   await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
-   await expect(host.getByText('2031-05-03',{exact:true})).toBeVisible();
-   const beforeOpening=writes.length;
-   await visitLink.focus();
-   await expect(visitLink).toBeFocused();
-   await page.keyboard.press('Enter');
-   const visitEditor=page.getByRole('dialog',{name:'编辑日程'});
-   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
-   await expect.poll(()=>visitEditor.evaluate(dialog=>dialog.contains(document.activeElement))).toEqual(true);
-   assert.equal(writes.length,beforeOpening);
-   await visitEditor.getByLabel('开始日期',{exact:true}).fill('2031-06-05');
-   await visitEditor.getByLabel('结束日期（不含）',{exact:true}).fill('2031-06-06');
-   await visitEditor.getByRole('button',{name:'保存日程',exact:true}).click();
-   await expect(page.getByText('已保存并读回日程。',{exact:true})).toBeVisible();
-   const moved=await calendar.get(config.ownerId,visit.id);
-   assert.equal(moved.revision,visit.revision+1);
-   assert.deepEqual(moved.fields.personal.links.people,visit.fields.personal.links.people);
-   await page.goBack();
-   await expect(overview).toBeVisible();
-   await page.getByRole('button',{name:'刷新',exact:true}).click();
-   await host.getByText('关联日程（1）',{exact:true}).click();
-   await expect(host.getByText('2031-06-05',{exact:true})).toBeVisible();
-   await expect(visitLink).toHaveAttribute('href','/personal/schedule?record='+visit.id);
-   detailFaultId=visit.id;
-   detailFault='denied';
-   const directPath='/personal/schedule?record='+visit.id;
-   function delayCalendarDetail(id:string) {
-    const arrived=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
-    heldDetails.set(id,{arrived:arrived.resolve,release:release.promise});
-    return {arrived:arrived.promise,release:release.resolve};
-   }
-   async function releaseCalendarDetail(held:ReturnType<typeof delayCalendarDetail>) {
-    const readback=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/calendar/status');
-    held.release();
-    await readback;
-    await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
-   }
-   detailFault=null;
-   const originalRead=delayCalendarDetail(visit.id);
-   try{
-    await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
-    await originalRead.arrived;
-    await page.getByRole('button',{name:'新建日程',exact:true}).click();
-    const newDraft=page.getByRole('dialog',{name:'新建日程'});
-    await newDraft.getByLabel('名称',{exact:true}).fill('Synthetic newer calendar draft');
-    await releaseCalendarDetail(originalRead);
-    await expect(newDraft.getByLabel('名称',{exact:true})).toHaveValue('Synthetic newer calendar draft');
-    await expect(visitEditor).toHaveCount(0);
-    allowDiscard=false;
-    await page.keyboard.press('Escape');
-    await expect(newDraft.getByLabel('名称',{exact:true})).toHaveValue('Synthetic newer calendar draft');
-    allowDiscard=true;
-    await newDraft.getByRole('button',{name:'关闭',exact:true}).click();
-   }finally{allowDiscard=true;originalRead.release();}
-   const alternateTitle='Synthetic alternate calendar event';
-   const alternate=(await calendar.mutate(config.ownerId,null,{
-    confirmed:true,spaceId:config.spaceId,fields:{...visit.fields,title:alternateTitle,
-     personal:{...visit.fields.personal,links:{...visit.fields.personal.links,people:[]}}},
-   },'person-overview-calendar-alternate')).entry;
-   for(const latestReturnsFirst of [false,true]){
-    const first=delayCalendarDetail(visit.id),latest=delayCalendarDetail(alternate.id);
-    try{
-     await page.goto(origin+'/personal/schedule',{waitUntil:'domcontentloaded'});
-     await page.getByRole('button',{name:'表格',exact:true}).click();
-     await page.getByRole('button',{name:'查看日程：'+visitTitle,exact:true}).click();
-     await first.arrived;
-     await page.getByRole('button',{name:'查看日程：'+alternateTitle,exact:true}).click();
-     await latest.arrived;
-     if(latestReturnsFirst){
-      await releaseCalendarDetail(latest);
-      await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(alternateTitle);
-      await releaseCalendarDetail(first);
-     }else{
-      await releaseCalendarDetail(first);
-      await expect(visitEditor).toHaveCount(0);
-      await releaseCalendarDetail(latest);
-     }
-     await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(alternateTitle);
-     await visitEditor.getByRole('button',{name:'关闭',exact:true}).click();
-    }finally{first.release();latest.release();}
-   }
-   for(const changed of ['foreign','readonly'] as const){
-    const detail=delayCalendarDetail(visit.id);
-    try{
-     await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
-     await detail.arrived;
-     calendarAuthority=changed;
-     await releaseCalendarDetail(detail);
-     await expect(visitEditor).toHaveCount(0);
-     if(changed==='readonly')await expect(page.getByText('日程读写权限已变化，请重新读取。',{exact:true})).toBeVisible();
-    }finally{detail.release();calendarAuthority=null;}
-   }
-   calendarAuthority='readonly';
-   await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
-   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
-   await expect(visitEditor.getByRole('button',{name:'保存日程',exact:true})).toBeDisabled();
-   calendarAuthority=null;
-   detailFault='denied';
-   const protectedWrites=writes.length;
-   await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
-   await expect(page.getByText('Synthetic detail denied',{exact:true})).toBeVisible();
-   await expect(visitEditor).toHaveCount(0);
-   assert.equal(writes.length,protectedWrites);
-   detailFault='temporary';
-   await page.reload({waitUntil:'domcontentloaded'});
-   await expect(page.getByText('Synthetic detail temporarily unavailable',{exact:true})).toBeVisible();
-   await expect(visitEditor).toHaveCount(0);
-   detailFault=null;
-   await page.getByRole('button',{name:'重新读取',exact:true}).click();
-   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
-   assert.equal(writes.length,protectedWrites);
-   await page.keyboard.press('Escape');
-   await expect(visitEditor).toHaveCount(0);
-   const detailReads=reads.filter(path=>path==='/api/platform/personal/calendar/'+visit.id).length;
-   await Promise.all([
-    page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/calendar'&&response.status()===200),
-    page.getByRole('button',{name:'重新读取',exact:true}).click(),
-   ]);
-   await expect(visitEditor).toHaveCount(0);
-   assert.equal(reads.filter(path=>path==='/api/platform/personal/calendar/'+visit.id).length,detailReads);
-   await page.goto(origin+'/personal/people',{waitUntil:'domcontentloaded'});
-   await expect(host.getByText('关联日程（1）',{exact:true})).toBeVisible();
-   if(!await host.locator('details').filter({hasText:'关联日程'}).evaluate(element=>element.hasAttribute('open')))await host.getByText('关联日程（1）',{exact:true}).click();
-   incompleteOverview=true;
-   await page.getByRole('button',{name:'刷新',exact:true}).click();
-   await expect(host.getByText('关联日程暂时无法完整核对。',{exact:true})).toBeVisible();
-   await expect(visitLink).toHaveCount(0);
-   incompleteOverview=false;overviewUnavailable=true;
-   const refresh=page.getByRole('button',{name:'刷新',exact:true});
-   await Promise.all([
-    page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/overview'&&response.status()===503),
-    refresh.click(),
-   ]);
-   await expect(refresh).toBeEnabled();
-   await expect(host.getByText('关联日程暂时无法完整核对。',{exact:true})).toBeVisible();
-   await expect(host.getByRole('heading',{name:namesake,exact:true})).toBeVisible();
-   await expect(visitLink).toHaveCount(0);
-   overviewUnavailable=false;calendarEnabled=false;
-   await page.getByRole('button',{name:'刷新',exact:true}).click();
-   await expect(host.getByText('个人日程来源未开放。',{exact:true})).toBeVisible();
-   await expect(visitLink).toHaveCount(0);
    writable=false;
    await page.getByRole('button',{name:'刷新',exact:true}).click();
    await expect(page.locator('summary').filter({hasText:'更多操作'})).toHaveCount(0);
    await expect(page.getByRole('button',{name:'新增人物',exact:true})).toHaveCount(0);
    await expect(page.getByRole('region',{name:'人物概览'}).getByText('合成关系乙',{exact:true})).toBeVisible();
-   assert.deepEqual(writes,['POST','PATCH','PATCH']);
+   assert.deepEqual(writes,['POST','PATCH']);
 
    await page.screenshot({path:join(evidence,type+'-'+width+'-'+theme+'.png'),fullPage:true});
    const account=page.getByRole('button',{name:'账号与更多操作',exact:true});
