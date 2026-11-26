@@ -25,7 +25,7 @@ export class PersonalWorkspaceController{
  private planningReadbackRequired=false;private busy=false;private preflight:AbortController|null=null;
  private refreshRead:AbortController|null=null;
  private undo:{id:string;revision:number;status:WorkspaceTask['status'];deadline:number}|null=null;
- private pending:{command:PersonalCommand;base:PublicEntry|null;generation:number;session:PersonalMutationSession;priorStatus?:WorkspaceTask['status']}|null=null;
+ private pending:{command:PersonalCommand;base:PublicEntry|null;generation:number;session:PersonalMutationSession;verifyReadback?:boolean;priorStatus?:WorkspaceTask['status']}|null=null;
  private options:{fetcher:PersonalFetch;origin:string;storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>;today:()=>string;key:()=>string;now?:()=>number;readTimeoutMs?:number;taskWorkspace?:boolean};
  constructor(options:PersonalWorkspaceController['options']){this.options=options;}
  getSnapshot=()=>this.value;subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
@@ -174,8 +174,8 @@ export class PersonalWorkspaceController{
   if(command.id&&(saved.id!==command.id||saved.revision!==command.body.expectedRevision!+1))throw Error('保存回执的记录或版本不符，请重新读取核对。');
   const baseline=context.base??current;
   if(baseline&&(saved.kind!==baseline.kind||canonical(saved.source)!==canonical(baseline.source)))throw Error('保存回执的来源或版本不符，请重新读取核对。');
-  let observed=saved;
-  if(command.id&&'status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
+  let observed=command.id&&state.observed?state.observed:saved;
+  if(!state.observed&&command.id&&'status'in saved.draft&&planningKeys.some(key=>Object.hasOwn(saved.draft,key)||baseline&&Object.hasOwn(baseline.draft,key))){
    this.planningReadbackRequired=true;
    try{
     const result=await this.json('/api/platform/personal/todo/'+saved.id,this.preflight?.signal);
@@ -208,12 +208,12 @@ export class PersonalWorkspaceController{
   if(!('title'in fields)||!('notes'in fields))return null;
   return this.save(null,{title:fields.title,text:fields.notes,date:'',status:'open'},undefined,command);
  }
- async saveTask(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields):Promise<PublicEntry|null>{
+ async saveTask(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields,verifyReadback=false):Promise<PublicEntry|null>{
   const entry=task?this.getTaskEntry(task):null,previous=entry&&this.binding?editorFromEntry(entry,this.binding.spaceId).fields:null;
   const priorStatus=previous&&previous.status!==fields.status&&canonical({...previous,status:fields.status})===canonical(fields)?previous.status:undefined;
-  return this.save(task,fields,priorStatus);
+  return this.save(task,fields,priorStatus,undefined,verifyReadback);
  }
- private async save(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields,priorStatus?:WorkspaceTask['status'],batchCommand?:PersonalCommand):Promise<PublicEntry|null>{
+ private async save(task:Pick<WorkspaceTask,'id'|'revision'>|null,fields:PersonalEditorFields,priorStatus?:WorkspaceTask['status'],batchCommand?:PersonalCommand,verifyReadback=false):Promise<PublicEntry|null>{
   if(this.planningReadbackRequired){this.emit({mutationError:'排期回读尚未确认，请先重新读取当前记录。'});return null;}
   if(this.busy||this.value.saving||this.value.uncertain||this.value.state.status!=='ready'||!this.value.access.writable||!this.value.access.allowedTypes?.includes('todo')||!this.binding||!this.session)return null;
   const entry=task?this.getTaskEntry(task):null;if(task&&!entry){this.emit({mutationError:'记录不存在或版本已变化，请重新读取后再操作。'});return null;}
@@ -225,7 +225,7 @@ export class PersonalWorkspaceController{
    if(!check.response.ok||!obj(check.body)||check.body.scope!=='personal-manual-candidate'||check.body.ownerId!==binding.ownerId||check.body.spaceId!==binding.spaceId||check.body.storageVerified!==true||check.body.writable!==true||!Array.isArray(check.body.allowedTypes)||!check.body.allowedTypes.includes('todo')){this.suspend();this.emit({state:{status:'forbidden',message:'会话或写入权限已变化，请重新登录核对。'}});return null;}
    const command=makePersonalCommand(binding,'todo',task?.id??null,draft,batchCommand?.key??this.options.key(),true,task?.revision);
    if(batchCommand&&canonical(command)!==canonical(batchCommand))throw Error('保留的行请求内容不符，未发送。');
-   this.pending={command,base:entry,generation:token,session,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,command.id===null);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
+   this.pending={command,base:entry,generation:token,session,verifyReadback,...(priorStatus!==undefined?{priorStatus}:{})};await session.submit(command,verifyReadback||command.id===null);return await this.applyReceipt(this.pending??{command,base:entry,generation:token,session});
   }catch(error){if(token===this.generation)this.emit({mutationError:error instanceof Error?error.message:'操作未确认，请重新读取核对。'});return null;}
   finally{if(this.preflight===preflight)this.preflight=null;if(session===this.session&&token===this.generation)this.busy=false;if(session===this.session&&token===this.generation&&this.value.saving&&session.getSnapshot().phase!=='saving'){const state=session.getSnapshot();if(state.phase==='idle'||state.phase==='saved')this.emit({saving:false,pendingTaskIds:[]});else this.readMutation();}}
  }
@@ -245,7 +245,10 @@ export class PersonalWorkspaceController{
   const context=this.pending?{...this.pending,generation:this.generation}:{command,base:current,generation:this.generation,session};
   // Retry preserves the original command and key; it never creates a second mutation.
   let failure:string|null=null;
-  try{this.busy=true;await session.retry(verifyReadback||command.type==='todo'&&command.id===null);return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
+  // A recovered label-bearing command may have been confirmed before a reload.
+  const {fields}=command.body;
+  const savedLabels=command.type==='todo'&&'status'in fields&&!!fields.personal?.topics.length;
+  try{this.busy=true;await session.retry(verifyReadback||this.pending?.verifyReadback||command.type==='todo'&&(command.id===null||savedLabels));return await this.applyReceipt(context);}catch(error){failure=error instanceof Error?error.message:'回执无法核对。';return null;}finally{if(session===this.session){this.busy=false;this.readMutation();if(failure)this.emit({mutationError:failure});}}
  }
  cancel(){++this.generation;this.preflight?.abort();this.preflight=null;this.busy=false;this.clearUndo();this.session?.cancel();this.readMutation();}
  async logout(){

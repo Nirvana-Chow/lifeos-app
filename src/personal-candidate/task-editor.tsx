@@ -5,6 +5,7 @@ import{useEffect,useRef,useState,type ComponentType}from'react';
 import{Dialog,DialogContent,DialogTitle,DialogDescription}from'../ui-review/ui/dialog';
 import type{PublicEntry}from'../platform/contracts';
 import type{PersonalEditorFields}from'./editor';
+import type{PersonalBinding}from'./client';
 import{clonePersonalJSON,editorFromEntry}from'./editor';
 import type{PersonalRelations,PersonalReference}from'./business';
 import{taskStatusLabels,taskReceiptMatchesSubmission,type TaskTarget,type TaskIdentity}from'./task-editor-state';
@@ -17,9 +18,10 @@ type LabelOption=PersonalReference&{title:string};
  * onAdd stages authorized labels in the draft. The existing Save button remains the only writer. */
 export type TaskLabelSuggestionAction=ComponentType<{
  task:TaskIdentity;
+ binding:PersonalBinding;
+ todoText:string;
  availableLabels:readonly LabelOption[];
- selectedLabels:readonly PersonalReference[];
- onAdd:(labels:readonly PersonalReference[])=>void;
+ onAdd:(labels:readonly PersonalReference[])=>boolean;
 }>;
 
 const noRelations:PersonalRelations={domain:null,project:null,topics:[]};
@@ -34,7 +36,7 @@ type TaskEditorProps={
  saving:boolean;
  uncertain:boolean;
  error:string|null;
- onSave:(task:TaskIdentity|null,fields:PersonalEditorFields)=>Promise<PublicEntry|null>;
+ onSave:(task:TaskIdentity|null,fields:PersonalEditorFields,verifyReadback?:boolean)=>Promise<PublicEntry|null>;
  onClose:()=>void;
  onRetry:()=>Promise<PublicEntry|null>;
  onStopWaiting:()=>void;
@@ -44,13 +46,14 @@ type TaskEditorProps={
  onRestoreFocus?:()=>void;
  inPlaceDetail?:boolean;
  LabelSuggestionAction?:TaskLabelSuggestionAction;
+ suggestionBinding?:PersonalBinding;
 };
 function confirmClose(busy:boolean,dirty:boolean){
  return !busy&&(!dirty||window.confirm('放弃尚未保存的修改？'));
 }
 export function TaskEditor({
  target,entry,spaceId,relations,writable,saving,uncertain,error,onSave,onClose,onRetry,onStopWaiting,
- concealed=false,closeGuard,onBatch,onRestoreFocus,inPlaceDetail=false,LabelSuggestionAction,
+ concealed=false,closeGuard,onBatch,onRestoreFocus,inPlaceDetail=false,LabelSuggestionAction,suggestionBinding,
 }:TaskEditorProps){
  const [openingEdit]=useState(()=>{
   if(concealed||target.mode!=='edit'||!entry||!spaceId||
@@ -62,6 +65,7 @@ export function TaskEditor({
  const approvedDocumentLeave=useRef(false);
  const closeButton=useRef<HTMLButtonElement>(null);
  const suggestionTarget=useRef<string|null>(null);
+ const verifySuggestedSave=useRef(false);
  const[editTask,setEditTask]=useState<TaskIdentity|null>(openingEdit?.task??null);
  const[fields,setFields]=useState(()=>clonePersonalJSON(initial.current)),[localError,setLocalError]=useState<string|null>(null),[submitting,setSubmitting]=useState(false);
  const busy=saving||uncertain||submitting,dirty=JSON.stringify(fields)!==JSON.stringify(initial.current);
@@ -94,8 +98,10 @@ export function TaskEditor({
   setFields(next);
   setEditTask({id:entry.id,revision:entry.revision});
  },[concealed,busy,dirty,target,entry,spaceId,editTask?.revision]);
- const suggestionKey=!concealed&&!blocked&&editTask&&entry?.id===editTask.id&&entry.revision===editTask.revision
-  ?JSON.stringify([spaceId,entry.id,entry.revision,entry.source.id]):null;
+ const todoText=fields.text?fields.title+'\n'+fields.text:fields.title;
+ const topicOptions=(relations.topic??[]).flatMap(value=>'title'in value.draft?[{...reference(value),title:value.draft.title}]:[]);
+ const suggestionKey=suggestionBinding&&!concealed&&!blocked&&editTask&&entry?.id===editTask.id&&entry.revision===editTask.revision
+  ?JSON.stringify([suggestionBinding,entry.id,entry.revision,entry.source.id,todoText,topicOptions]):null;
  useEffect(()=>{
   suggestionTarget.current=suggestionKey;
   return()=>{suggestionTarget.current=null;};
@@ -123,16 +129,19 @@ export function TaskEditor({
   if(!confirmClose(busy,dirty)){event.preventDefault();return;}
   approvedDocumentLeave.current=true;
  }}>{projectName}</a>:projectName;
- const topicOptions=(relations.topic??[]).flatMap(value=>'title'in value.draft?[{...reference(value),title:value.draft.title}]:[]);
  const stageLabels=(requested:readonly PersonalReference[])=>{
-  if(!suggestionKey||suggestionTarget.current!==suggestionKey)return;
+  if(!suggestionKey||suggestionTarget.current!==suggestionKey)return false;
+  const ids=new Set(requested.map(ref=>ref.id));
   const candidates=topicOptions.filter(option=>requested.some(ref=>ref.id===option.id&&ref.sourceId===option.sourceId&&ref.revision===option.revision));
-  if(!candidates.length)return;
+  if(!candidates.length||candidates.length!==requested.length)return false;
+  if(relation.topics.filter(ref=>!ids.has(ref.id)).length+candidates.length>20)return false;
+  verifySuggestedSave.current=true;
   setFields(current=>{
    const existing=related(current);
-   const additions=candidates.filter(option=>!existing.topics.some(ref=>ref.id===option.id));
-   return additions.length?{...current,personal:{...existing,topics:[...existing.topics,...additions.map(({id,sourceId,revision})=>({id,sourceId,revision}))]}}:current;
+   const remaining=existing.topics.filter(ref=>!ids.has(ref.id));
+   return {...current,personal:{...existing,topics:[...remaining,...candidates.map(({id,sourceId,revision})=>({id,sourceId,revision}))]}};
   });
+  return true;
  };
  const labels=<details className={styles.disclosure}>
   <summary>标签（可选）{relation.topics.length>0&&<span className={styles.labelCount}>{relation.topics.length}</span>}</summary>
@@ -145,8 +154,8 @@ export function TaskEditor({
      onChange={event=>toggleLabel(id,event.target.checked?{id,sourceId,revision}:null)}/>{title}
    </label>)}
   </fieldset>
-  {LabelSuggestionAction&&suggestionKey&&editTask&&topicOptions.length>0&&
-   <LabelSuggestionAction task={editTask} availableLabels={topicOptions} selectedLabels={relation.topics} onAdd={stageLabels}/>}
+  {LabelSuggestionAction&&suggestionKey&&suggestionBinding&&editTask&&topicOptions.length>0&&
+   <LabelSuggestionAction key={editTask.id} task={editTask} binding={suggestionBinding} todoText={todoText} availableLabels={topicOptions} onAdd={stageLabels}/>}
  </details>;
  const projectMatches=!!project;
  const association=<details className={styles.disclosure}>
@@ -174,7 +183,7 @@ export function TaskEditor({
     </dl>
     {association}
    </div>
-  </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
+  </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields,verifySuggestedSave.current);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
     <label>标题<input autoFocus={!inPlaceDetail} required maxLength={240} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
     <label>正文<textarea rows={inPlaceDetail?4:6} maxLength={16384} value={fields.text} onChange={e=>setFields({...fields,text:e.target.value})}/></label>
