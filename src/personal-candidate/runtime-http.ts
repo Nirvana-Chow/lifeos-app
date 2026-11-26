@@ -15,8 +15,8 @@ import {readReleaseArtifact,type ReleaseArtifact} from '../release-notes-candida
 import type {AuthorityService} from '../agent-authority/service.ts';
 import type {ClassificationService} from './classification-service.ts';
 import {handleOwnerClassificationRequest} from './classification-http.ts';
-import {createHash} from 'node:crypto';
-import type {PlatformRepository,SessionReader,Principal} from '../platform/contracts.ts';
+import {createHash,createHmac} from 'node:crypto';
+import type {PlatformRepository,Principal} from '../platform/contracts.ts';
 import {PlatformError} from '../platform/domain.ts';
 import {assertLocalRequest} from '../platform/request-boundary.ts';
 import {readWritePermit,type WritePermitBinding} from '../deployment-candidate/write-permit.ts';
@@ -40,8 +40,9 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  if(config.businessWriteMode==='disabled')throw new PlatformError(503,'PERSONAL_WRITES_LOCKED','本人空间业务写入已关闭，请保留原保存请求。');
  requirePersonalWritePermit(config,sourceSha);
 }
-const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader & RecentMemosReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;fileIndexManifest?:string;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+const privateReadHeaders={'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'};
+const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{...privateReadHeaders,...extra}});
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader & RecentMemosReader>;sessions:{read(headers:Headers):Promise<(Principal&{sessionRef?:string})|null>};taskSnapshotValidatorKey?:string;config:PersonalConfig;storageVerified:boolean;fileIndexManifest?:string;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,articleEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -54,18 +55,20 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
  return async request=>{
   try{
    const url=new URL(request.url);assertLocalRequest(request,options.config.baseURL);
-   const assertOwner=async():Promise<void>=>{
+   const readOwner=async()=>{
     if(request.signal.aborted)throw new PlatformError(499,'REQUEST_CANCELLED','已取消，尚未确认保存。');
-    let principal:Principal|null;try{principal=await options.sessions.read(request.headers);}catch{throw new PlatformError(503,'AUTH_UNAVAILABLE','身份服务暂不可用。');}
+    let principal:(Principal&{sessionRef?:string})|null;try{principal=await options.sessions.read(request.headers);}catch{throw new PlatformError(503,'AUTH_UNAVAILABLE','身份服务暂不可用。');}
     if(!principal)throw new PlatformError(401,'LOGIN_REQUIRED','请先登录。');
     if(principal.userId!==options.config.ownerId||principal.email.toLowerCase()!==options.config.ownerEmail)throw new PlatformError(403,'ACCOUNT_NOT_ALLOWED','此账号没有访问本人空间的权限。');
+    return principal;
    };
+   const assertOwner=async()=>{await readOwner();};
    if(url.pathname==='/api/platform/personal/availability'){
     if(request.method!=='GET'||url.search)return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此状态仅可读取。'}},405);
     let writable=false;try{await options.assertWritable();writable=true;}catch{}
     return respond({configured:true,writable,loginAllowed:options.config.readonlyLoginApproved===true||writable,https:new URL(options.config.baseURL).protocol==='https:',transport:options.config.transport??'https',origin:options.config.baseURL,userAccepted:false});
    }
-   await assertOwner();
+   const owner=await readOwner();
    const fileIndexResponse=await handleFileIndexRequest(request,{service,storageVerified:options.storageVerified,manifest:options.fileIndexManifest,assertOwner});
    if(fileIndexResponse)return fileIndexResponse;
    if(url.pathname==='/api/platform/personal/file-handoffs'||url.pathname.startsWith('/api/platform/personal/file-handoffs/')){
@@ -108,8 +111,16 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
     const value=await readTaskWorkspaceSnapshot(request,options.config,options.storageVerified,options.repository,includeAccess);
     if(!includeAccess){await assertOwner();return respond(value);}
     const access=await readWorkspaceAccess();
-    await assertOwner();
-    return respond({...value,access});
+    const current=await readOwner();
+    const key=options.taskSnapshotValidatorKey;
+    if(!key||!current.sessionRef||owner.sessionRef!==current.sessionRef)return respond({...value,access});
+    const {observedAt,...snapshot}=value;
+    // The timestamp describes this read. Every field that can change visible data or access participates in the validator.
+    const digest=createHmac('sha256',key).update(JSON.stringify(['lifeos-task-snapshot-v1',current.sessionRef,snapshot,access])).digest('base64url');
+    const ETag=`W/"lifeos-task-v1-${digest}"`;
+    if(request.headers.get('if-none-match')===ETag)return new Response(null,{status:304,
+     headers:{...privateReadHeaders,ETag,'X-LifeOS-Snapshot-Observed-At':observedAt}});
+    return respond({...value,access},200,{ETag});
    }
    if(url.pathname==='/api/platform/personal/todo-classifications'||url.pathname.startsWith('/api/platform/personal/todo-classifications/')){
     if(!options.classification)return respond({error:{code:'NOT_FOUND',message:'分类尚未开放。'}},404);
