@@ -73,7 +73,12 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
     const tasks=tasksForSpace();
     return route.fulfill({json:{scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
    }
-   if(path.endsWith('/journal/snapshot'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:1,items:[fixture],observedAt:'2030-11-26T00:00:00.000Z'}});
+   if(path.endsWith('/journal/snapshot')){
+    const original={marker:'personal-manual-v1',type:'journal',spaceId,input:{spaceId,confirmed:true,
+     fields:{title:'Synthetic diary 25',text:'Synthetic journal body',occurredOn:'2030-11-26'}}};
+    const items=[{...fixture,source:{...fixture.source,original}}];
+    return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:1,items,observedAt:'2030-11-26T00:00:00.000Z'}});
+   }
    return route.fulfill({status:404,json:{}});
   });
   const coldStart=performance.now();
@@ -193,9 +198,12 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    await capture();
    const filter=page.getByRole('textbox',{name:'搜索待办',exact:true});
    const openJournal=async()=>{
-    await (await openNav()).getByRole('link',{name:/^(日记|记录)$/}).click();
-    await expect(page).toHaveURL(origin+'/personal/journal');
+    const journalLink=(await openNav()).getByRole('link',{name:/^(日记|记录)$/});
+    await journalLink.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(origin+'/personal/journal',{timeout:30000});
     await expect(page.getByRole('heading',{name:'记录',exact:true,level:1})).toBeVisible();
+    await expect(page.getByRole('link',{name:'Synthetic diary 25',exact:true})).toBeVisible();
    };
    const returnToTasks=async()=>{
     await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
@@ -208,7 +216,7 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
     await openJournal();
     changeScope();
     await page.evaluate(()=>{
-     const proof=window as Window&{firstVisibleTaskFilter:string|null};
+     const proof=window as Window&{firstVisibleTaskFilter?:string|null};
      proof.firstVisibleTaskFilter=null;
      const observer=new MutationObserver(()=>{
       const input=document.querySelector<HTMLInputElement>('[data-workspace-state="ready"] input[aria-label="搜索待办"]');
@@ -220,7 +228,7 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
      observer.observe(document.body,{subtree:true,childList:true,attributes:true});
     });
     await returnToTasks();
-    const firstVisibleFilter=()=>page.evaluate(()=>(window as Window&{firstVisibleTaskFilter:string|null}).firstVisibleTaskFilter);
+    const firstVisibleFilter=()=>page.evaluate(()=>(window as Window&{firstVisibleTaskFilter?:string|null}).firstVisibleTaskFilter??null);
     await expect.poll(firstVisibleFilter).not.toBeNull();
     receivedFilters.push((await firstVisibleFilter())!);
    }
