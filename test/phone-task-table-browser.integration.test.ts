@@ -80,11 +80,14 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});
    });
    await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:60000});
+   if(process.env.PHONE_TASK_TABLE_NO_CLONE==='1'){
+    assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
+   }
    const grid=page.locator('[data-task-grid="reui"]');
    const view=page.getByRole('button',{name:'表格',exact:true});
    if(!await grid.isVisible())await view.click();
    const row=grid.locator('tbody tr[data-row-id]').first(),heading=row.locator('td[data-col-id="title"]').getByText(title,{exact:true});
-   await expect(heading).toBeVisible();
+   await expect(heading).toBeVisible({timeout:25000});
    const measured=await row.evaluate(node=>{
     const measure=(selector:string)=>{
      const cell=node.querySelector<HTMLElement>(selector)!;
@@ -142,6 +145,42 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     assert.deepEqual(task.draft,{...initial,title:savedTitle});
     assert.equal(writes.length,2);assert.ok(readbacks.includes(3));
    }catch(error){failures.push({width,entry:'list',message:String(error),errors:[...errors]});}
+   if(failures.length===0){
+    await view.click();
+    const savedTitle=task.draft.title;
+    const details=(value:string)=>grid.getByRole('button',{name:'查看待办详情：'+value,exact:true});
+    const detail=page.getByRole('dialog',{name:'待办详情',exact:true});
+    await details(savedTitle).click();
+    const detailTitle=detail.getByLabel('标题',{exact:true});
+    await expect(detailTitle).toBeFocused();
+    await expect(detail.getByRole('textbox',{name:'正文',exact:true})).toHaveValue(initial.notes);
+    const detailDate=detail.locator('label').filter({hasText:/^到期日$/}).locator('input[type=date]');
+    await expect(detailDate).toHaveValue(initial.dueOn);
+    await detailTitle.fill('合成侧栏取消');
+    page.once('dialog',dialog=>void dialog.accept());
+    await detail.getByRole('button',{name:'取消',exact:true}).click();
+    await expect(detail).toHaveCount(0);
+    await expect(details(savedTitle)).toBeFocused();
+    assert.equal(writes.length,2);
+
+    await details(savedTitle).click();
+    const revisedTitle=savedTitle+' 侧栏已核对';
+    await detailTitle.fill(revisedTitle);
+    await detailDate.fill('');
+    await detail.getByRole('button',{name:'保存待办',exact:true}).click();
+    await expect(detail).toHaveCount(0);
+    await expect(details(revisedTitle)).toBeVisible();
+    assert.deepEqual(task.draft,{...initial,title:revisedTitle,dueOn:null});
+    assert.equal(writes.length,3);assert.ok(readbacks.includes(4));
+    const focusAfterSave=await page.evaluate(()=>document.activeElement?.tagName);
+    await details(revisedTitle).click();
+    await expect(detailTitle).toBeFocused();
+    await expect(detailTitle).toHaveValue(revisedTitle);
+    await expect(detailDate).toHaveValue('');
+    await detail.getByRole('button',{name:'关闭待办详情',exact:true}).click();
+    await expect(details(revisedTitle)).toBeFocused();
+    console.log('PHONE_TASK_EDITOR_RECEIPTS '+JSON.stringify({width,cloneDisabled:process.env.PHONE_TASK_TABLE_NO_CLONE==='1',readbacks,focusAfterSave}));
+   }
    if(width===390&&failures.length===0){
     await view.click();
     const grouping=grid.getByLabel('待办表格分组');

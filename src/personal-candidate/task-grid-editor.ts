@@ -1,4 +1,4 @@
-import type { PersonalEditorFields } from './editor.ts';
+import { clonePersonalJSON, type PersonalEditorFields } from './editor.ts';
 import type { PublicEntry } from '../platform/contracts.ts';
 import type { TaskCellDraft, TaskCellField } from './task-cell-draft.ts';
 import { receiptEditor, type NativeReceiptEditor, type TaskIdentity } from './task-editor-state.ts';
@@ -35,7 +35,7 @@ export function mountTaskGridEditor(
   };
   const editor = receiptEditor(native, {
     field: options.field,
-    capture: () => ({ task: { ...options.task }, fields: structuredClone(options.fields) }),
+    capture: () => ({ task: { ...options.task }, fields: clonePersonalJSON(options.fields) }),
     canSave: () => options.canSave() && !composing,
     active: () => active && !closed,
     save: options.save,
