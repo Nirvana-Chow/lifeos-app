@@ -98,6 +98,7 @@ export type LifeOSWorkspaceProps = {
   onLogin?: () => void;
   onLogout?: () => void;
   onCreateTask?: (trigger?: HTMLButtonElement) => boolean | void;
+  onOpenTaskBatch?: (trigger: HTMLButtonElement) => void;
   /** Keep the existing revision/idempotency/recovery writer in the host. No optimistic local mutation. */
   onSetTaskStatus?: (
     task: Pick<TaskRow, "id" | "revision">,

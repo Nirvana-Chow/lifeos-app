@@ -11,7 +11,7 @@ import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from 
 
 const spaceId = 'synthetic-health-space';
 const observedAt = '2030-11-02T00:00:00.000Z';
-function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body'|'other',state:'planned'|'completed'='completed',occurredOn='2030-11-02') {
+function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body'|'other',state:'planned'|'completed'='completed',occurredOn:string|null='2030-11-02') {
   const defaults = emptyHealthFields(kind==='sleep'||kind==='body'?kind:'training','Asia/Shanghai');
   const fields = {...defaults,title,occurredOn};
   if (fields.personal.healthKind==='training') {
@@ -20,9 +20,19 @@ function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'b
     fields.personal.durationMinutes = 30;
   }
   if (fields.personal.healthKind==='body') {
-    fields.personal.weight={value:70,unit:'kg'};
-    fields.personal.bodyFatPercent=20;
-    fields.personal.circumference.waist = {value:78,unit:'cm'};
+    if(n===6){
+      fields.personal.weight={value:70,unit:'kg'};
+      fields.personal.bodyFatPercent=20;
+      fields.personal.circumference={
+        waist:{value:78,unit:'cm'},chest:{value:35,unit:'in'},hip:{value:90,unit:'cm'},
+        upperArm:{value:28,unit:'cm'},thigh:{value:50,unit:'cm'},calf:{value:34,unit:'cm'},
+      };
+    }else if(n===8){
+      fields.personal.circumference.calf={value:13,unit:'in'};
+    }else if(n===10||n>=20){
+      fields.personal.weight={value:151,unit:'lb'};
+      fields.personal.circumference.waist={value:31,unit:'in'};
+    }
   }
   const id = '10000000-0000-4000-8000-'+String(n).padStart(12,'0');
   return {
@@ -96,7 +106,10 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   let items = [
     healthRecord(1,'合成睡眠','sleep'),healthRecord(2,'合成健身','strength'),
     healthRecord(3,'合成飞盘计划','frisbee','planned'),healthRecord(4,'合成飞盘实绩','frisbee'),
-    healthRecord(5,'合成健身计划','strength','planned','2031-02-01'),healthRecord(6,'合成体重体脂','body'),
+    healthRecord(5,'合成健身计划','strength','planned','2031-02-01'),healthRecord(6,'合成完整测量','body'),
+    healthRecord(8,'合成仅小腿围','body','completed',null),
+    healthRecord(9,'合成没有读数','body'),
+    healthRecord(10,'合成英制测量','body'),
   ];
   const writes:string[] = [];
   const detailReads:string[] = [];
@@ -150,50 +163,171 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(skip).toBeFocused();
     await page.keyboard.press('Enter');
   }
-  await expect(body).toHaveAttribute('aria-current','location');
-  await expect(row('合成体重体脂')).toBeVisible();
-  await expect(row('合成睡眠')).toHaveCount(0);
-  await expect(row('合成健身')).toHaveCount(0);
-  await expect(page.getByText('饮食 · 未接入')).toBeVisible();
-  const bodyTable = page.getByRole('table');
-  await expect(bodyTable.getByText('70 kg · 20% · 腰围 78 cm')).toBeVisible();
-  for (const width of [1365,390]) {
+  const bodyNav=page.getByRole('navigation',{name:'身体指标记录',exact:true});
+  const weight=bodyNav.getByRole('link',{name:'体重',exact:true});
+  const fat=bodyNav.getByRole('link',{name:'体脂',exact:true});
+  const circumference=bodyNav.getByRole('link',{name:'围度',exact:true});
+  const complete=page.getByRole('link',{name:'合成完整测量',exact:true});
+  const calfOnly=page.getByRole('link',{name:'合成仅小腿围',exact:true});
+  const bodyTable=page.getByRole('table');
+  const id=items[5].id;
+  const canonical=origin+'/personal/health';
+  const proof=process.env.LIFEOS_HEALTH_PROOF_DIR;
+  const title=dialog.getByRole('textbox',{name:'标题',exact:true});
+  for(const width of [390,430,1365]){
     await page.setViewportSize({width,height:900});
-    await expect(nav).toBeVisible();
-    const tableBounds = await bodyTable.boundingBox();
-    assert.ok(tableBounds && tableBounds.height<245,'one body record should not reserve a full viewport');
-    await expect.poll(()=>bodyTable.getByText('70 kg · 20% · 腰围 78 cm').evaluate(summary=>{
-      const range = document.createRange();
-      range.selectNodeContents(summary);
-      const text = range.getBoundingClientRect();
-      const table = summary.closest('table')!.getBoundingClientRect();
-      return text.left>=table.left && text.right<=Math.min(table.right,innerWidth)-8;
-    }),{message:'body metrics must fully fit the visible table width'}).toBe(true);
+    await body.click();
+    await expect(page).toHaveURL(canonical+'#body');
+    await expect(body).toHaveAttribute('aria-current','location');
+    await expect(bodyTable).toHaveCount(0);
+    await expect(page.getByText('饮食 · 未接入')).toBeVisible();
+    for(const link of [weight,fat,circumference]){
+      await expect(link).toBeInViewport({ratio:1});
+      await expect.poll(async()=>Math.floor((await link.boundingBox())?.height??0)).toBeGreaterThanOrEqual(width===1365?32:44);
+    }
+    if(proof)await page.screenshot({path:join(proof,`body-entrances-${width}.png`),animations:'disabled'});
+    for(const [section,link,summary] of [
+      ['weight',weight,'70 kg'],['fat',fat,'20%'],
+      ['circumference',circumference,'腰围 78 cm · 胸围 35 in · 臀围 90 cm · 上臂围 28 cm · 大腿围 50 cm · 小腿围 34 cm'],
+    ] as const){
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(link).toBeFocused();
+      await expect(link).toHaveAttribute('aria-current','location');
+      const fragment='#body-'+section;
+      await expect(page).toHaveURL(canonical+fragment);
+      await expect(complete).toHaveAttribute('href',fragment+'/'+id);
+      await expect(bodyTable.getByText(summary,{exact:true})).toBeVisible();
+      await expect.poll(()=>bodyTable.getByText(summary,{exact:true}).evaluate(element=>{
+        const range=document.createRange();
+        range.selectNodeContents(element);
+        const viewport=element.closest('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();
+        return [...range.getClientRects()].every(rect=>rect.left>=viewport.left && rect.right<=Math.min(viewport.right,innerWidth));
+      })).toBe(true);
+      await expect(calfOnly).toHaveCount(section==='circumference'?1:0);
+      await expect(page.getByText('合成没有读数',{exact:true})).toHaveCount(0);
+      if(section==='circumference'){
+        await expect(bodyTable.getByText('小腿围 13 in',{exact:true})).toBeVisible();
+        await expect(calfOnly.locator('..').locator('time')).toHaveCount(0);
+        if(proof)await page.screenshot({path:join(proof,`body-circumference-${width}.png`),animations:'disabled'});
+      }
+      const readsBefore=detailReads.length;
+      await complete.click();
+      await expect(page).toHaveURL(canonical+fragment+'/'+id);
+      await expect(title).toHaveValue('合成完整测量');
+      assert.deepEqual(detailReads.slice(readsBefore),[id]);
+      await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page).toHaveURL(canonical+fragment);
+      await expect(complete).toBeFocused();
+    }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const proof = process.env.LIFEOS_HEALTH_PROOF_DIR;
-    if(proof) await page.screenshot({path:join(proof,`body-${width}.png`),animations:'disabled'});
+    t.diagnostic('body categories and original ID at '+width+' px: '+id);
   }
-  await page.setViewportSize({width:1365,height:900});
-  await row('合成体重体脂').click();
-  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成体重体脂');
+
+  await page.goForward();
+  await expect(title).toHaveValue('合成完整测量');
+  await page.reload();
+  await expect(title).toHaveValue('合成完整测量');
   await dialog.getByText('身体围度（可留空）',{exact:true}).click();
   await expect(dialog.getByLabel('腰围',{exact:true})).toHaveValue('78');
-  await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
+  await expect(dialog.getByLabel('小腿围',{exact:true})).toHaveValue('34');
+  await page.goBack();
+  await expect(dialog).toHaveCount(0);
+  await expect(complete).toBeFocused();
+  await page.goBack();
+  await expect(fat).toHaveAttribute('aria-current','location');
+  await expect(fat).toBeFocused();
+  await page.goForward();
+  await expect(circumference).toBeFocused();
+  await row('趋势').click();
+  await expect(page.getByLabel('查看指标').locator('option')).toHaveText(['腰围']);
+  await expect(page.getByRole('img',{name:/^腰围，cm，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/^腰围，in，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByText(/1 条日期未知，1 条指标未知/)).toBeVisible();
+  await weight.click();
+  await row('趋势').click();
+  await expect(page.getByRole('img',{name:/^体重，kg，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/^体重，lb，1 条有日期的记录/})).toBeVisible();
+
+  await page.setViewportSize({width:390,height:900});
+  await body.click();
+  await page.getByRole('link',{name:'查看全部原始身体测量',exact:true}).click();
+  await expect(page).toHaveURL(canonical+'#body-originals');
+  await row('合成没有读数').click();
+  await expect(title).toHaveValue('合成没有读数');
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await row('趋势').click();
-  await expect(page.getByLabel('查看指标').locator('option')).toHaveText(['体重','体脂率','腰围']);
-  await page.getByLabel('查看指标').selectOption('waist');
-  await expect(page.getByRole('img',{name:/^腰围，cm，1 条有日期的记录/})).toBeVisible();
 
-  await page.goto(origin+'/personal/health#body');
+  const originalItems=items;
+  items=[...items,...Array.from({length:35},(_,i)=>healthRecord(i+20,'合成滚动测量 '+i,'body'))];
+  await weight.click();
+  await row('刷新').click();
+  await expect(page.getByText('37 条',{exact:true})).toBeVisible();
+  const viewport=page.locator('[data-slot="data-grid-table-viewport"]');
+  await viewport.evaluate(element=>{element.scrollTop=1300;});
+  await expect.poll(()=>viewport.evaluate(element=>element.scrollTop)).toBeGreaterThan(1000);
+  const scrollRecord=page.getByRole('link',{name:'合成滚动测量 15',exact:true});
+  await scrollRecord.click();
+  await expect(title).toHaveValue('合成滚动测量 15');
+  await page.keyboard.press('Escape');
+  await expect(scrollRecord).toBeFocused();
+  assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
+  const rowOffset=()=>scrollRecord.evaluate(element=>element.getBoundingClientRect().top-
+   element.closest('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect().top);
+  const beforeSwitch=await rowOffset();
+  await fat.click();
+  await page.goBack();
+  await expect(weight).toBeFocused();
+  await expect.poll(async()=>Math.abs((await rowOffset())-beforeSwitch)).toBeLessThan(16);
+  assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
+  t.diagnostic('390 px list restored the same row within 16px after category traversal');
+  const farId=items.find(record=>record.draft.title==='合成滚动测量 29')!.id;
+  await page.goto(canonical+'#body-weight/'+farId);
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.reload();
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'合成滚动测量 29',exact:true})).toBeFocused();
+  items=originalItems;
+
+  await page.goto(canonical+'#body-circumference/'+items[6].id);
+  await expect(title).toHaveValue('合成仅小腿围');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(canonical+'#body-circumference');
+  await expect(calfOnly).toBeFocused();
+  const beforeUnknown=detailReads.length;
+  await page.goto(canonical+'#body-weight/'+items[6].id);
+  await expect(page.getByText('这条身体测量记录不在当前分区的已读列表。',{exact:true})).toBeVisible();
+  assert.equal(detailReads.length,beforeUnknown);
+
+  await page.goto(canonical+'#body-fat');
+  await page.reload();
+  await expect(complete).toBeVisible();
+  revokeAfterHistory=true;
+  await complete.click();
+  await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
+  await expect(bodyNav).toHaveCount(0);
+  const revokedReads=detailReads.length;
+  await page.goto(canonical+'#body-fat/'+id);
+  await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+  assert.equal(detailReads.length,revokedReads);
+  assert.deepEqual(writes,[]);
+  healthEnabled=true;
+  await page.setViewportSize({width:1365,height:900});
+  await page.goto(canonical+'#body');
   await page.reload();
   await expect(body).toHaveAttribute('aria-current','location');
-  await expect(row('合成体重体脂')).toBeVisible();
+  await expect(weight).toBeVisible();
   await sleep.click();
   await expect(page).toHaveURL(origin+'/personal/health#sleep');
   await expect(row('合成睡眠')).toBeVisible();
-  await expect(row('合成体重体脂')).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
   await expect(row('合成健身')).toHaveCount(0);
   await page.reload();
   await expect(sleep).toHaveAttribute('aria-current','location');
@@ -335,6 +469,61 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await exercise.click();
     await expect(completed).toBeVisible();
     await expect(exerciseStatus).toHaveValue('completed');
+
+    await body.click();
+    for(const [category,link] of [['weight',weight],['fat',fat],['circumference',circumference]] as const){
+      await link.click();
+      const listLocation=new URL(beforeSleep);
+      listLocation.hash='body-'+category;
+      const sourceLocation=new URL(listLocation);
+      sourceLocation.hash+='/'+id;
+      await expect(page).toHaveURL(listLocation.href);
+      await complete.click();
+      await expect(page).toHaveURL(sourceLocation.href);
+      await expect(titleField).toHaveValue('合成完整测量');
+      assert.equal(detailReads.at(-1),id);
+      await page.goBack();
+      await expect(page).toHaveURL(listLocation.href);
+      await expect(dialog).toHaveCount(0);
+      await expect(complete).toBeFocused();
+      await page.goForward();
+      await expect(page).toHaveURL(sourceLocation.href);
+      await expect(titleField).toHaveValue('合成完整测量');
+      await page.keyboard.press('Escape');
+      await expect(complete).toBeFocused();
+    }
+    await sleep.click();
+    await expect(page).toHaveURL(sleepLocation.href);
+    await expect(row('合成睡眠')).toBeVisible();
+    await page.goBack();
+    await expect(circumference).toHaveAttribute('aria-current','location');
+    await expect(complete).toBeVisible();
+    await exercise.click();
+    await expect(page).toHaveURL(beforeSleep);
+    await expect(completed).toBeVisible();
+    await expect(frisbee).toHaveAttribute('aria-pressed','true');
+    await expect(exerciseStatus).toHaveValue('completed');
+
+    if(width===390){
+      await body.click();
+      await weight.click();
+      revokeAfterHistory=true;
+      await complete.click();
+      const closed=page.getByRole('alert').filter({hasText:'此模块尚未开放。'});
+      await expect(closed).toBeVisible();
+      assert.equal(detailReads.at(-1),id);
+      await page.goBack();
+      await page.goForward();
+      await expect(closed).toBeVisible();
+      await expect(dialog).toHaveCount(0);
+      await expect(complete).toHaveCount(0);
+      await expect(completed).toHaveCount(0);
+      healthEnabled=true;
+      await page.goto(beforeSleep);
+      await page.reload();
+      await expect(completed).toBeVisible();
+    }
+    t.diagnostic('exercise history, three body originals, sleep and restored exercise filters at '+width+' px');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.deepEqual(writes,[]);
   }
@@ -377,7 +566,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await page.goto(exerciseLink);
   await page.reload();
   await row('表格').click();
-  await expect(row('合成体重体脂')).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
   await expect(row('合成睡眠')).toHaveCount(0);
   await filters.getByRole('button',{name:'健身训练',exact:true}).click();
   await expect(row('合成健身')).toBeVisible();
@@ -443,7 +632,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(body).toBeVisible();
     await expect(sleep).toBeVisible();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const proof = process.env.LIFEOS_HEALTH_PROOF_DIR;
+
     if(proof) {
       await nav.scrollIntoViewIfNeeded();
       await page.screenshot({path:join(proof,`exercise-${width}.png`),animations:'disabled'});

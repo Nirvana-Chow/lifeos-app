@@ -4,6 +4,27 @@ export const healthKindLabels = {body:'身体测量',sleep:'睡眠',training:'�
 export const healthMetricLabels = {weight:'体重',bodyFat:'体脂率',waist:'腰围',sleepMinutes:'实睡时长',trainingMinutes:'已完成训练时长',distance:'已完成训练距离'};
 export const circumferenceLabels = {waist:'腰围',chest:'胸围',hip:'臀围',upperArm:'上臂围',thigh:'大腿围',calf:'小腿围'};
 
+export const bodySections = {
+  weight:{label:'体重',trend:'weight'},
+  fat:{label:'体脂',trend:'bodyFat'},
+  circumference:{label:'围度',trend:'waist'},
+} as const;
+export type BodySection = keyof typeof bodySections;
+
+function circumferenceSummary(p:Extract<HealthPersonal,{healthKind:'body'}>):string[] {
+  return circumferenceSites.flatMap(site => {
+    const measurement = p.circumference[site];
+    return measurement ? [`${circumferenceLabels[site]} ${measurement.value} ${measurement.unit}`] : [];
+  });
+}
+
+export function bodySectionSummary(p:HealthPersonal,section:BodySection):string|null {
+  if (p.healthKind!=='body') return null;
+  if (section==='weight') return p.weight ? `${p.weight.value} ${p.weight.unit}` : null;
+  if (section==='fat') return p.bodyFatPercent===null ? null : `${p.bodyFatPercent}%`;
+  return circumferenceSummary(p).join(' · ') || null;
+}
+
 /** New fields carry no invented date, measurements or completion. */
 export function emptyHealthFields(kind:HealthPersonal['healthKind'],timeZone:string):HealthPersonalFields {
   const common = {type:'health' as const,schemaVersion:1 as const,timeZone,source:{kind:'manual' as const,label:null}};
@@ -22,11 +43,7 @@ export function healthSummary(fields:HealthPersonalFields):string {
   if (p.healthKind === 'body') {
     const measures = [p.weight ? `${p.weight.value} ${p.weight.unit}` : '体重未知',
       p.bodyFatPercent === null ? '体脂未知' : `${p.bodyFatPercent}%`];
-    for (const site of circumferenceSites) {
-      const measurement = p.circumference[site];
-      if (measurement) measures.push(`${circumferenceLabels[site]} ${measurement.value} ${measurement.unit}`);
-    }
-    return measures.join(' · ');
+    return [...measures,...circumferenceSummary(p)].join(' · ');
   }
   if (p.healthKind === 'sleep') {
     const elapsed = sleepElapsedMinutes(p);

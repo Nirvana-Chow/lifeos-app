@@ -61,7 +61,7 @@
     gap: 6px;
     margin-bottom: 8px;
 
-    > :is(a, button):not(:global(.lo-filter-button)) {
+    > :is(a, button):not(:global(.lo-filter-button), :global(.lo-task-batch-action)) {
       grid-area: 1 / 1;
       min-height: 44px;
       padding-inline: 8px;
@@ -83,6 +83,13 @@
     }
     > :global(.lo-view-switch) svg { display: none; }
     > :global(.lo-filter-button) { grid-area: 2 / 3; min-height: 44px; }
+    > :global(.lo-task-batch-action) {
+      grid-area: 3 / 1 / 4 / -1;
+      justify-self: start;
+      min-height: 44px;
+      padding-inline: 8px;
+      font-size: 14px;
+    }
   }
 
   :global(html:not([data-lifeos-workspace-layout="desktop"])) .root[data-flat-projects] {
