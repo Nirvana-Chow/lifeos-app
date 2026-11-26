@@ -244,9 +244,13 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  poolStorageVerified=false;
  await page.goto(development,{waitUntil:'domcontentloaded'});
  await expect(poolLink).toBeVisible();
+ const blockedSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/todo/workspace-snapshot');
  await poolLink.click();
  await expect(page).toHaveURL(poolUrl);
- await expect(page.getByText('本人空间存储尚未核验，暂无法读取待办。',{exact:true})).toBeVisible();
+ const blocked=await blockedSnapshot;
+ assert.equal(blocked.status(),503);
+ assert.equal((await blocked.json()).error.code,'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE');
+ await expect(page.getByText('暂时无法读取完整待办列表，请重试。',{exact:true})).toBeVisible();
  await expect(requirementRow).toHaveCount(0);
  poolStorageVerified=true;
  summaryError=null;
