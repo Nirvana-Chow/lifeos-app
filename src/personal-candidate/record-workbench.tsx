@@ -206,6 +206,14 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    const data=await json(type+'/'+entry.id),row=ownerRecord(data.entry,type,current.current.spaceId);
    const versions=await json(type+'/'+entry.id+'/history'),after=readStatus(await json('status'));
    if(token!==generation.current||!current.current||binding!==keyOf(after)||binding!==keyOf(current.current))return;
+   if(type==='health'&&!recordModuleEnabled(type,after)){
+    hide();
+    draftCache.current=null;
+    exerciseDetail.current=null;
+    exerciseTrigger.current=null;
+    setError('此模块尚未开放。');
+    return;
+   }
    if(exerciseMode){
     if(url!==window.location.href||(exerciseMode==='restore'&&exerciseHistoryRecord(binding)!==entry.id))return;
     if(exerciseMode==='push')pushExerciseHistoryRecord(entry.id,binding);

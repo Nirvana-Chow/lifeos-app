@@ -90,7 +90,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(page.getByRole('heading',{name:'合成登录页'})).toBeVisible();
   await context.addCookies([{name:'health-fixture',value:'owner',url:origin}]);
 
-  let writable = false;
+  let writable = false, revokeAfterHistory = false;
   let verifiedSpace = spaceId;
   let healthEnabled = true, denied = false, truncated = false, foreign = false, reads = 0;
   let items = [
@@ -120,7 +120,13 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     const record = items.find(item=>url.pathname.endsWith('/health/'+item.id));
     if(record){detailReads.push(record.id);return route.fulfill({json:{entry:record}});}
-    if(url.pathname.endsWith('/history'))return route.fulfill({json:{items:[]}});
+    if(url.pathname.endsWith('/history')){
+      if(revokeAfterHistory&&url.pathname.includes('/personal/health/')){
+        revokeAfterHistory=false;
+        healthEnabled=false;
+      }
+      return route.fulfill({json:{items:[]}});
+    }
     return route.fulfill({status:404,json:{}});
   });
   await page.goto(origin+'/personal');
@@ -490,6 +496,45 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await filters.getByRole('button',{name:'全部运动',exact:true}).click();
   await row('刷新').click();
   await expect(row('合成飞盘实绩')).toBeVisible();
+  // A successful snapshot, detail and history can be followed by a same-space feature revocation.
+  for(const action of ['open','reload'] as const){
+    const detail=row('合成飞盘实绩');
+    if(action==='reload'){
+      await detail.click();
+      await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+    }
+    const beforeRevocation=detailReads.length;
+    const finalStatus=page.waitForResponse(async response=>{
+      if(!response.url().endsWith('/personal/status')||!response.ok())return false;
+      const after=await response.json();
+      return after.healthEnabled===false&&after.spaceId===spaceId&&after.ownerId==='synthetic-health-owner';
+    });
+    revokeAfterHistory=true;
+    if(action==='reload')await page.reload();
+    else await detail.click();
+    await finalStatus;
+    assert.equal(detailReads.length,beforeRevocation+1);
+    assert.equal(detailReads.at(-1),items[0].id);
+    await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect(detail).toHaveCount(0);
+    await expect(filters).toHaveCount(0);
+    const afterRevocation=detailReads.length;
+    if(action==='reload'){
+      await page.goBack();
+      await page.goForward();
+      await expect(dialog).toHaveCount(0);
+      await expect(detail).toHaveCount(0);
+    }
+    await row('刷新').click();
+    await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+    assert.equal(detailReads.length,afterRevocation);
+    healthEnabled=true;
+    await page.goto(exerciseLink);
+    await page.reload();
+    await row('表格').click();
+    await expect(detail).toBeVisible();
+  }
   for(const [testDenied,testTruncated,message] of [[true,false,'合成读取拒绝'],[false,true,'完整记录未读取完成。']] as const){
     denied = testDenied;
     truncated = testTruncated;
