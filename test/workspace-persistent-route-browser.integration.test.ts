@@ -25,7 +25,7 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
  await writeFile(join(root,'app/login/page.tsx'),'export default function Page(){return <h1>Synthetic login</h1>}');
  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await writeFile(join(root,'src/platform/runtime.ts'),`
- export const readPlatformLoginCapability=async()=>({sessionDuration:false});
+ export const readPlatformLoginCapability=async()=>({sessionDuration:true});
  export const readPlatformPasswordCapability=async()=>false;
  export const readPlatformPagePrincipal=async(headers)=>headers.get('cookie')?.includes('synthetic-owner=1')&&!headers.get('cookie')?.includes('synthetic-deny=1')?{id:'synthetic-owner'}:null;
  `);
@@ -51,14 +51,15 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
   const page:Page=await browser.newPage({viewport:{width,height:900}});
   await page.context().addCookies([{name:'synthetic-owner',value:'1',url:origin}]);
   const documents:string[]=[],errors:string[]=[],writes:string[]=[];
+  let ownerId='synthetic-owner',spaceId=journalStatus.spaceId,mfaVerified=true;
   page.on('request',request=>{if(request.resourceType()==='document')documents.push(new URL(request.url()).pathname);});
   page.on('pageerror',error=>errors.push(error.message));
   const fixture=journalFixture(25,'2030-11-26','Synthetic journal body');
-  const tasks=Array.from({length:55},(_,index)=>{
+  const tasksForSpace=()=>Array.from({length:55},(_,index)=>{
    const entry=journalFixture(100+index,null);
    const fields={title:'合成待办长标题 保留日记导航与滚动 '.repeat(3)+index,notes:'',dueOn:null,status:'open'};
    return {...entry,kind:'todo',draft:fields,source:{...entry.source,original:{marker:'personal-manual-v1',
-    type:'todo',spaceId:journalStatus.spaceId,input:{spaceId:journalStatus.spaceId,confirmed:true,fields}}}};
+    type:'todo',spaceId,input:{spaceId,confirmed:true,fields}}}};
   });
   await page.route('**/api/platform/**',async route=>{
    const request=route.request(),url=new URL(request.url());
@@ -66,8 +67,12 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405,json:{}});}
    const path=url.pathname;
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(path.endsWith('/status'))return route.fulfill({json:{...journalStatus,ownerId:'synthetic-owner',scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal']}});
-   if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot'))return route.fulfill({json:{scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
+   if(path.endsWith('/auth/get-session'))return route.fulfill({json:{user:{id:ownerId},session:{mfaVerified,sessionDurationMode:'fixed',sessionDurationSeconds:1800,expiresAt:new Date(Date.now()+600000).toISOString()}}});
+   if(path.endsWith('/status'))return route.fulfill({json:{...journalStatus,ownerId,spaceId,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal']}});
+   if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot')){
+    const tasks=tasksForSpace();
+    return route.fulfill({json:{scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
+   }
    if(path.endsWith('/journal/snapshot'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:1,items:[fixture],observedAt:'2030-11-26T00:00:00.000Z'}});
    return route.fulfill({status:404,json:{}});
   });
@@ -82,11 +87,13 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    return page.locator('aside.lo-sidebar').getByRole('navigation',{name:'主导航',exact:true});
   };
   await expect(page.getByRole('heading',{name:'待办',exact:true,level:1})).toBeVisible();
-  await expect(page.locator('header.lo-header').getByRole('link',{name:'搜索本人记录',exact:true})).toBeVisible();
+  const header=page.locator('header.lo-header');
+  const globalSearch={name:'搜索本人记录',exact:true};
+  await expect(header.getByRole('link',globalSearch).or(header.getByRole('button',globalSearch))).toBeVisible();
   await page.getByRole('button',{name:'列表',exact:true}).click();
   const taskRows=page.locator('.lo-list-rows');
   await expect(taskRows).toBeVisible();
-  await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasks.length);
+  await expect(taskRows.locator('.lo-task-row')).toHaveCount(tasksForSpace().length);
   const taskDataReadyMs=Math.round(performance.now()-coldStart);
   await taskRows.evaluate(region=>{region.scrollTop=240;});
   await expect.poll(()=>taskRows.evaluate(region=>region.scrollTop)).toBe(240);
@@ -178,6 +185,62 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
     assert.deepEqual(documents,['/personal']);
     console.log('WORKSPACE_OVERVIEW_RETURN '+JSON.stringify({width,restoredFocus:'打开导航',documents}));
    }
+  }
+  if(!before&&width===1365){
+   // Give these checks their own history, after the guarded Back/Forward case above.
+   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+   await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
+   await capture();
+   const filter=page.getByRole('textbox',{name:'搜索待办',exact:true});
+   const openJournal=async()=>{
+    await (await openNav()).getByRole('link',{name:/^(日记|记录)$/}).click();
+    await expect(page).toHaveURL(origin+'/personal/journal');
+    await expect(page.getByRole('heading',{name:'记录',exact:true,level:1})).toBeVisible();
+   };
+   const returnToTasks=async()=>{
+    await page.evaluate(()=>{setTimeout(()=>history.back(),0);});
+    await expect(page).toHaveURL(origin+'/personal?page=tasks');
+    await expect(page.locator('[data-workspace-state="ready"]')).toHaveCount(1);
+   };
+   const receivedFilters:string[]=[];
+   for(const changeScope of [()=>{},()=>{ownerId='synthetic-owner-switch';},()=>{spaceId='synthetic-space-switch';}]){
+    await filter.fill('合成筛选词 保留日记导航与滚动');
+    await openJournal();
+    changeScope();
+    await page.evaluate(()=>{
+     const proof=window as Window&{firstVisibleTaskFilter:string|null};
+     proof.firstVisibleTaskFilter=null;
+     const observer=new MutationObserver(()=>{
+      const input=document.querySelector<HTMLInputElement>('[data-workspace-state="ready"] input[aria-label="搜索待办"]');
+      if(location.pathname==='/personal'&&input&&input.getClientRects().length){
+       observer.disconnect();
+       proof.firstVisibleTaskFilter=input.value;
+      }
+     });
+     observer.observe(document.body,{subtree:true,childList:true,attributes:true});
+    });
+    await returnToTasks();
+    const firstVisibleFilter=()=>page.evaluate(()=>(window as Window&{firstVisibleTaskFilter:string|null}).firstVisibleTaskFilter);
+    await expect.poll(firstVisibleFilter).not.toBeNull();
+    receivedFilters.push((await firstVisibleFilter())!);
+   }
+   await openJournal();
+   const journalQuery='/personal/journal?record=synthetic-review&view=%E6%97%A5%E8%AE%B0';
+   await page.evaluate(path=>history.replaceState(history.state,'',path+'#synthetic-fragment'),journalQuery);
+   mfaVerified=false;
+   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+   await expect(page.getByRole('heading',{name:'登录已到期或需要重新验证'})).toBeVisible();
+   const relogin=page.getByRole('link',{name:'重新登录',exact:true});
+   const href=new URL((await relogin.getAttribute('href'))!,origin);
+   await expect(relogin).toHaveAttribute('target','_blank');
+   mfaVerified=true;
+   await page.getByRole('button',{name:'已完成登录，继续编辑'}).click();
+   await expect(page.getByRole('heading',{name:'记录',exact:true,level:1})).toBeVisible();
+   assert.deepEqual(await compare(),{sameDocument:true,sameNodes:[true,true,true,true,true]});
+   assert.deepEqual({receivedFilters,returnTo:href.searchParams.get('return_to')},{
+    receivedFilters:['合成筛选词 保留日记导航与滚动','',''],returnTo:journalQuery,
+   });
+   console.log('WORKSPACE_SCOPE_AND_SESSION '+JSON.stringify({sameScopePreserved:true,ownerCleared:true,spaceCleared:true,returnTo:journalQuery}));
   }
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);

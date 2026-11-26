@@ -51,7 +51,7 @@ function PersistentFrame({path,store,location,push,children}:Options&{
  const verified=useOwnerPageVerification();
  const isJournal=path==='/personal/journal';
  return <PersonalWorkspaceView {...(isJournal||!task?{
-  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true,writable:null,loginAllowed:true},
+  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true?true:null,writable:null,loginAllowed:true},
  }:task)}
   initialPage={location.page} initialModal={location.page==='settings'?'settings':location.modal}
   initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
