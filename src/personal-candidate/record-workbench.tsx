@@ -5,6 +5,7 @@ import {useTable,type ColumnDef} from '@tanstack/react-table';
 import {DataGrid,DataGridContainer,dataGridFeatures} from '../ui-review/reui/data-grid';
 import {DataGridTableVirtual} from '../ui-review/reui/data-grid-table-virtual';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '../ui-review/ui/dialog';
+import {Badge} from '../ui-review/ui/badge';
 import {Button} from '../ui-review/ui/button';
 import {Input} from '../ui-review/ui/input';
 import type {PublicEntry} from '../platform/contracts';
@@ -362,7 +363,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDur
    onClick={()=>void retry()}>继续上次保存（{recordLabels[mutation.pending.type]}）</Button>:<p>保留的请求无法核对，请保留当前页面。</p>}
  </div>;
  const feedback=<>
-  {error&&!(type==='journal'&&editor)&&<p role="alert" className={s.error}>{error}</p>}{notice&&<p role="status" data-record-notice>{notice}</p>}
+  {error&&!(type==='journal'&&editor)&&<p role="alert" className={s.error}>{error}</p>}{notice&&<p role="status" data-record-notice><Badge variant="secondary">{notice}</Badge></p>}
   {!(type==='journal'&&editor)&&<>{mutation?.error&&<p role="alert">{mutation.error}</p>}{recovery}</>}
  </>;
  const records=<>
