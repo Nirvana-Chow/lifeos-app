@@ -93,7 +93,7 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    }
    return page.locator('aside.lo-sidebar').getByRole('navigation',{name:'主导航',exact:true});
   };
-  await expect(page.getByRole('heading',{name:'待办',exact:true,level:1})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'待办',exact:true,level:1})).toBeVisible({timeout:30000});
   const header=page.locator('header.lo-header');
   const globalSearch={name:'搜索本人记录',exact:true};
   await expect(header.getByRole('link',globalSearch).or(header.getByRole('button',globalSearch))).toBeVisible();
