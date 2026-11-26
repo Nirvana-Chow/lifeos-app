@@ -4,7 +4,7 @@ import {useContext,useState,useSyncExternalStore,type ReactNode} from 'react';
 import {readWorkspaceLocation} from '../workbench/private-navigation';
 import {PersonalWorkspaceView} from './live-workspace';
 import {PrivacyBoundary,useOwnerPageVerification} from './privacy';
-import {isWorkspaceRoute,WorkspaceRouteContext,type TaskShellFrame,type WorkspaceRoutePath} from './workspace-route-context';
+import {businessRecordWorkspaceTitles,isBusinessRecordWorkspaceRoute,isWorkspaceRoute,WorkspaceRouteContext,type TaskShellFrame,type WorkspaceRoutePath} from './workspace-route-context';
 
 function createTaskFrame(){
  let current:TaskShellFrame|null=null;
@@ -57,7 +57,7 @@ function PersistentFrame({path,store,location,push,children}:Options&{
   initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
   unifiedRoute={{path,push}}
   {...(isContentRoute?{
-   contentPage:{wide:true,title:path==='/personal/storage-review'?'存储审核':path==='/personal/finance'?'财务':'记录',content:children},
+   contentPage:{wide:true,title:isBusinessRecordWorkspaceRoute(path)?businessRecordWorkspaceTitles[path]:path==='/personal/storage-review'?'存储审核':path==='/personal/finance'?'财务':'记录',content:children},
    onBeforeNavigate:()=>route?.activeContentGuard.current?.()!==false,
   }:{})}
  />;
