@@ -11,18 +11,28 @@ import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from 
 
 const spaceId = 'synthetic-health-space';
 const observedAt = '2030-11-02T00:00:00.000Z';
-function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body',state:'planned'|'completed'='completed',occurredOn='2030-11-02') {
+function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body'|'other',state:'planned'|'completed'='completed',occurredOn:string|null='2030-11-02') {
   const defaults = emptyHealthFields(kind==='sleep'||kind==='body'?kind:'training','Asia/Shanghai');
   const fields = {...defaults,title,occurredOn};
   if (fields.personal.healthKind==='training') {
-    fields.personal.activity = kind==='frisbee'?'other':'strength';
+    fields.personal.activity = kind==='frisbee'||kind==='other'?'other':'strength';
     fields.personal.state = state;
     fields.personal.durationMinutes = 30;
   }
   if (fields.personal.healthKind==='body') {
-    fields.personal.weight={value:70,unit:'kg'};
-    fields.personal.bodyFatPercent=20;
-    fields.personal.circumference.waist = {value:78,unit:'cm'};
+    if(n===6){
+      fields.personal.weight={value:70,unit:'kg'};
+      fields.personal.bodyFatPercent=20;
+      fields.personal.circumference={
+        waist:{value:78,unit:'cm'},chest:{value:35,unit:'in'},hip:{value:90,unit:'cm'},
+        upperArm:{value:28,unit:'cm'},thigh:{value:50,unit:'cm'},calf:{value:34,unit:'cm'},
+      };
+    }else if(n===8){
+      fields.personal.circumference.calf={value:13,unit:'in'};
+    }else if(n===10||n>=20){
+      fields.personal.weight={value:151,unit:'lb'};
+      fields.personal.circumference.waist={value:31,unit:'in'};
+    }
   }
   const id = '10000000-0000-4000-8000-'+String(n).padStart(12,'0');
   return {
@@ -35,7 +45,7 @@ function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'b
 
 test('OPT-IN canonical owner health route separates body indicators, exercise and sleep', {
   skip:process.env.RUN_HEALTH_FOUNDATION_BROWSER!=='1' && 'Requires isolated Next and Chromium',
-  timeout:150000,
+  timeout:210000,
 }, async t => {
   const source = resolve(import.meta.dirname,'..');
   const root = await mkdtemp(join(tmpdir(),'lifeos-auth-theme-health-foundation-'));
@@ -90,29 +100,46 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(page.getByRole('heading',{name:'合成登录页'})).toBeVisible();
   await context.addCookies([{name:'health-fixture',value:'owner',url:origin}]);
 
+  let writable = false, revokeAfterHistory = false;
+  let verifiedSpace = spaceId;
   let healthEnabled = true, denied = false, truncated = false, foreign = false, reads = 0;
   let items = [
     healthRecord(1,'合成睡眠','sleep'),healthRecord(2,'合成健身','strength'),
     healthRecord(3,'合成飞盘计划','frisbee','planned'),healthRecord(4,'合成飞盘实绩','frisbee'),
-    healthRecord(5,'合成健身计划','strength','planned','2031-02-01'),healthRecord(6,'合成体重体脂','body'),
+    healthRecord(5,'合成健身计划','strength','planned','2031-02-01'),healthRecord(6,'合成完整测量','body'),
+    healthRecord(8,'合成仅小腿围','body','completed',null),
+    healthRecord(9,'合成没有读数','body'),
+    healthRecord(10,'合成英制测量','body'),
   ];
   const writes:string[] = [];
+  const detailReads:string[] = [];
   await page.route('**/api/platform/**',async route => {
     const request = route.request(), url = new URL(request.url());
     if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405,json:{}});}
     if(url.pathname.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-    if(url.pathname.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal'],healthEnabled}});
+    if(url.pathname.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:verifiedSpace,storageVerified:true,writable,allowedTypes:['todo','journal'],healthEnabled}});
     if(url.pathname.endsWith('/health/snapshot')){
       reads++;
       if(denied)return route.fulfill({status:403,json:{error:{message:'合成读取拒绝'}}});
-      const snapshot = foreign ? items.map(item=>({...item,source:{...item.source,original:{...item.source.original,spaceId:'synthetic-foreign-space'}}})) : items;
+      const snapshot = foreign || verifiedSpace!==spaceId ? items.map(item=>{
+        const original=item.source.original;
+        return {...item,source:{...item.source,original:{
+          ...original,spaceId:foreign?'synthetic-foreign-space':verifiedSpace,input:{...original.input,spaceId:verifiedSpace},
+        }}};
+      }) : items;
       return route.fulfill({json:{scope:'full-current-snapshot',total:snapshot.length,truncated,items:snapshot,observedAt}});
     }
     if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']},total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     const record = items.find(item=>url.pathname.endsWith('/health/'+item.id));
-    if(record)return route.fulfill({json:{entry:record}});
-    if(url.pathname.endsWith('/history'))return route.fulfill({json:{items:[]}});
+    if(record){detailReads.push(record.id);return route.fulfill({json:{entry:record}});}
+    if(url.pathname.endsWith('/history')){
+      if(revokeAfterHistory&&url.pathname.includes('/personal/health/')){
+        revokeAfterHistory=false;
+        healthEnabled=false;
+      }
+      return route.fulfill({json:{items:[]}});
+    }
     return route.fulfill({status:404,json:{}});
   });
   await page.goto(origin+'/personal');
@@ -136,50 +163,171 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(skip).toBeFocused();
     await page.keyboard.press('Enter');
   }
-  await expect(body).toHaveAttribute('aria-current','location');
-  await expect(row('合成体重体脂')).toBeVisible();
-  await expect(row('合成睡眠')).toHaveCount(0);
-  await expect(row('合成健身')).toHaveCount(0);
-  await expect(page.getByText('饮食 · 未接入')).toBeVisible();
-  const bodyTable = page.getByRole('table');
-  await expect(bodyTable.getByText('70 kg · 20% · 腰围 78 cm')).toBeVisible();
-  for (const width of [1365,390]) {
+  const bodyNav=page.getByRole('navigation',{name:'身体指标记录',exact:true});
+  const weight=bodyNav.getByRole('link',{name:'体重',exact:true});
+  const fat=bodyNav.getByRole('link',{name:'体脂',exact:true});
+  const circumference=bodyNav.getByRole('link',{name:'围度',exact:true});
+  const complete=page.getByRole('link',{name:'合成完整测量',exact:true});
+  const calfOnly=page.getByRole('link',{name:'合成仅小腿围',exact:true});
+  const bodyTable=page.getByRole('table');
+  const id=items[5].id;
+  const canonical=origin+'/personal/health';
+  const proof=process.env.LIFEOS_HEALTH_PROOF_DIR;
+  const title=dialog.getByRole('textbox',{name:'标题',exact:true});
+  for(const width of [390,430,1365]){
     await page.setViewportSize({width,height:900});
-    await expect(nav).toBeVisible();
-    const tableBounds = await bodyTable.boundingBox();
-    assert.ok(tableBounds && tableBounds.height<245,'one body record should not reserve a full viewport');
-    await expect.poll(()=>bodyTable.getByText('70 kg · 20% · 腰围 78 cm').evaluate(summary=>{
-      const range = document.createRange();
-      range.selectNodeContents(summary);
-      const text = range.getBoundingClientRect();
-      const table = summary.closest('table')!.getBoundingClientRect();
-      return text.left>=table.left && text.right<=Math.min(table.right,innerWidth)-8;
-    }),{message:'body metrics must fully fit the visible table width'}).toBe(true);
+    await body.click();
+    await expect(page).toHaveURL(canonical+'#body');
+    await expect(body).toHaveAttribute('aria-current','location');
+    await expect(bodyTable).toHaveCount(0);
+    await expect(page.getByText('饮食 · 未接入')).toBeVisible();
+    for(const link of [weight,fat,circumference]){
+      await expect(link).toBeInViewport({ratio:1});
+      await expect.poll(async()=>Math.floor((await link.boundingBox())?.height??0)).toBeGreaterThanOrEqual(width===1365?32:44);
+    }
+    if(proof)await page.screenshot({path:join(proof,`body-entrances-${width}.png`),animations:'disabled'});
+    for(const [section,link,summary] of [
+      ['weight',weight,'70 kg'],['fat',fat,'20%'],
+      ['circumference',circumference,'腰围 78 cm · 胸围 35 in · 臀围 90 cm · 上臂围 28 cm · 大腿围 50 cm · 小腿围 34 cm'],
+    ] as const){
+      await link.focus();
+      await page.keyboard.press('Enter');
+      await expect(link).toBeFocused();
+      await expect(link).toHaveAttribute('aria-current','location');
+      const fragment='#body-'+section;
+      await expect(page).toHaveURL(canonical+fragment);
+      await expect(complete).toHaveAttribute('href',fragment+'/'+id);
+      await expect(bodyTable.getByText(summary,{exact:true})).toBeVisible();
+      await expect.poll(()=>bodyTable.getByText(summary,{exact:true}).evaluate(element=>{
+        const range=document.createRange();
+        range.selectNodeContents(element);
+        const viewport=element.closest('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect();
+        return [...range.getClientRects()].every(rect=>rect.left>=viewport.left && rect.right<=Math.min(viewport.right,innerWidth));
+      })).toBe(true);
+      await expect(calfOnly).toHaveCount(section==='circumference'?1:0);
+      await expect(page.getByText('合成没有读数',{exact:true})).toHaveCount(0);
+      if(section==='circumference'){
+        await expect(bodyTable.getByText('小腿围 13 in',{exact:true})).toBeVisible();
+        await expect(calfOnly.locator('..').locator('time')).toHaveCount(0);
+        if(proof)await page.screenshot({path:join(proof,`body-circumference-${width}.png`),animations:'disabled'});
+      }
+      const readsBefore=detailReads.length;
+      await complete.click();
+      await expect(page).toHaveURL(canonical+fragment+'/'+id);
+      await expect(title).toHaveValue('合成完整测量');
+      assert.deepEqual(detailReads.slice(readsBefore),[id]);
+      await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page).toHaveURL(canonical+fragment);
+      await expect(complete).toBeFocused();
+    }
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const proof = process.env.LIFEOS_HEALTH_PROOF_DIR;
-    if(proof) await page.screenshot({path:join(proof,`body-${width}.png`),animations:'disabled'});
+    t.diagnostic('body categories and original ID at '+width+' px: '+id);
   }
-  await page.setViewportSize({width:1365,height:900});
-  await row('合成体重体脂').click();
-  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成体重体脂');
+
+  await page.goForward();
+  await expect(title).toHaveValue('合成完整测量');
+  await page.reload();
+  await expect(title).toHaveValue('合成完整测量');
   await dialog.getByText('身体围度（可留空）',{exact:true}).click();
   await expect(dialog.getByLabel('腰围',{exact:true})).toHaveValue('78');
-  await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
+  await expect(dialog.getByLabel('小腿围',{exact:true})).toHaveValue('34');
+  await page.goBack();
+  await expect(dialog).toHaveCount(0);
+  await expect(complete).toBeFocused();
+  await page.goBack();
+  await expect(fat).toHaveAttribute('aria-current','location');
+  await expect(fat).toBeFocused();
+  await page.goForward();
+  await expect(circumference).toBeFocused();
+  await row('趋势').click();
+  await expect(page.getByLabel('查看指标').locator('option')).toHaveText(['腰围']);
+  await expect(page.getByRole('img',{name:/^腰围，cm，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/^腰围，in，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByText(/1 条日期未知，1 条指标未知/)).toBeVisible();
+  await weight.click();
+  await row('趋势').click();
+  await expect(page.getByRole('img',{name:/^体重，kg，1 条有日期的记录/})).toBeVisible();
+  await expect(page.getByRole('img',{name:/^体重，lb，1 条有日期的记录/})).toBeVisible();
+
+  await page.setViewportSize({width:390,height:900});
+  await body.click();
+  await page.getByRole('link',{name:'查看全部原始身体测量',exact:true}).click();
+  await expect(page).toHaveURL(canonical+'#body-originals');
+  await row('合成没有读数').click();
+  await expect(title).toHaveValue('合成没有读数');
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await row('趋势').click();
-  await expect(page.getByLabel('查看指标').locator('option')).toHaveText(['体重','体脂率','腰围']);
-  await page.getByLabel('查看指标').selectOption('waist');
-  await expect(page.getByRole('img',{name:/^腰围，cm，1 条有日期的记录/})).toBeVisible();
 
-  await page.goto(origin+'/personal/health#body');
+  const originalItems=items;
+  items=[...items,...Array.from({length:35},(_,i)=>healthRecord(i+20,'合成滚动测量 '+i,'body'))];
+  await weight.click();
+  await row('刷新').click();
+  await expect(page.getByText('37 条',{exact:true})).toBeVisible();
+  const viewport=page.locator('[data-slot="data-grid-table-viewport"]');
+  await viewport.evaluate(element=>{element.scrollTop=1300;});
+  await expect.poll(()=>viewport.evaluate(element=>element.scrollTop)).toBeGreaterThan(1000);
+  const scrollRecord=page.getByRole('link',{name:'合成滚动测量 15',exact:true});
+  await scrollRecord.click();
+  await expect(title).toHaveValue('合成滚动测量 15');
+  await page.keyboard.press('Escape');
+  await expect(scrollRecord).toBeFocused();
+  assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
+  const rowOffset=()=>scrollRecord.evaluate(element=>element.getBoundingClientRect().top-
+   element.closest('[data-slot="data-grid-table-viewport"]')!.getBoundingClientRect().top);
+  const beforeSwitch=await rowOffset();
+  await fat.click();
+  await page.goBack();
+  await expect(weight).toBeFocused();
+  await expect.poll(async()=>Math.abs((await rowOffset())-beforeSwitch)).toBeLessThan(16);
+  assert.ok(await viewport.evaluate(element=>element.scrollTop)>1000);
+  t.diagnostic('390 px list restored the same row within 16px after category traversal');
+  const farId=items.find(record=>record.draft.title==='合成滚动测量 29')!.id;
+  await page.goto(canonical+'#body-weight/'+farId);
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.reload();
+  await expect(title).toHaveValue('合成滚动测量 29');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('link',{name:'合成滚动测量 29',exact:true})).toBeFocused();
+  items=originalItems;
+
+  await page.goto(canonical+'#body-circumference/'+items[6].id);
+  await expect(title).toHaveValue('合成仅小腿围');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(canonical+'#body-circumference');
+  await expect(calfOnly).toBeFocused();
+  const beforeUnknown=detailReads.length;
+  await page.goto(canonical+'#body-weight/'+items[6].id);
+  await expect(page.getByText('这条身体测量记录不在当前分区的已读列表。',{exact:true})).toBeVisible();
+  assert.equal(detailReads.length,beforeUnknown);
+
+  await page.goto(canonical+'#body-fat');
+  await page.reload();
+  await expect(complete).toBeVisible();
+  revokeAfterHistory=true;
+  await complete.click();
+  await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
+  await expect(bodyNav).toHaveCount(0);
+  const revokedReads=detailReads.length;
+  await page.goto(canonical+'#body-fat/'+id);
+  await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+  assert.equal(detailReads.length,revokedReads);
+  assert.deepEqual(writes,[]);
+  healthEnabled=true;
+  await page.setViewportSize({width:1365,height:900});
+  await page.goto(canonical+'#body');
   await page.reload();
   await expect(body).toHaveAttribute('aria-current','location');
-  await expect(row('合成体重体脂')).toBeVisible();
+  await expect(weight).toBeVisible();
   await sleep.click();
   await expect(page).toHaveURL(origin+'/personal/health#sleep');
   await expect(row('合成睡眠')).toBeVisible();
-  await expect(row('合成体重体脂')).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
   await expect(row('合成健身')).toHaveCount(0);
   await page.reload();
   await expect(sleep).toHaveAttribute('aria-current','location');
@@ -201,10 +349,169 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(row('合成睡眠')).toBeVisible();
   await page.goForward();
   await expect(page.getByRole('heading',{name:'运动日历',exact:true})).toBeVisible();
+  const exerciseLink=origin+'/personal/health#exercise';
+  const gym=filters.getByRole('button',{name:'健身训练',exact:true});
+  const frisbee=filters.getByRole('button',{name:'飞盘',exact:true});
+  const exerciseStatus=filters.getByLabel('运动状态');
+  items=[...items,healthRecord(7,'合成其他运动','other')];
+  writable=true;
   await page.reload();
-  await expect(exercise).toHaveAttribute('aria-current','location');
+  for(const width of [390,430,1365]){
+    await page.setViewportSize({width,height:844});
+    await page.goto(exerciseLink);
+    await expect(exercise).toHaveAttribute('aria-current','location');
+    await expect(page.getByRole('heading',{name:'运动日历',exact:true})).toBeVisible();
+    for(const control of [gym,frisbee,exerciseStatus]){
+      const rect=await control.boundingBox();
+      assert.ok(rect&&rect.y>=0&&rect.y+rect.height<=844&&rect.x>=0&&rect.x+rect.width<=width,
+        'the exercise filter must be fully visible on the first screen at '+width+'px');
+    }
+    await gym.focus();
+    await page.keyboard.press('Enter');
+    await expect(gym).toHaveAttribute('aria-pressed','true');
+    await expect(row('表格')).toHaveAttribute('aria-pressed','true');
+    await expect(row('合成健身')).toBeVisible();
+    await expect(row('合成其他运动')).toBeVisible();
+    await expect(row('合成飞盘实绩')).toHaveCount(0);
+    await page.goBack();
+    await expect(page).toHaveURL(exerciseLink);
+    await expect(page.getByRole('heading',{name:'运动日历',exact:true})).toBeVisible();
+    await page.goForward();
+    await expect(row('合成健身')).toBeVisible();
+    await frisbee.click();
+    await expect(row('合成其他运动')).toHaveCount(0);
+    await exerciseStatus.selectOption('planned');
+    await expect(row('合成飞盘计划')).toBeVisible();
+    await expect(row('合成飞盘实绩')).toHaveCount(0);
+    await exerciseStatus.selectOption('completed');
+    const completed=row('合成飞盘实绩');
+    await expect(completed).toBeVisible();
+    await expect(row('合成飞盘计划')).toHaveCount(0);
+    const proof=process.env.LIFEOS_HEALTH_PROOF_DIR;
+    if(proof)await page.screenshot({path:join(proof,`exercise-filter-${width}.png`),animations:'disabled'});
+    await completed.focus();
+    const detailLocation=page.url();
+    const listScroll=await page.evaluate(()=>window.scrollY);
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+    assert.equal(detailReads.at(-1),items[3].id);
+    if(width===390){
+      const beforeReload=detailReads.length;
+      await page.reload();
+      await expect(page).toHaveURL(detailLocation);
+      await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+      assert.equal(detailReads.length,beforeReload+1);
+      assert.equal(detailReads.at(-1),items[3].id);
+      await expect.poll(()=>dialog.evaluate(node=>node.contains(document.activeElement))).toBe(true);
+    }
+    await page.goBack();
+    await expect(page).toHaveURL(detailLocation);
+    await expect(dialog).toHaveCount(0);
+    await expect(completed).toBeFocused();
+    assert.equal(await page.evaluate(()=>window.scrollY),listScroll);
+    await expect(frisbee).toHaveAttribute('aria-pressed','true');
+    await expect(exerciseStatus).toHaveValue('completed');
+    await page.goForward();
+    const titleField=dialog.getByRole('textbox',{name:'标题',exact:true});
+    await expect(titleField).toHaveValue('合成飞盘实绩');
+    assert.equal(detailReads.at(-1),items[3].id);
+    await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeEnabled();
+    if(width===390){
+      await titleField.fill('未保存的原详情修改');
+      page.once('dialog',confirmation=>void confirmation.dismiss());
+      await page.goBack();
+      await expect(titleField).toHaveValue('未保存的原详情修改');
+      await titleField.fill('合成飞盘实绩');
+    }
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(exerciseStatus).toHaveValue('completed');
+
+    if(width===390){
+      await exerciseStatus.selectOption('planned');
+      const planned=row('合成飞盘计划');
+      await planned.click();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      await page.reload();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      assert.equal(detailReads.at(-1),items[2].id);
+      await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(planned).toBeFocused();
+      await expect(frisbee).toHaveAttribute('aria-pressed','true');
+      await expect(exerciseStatus).toHaveValue('planned');
+      await expect(completed).toHaveCount(0);
+      await page.goForward();
+      await expect(titleField).toHaveValue('合成飞盘计划');
+      await page.goBack();
+      await expect(planned).toBeFocused();
+      await expect(exerciseStatus).toHaveValue('planned');
+      await exerciseStatus.focus();
+      await page.keyboard.press('End');
+      await expect(completed).toBeVisible();
+      await expect(exerciseStatus).toHaveValue('completed');
+    }
+
+    const beforeSleep=page.url();
+    await sleep.click();
+    await expect(row('合成睡眠')).toBeVisible();
+    const sleepLocation=new URL(beforeSleep);
+    sleepLocation.hash='sleep';
+    await expect(page).toHaveURL(sleepLocation.href);
+    await expect(sleep).toHaveAttribute('aria-current','location');
+    await page.goBack();
+    await expect(page).toHaveURL(beforeSleep);
+    await expect(completed).toBeVisible();
+    await expect(exerciseStatus).toHaveValue('completed');
+    await page.goForward();
+    await expect(row('合成睡眠')).toBeVisible();
+    await expect(page).toHaveURL(sleepLocation.href);
+    await exercise.click();
+    await expect(completed).toBeVisible();
+    await expect(exerciseStatus).toHaveValue('completed');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    assert.deepEqual(writes,[]);
+  }
+  await row('合成飞盘实绩').click();
+  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+  const previousRecords=items;
+  const missingId=items[3].id;
+  const beforeMissing=detailReads.length;
+  items=items.filter(item=>item.id!==missingId);
+  await page.reload();
+  const missing=page.getByRole('status').filter({hasText:'这条运动记录不在当前已读列表。'});
+  await expect(missing).toBeVisible();
+  await expect(page.getByText('当前筛选下暂无已读记录。',{exact:true})).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(exerciseStatus).toHaveValue('completed');
+  await page.goBack();
+  await expect(missing).toHaveCount(0);
+  await page.goForward();
+  await expect(missing).toBeVisible();
+  assert.equal(detailReads.length,beforeMissing);
+  await page.goBack();
+  items=previousRecords;
+  await row('刷新').click();
+  await expect(row('合成飞盘实绩')).toBeVisible();
+
+  // A fresh valid snapshot in another space may contain the same synthetic ID.
+  // The old history entry still must not open a detail there.
+  await row('合成飞盘实绩').click();
+  await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+  const beforeSpaceChange=detailReads.length;
+  verifiedSpace='synthetic-other-health-space';
+  await page.reload();
+  await expect(row('合成飞盘实绩')).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  assert.equal(detailReads.length,beforeSpaceChange);
+  verifiedSpace=spaceId;
+
+  items=items.slice(0,-1);
+  writable=false;
+  await page.goto(exerciseLink);
+  await page.reload();
   await row('表格').click();
-  await expect(row('合成体重体脂')).toHaveCount(0);
+  await expect(complete).toHaveCount(0);
   await expect(row('合成睡眠')).toHaveCount(0);
   await filters.getByRole('button',{name:'健身训练',exact:true}).click();
   await expect(row('合成健身')).toBeVisible();
@@ -229,13 +536,13 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(filters.getByRole('button',{name:'飞盘',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(filters.getByLabel('运动状态')).toHaveValue('completed');
   await expect(main).toBeFocused();
-  await expect(page).toHaveURL(origin+'/personal/health#exercise');
+  await expect(page).toHaveURL(url=>url.pathname==='/personal/health'&&url.hash==='#exercise'&&url.searchParams.get('exerciseStatus')==='completed');
   await page.evaluate(()=>{window.location.hash='#personal-main';});
-  await expect(page).toHaveURL(origin+'/personal/health#personal-main');
+  await expect(page).toHaveURL(url=>url.pathname==='/personal/health'&&url.hash==='#personal-main');
   await expect(exercise).toHaveAttribute('aria-current','location');
   await expect(filters.getByLabel('运动状态')).toHaveValue('completed');
   await page.goBack();
-  await expect(page).toHaveURL(origin+'/personal/health#exercise');
+  await expect(page).toHaveURL(url=>url.pathname==='/personal/health'&&url.hash==='#exercise'&&url.searchParams.get('exerciseStatus')==='completed');
   await expect(row('合成飞盘实绩')).toBeVisible();
   await row('合成飞盘实绩').click();
   await expect(dialog.getByRole('button',{name:'保存',exact:true})).toBeDisabled();
@@ -270,7 +577,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await expect(body).toBeVisible();
     await expect(sleep).toBeVisible();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-    const proof = process.env.LIFEOS_HEALTH_PROOF_DIR;
+
     if(proof) {
       await nav.scrollIntoViewIfNeeded();
       await page.screenshot({path:join(proof,`exercise-${width}.png`),animations:'disabled'});
@@ -328,6 +635,45 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await filters.getByRole('button',{name:'全部运动',exact:true}).click();
   await row('刷新').click();
   await expect(row('合成飞盘实绩')).toBeVisible();
+  // A successful snapshot, detail and history can be followed by a same-space feature revocation.
+  for(const action of ['open','reload'] as const){
+    const detail=row('合成飞盘实绩');
+    if(action==='reload'){
+      await detail.click();
+      await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue('合成飞盘实绩');
+    }
+    const beforeRevocation=detailReads.length;
+    const finalStatus=page.waitForResponse(async response=>{
+      if(!response.url().endsWith('/personal/status')||!response.ok())return false;
+      const after=await response.json();
+      return after.healthEnabled===false&&after.spaceId===spaceId&&after.ownerId==='synthetic-health-owner';
+    });
+    revokeAfterHistory=true;
+    if(action==='reload')await page.reload();
+    else await detail.click();
+    await finalStatus;
+    assert.equal(detailReads.length,beforeRevocation+1);
+    assert.equal(detailReads.at(-1),items[0].id);
+    await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect(detail).toHaveCount(0);
+    await expect(filters).toHaveCount(0);
+    const afterRevocation=detailReads.length;
+    if(action==='reload'){
+      await page.goBack();
+      await page.goForward();
+      await expect(dialog).toHaveCount(0);
+      await expect(detail).toHaveCount(0);
+    }
+    await row('刷新').click();
+    await expect(page.getByRole('alert').filter({hasText:'此模块尚未开放。'})).toBeVisible();
+    assert.equal(detailReads.length,afterRevocation);
+    healthEnabled=true;
+    await page.goto(exerciseLink);
+    await page.reload();
+    await row('表格').click();
+    await expect(detail).toBeVisible();
+  }
   for(const [testDenied,testTruncated,message] of [[true,false,'合成读取拒绝'],[false,true,'完整记录未读取完成。']] as const){
     denied = testDenied;
     truncated = testTruncated;
