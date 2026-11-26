@@ -184,10 +184,13 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    if(width===390&&failures.length===0){
     await view.click();
     const grouping=grid.getByLabel('待办表格分组');
-    await grouping.selectOption('area');
-    await expect(grid.locator('[data-task-group="area"]')).toContainText('未关联领域');
+    await expect(grouping.getByRole('option',{name:'按领域',exact:true})).toHaveCount(0);
+    await expect(grouping.getByRole('option')).toHaveText(['不分组','按项目']);
+    await grouping.selectOption('project');
+    await expect(grid.locator('[data-task-group="project"]')).toContainText('未关联项目');
     await expect(grid.locator('tbody tr[data-row-id]')).toHaveCount(2);
     await grouping.selectOption('none');
+    await expect(grid.locator('[data-task-group]')).toHaveCount(0);
     const filter=page.getByRole('textbox',{name:'搜索待办'});
     await filter.fill('合成不存在');await expect(grid.getByText('没有符合条件的待办')).toBeVisible();
     await filter.fill('合成长中文');await expect(row).toBeVisible();
