@@ -166,32 +166,75 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    assert.equal(entries.find(entry=>entry.id===taskId).draft.status,status);
    assert.deepEqual(counts(),{writes:before.writes+1,requests:before.requests+1});
   }
-  async function dropWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
+  const kanban=board.locator('[data-slot="kanban"]');
+  const moveMenu=card.getByRole('combobox',{name:'移动到',exact:true});
+  for(let step=0;step<30;step++){
+   if(await drag.evaluate(node=>node===node.ownerDocument.activeElement))break;
+   await page.keyboard.press('Tab');
+  }
+  await expect(drag).toBeFocused();
+
+  async function previewWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
    const before=counts();
    await expect(column(status).locator('[data-kanban-task]')).toHaveCount(0);
    await expect(drag).toBeEnabled();
-   await drag.focus();
    await expect(drag).toBeFocused();
    await page.keyboard.press('Space');
-   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+   await expect(kanban).toHaveAttribute('data-dragging','true');
    // dnd-kit attaches the keyboard movement listener in a deferred task.
    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
    await page.keyboard.press(key);
    await expect(stagedCard(status)).toBeVisible();
    assert.deepEqual(counts(),before,'keyboard preview must not send a PATCH');
-   await page.keyboard.press('Space');
-   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','false');
-   await requireStatusReceipt(status,before);
+   return before;
   }
+  async function dropWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
+   const before=await previewWithKeyboard(key,status);
+   await page.keyboard.press('Space');
+   await expect(kanban).toHaveAttribute('data-dragging','false');
+   await requireStatusReceipt(status,before);
+   await expect(drag).toBeFocused();
+  }
+  async function expectCanceled(status:'open'|'in_progress',before:ReturnType<typeof counts>){
+   await expect(kanban).toHaveAttribute('data-dragging','false');
+   await expect(stagedCard(status)).toBeVisible();
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
+   assert.deepEqual(counts(),before,'canceling keyboard preview must not send a PATCH');
+  }
+  const beforeTab=await previewWithKeyboard('ArrowLeft','open');
+  await page.keyboard.press('Tab');
+  await expectCanceled('in_progress',beforeTab);
+  await expect(moveMenu).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(drag).toBeFocused();
+
+  const beforeEscape=await previewWithKeyboard('ArrowLeft','open');
+  await page.keyboard.press('Escape');
+  await expectCanceled('in_progress',beforeEscape);
+  await expect(drag).toBeFocused();
   await dropWithKeyboard('ArrowLeft','open');
-  await dropWithKeyboard('ArrowRight','in_progress');
+
+  const beforeShiftTab=await previewWithKeyboard('ArrowRight','in_progress');
+  await page.keyboard.press('Shift+Tab');
+  await expectCanceled('open',beforeShiftTab);
+  await expect(card).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(drag).toBeFocused();
+
+  const beforeEnter=await previewWithKeyboard('ArrowRight','in_progress');
+  await page.keyboard.press('Enter');
+  await expect(kanban).toHaveAttribute('data-dragging','true');
+  assert.deepEqual(counts(),beforeEnter,'Enter must not confirm a keyboard drag');
+  await page.keyboard.press('Space');
+  await requireStatusReceipt('in_progress',beforeEnter);
+  await expect(drag).toBeFocused();
 
   await page.setViewportSize({width:390,height:844});
   await dropWithKeyboard('ArrowLeft','open');
   await dropWithKeyboard('ArrowRight','in_progress');
   const beforeMenu=counts();
-  const moveMenu=card.getByRole('combobox',{name:'移动到',exact:true});
-  await moveMenu.focus();
+  await page.keyboard.press('Tab');
+  await expect(moveMenu).toBeFocused();
   await moveMenu.press('ArrowUp');
   await requireStatusReceipt('open',beforeMenu);
 
@@ -223,7 +266,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   }
   const boardInputs={writes:writes-beforeBoardInputs.writes,requests:taskPatchRequests-beforeBoardInputs.requests};
   assert.deepEqual(boardInputs,{writes:6,requests:6});
-  console.log('TASK_BOARD_INPUTS_PASS '+JSON.stringify({keyboard:[1365,390],directions:['left','right'],menu:true,touch:390,boardInputs}));
+  console.log('TASK_BOARD_INPUTS_PASS '+JSON.stringify({keyboard:[1365,390],directions:['left','right'],cancelWithoutWrites:['Tab','Shift+Tab','Escape'],confirmation:'Space',menu:true,touch:390,boardInputs}));
   await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await gantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await page.getByRole('link',{name:'编辑项目：合成排期项目',exact:true}).click({noWaitAfter:true});
   await expect(page.getByLabel('计划开始',{exact:true})).toBeVisible();await page.getByLabel('计划开始',{exact:true}).fill('2030-11-01');await page.getByLabel('计划结束',{exact:true}).fill('2030-11-20');await page.getByRole('checkbox',{name:'我已核对这一条内容，确认保存到本人空间。',exact:true}).check();const projectReadsBeforeSave=projectReads;await page.getByRole('button',{name:'确认保存',exact:true}).click();await expect.poll(()=>projectReads).toBeGreaterThan(projectReadsBeforeSave);await expect(page.getByLabel('计划结束',{exact:true})).toHaveValue('2030-11-20');
   await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();await expect(page.getByRole('columnheader',{name:/领域/})).toHaveCount(0);await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-01 至 2030-11-20',exact:true})).toBeVisible();await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
