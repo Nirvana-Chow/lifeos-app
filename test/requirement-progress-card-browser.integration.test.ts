@@ -9,6 +9,7 @@ import {chromium,expect} from '@playwright/test';
 import {requirements,type Requirement} from '../src/platform/requirements.ts';
 import {dateInCalendarZone,shiftCalendarDate} from '../src/calendar-candidate/personal-projection.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {readJournalHistory} from '../src/personal-journal/history.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
 test('owner overview shows live-source snippets, honest fallbacks and existing routes on desktop and phone',{
@@ -66,7 +67,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  });
  const config={ownerId:'overview-owner',ownerEmail:'fixture@example.test',spaceId:'overview-space',baseURL:origin,
   databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
- const repo=new MemoryPort();
+ const repo=Object.assign(new MemoryPort(),{readRecentMemos:async()=>{
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>handler(new Request(origin+String(input),{...init,headers:{host:new URL(origin).host}}));
+  const {sources,recordedAtById}=await readJournalHistory(fetcher,{includeRecordedTimes:true});
+  return {rows:sources.memos.rows.map(({id,title,text,occurredOn})=>({id,title,text,occurredOn,recordedAt:recordedAtById!.get(id)!}))
+   .sort((a,b)=>Date.parse(b.recordedAt)-Date.parse(a.recordedAt)||b.id.localeCompare(a.id)).slice(0,5),
+   classificationPending:sources.unclassified.length>0};
+ }});
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  const transaction=repo.transaction.bind(repo);
  repo.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{}}));
@@ -110,8 +117,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  writable=false;
  const beforeRows=structuredClone(repo.rows);
  let readsDisabled=false, emptySources=false, exerciseCreate=false;
+ const journalReads:string[]=[];
  await page.route('**/api/platform/**',async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
+  if(path.includes('/journal/')||path.endsWith('/topic/snapshot'))journalReads.push(path);
   assert.ok(request.method()==='GET'||(exerciseCreate&&request.method()==='POST'&&path.endsWith('/personal/requirements')));
   const apiRequest=()=>new Request(url,{method:request.method(),headers:{...request.headers(),host:url.host},body:request.postData()??undefined});
   if(path.endsWith('/requirements/snapshot')){
@@ -130,18 +139,20 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   }
   const fixtureItem=items.find(item=>path.endsWith('/requirements/'+item.id));
   if(fixtureItem)return route.fulfill({json:{entry:fixtureItem}});
-  if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/snapshot')))return route.fulfill({status:503,json:{}});
+  if(mode==='denied'&&path.endsWith('/journal/recent-memos'))return route.fulfill({status:403,json:{}});
+  if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/recent-memos')))return route.fulfill({status:503,json:{}});
   const response=await handler(apiRequest());
   const result=await response.json();
-  if(mode==='wrong-space'&&path.endsWith('/personal/status'))result.spaceId='another-space';
+  if(mode==='wrong-space'&&(path.endsWith('/personal/status')||path.endsWith('/journal/recent-memos')))result.spaceId='another-space';
   if(mode==='disabled'&&path.endsWith('/personal/status'))result.requirementsEnabled=false;
-  if(emptySources&&path.endsWith('/journal/snapshot')){result.items=[];result.total=0;}
+  if(emptySources&&path.endsWith('/journal/recent-memos')){result.rows=[];result.classificationPending=false;}
   if(emptySources&&path.endsWith('/personal/calendar')){result.entries=[];result.total=0;}
   return route.fulfill({status:response.status,json:result});
  });
  const firstSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/requirements/snapshot')&&response.ok(),{timeout:45000});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
  await firstSnapshot;
+ assert.ok(journalReads.every(path=>path.endsWith('/journal/recent-memos')));
  const card=page.getByRole('region',{name:'需求交付与验收',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
  for(const [label,value] of [['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
@@ -166,6 +177,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByText('Apple 日历尚未连接')).toBeVisible();
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
  await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
+ assert.ok(journalReads.length>0&&journalReads.every(path=>path.endsWith('/journal/recent-memos')));
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
  const thoughtRows=thoughts.getByRole('listitem');
  await expect(thoughtRows.first().getByRole('link')).toHaveText('合成新录入旧事');
@@ -221,8 +233,8 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await expect(card.getByText('需求交付与验收暂不可用')).toBeVisible();
   await expect(card.locator('dd')).toHaveCount(0);
-  if(invalid==='wrong-space'){
-   assert.equal(reads,before);
+  if(invalid==='wrong-space'||invalid==='denied'){
+   if(invalid==='wrong-space')assert.equal(reads,before);
    await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
    await expect(excerpt).toHaveCount(0);
   }
@@ -272,6 +284,19 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
+ const beforeTasks=journalReads.length;
+ await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+ await expect(page.getByRole('heading',{name:'待办',level:1,exact:true})).toBeVisible();
+ await page.evaluate(()=>{
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+  document.dispatchEvent(new Event('visibilitychange'));
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});
+  document.dispatchEvent(new Event('visibilitychange'));
+  window.dispatchEvent(new Event('focus'));
+ });
+ await expect(page.locator('header.lo-header').getByRole('link',{name:'搜索本人记录'})).toBeVisible();
+ assert.equal(journalReads.length,beforeTasks,'task-only entry and foreground events must not perform journal reads');
+ console.log('RECENT_MEMOS_BROWSER task direct entry and foreground issued zero journal and topic requests');
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
  await expect(page.getByRole('heading',{name:'个人项目',level:1,exact:true})).toBeVisible();
  await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'兴趣学习',exact:true})).toBeVisible();

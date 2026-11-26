@@ -4,7 +4,7 @@ import {ArrowUpRight} from 'lucide-react';
 import {useEffect, useState, type ReactNode} from 'react';
 import {readPersonalCalendarSnapshot, readPersonalCalendarStatus} from '../calendar-candidate/personal-client.ts';
 import {dateInCalendarZone, shiftCalendarDate} from '../calendar-candidate/personal-projection.ts';
-import {readJournalHistory} from '../personal-journal/history.ts';
+import {loadRecentMemos} from '../personal-journal/recent-memos.ts';
 import type {TaskRow, WorkspaceState} from './contract.ts';
 import {RequirementProgressCard} from './requirement-progress-card';
 import {filterTasks, metricTaskFilter} from './selectors.ts';
@@ -39,34 +39,22 @@ async function upcoming(fetcher: typeof fetch, scope: string) {
   return {rows:rows.slice(0,5), appleMissing:!snapshot.sources.some(source=>source.id==='apple-calendar'&&source.connected)};
 }
 
-async function recentMemos(fetcher: typeof fetch, scope: string) {
-  const {binding,sources:{memos:history,unclassified},recordedAtById} = await readJournalHistory(fetcher,{includeRecordedTimes:true});
-  if (JSON.stringify([binding.ownerId,binding.spaceId]) !== scope) throw Error();
-  const rows = history.rows.map(({id,title,text,occurredOn,href})=>{
-    const createdAt = recordedAtById?.get(id) ?? '';
-    const timestamp = Date.parse(createdAt);
-    const recordedAt = Number.isFinite(timestamp) ? createdAt : null;
-    return {id,title,text,occurredOn,href,recordedAt,timestamp:recordedAt ? timestamp : -Infinity};
-  }).sort((a,b)=>b.timestamp-a.timestamp||b.id.localeCompare(a.id)).slice(0,5);
-  return {rows, classificationPending: unclassified.length > 0};
-}
-
 function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string)=>Promise<T>): Source<T> {
-  const [state,setState] = useState<Source<T>>({state:'loading'});
+  const [result,setResult] = useState<{scope:string;state:Source<T>}|null>(null);
   useEffect(()=>{
-    if (!scope) return;
+    if (!scope) {setResult(null);return;}
     const verified = scope;
     let pending: AbortController | undefined;
     function refresh() {
       pending?.abort();
-      setState({state:'loading'});
+      setResult({scope:verified,state:{state:'loading'}});
       if (document.visibilityState === 'hidden') return;
       const controller = new AbortController();
       pending = controller;
       const {signal} = controller;
       void read((url,init)=>fetch(url,{...init,signal}),verified).then(
-        value=>{if(!signal.aborted)setState({state:'ready',value});},
-        ()=>{if(!signal.aborted)setState({state:'unavailable'});},
+        value=>{if(!signal.aborted)setResult({scope:verified,state:{state:'ready',value}});},
+        ()=>{if(!signal.aborted)setResult({scope:verified,state:{state:'unavailable'}});},
       );
     }
     refresh();
@@ -74,7 +62,7 @@ function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string
     document.addEventListener('visibilitychange',refresh);
     return ()=>{pending?.abort();window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
   },[scope,read]);
-  return scope ? state : {state:'unavailable'};
+  return !scope ? {state:'unavailable'} : result?.scope===scope ? result.state : {state:'loading'};
 }
 
 function OverviewPanel({title,action,children}: {title:string;action?:ReactNode;children:ReactNode}) {
@@ -86,7 +74,7 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
   onRequirements:()=>void;onTasks:()=>void;renderTask:(row:TaskRow)=>ReactNode;
 }) {
   const calendar = useSource(scope && scheduleHref ? scope : null,upcoming);
-  const memos = useSource(scope && journalHref ? scope : null,recentMemos);
+  const memos = useSource(scope && journalHref ? scope : null,loadRecentMemos);
   const tasks = showTasks && state.status === 'ready' ? filterTasks(state.data.tasks, metricTaskFilter('pending')) : null;
   const partial = state.status === 'ready' && state.data.coverage === 'partial';
   return <div className={s.overview}>
