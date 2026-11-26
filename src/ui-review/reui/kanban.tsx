@@ -11,6 +11,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -230,6 +231,8 @@ function Kanban<T>({
   } | null>(null)
 
   const root = useRef<HTMLDivElement>(null)
+  const tabCancelCode = `KanbanCancel:${useId()}`
+  const shouldRestoreFocus = accessibility?.restoreFocus !== false
   const leavingWithTab = useRef(false)
   const pendingFocus = useRef<{ id: UniqueIdentifier; previous: EventTarget | null } | null>(null)
 
@@ -247,6 +250,10 @@ function Kanban<T>({
   useLayoutEffect(() => {
     const pending = pendingFocus.current
     const document = root.current?.ownerDocument
+    if (!shouldRestoreFocus) {
+      pendingFocus.current = null
+      return
+    }
     if (!pending || !document || activeId !== null) return
     // Wait for the receipt to re-enable the handle without stealing focus
     // if the user has already moved on.
@@ -262,10 +269,10 @@ function Kanban<T>({
   })
 
   const restoreKeyboardFocus = useCallback((event: DragEndEvent | DragCancelEvent) => {
-    if (!leavingWithTab.current && event.activatorEvent instanceof KeyboardEvent) {
+    if (shouldRestoreFocus && !leavingWithTab.current && event.activatorEvent instanceof KeyboardEvent) {
       pendingFocus.current = { id: event.active.id, previous: event.activatorEvent.target }
     }
-  }, [])
+  }, [shouldRestoreFocus])
 
   const keyboardCoordinates = useCallback<KeyboardCoordinateGetter>((event, args) => {
     const step = event.code === "ArrowLeft" ? -1 : event.code === "ArrowRight" ? 1 : 0
@@ -274,12 +281,12 @@ function Kanban<T>({
       const document = root.current.ownerDocument
       leavingWithTab.current = true
       try {
-        // Cancel through the sensor before the browser tabs from the restored
-        // handle. The original Tab event keeps its native default action.
+        // Only this sensor recognizes the board's private cancellation code.
+        // The original Tab event continues with its native default action.
         flushSync(() => document.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Escape", code: "Escape", bubbles: true, cancelable: true,
+          code: tabCancelCode, cancelable: true,
         })))
-        findHandle(active.id)?.focus({ preventScroll: true })
+        if (shouldRestoreFocus) findHandle(active.id)?.focus({ preventScroll: true })
       } finally {
         leavingWithTab.current = false
       }
@@ -306,12 +313,15 @@ function Kanban<T>({
       }
     }
     return sortableKeyboardCoordinates(event, args)
-  }, [findHandle])
+  }, [findHandle, shouldRestoreFocus, tabCancelCode])
 
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
     useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
-    useSensor(KeyboardSensor, { keyboardCodes: KEYBOARD_CODES, coordinateGetter: keyboardCoordinates })
+    useSensor(KeyboardSensor, {
+      keyboardCodes: { ...KEYBOARD_CODES, cancel: [...KEYBOARD_CODES.cancel, tabCancelCode] },
+      coordinateGetter: keyboardCoordinates,
+    })
   )
 
   const columnIds = useMemo(() => {
@@ -455,7 +465,7 @@ function Kanban<T>({
       pendingFocus.current = null
       onDragStart?.(event)
 
-      if (onValueCommit || restoreOnCancel) {
+      if (onValueCommit || restoreOnCancel || event.activatorEvent instanceof KeyboardEvent) {
         const snapshot = valueRef.current
       const id = event.active.id
         const keys = Object.keys(snapshot)
@@ -553,12 +563,13 @@ function Kanban<T>({
       restoreKeyboardFocus(event)
       const origin = dragOriginRef.current
 
-      if (restoreOnCancel && origin && !onMove) {
-        // Escape/cancel: undo the live-preview reshuffle applied during dragOver.
-        setColumns(origin.value)
-      } else if (onValueCommit && origin && !onMove) {
-        // No restore requested: the live preview stays visible, so commit it.
-        commitChange(valueRef.current, event, "item")
+      if (origin && !onMove) {
+        if (leavingWithTab.current || restoreOnCancel) {
+          setColumns(origin.value)
+        } else if (onValueCommit) {
+          // Other cancel routes retain the caller's live-preview behavior.
+          commitChange(valueRef.current, event, "item")
+        }
       }
 
       dragOriginRef.current = null

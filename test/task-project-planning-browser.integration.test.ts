@@ -18,12 +18,81 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
  try{
   await mkdir(join(root,'app/personal/edit'),{recursive:true});
   await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),cp(join(source,'app/personal/page.tsx'),join(root,'app/personal/page.tsx')),cp(join(source,'app/personal/edit/page.tsx'),join(root,'app/personal/edit/page.tsx')),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+  await mkdir(join(root,'app/kanban-fixture'));
+  await cp(join(source,'test/fixtures/kanban-keyboard-cancel.tsx'),join(root,'app/kanban-fixture/page.tsx'));
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformPagePrincipal=async()=>({id:"synthetic-planning-owner"});export const readPlatformPasswordCapability=async()=>false;\n');
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],detached:true});serverProcess=trackAuthThemeProcess(server,true);server.stderr.resume();
   const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.once('error',error=>{clearTimeout(timer);reject(error);});server.stdout.on('data',chunk=>{output=(output+String(chunk)).slice(-65536);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
   browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
   const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(9000);
+  {
+   await page.goto(origin+'/kanban-fixture',{waitUntil:'domcontentloaded',timeout:60000});
+   await expect(page.getByTestId('escaped-events')).toHaveText('0 Escape events');
+   for(const restoreFocus of [true,false]){
+    const fixture=page.getByTestId(restoreFocus?'default-focus':'no-focus-restore');
+    const handle=fixture.locator('[data-slot="kanban-item-handle"]');
+    const originColumn=fixture.locator('[data-slot="kanban-column"][data-value="left"]');
+    const targetColumn=fixture.locator('[data-slot="kanban-column"][data-value="right"]');
+    const counts=fixture.getByTestId('counts');
+    await fixture.getByRole('button',{name:'Before board'}).focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await expect(handle).toBeFocused();
+
+    async function preview(){
+     await page.keyboard.press('Space');
+     await expect(fixture.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
+     await page.keyboard.press('ArrowRight');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+    }
+
+    for(const key of ['Tab','Shift+Tab']){
+     await preview();
+     await page.keyboard.press(key);
+     await expect(fixture.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','false');
+     await expect(counts).toHaveText('0 commits');
+     await expect(originColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+     await expect(page.getByTestId('escaped-events')).toHaveText(restoreFocus?'0 Escape events':'1 Escape events');
+     if(restoreFocus){
+      if(key==='Tab'){
+       await expect(fixture.getByRole('button',{name:'After board'})).toBeFocused();
+       await page.keyboard.press('Shift+Tab');
+      }else{
+       await expect(originColumn.locator('[data-slot="kanban-item"]')).toBeFocused();
+       await page.keyboard.press('Tab');
+      }
+     }else{
+      await expect(handle).not.toBeFocused();
+      await fixture.getByRole('button',{name:'Before board'}).focus();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+     }
+     await expect(handle).toBeFocused();
+    }
+    await preview();
+    await page.keyboard.press('Escape');
+    if(restoreFocus){
+     // Generic default retains the existing Escape behavior.
+     await expect(counts).toHaveText('1 commits');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).toBeFocused();
+    }else{
+     await expect(counts).toHaveText('0 commits');
+     await expect(originColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+     await expect(handle).not.toBeFocused();
+     await fixture.getByRole('button',{name:'Before board'}).focus();
+     await page.keyboard.press('Tab');
+     await page.keyboard.press('Tab');
+     await expect(handle).toBeFocused();
+     await preview();
+     await page.keyboard.press('Space');
+     await expect(counts).toHaveText('1 commits');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).not.toBeFocused();
+    }
+   }
+   console.log('KANBAN_GENERIC_CANCEL_PASS '+JSON.stringify({tab:['Tab','Shift+Tab'],commits:0,documentEscapeEventsOnTab:0,defaultEscapeCommits:1,explicitFocusOptOut:true}));
+  }
   const taskId='11111111-1111-4111-8111-111111111111',projectId='33333333-3333-4333-8333-333333333333',newId='55555555-5555-4555-8555-555555555555',spaceId='synthetic-planning-space',ownerId='synthetic-planning-owner';
   const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
   // Only this private test's Node memory is written. No remote service, real record or database.
