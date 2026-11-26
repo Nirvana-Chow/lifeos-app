@@ -9,6 +9,9 @@ import s from './coverage.module.css';
 type OpenOriginal=(event:MouseEvent<HTMLAnchorElement>,id:string)=>void;
 const labels:Record<JournalPeriod,string>={day:'日',week:'周',month:'月',quarter:'季度',year:'年'};
 const weekdays=['一','二','三','四','五','六','日'];
+const snapshotTime=new Intl.DateTimeFormat('sv-SE',{
+ timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23',
+});
 function JournalReferences({rows,onOpen,label='日记'}:{rows:JournalHistoryRow[];onOpen:OpenOriginal;label?:string}){
  const [limit,setLimit]=useState(20),shown=rows.slice(0,limit);
  return <>
@@ -46,6 +49,14 @@ export function JournalCoveragePanel({history,memos,onOpen,period,onPeriodChange
     {inputError&&<p role="alert">{inputError}</p>}
     <p className={s.range}>{selection.range.from} 至 {selection.range.to}（含首尾日）</p>
     {selection.range.from>history.today?<p role="status">此周期尚未开始。</p>:<>
+    <details>
+     <summary>核对本期复盘资料</summary>
+     <section aria-label="本期复盘资料核对">
+      <p className={s.meta}>快照读取时间（北京时间）：<time dateTime={history.observedAt}>{snapshotTime.format(new Date(history.observedAt))}</time></p>
+      <p>日记 {selection.rows.length} 条，已核对随手记 {memoSelection.rows.length} 条。</p>
+      <p className={s.meta}>日期未知的记录未计入本期。</p>
+     </section>
+    </details>
     <h4>Memos</h4>
     {memoSelection.rows.length>0?<JournalReferences key={'memos'+period+date} rows={memoSelection.rows} onOpen={onOpen} label="随手记"/>:<p className={s.meta}>当前库内没有这个周期的已核对随手记。</p>}
     <h4>日记</h4>

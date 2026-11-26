@@ -43,7 +43,7 @@ function parsePage(value:unknown,mode:RecordWindowMode,query:SearchQuery|Timelin
 export class RecordWindowClient{
  private readonly transport:typeof fetch;private ownerId:string|undefined;
  private readonly identityListeners=new Set<(error:RecordWindowError)=>void>();
- constructor(transport:typeof fetch=fetch){this.transport=transport;}
+ constructor(transport:typeof fetch=(input,init)=>globalThis.fetch(input,init)){this.transport=transport;}
  onIdentityFailure(listener:(error:RecordWindowError)=>void){this.identityListeners.add(listener);return()=>{this.identityListeners.delete(listener);};}
  private failIdentity(error:RecordWindowError){for(const listener of this.identityListeners)listener(error);return error;}
  private async request(path:string,signal?:AbortSignal):Promise<{response:Response;body:string}>{

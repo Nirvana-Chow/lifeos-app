@@ -23,6 +23,16 @@ test('date-only stays a date, unknown stays unknown and instant formats use chos
  assert.equal(formatTimelineTime(item(),'Asia/Shanghai'),'2026-12-31（仅日期）');assert.equal(formatTimelineTime({...item(),date:null,dateKind:'unknown'},'Asia/Shanghai'),'日期未知');const instant={...item(),date:'2027-01-01',at:now,dateKind:'instant' as const,sourceTimeZone:'UTC'};assert.equal(formatTimelineTime(instant,'Asia/Shanghai'),'2027-01-01 00:00:00（Asia/Shanghai）');assert.equal(formatTimelineTime(instant,'UTC'),'2026-12-31 16:00:00（UTC）');
 });
 
+test('corrections with the same Shanghai wall time show each actual UTC offset',()=>{
+ const correction:TimelineItem={...item(),date:'1991-09-15',dateKind:'instant',timeRole:'changed',sourceTimeZone:'UTC'};
+ const before={...correction,at:'1991-09-14T16:30:00.000Z'};
+ const after={...correction,at:'1991-09-14T17:30:00.000Z'};
+
+ assert.equal(formatTimelineTime(before,'Asia/Shanghai'),'1991-09-15 01:30:00（Asia/Shanghai · UTC+09:00）');
+ assert.equal(formatTimelineTime(after,'Asia/Shanghai'),'1991-09-15 01:30:00（Asia/Shanghai · UTC+08:00）');
+ assert.equal(formatTimelineTime(before,'UTC'),'1991-09-14 16:30:00（UTC · UTC+00:00）');
+});
+
 test('source identity and revisions are strict while newer current contents and missing historical windows stay distinct',()=>{
  const selected={...item(),revision:2,currentRevision:25,isHistorical:true,title:'Synthetic revision 2'},value=source();value.current={...value.current,revision:25,title:'Synthetic current'};value.history=[value.current];value.historyTruncated=true;
  const checked=validateTimelineSource(selected,value);assert.equal(checked.selected,null);assert.equal(checked.currentChanged,false);assert.equal(checked.selectedOutsideHistory,true);value.current.revision=26;value.history=[value.current];assert.equal(validateTimelineSource(selected,value).currentChanged,true);
