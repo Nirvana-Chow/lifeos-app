@@ -215,3 +215,27 @@ The owner clarified that manual entry and conversation intake coexist. Verify a 
 For the existing owner workspace read flow, verify neutral page recovery and a read-only historical task link when the confirmed owner cannot load the full snapshot. Require an independently validated response before showing details, preserve failed-list and missing-record states, and leave authenticated production incident attribution and rollout pending independent evidence.
 
 With the flat Todo table and its previous candidate integrated, keep existing status filtering, single-entry creation and project relationships. Finish the compact Todo timeline and make the Kanban title open the existing in-place detail; verify the independent plan and deadline scales, keyboard editing and receipt-driven moves.
+
+## LO-UI-001 persistent workspace shell checkpoint (2026-11-26)
+
+Continue [Issue #30](https://github.com/Nirvana-Chow/lifeos-app/issues/30) under existing 1.2 / 3.1 / 3.2. The first slice gives the canonical task workspace `/personal?page=tasks` and records at `/personal/journal` one persistent ReUI chrome under the personal layout. The root's existing overview, inbox, projects, areas, requirements, settings and classification query states continue through the same root workspace. Journal record queries keep their existing route and server verification. Task and journal readers and editors remain route-owned.
+
+Migration inventory for the existing personal app:
+
+| Surface | Disposition |
+| --- | --- |
+| Root query workspace and journal | First slice. Verify the representative task-to-journal transition and return. |
+| Schedule, health, activity, people, finance, media, career, resume, portfolio, development projects and cooking (index, history and detail) | Route-owned business bodies still need adapters and route-by-route validation. |
+| Search, the records redirect, task classification preview, and dedicated requirement roadmap, feedback and updates | Keep existing deep links. Global search overlay work is tracked by #9. |
+| `/personal/edit` including task and journal aliases | Keep the legacy editor entry and return contracts. |
+| Catch-all workbench surfaces: growth, articles, albums, time, files, reports, outputs, chat, knowledge, RAG, agents, workflows, executions, approvals, tools, settings/ai and settings/data | Later route-by-route adapters need to preserve existing capability and unavailable states. |
+| File handoffs and standalone storage review HTML | Retain independent route authorization and storage review's native document and recovery workflow. |
+| OAuth continuation, login, session recovery and external routes | Preserve their current security and document boundaries. |
+
+Use synthetic browser evidence at desktop, 390px and 430px to distinguish document and shell-node preservation from identical-looking markup. Keep existing fixed-main CI, published version and owner experience gates open.
+
+### Storage review workspace entry (EXEC-STORAGE-ENTRY-001)
+
+Continue 1.2/3.1/3.2 and [Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41#issuecomment-7182201330). The storage content shares the existing checklist, decision and note controller with the standalone response. Its review is loaded on mount after verifying the owner and space. The shared personal layout owns canonical navigation, history, focus, scroll restoration and the active content guard. Keep the current direct entry until the host is qualified. Preserve the standalone CSP and the existing save, receipt and independent readback rules. Fixed-source integration, production readback and owner experience remain pending.
+
+The storage host candidate connects the Settings link at the canonical URL to the reviewed body during workspace navigation. Direct document requests keep the standalone response. Browser qualification uses synthetic owners and independently verifies both paths. Fixed-main integration, deployment and owner acceptance remain pending.

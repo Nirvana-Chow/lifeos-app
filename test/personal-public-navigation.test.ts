@@ -1,3 +1,4 @@
+import * as navigationIcons from '../src/workbench/navigation-icons.ts';
 import {keyManagementFlag} from '../src/agent-api/key-management-config.ts';
 import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import test from 'node:test';
@@ -10,12 +11,13 @@ import{resolveTaskTarget}from'../src/personal-candidate/task-editor-state.ts';
 import{editorFromEntry}from'../src/personal-candidate/editor.ts';
 import {validateId} from '../src/platform/domain.ts';
 import * as privateNavigation from '../src/workbench/private-navigation.ts';
+import {isWorkspaceRoute} from '../src/personal-candidate/workspace-route-context.ts';
 import * as workspaceHierarchy from '../src/ui-review/workspace-hierarchy.ts';
 import * as workspaceSelectors from '../src/ui-review/selectors.ts';
 
 type Node = {type:unknown;props:Record<string,any>};
 const jsx={jsx:(type:unknown,props:Record<string,any>)=>({type,props}),jsxs:(type:unknown,props:Record<string,any>)=>({type,props}),Fragment:'fragment'};
-const shellImports={'../workbench/workspace-layout-control':{},'radix-ui':{Popover:{}}};
+const shellImports={'../personal-candidate/workspace-route-context':{isWorkspaceRoute},'../workbench/navigation-icons':navigationIcons,'../personal-search/dialog':{PersonalSearchDialogTrigger:'personal-search-dialog-trigger'},'../workbench/workspace-layout-control':{},'radix-ui':{Popover:{}}};
 const react={useRef:(value:any)=>({current:value}),useState:(value:any)=>[value,()=>{}],useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn()};
 function load(path:string,imports:Record<string,unknown>,browser:Record<string,any>={location:{assign:(url:string)=>destinations.push(url)}}){const module={exports:{} as Record<string,any>};const source=readFileSync(new URL(path,import.meta.url),'utf8');const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','module','exports','window','Element','document',code)((key:string)=>{if(key==='../personal-candidate/project-detail-href')return {projectDetailHref};if(key.endsWith('/key-management-config'))return {keyManagementFlag};if(key==='./workspace.module.css')return {default:{}};if(key==='./owner-module-navigation')return {useOwnerModules:()=>({links:[],scope:null,path:''}),OwnerModuleLinks:()=>null};if(key==='./owner-release-notice')return {OwnerReleaseNotice:()=>null};if(key==='./daily-overview')return {DailyOverview:()=>null};assert.ok(key in imports,`unexpected import ${key}`);return imports[key];},module,module.exports,browser,browser.Element,browser.document??{activeElement:null});return module.exports;}
 function find(node:any,predicate:(n:Node)=>boolean):Node|undefined{if(!node||typeof node!=='object')return;if(Array.isArray(node)){for(const item of node){const found=find(item,predicate);if(found)return found;}return;}return predicate(node)?node:find(node.props?.children,predicate);}
@@ -128,13 +130,13 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
   useEffect(run:Effect['run'],deps?:unknown[]){effect(run,deps,false);},
   useLayoutEffect(run:Effect['run'],deps?:unknown[]){effect(run,deps,true);},
  };
- type Registration={type:string;callback:Function;removed:boolean};
+ type Registration={type:string;callback:Function;capture:boolean;removed:boolean};
  const registrations:Registration[]=[];
- const add=(type:string,callback:Function)=>{
-  if(!registrations.some(item=>item.type===type&&item.callback===callback&&!item.removed))registrations.push({type,callback,removed:false});
+ const add=(type:string,callback:Function,capture=false)=>{
+  if(!registrations.some(item=>item.type===type&&item.callback===callback&&item.capture===capture&&!item.removed))registrations.push({type,callback,capture,removed:false});
  };
- const remove=(type:string,callback:Function)=>{
-  for(const item of registrations)if(item.type===type&&item.callback===callback)item.removed=true;
+ const remove=(type:string,callback:Function,capture=false)=>{
+  for(const item of registrations)if(item.type===type&&item.callback===callback&&item.capture===capture)item.removed=true;
  };
  let location=new URL('https://fixture.invalid/personal'),nativeIndex=0;
  const replaced:string[]=[],guards:string[]=[],opened:unknown[]=[];
@@ -192,7 +194,7 @@ test('a parent commit during popstate keeps the subscribed listener and reads co
   const event={state:history.state};
   // Native dispatch snapshots registrations. Removed listeners do not run,
   // and listeners added during this dispatch begin with the next event.
-  for(const item of registrations.filter(item=>item.type==='popstate'&&!item.removed)){
+  for(const item of registrations.filter(item=>item.type==='popstate'&&!item.removed).sort((a,b)=>Number(b.capture)-Number(a.capture))){
    if(!item.removed)item.callback(event);
   }
  }

@@ -1,15 +1,11 @@
 "use client";
 
+import {isWorkspaceRoute} from "../personal-candidate/workspace-route-context";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {Popover} from "radix-ui";
 import {
   LayoutDashboard,
   Ellipsis,
-  CheckSquare2,
-  Settings,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Menu,
   Plus,
   Search,
   List,
@@ -68,7 +64,9 @@ import "./review.css";
 import {ThemeSwitch,ThemeSystemAction} from "../workbench/theme-switch";
 import {WorkspaceLayoutSettings, WorkspaceLayoutToggle} from "../workbench/workspace-layout-control";
 import {CategoryGrid} from "./category-grid";
+import {CollapseSidebarIcon,ExpandSidebarIcon,OpenNavigationIcon,SearchNavigationIcon,SettingsNavigationIcon,TodoNavigationIcon} from '../workbench/navigation-icons';
 import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
+import {PersonalSearchDialogTrigger} from '../personal-search/dialog';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
@@ -81,7 +79,7 @@ import {defaultSettingsPanel,readWorkspaceLocation,workspaceLocationHref,workspa
 
 const workspacePageNavigation = {
  overview:{label:'总览',icon:LayoutDashboard},
- tasks:{label:'待办',icon:CheckSquare2},
+ tasks:{label:'待办',icon:TodoNavigationIcon},
  projects:{label:'个人项目',icon:Folders},
  areas:{label:'领域',icon:Layers},
 } as const;
@@ -157,20 +155,27 @@ function DataState({
   );
 }
 
+type RouteFocus={control:HTMLElement|null;link:{region:'header.lo-header'|'aside.lo-sidebar';href:string}|null};
+
 export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const ownerModules=useOwnerModules(access.authenticated===true,props.viewPreferenceScope??null);
-  const [page, setPage] = useState<WorkspacePage>(
+  const navigationHrefs=ownerModules.links.map(link=>link.href).join("\n");
+  const routePath=props.unifiedRoute?.path;
+  const contentRoute=!!routePath&&routePath!=='/personal';
+  const modulePath=routePath??ownerModules.path;
+  const [workspacePage, setPage] = useState<WorkspacePage>(
     props.initialModal==='settings' ? 'settings' : props.initialPage ?? "overview",
   );
+  const page=contentRoute?'overview':workspacePage;
   const settingsOpen=page==='settings';
   const [classificationPlanId,setClassificationPlanId]=useState<string|null>(props.initialModal==='classification'?props.initialClassificationPlanId??null:null);
   const [settingsPanel,setSettingsPanel]=useState<SettingsPanel>(props.initialSettingsPanel??defaultSettingsPanel);
   const locationState=useRef({page,settingsOpen,settingsPanel,classificationPlanId});
   locationState.current={page,settingsOpen,settingsPanel,classificationPlanId};
   const title = contentPage?.title ?? unavailablePage?.title ?? pageTitles[page];
-  const settingsSection=page==='settings'||page==='requirements'||ownerModules.path.startsWith('/personal/requirements/');
+  const settingsSection=routePath==='/personal/storage-review'||page==='settings'||page==='requirements'||modulePath.startsWith('/personal/requirements/');
   const settingsSubpage=settingsOpen&&(settingsPanel==='security'||settingsPanel==='api-keys');
   const breadcrumbTitle=settingsSubpage?(settingsPanel==='security'?'安全与密码':'API 密钥'):title;
   const isOverview=page==='overview'&&!contentPage&&!unavailablePage;
@@ -184,7 +189,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const selectedModule=moduleGroups.find(group=>group.id===chosenModule);
   const settingsNavigationActive=settingsSection&&!selectedModule;
   const routeModule=moduleGroups.find(group=>group.links.some(link=>
-    ownerModules.path===link.href||ownerModules.path.startsWith(link.href+'/'),
+    modulePath===link.href||modulePath.startsWith(link.href+'/'),
   ));
   const activeModule=settingsNavigationActive?undefined:selectedModule??routeModule??moduleGroups.find(group=>group.id==='daily');
   const moduleSwitch=(compact=false)=>(
@@ -206,8 +211,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const [view, setView] = useState<TaskView>(props.initialView ?? "table");
   const [collapsed, setCollapsed] = useState(false),
     [mobileOpen, setMobileOpen] = useState(false),
-    [filtersOpen, setFiltersOpen] = useState(false);
-  const [filter, setFilter] = useState<TaskFilter>(defaultFilter);
+    [storedFiltersOpen, setFiltersOpen] = useState(false);
+  const [storedFilter, setFilter] = useState<TaskFilter>(defaultFilter);
+  const [storedTopicQuery,setTopicQuery]=useState('');
+  const [filterScope,setFilterScope]=useState<string|null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(
     null,
@@ -217,12 +224,56 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     tableViewButton = useRef<HTMLButtonElement | null>(null);
   const requirementNavigationGuard=useRef<(()=>boolean)|null>(null);
   const verifiedPrivateScope = access.authenticated === true ? props.viewPreferenceScope : null;
+  const currentFilterScope=contentRoute?ownerModules.scope:verifiedPrivateScope??null;
+  const scopeRevoked=routePath==='/personal'&&access.authenticated===false;
+  if(routePath&&(currentFilterScope||scopeRevoked)&&currentFilterScope!==filterScope){
+    setFilterScope(currentFilterScope);
+    setFilter(defaultFilter);
+    setFiltersOpen(false);
+    setTopicQuery('');
+    setDetailId(null);
+  }
+  // A route transition can temporarily lack a verified task frame. Keep the
+  // previous filters in memory but display them only for the verified binding.
+  const showStoredFilters=!routePath||!!currentFilterScope&&currentFilterScope===filterScope;
+  const filter=showStoredFilters?storedFilter:defaultFilter;
+  const filtersOpen=showStoredFilters&&storedFiltersOpen;
+  const topicQuery=showStoredFilters?storedTopicQuery:'';
+
   const [retainedPrivateScope, setRetainedPrivateScope] = useState<string | null>(null);
   if (access.authenticated === false && retainedPrivateScope !== null) setRetainedPrivateScope(null);
   if (verifiedPrivateScope && verifiedPrivateScope !== retainedPrivateScope) setRetainedPrivateScope(verifiedPrivateScope);
   const showPrivateRequirements = access.authenticated === true && (props.viewPreferenceScope === undefined || !!verifiedPrivateScope);
   const retainPrivateRequirements = access.authenticated !== false && (showPrivateRequirements || retainedPrivateScope !== null);
   const currentHref = useRef("");
+  const committedRoute=useRef(routePath);
+  const pendingRoutePush=useRef(false);
+  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:RouteFocus}>());
+  const restoreRouteScroll=useRef(false);
+  const restoreRouteFocus=useRef<RouteFocus|null>(null);
+  const fallbackRouteFocus=useRef<HTMLElement|null>(null);
+  const mainRegion=useRef<HTMLElement>(null);
+  function scrollRegions(main:HTMLElement){
+    return [main,...main.querySelectorAll<HTMLElement>(':scope > .lo-content, .lo-list-rows, .lo-board-cards, [data-slot="data-grid-table-viewport"]')];
+  }
+  function rememberRoutePosition(trigger?:HTMLAnchorElement){
+    const main=mainRegion.current;
+    const focused=trigger??document.activeElement;
+    const control=mobileOpen?menuButton.current:focused instanceof HTMLElement&&focused!==document.body?focused:null;
+    const region=control?.closest('header.lo-header')?'header.lo-header':control?.closest('aside.lo-sidebar')?'aside.lo-sidebar':null;
+    const href=control instanceof HTMLAnchorElement?control.getAttribute('href'):null;
+    if(main&&currentHref.current)routePositions.current.set(currentHref.current,{
+      windowY:window.scrollY,regions:scrollRegions(main).map(region=>({x:region.scrollLeft,y:region.scrollTop})),
+      focus:{control,link:region&&href?{region,href}:null},
+    });
+  }
+  function pushUnifiedRoute(destination:string,trigger?:HTMLAnchorElement){
+    if(!props.unifiedRoute||window.location.pathname+window.location.search===destination)return;
+    rememberRoutePosition(trigger);
+    pendingRoutePush.current=true;
+    setMobileOpen(false);
+    props.unifiedRoute.push(destination);
+  }
   const currentHistory = useRef<WorkspaceHistoryEntry | null>(null);
   const restoringHistory = useRef(false);
   const currentBrowserIndex = useRef<number | null>(null);
@@ -276,9 +327,8 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const pendingIds = new Set(props.pendingTaskIds ?? []);
   const canWrite = mayWrite(access) && !props.saving && !props.uncertain;
   const [undoNow,setUndoNow]=useState(0);
-  const [topicQuery,setTopicQuery]=useState("");
   useEffect(()=>{if(!props.undoDeadline)return;setUndoNow(Date.now());const timer=window.setTimeout(()=>setUndoNow(Date.now()),Math.max(0,props.undoDeadline-Date.now()));return()=>window.clearTimeout(timer);},[props.undoDeadline]);
-  const detail = data?.tasks.find((task) => task.id === detailId) ?? null;
+  const detail = (showStoredFilters ? data?.tasks.find((task) => task.id === detailId) : null) ?? null;
   const filterActive =
     !!filter.query ||
     !!filter.areaId ||
@@ -322,10 +372,88 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       portalContainer.style.removeProperty("--lo-filing-footer-space");
     };
   }, [portalContainer]);
+  useLayoutEffect(()=>{
+    const previous=committedRoute.current;
+    committedRoute.current=routePath;
+    if(!routePath||previous===routePath)return;
+    const href=window.location.pathname+window.location.search;
+    const old=currentHistory.current;
+    const entry=pendingRoutePush.current&&old?{scope:old.scope,index:old.index+1}:
+      workspaceHistoryEntry(window.history.state)??{scope:old?.scope??crypto.randomUUID(),index:old?.index??0};
+    restoreRouteFocus.current=(pendingRoutePush.current?null:routePositions.current.get(href)?.focus)??{control:null,link:null};
+    fallbackRouteFocus.current=null;
+    pendingRoutePush.current=false;
+    window.history.replaceState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
+    currentHistory.current=entry;
+    historyLimit.current=Math.max(historyLimit.current,entry.index);
+    currentHref.current=href;
+    currentBrowserIndex.current=browserHistoryIndex();
+    currentHistoryState.current=window.history.state;
+    setChosenModule(historyModule(window.history.state));
+    setMobileOpen(false);
+    if(routePath==='/personal'){
+      const next=readWorkspaceLocation(Object.fromEntries(new URLSearchParams(window.location.search)));
+      setPage(next.page);
+      setSettingsPanel(next.panel??defaultSettingsPanel);
+      setClassificationPlanId(next.modal==='classification'?next.planId:null);
+    }
+    restoreRouteScroll.current=true;
+    updateHistoryControls();
+  },[routePath]);
+  useLayoutEffect(()=>{
+    if(!restoreRouteFocus.current)return;
+    const frame=requestAnimationFrame(()=>{
+      const position=restoreRouteFocus.current;
+      if(!position)return;
+      restoreRouteFocus.current=null;
+      const previousFallback=fallbackRouteFocus.current;
+      if(previousFallback&&document.activeElement!==previousFallback&&document.activeElement!==document.body)return;
+      const {control,link}=position;
+      const authorized=link&&navigationHrefs.split('\n').includes(link.href)&&
+        (routePath!=='/personal'||state.status==='ready'&&verifiedPrivateScope===ownerModules.scope);
+      let target=link?null:control;
+      if(authorized){
+        target=mainRegion.current?.closest('.lo-shell')?.querySelector<HTMLElement>(
+          `${link.region} a[href="${CSS.escape(link.href)}"]`
+        )??null;
+      }
+      if(target?.isConnected&&target.getClientRects().length){target.focus({preventScroll:true});return;}
+      const heading=mainRegion.current?.querySelector<HTMLElement>('h1')??null;
+      heading?.focus({preventScroll:true});
+      if(link&&routePath&&state.status!=='forbidden'&&state.status!=='error'){
+        fallbackRouteFocus.current=heading;
+        restoreRouteFocus.current=position;
+      }
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[routePath,state.status,page,navigationHrefs,verifiedPrivateScope,ownerModules.scope]);
+  useLayoutEffect(()=>{
+    if(!restoreRouteScroll.current)return;
+    const main=mainRegion.current;
+    if(!main)return;
+    const position=routePositions.current.get(currentHref.current);
+    const restore=()=>{
+      scrollRegions(main).forEach((region,index)=>region.scrollTo(position?.regions[index]?.x??0,position?.regions[index]?.y??0));
+      window.scrollTo(0,position?.windowY??0);
+      if(routePath!=='/personal'||state.status==='ready')restoreRouteScroll.current=false;
+    };
+    // The review list acquires its height only after the owner check and read.
+    if(routePath==='/personal/storage-review'&&position&&!main.querySelector('#storage-review-body:not([hidden])')){
+      const observer=new MutationObserver(()=>{
+        if(main.querySelector('#storage-review-body:not([hidden])')){
+          observer.disconnect();
+          restore();
+        }
+      });
+      observer.observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
+      return ()=>observer.disconnect();
+    }
+    restore();
+  },[routePath,state.status,page]);
   useEffect(() => {
     if (!props.syncUrl) return;
     const initialLocation=readWorkspaceLocation(Object.fromEntries(new URLSearchParams(window.location.search)));
-    if(initialLocation.page==='settings')window.history.replaceState(window.history.state,'',workspaceLocationHref(initialLocation));
+    if((!committedRoute.current||committedRoute.current==='/personal')&&initialLocation.page==='settings')window.history.replaceState(window.history.state,'',workspaceLocationHref(initialLocation));
     if (!currentHistory.current) {
       const entry = workspaceHistoryEntry(window.history.state) ?? {scope: crypto.randomUUID(), index: 0};
       window.history.replaceState({...window.history.state, [workspaceHistoryKey]: entry}, '', window.location.href);
@@ -345,10 +473,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const entry = workspaceHistoryEntry(event.state);
       const url = new URL(window.location.href);
       const isTaskLink = url.pathname === "/personal/edit" && url.searchParams.get("type") === "todo";
-      if (url.pathname !== "/personal" && !isTaskLink) return;
+      const crossUnifiedRoute=!!committedRoute.current&&url.pathname!==committedRoute.current&&
+        isWorkspaceRoute(url.pathname);
+      if (url.pathname !== "/personal" && !isTaskLink && !crossUnifiedRoute) return;
       const nextLocation = readWorkspaceLocation(Object.fromEntries(url.searchParams));
       const historyPage=nextLocation.page;
-      const sameBackground=!isTaskLink&&historyPage===locationState.current.page;
+      const sameBackground=!crossUnifiedRoute&&!isTaskLink&&historyPage===locationState.current.page;
       const overlayChange=sameBackground&&(!!nextLocation.modal||!!locationState.current.classificationPlanId);
       const task = isTaskLink ? tasks.find(row => row.id === url.searchParams.get("id")) : null;
       const wantsCreate = isTaskLink ? !url.searchParams.has("id") : historyPage !== "requirements" && historyPage !== "settings" && url.searchParams.get("create") === "todo";
@@ -357,10 +487,12 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       else if (locationState.current.classificationPlanId && classificationCloseGuard?.current?.()===false) allowed=false;
       else if (locationState.current.settingsOpen&&settingsCloseGuard?.current?.()===false) allowed=false;
       else if (overlayChange || locationState.current.settingsOpen&&historyPage==='settings') allowed = saving||uncertain ? false : onBeforeSettingsChange?.();
+      else if (crossUnifiedRoute) allowed=onBeforeNavigate?.();
       else if (task && onOpenTask) allowed = onOpenTask(task);
       else if (wantsCreate && onCreateTask) allowed = onCreateTask();
       else allowed = onBeforeNavigate?.();
       if (allowed === false) {
+        if(crossUnifiedRoute)event.stopImmediatePropagation();
         const active = currentHistory.current;
         const nativeIndex = browserHistoryIndex();
         const delta = nativeIndex !== null && currentBrowserIndex.current !== null
@@ -377,6 +509,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           window.history.replaceState(currentHistoryState.current, '', currentHref.current);
           currentBrowserIndex.current = browserHistoryIndex();
         }
+        return;
+      }
+      if(crossUnifiedRoute){
+        rememberRoutePosition();
+        pendingRoutePush.current=false;
         return;
       }
       if (isTaskLink && !task && !wantsCreate) {
@@ -398,8 +535,22 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       historyLimit.current=Math.max(historyLimit.current,currentHistory.current.index);
       updateHistoryControls();
     };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    // Next handles same-document traversal in its window bubble listener.
+    // Check a shared route before Next can unmount the current editor.
+    const handled=new WeakSet<PopStateEvent>();
+    const capture=(event:PopStateEvent)=>{
+      const path=window.location.pathname;
+      if(!committedRoute.current||path===committedRoute.current||!isWorkspaceRoute(path))return;
+      handled.add(event);
+      onPopState(event);
+    };
+    const bubble=(event:PopStateEvent)=>{if(!handled.has(event))onPopState(event);};
+    window.addEventListener('popstate',capture,true);
+    window.addEventListener('popstate',bubble);
+    return()=>{
+      window.removeEventListener('popstate',capture,true);
+      window.removeEventListener('popstate',bubble);
+    };
   }, [props.syncUrl]);
   function settingsAllowed() {
     return !restoringHistory.current&&(!classificationPlanId||props.classificationCloseGuard?.current?.()!==false)&&!props.saving&&!props.uncertain&&props.onBeforeSettingsChange?.()!==false;
@@ -435,6 +586,10 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   ) {
     if (restoringHistory.current || page==='requirements'&&next!==page&&requirementNavigationGuard.current?.()===false || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false) return false;
     const destination=next==='settings'?workspaceLocationHref({page:'settings',panel:nextSettingsPanel}):workspaceHref(next);
+    if(contentRoute){
+      pushUnifiedRoute(destination);
+      return true;
+    }
     if((unavailablePage||contentPage)&&next==='settings'&&nextSettingsPanel!==defaultSettingsPanel){
       window.location.assign(destination);return true;
     }
@@ -502,7 +657,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </div>
       {toolLinks.length>0&&<div role="group" aria-label="资料与工具" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>资料与工具</span>
-        <OwnerModuleLinks links={toolLinks} path={ownerModules.path} collapsed={collapsed}/>
+        <OwnerModuleLinks links={toolLinks} path={modulePath} collapsed={collapsed}/>
       </div>}
       <div role="group" aria-label="偏好与账号" className={workspaceStyles.navigationGroup}>
         <span className={workspaceStyles.navigationLabel}>偏好与账号</span>
@@ -531,7 +686,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               <Icon size={19} aria-hidden="true"/><span>{label}</span>
             </Button>;
           })}
-          <OwnerModuleLinks links={activeModule.links} path={ownerModules.path} collapsed={collapsed}/>
+          <OwnerModuleLinks links={activeModule.links} path={modulePath} collapsed={collapsed}/>
         </div>}
       </nav>}
       <div className="lo-sidebar-bottom">
@@ -544,7 +699,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           data-workspace-nav
           onClick={() => openSettings()}
         >
-          <Settings size={19} />
+          <SettingsNavigationIcon/>
           <span>设置</span>
         </Button>
         <Button
@@ -554,9 +709,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           onClick={() => setCollapsed(!collapsed)}
         >
           {collapsed ? (
-            <PanelLeftOpen size={19} />
+            <ExpandSidebarIcon/>
           ) : (
-            <PanelLeftClose size={19} />
+            <CollapseSidebarIcon/>
           )}
           <span>收起侧栏</span>
         </Button>
@@ -704,6 +859,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         if (href && (page==='requirements'&&requirementNavigationGuard.current?.()===false || props.saving || props.uncertain || classificationPlanId && props.classificationCloseGuard?.current?.()===false || settingsOpen && props.settingsCloseGuard?.current?.() === false || props.onBeforeNavigate?.() === false)) {
           event.preventDefault();
           event.stopPropagation();
+          return;
+        }
+        if(routePath&&href&&href!=='/personal'&&isWorkspaceRoute(href)){
+          event.preventDefault();
+          pushUnifiedRoute(href,link instanceof HTMLAnchorElement?link:undefined);
         }
       }}
       ref={setPortalContainer}
@@ -719,7 +879,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           ref={menuButton}
           onClick={() => setMobileOpen(true)}
         >
-          <Menu size={20} />
+          <OpenNavigationIcon/>
         </Button>
         <Button
           variant="ghost"
@@ -735,11 +895,11 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <div className="lo-header-actions">
           {props.desktopNavigation && <WorkspaceLayoutToggle className={`lo-icon-button ${workspaceStyles.layoutToggle}`}/>}
           <Button variant="ghost" size="icon" className="lo-icon-button" aria-label="打开设置" title="设置"
-            data-workspace-nav onClick={()=>openSettings()}><Settings size={19} aria-hidden="true"/></Button>
+            data-workspace-nav onClick={()=>openSettings()}><SettingsNavigationIcon/></Button>
           {globalSearch && <Button asChild variant="ghost" size="icon" className="lo-icon-button">
-            <a href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
-              <Search size={19} aria-hidden="true"/>
-            </a>
+            <PersonalSearchDialogTrigger href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
+              <SearchNavigationIcon/>
+            </PersonalSearchDialogTrigger>
           </Button>}
           <ThemeSwitch allowSystem={!props.desktopNavigation && settingsSection}/>
           {access.authenticated===true && access.writable===false && <Badge variant="outline">只读</Badge>}
@@ -764,7 +924,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </header>
       <div className="lo-body">
         <aside className="lo-sidebar">{navigation}</aside>
-        <main id="personal-main" tabIndex={settingsOpen?0:undefined} className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""} ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas"].includes(page)?"lo-main-matters":""}`}>
+        <main ref={mainRegion} id="personal-main" tabIndex={settingsOpen?0:undefined} className={`lo-main ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas","requirements"].includes(page)?"lo-main-bounded":""} ${!contentPage&&!unavailablePage&&["tasks","inbox","projects","areas"].includes(page)?"lo-main-matters":""}`}>
           <div data-matters-filters-expanded={filtersOpen&&(page==="tasks"||page==="inbox")?"":undefined} className={contentPage ? contentPage.wide?"lo-content lo-content-wide":"lo-content lo-content-account" : page === "settings" ? `lo-content lo-content-wide ${workspaceStyles.settingsContent}` :
             (page === "tasks" || page === "inbox") && view === "table" || page === "projects" || page === "areas" || page === "requirements" ? "lo-content lo-content-wide" : "lo-content"}>
           <nav aria-label="浏览位置" className={workspaceStyles.breadcrumbs}>
@@ -796,7 +956,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
               )}
             </div>
             <div className="lo-page-actions">
-              {contentPage&&financeLink&&portfolioLink&&ownerModules.path===financeLink.href&&<Button asChild variant="ghost">
+              {contentPage&&financeLink&&portfolioLink&&modulePath===financeLink.href&&<Button asChild variant="ghost">
                 <a href={portfolioLink.href} data-workspace-nav>账户与投资</a>
               </Button>}
               {!props.desktopNavigation && refreshAvailable && (
