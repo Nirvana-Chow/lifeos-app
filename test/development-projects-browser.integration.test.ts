@@ -143,7 +143,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
  const openHome=async()=>{
   await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:60000});
-  await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toBeVisible();
+  await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toBeVisible();
  };
  const openMobileNavigation=async()=>{
   await expect(header.getByRole('button',{name:'切换到桌面版',exact:true})).toBeVisible();
@@ -198,7 +198,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  await expect(dialog.getByText('历史版本（1）')).toBeVisible();
  assert.equal(careerReads,1);assert.equal(revisionReads,1);
  await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle',timeout:60000});
- await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toBeVisible();
+ await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await expect(page.getByRole('group',{name:/项目视图/})).toBeVisible({timeout:30000});
  await expect(page).toHaveURL(origin+'/personal?page=projects');

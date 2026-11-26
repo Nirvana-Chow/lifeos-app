@@ -77,7 +77,14 @@ export function mountTaskGridEditor(
     event.stopPropagation();
     void commit(event.key === 'Tab' ? event.shiftKey ? 'previous' : 'next' : null);
   };
-  const blur = () => { void commit(); };
+  const blur = (event: Event) => {
+    const target = (event as FocusEvent).relatedTarget;
+    if (target && target instanceof Element && target.closest('[data-personal-search-focus]')) {
+      editor.captureDraft();
+      return;
+    }
+    void commit();
+  };
   input.addEventListener('compositionstart', compositionStart);
   input.addEventListener('compositionend', compositionEnd);
   input.addEventListener('keydown', keydown);

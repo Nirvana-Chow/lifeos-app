@@ -69,6 +69,7 @@ import {ThemeSwitch,ThemeSystemAction} from "../workbench/theme-switch";
 import {WorkspaceLayoutSettings, WorkspaceLayoutToggle} from "../workbench/workspace-layout-control";
 import {CategoryGrid} from "./category-grid";
 import {useOwnerModules,OwnerModuleLinks} from './owner-module-navigation';
+import {PersonalSearchDialogTrigger} from '../personal-search/dialog';
 import {OwnerReleaseNotice} from './owner-release-notice';
 import {LogoutButton} from '../personal-candidate/privacy';
 import {RequirementsPage} from "./requirements-page";
@@ -737,9 +738,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           <Button variant="ghost" size="icon" className="lo-icon-button" aria-label="打开设置" title="设置"
             data-workspace-nav onClick={()=>openSettings()}><Settings size={19} aria-hidden="true"/></Button>
           {globalSearch && <Button asChild variant="ghost" size="icon" className="lo-icon-button">
-            <a href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
+            <PersonalSearchDialogTrigger href={globalSearch.href} aria-label={globalSearch.label} title={globalSearch.label} data-workspace-nav>
               <Search size={19} aria-hidden="true"/>
-            </a>
+            </PersonalSearchDialogTrigger>
           </Button>}
           <ThemeSwitch allowSystem={!props.desktopNavigation && settingsSection}/>
           {access.authenticated===true && access.writable===false && <Badge variant="outline">只读</Badge>}

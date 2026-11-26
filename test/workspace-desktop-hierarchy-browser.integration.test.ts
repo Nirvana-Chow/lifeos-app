@@ -47,7 +47,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(moduleSwitch.getByRole('link',{name:'开发项目',exact:true})).toHaveAttribute('href','/personal/development-projects');
  await expect(moduleSwitch.getByRole('button',{pressed:true})).toHaveAccessibleName('日常');
  await assertWorkspaceModule(nav,'日常',planning);
- await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
  await expect(page.getByRole('dialog')).toHaveCount(0);
  assert.equal(releaseReads,0,'opening the workspace does not consult automatic announcements');
  await expect(page.locator('header')).toHaveCSS('background-image','none');
