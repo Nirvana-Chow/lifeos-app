@@ -1,5 +1,6 @@
 import * as navigationIcons from '../src/workbench/navigation-icons.ts';
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
+import {isWorkspaceRoute} from '../src/personal-candidate/workspace-route-context.ts';
 import {projectDetailHref} from '../src/personal-candidate/project-detail-href.ts';
 import {ownerModules,verifiedModuleScope} from '../src/ui-review/owner-modules.ts';
 import * as selectors from '../src/ui-review/selectors.ts';
@@ -40,6 +41,7 @@ test('workspace settings navigation keeps the three legacy routes outside the de
    'react/jsx-runtime':jsx,
    react:{useEffect:()=>{},useLayoutEffect:()=>{},useMemo:(fn:()=>unknown)=>fn(),useRef:(value:unknown)=>({current:value}),useState:(value:unknown)=>[value,()=>{}]},
    '../personal-candidate/project-detail-href':{projectDetailHref},
+   '../personal-candidate/workspace-route-context':{isWorkspaceRoute},
    '../workbench/navigation-icons':navigationIcons,
    './selectors':selectors,'./workspace-hierarchy':workspaceHierarchy,'../workbench/private-navigation':privateNavigation,
    './owner-module-navigation':{useOwnerModules:(enabled:boolean,currentScope:string|null)=>({links:enabled?ownerModules(value,currentScope):[],scope:verifiedModuleScope(value),path:'/personal/requirements/updates'}),OwnerModuleLinks:'owner-links'},
