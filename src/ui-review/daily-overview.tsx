@@ -69,7 +69,7 @@ function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string
 }
 
 function OverviewPanel({title,action,children}: {title:string;action?:ReactNode;children:ReactNode}) {
-  return <Frame asChild>
+  return <Frame asChild className="border-transparent bg-transparent">
     <section aria-label={title}>
       <FramePanel className="p-0">
         <div className="lo-panel-heading"><h2>{title}</h2>{action}</div>
