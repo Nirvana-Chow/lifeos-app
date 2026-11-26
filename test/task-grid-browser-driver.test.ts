@@ -12,3 +12,11 @@ test('a screen-reader fallback or canvas alone cannot satisfy the selected ReUI 
   assert.equal(reuiGridRendered({ ...valid, grids: 0, nativeTitle: false, renderedRows: 0 }), false);
   assert.equal(reuiGridRendered({ ...valid, renderer: 'vtable' }), false);
 });
+
+test('the personal task presentation requires the exact flat five-column native grid', () => {
+  const flat={...valid,headers:['完成','待办','状态','到期日','详情'],cellsPerRow:[5]};
+  assert.equal(reuiGridRendered(flat,true),true);
+  assert.equal(reuiGridRendered(valid,true),false);
+  assert.equal(reuiGridRendered(flat),false);
+  assert.equal(reuiGridRendered({...flat,headers:['完成','待办','状态','项目','详情']},true),false);
+});

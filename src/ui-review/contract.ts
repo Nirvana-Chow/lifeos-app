@@ -16,6 +16,7 @@ export type TaskRow = PersonalPlanningFields & {
   dueOn: string | null;
   area: ReferenceLabel | null;
   project: ReferenceLabel | null;
+  labels?: readonly ReferenceLabel[];
   /** Must come from an explicit source classification; missing relations are not an inbox. */
   inInbox: boolean | null;
   sourceLabel: string | null;
@@ -78,6 +79,7 @@ export type TaskFilter = {
 export type LifeOSWorkspaceProps = {
   /** Offer the device-local layout preference in the shared owner workspace. */
   desktopNavigation?: boolean;
+  flatTaskLabels?: boolean;
   renderTaskClassificationPreview?: () => ReactNode;
   /** Verified owner+space scope for browser-only layout preferences; absent disables persistence. */
   viewPreferenceScope?: string | null;
@@ -127,6 +129,8 @@ export type LifeOSWorkspaceProps = {
 /** Shared ordinary-grid boundary; the existing controller remains the only business writer. */
 export type TaskGridProps = {
   flatProjects?: boolean;
+  /** Owner's flat list with optional labels and title detail action. */
+  flatLabels?: boolean;
   emptyMessage?: string;
   viewPreferenceScope?: string | null;
   draftMemory?: TaskCellDraftMemory;

@@ -7,7 +7,7 @@ import {renderedContrast,type ContrastLayer} from './personal-contrast.ts';
 import {assertPublicLayout} from './owner-recovery-browser-fixture.ts';
 import type {PublicEntry} from '../../src/platform/contracts.ts';
 import {themeStorageKey} from '../../src/workbench/theme.ts';
-import {requireTaskGrid,taskGridRoot,taskGridInput,taskGridTitleCell,taskGridViewport} from './task-grid-browser-driver.ts';
+import {requireTaskGrid,taskGridRoot,taskGridInput,taskGridTitleButton,taskGridViewport} from './task-grid-browser-driver.ts';
 
 /** Approved density roles; standalone journal forms retain their explicit16px style. */
 export function presentationDensity(width:number,finePointer:boolean,surface:'workspace'|'standalone-editor'='workspace'){
@@ -93,7 +93,7 @@ export type NativeTablePresentation={busy:string|null;failures:number;canvases:n
 export function nativeTableRendered(f:NativeTablePresentation):boolean{return f.busy==='false'&&f.failures===0&&f.canvases>0&&f.painted===true;}
 // VTable's pure painted-canvas oracle above remains available for the fixed A source.
 // B always requires the selected renderer's own native DOM, never its text fallback.
-const requireNativeTable = (page:Page) => requireTaskGrid(page,synthetic.title);
+const requireNativeTable = (page:Page) => requireTaskGrid(page,synthetic.title,1,true);
 const form=(page:Page)=>page.locator('form').filter({has:page.getByLabel('标题',{exact:true})});
 const title=(page:Page)=>form(page).getByLabel('标题',{exact:true});
 export function recordFieldLabel(label:string):RegExp{return new RegExp('^'+label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));}
@@ -256,7 +256,7 @@ async function saveTask(page:Page,previous?:PublicEntry):Promise<PublicEntry>{
  if(previous){assert.equal(entry.id,previous.id);assert.equal(entry.source.id,previous.source.id);assert.deepEqual(entry.source.original,previous.source.original);}
  await expect(page.getByRole('dialog')).toHaveCount(0);assert.deepEqual((await json(page,path+(previous?'':'/'+entry.id))).entry,entry);return entry;
 }
-export async function taskRelations(page:Page){const details=form(page).locator('details');if(await details.count()&&!await details.evaluate(node=>(node as HTMLDetailsElement).open))await details.locator('summary').click();}
+export async function taskRelations(page:Page){const details=form(page).locator('details').filter({has:page.getByText('关联',{exact:true})});if(await details.count()&&!await details.evaluate(node=>(node as HTMLDetailsElement).open))await details.locator('summary').click();}
 type LatencyPhase='tasks-table-ready'|'native-input-visible'|'editor-form-ready'|'body-next-frame';
 // Synthetic fixture only: fixed labels and elapsed numbers, never data or request details.
 function latency(phase:LatencyPhase,start:number){const elapsedMs=performance.now()-start;assert.equal(Number.isFinite(elapsedMs)&&elapsedMs>=0,true);console.log('PERSONAL_LATENCY',JSON.stringify({phase,elapsedMs:Math.round(elapsedMs*100)/100}));}
@@ -337,7 +337,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await workspaceReady(page);const initial=await overview(page);assert.equal(initial.total,0);assert.deepEqual(initial.items,[]);
  phase='workspace-capabilities';const access=await json(page,'/api/platform/personal/status');assert.equal(access.writable,true);assert.equal(access.storageReviewEnabled,true);assert.deepEqual(access.allowedTypes,['todo','journal','project','domain','topic']);
  phase='cancel-empty';await page.goto(new URL('/personal?page=tasks&create=todo',page.url()).href,{waitUntil:'domcontentloaded'});await readyEditor(page,'');await taskRelations(page);
- for(const label of ['项目','领域']){await expect(recordField(page,label)).toHaveValue('');await expect(recordField(page,label).locator('option')).toHaveCount(1);}
+ for(const label of ['关联项目','领域'])await expect(recordField(page,label)).toHaveCount(0);
  await page.getByRole('button',{name:'关闭待办编辑',exact:true}).click();assert.equal((await overview(page)).total,0);
  phase='create-domain';await page.goto(new URL('/personal?page=areas',page.url()).href,{waitUntil:'domcontentloaded'});await page.getByRole('link',{name:'新建领域',exact:true}).click();await readyEditor(page,'');
  await title(page).fill(synthetic.domain);await recordField(page,'说明 / 正文').fill('隔离合成领域说明');const domain=await save(page,'domain');
@@ -348,10 +348,10 @@ export async function verifyPersonalWorkspace(page:Page){
  phase='create-todo';await title(page).fill(synthetic.initial);await recordField(page,'正文').fill(synthetic.notes);await recordField(page,'到期日').fill(synthetic.date);let todo=await saveTask(page);assert.equal('status'in todo.draft?todo.draft.status:null,'open');
  await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
  const trigger=page.getByRole('button',{name:'展开详情：'+synthetic.initial,exact:true});const editorStart=performance.now();await trigger.click();await editTask(page,synthetic.initial);latency('editor-form-ready',editorStart);
- phase='edit-and-readback';await title(page).fill(synthetic.title);const bodyStart=performance.now();await recordField(page,'正文').fill(synthetic.editedNotes);await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));latency('body-next-frame',bodyStart);await recordField(page,'到期日').fill(synthetic.editedDate);await recordField(page,'状态').selectOption('in_progress');await taskRelations(page);await recordField(page,'项目').selectOption(project.id);await recordField(page,'领域').selectOption(domain.id);todo=await saveTask(page,todo);
- assert.deepEqual(todo.draft,{title:synthetic.title,notes:synthetic.editedNotes,dueOn:synthetic.editedDate,status:'in_progress',personal:{project:reference(project),domain:reference(domain),topics:[]}});
+ phase='edit-and-readback';await title(page).fill(synthetic.title);const bodyStart=performance.now();await recordField(page,'正文').fill(synthetic.editedNotes);await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));latency('body-next-frame',bodyStart);await recordField(page,'到期日').fill(synthetic.editedDate);await recordField(page,'状态').selectOption('in_progress');await taskRelations(page);await recordField(page,'关联项目').selectOption(project.id);todo=await saveTask(page,todo);
+ assert.deepEqual(todo.draft,{title:synthetic.title,notes:synthetic.editedNotes,dueOn:synthetic.editedDate,status:'in_progress',personal:{project:reference(project),domain:null,topics:[]}});
  const editorURL=origin+'/personal/edit?type=todo&id='+encodeURIComponent(todo.id),tasksURL=origin+'/personal?page=tasks';
- const verifyFields=async()=>{await editTask(page,synthetic.title);await expect(recordField(page,'正文')).toHaveValue(synthetic.editedNotes);await expect(recordField(page,'到期日')).toHaveValue(synthetic.editedDate);await expect(recordField(page,'状态')).toHaveValue('status'in todo.draft?todo.draft.status:'');await taskRelations(page);await expect(recordField(page,'项目')).toHaveValue(project.id);await expect(recordField(page,'领域')).toHaveValue(domain.id);};
+ const verifyFields=async()=>{await editTask(page,synthetic.title);await expect(recordField(page,'正文')).toHaveValue(synthetic.editedNotes);await expect(recordField(page,'到期日')).toHaveValue(synthetic.editedDate);await expect(recordField(page,'状态')).toHaveValue('status'in todo.draft?todo.draft.status:'');await taskRelations(page);await expect(recordField(page,'关联项目')).toHaveValue(project.id);await expect(recordField(page,'领域')).toHaveCount(0);};
  await page.goto(editorURL,{waitUntil:'domcontentloaded'});await page.reload({waitUntil:'domcontentloaded'});await verifyFields();await readTodo(page,todo,[domain,project,todo]);
  phase='four-states';for(const status of ['done','cancelled','in_progress'] as const){await recordField(page,'状态').selectOption(status);todo=await saveTask(page,todo);assert.equal('status'in todo.draft?todo.draft.status:null,status);await page.reload({waitUntil:'domcontentloaded'});await verifyFields();await readTodo(page,todo,[domain,project,todo]);}
  phase='unsaved-modal-cancel';await title(page).fill('合成未保存草稿');await confirmDiscard(page,false,async()=>{await page.getByRole('button',{name:'取消',exact:true}).click();});await expect(title(page)).toHaveValue('合成未保存草稿');await confirmDiscard(page,true,async()=>{await page.getByRole('button',{name:'取消',exact:true}).click();});await expect(page.getByRole('dialog')).toHaveCount(0);await readTodo(page,todo,[domain,project,todo]);
@@ -390,14 +390,14 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.getByRole('button',{name:'撤销',exact:true}).click();todo=(await(await tableUndoReceipt).json()).entry;
  assert.equal('status'in todo.draft?todo.draft.status:null,'in_progress');await requireNativeTable(page);
 
- phase='native-title-open';const nativeStart=performance.now();await taskGridTitleCell(page,synthetic.title).dblclick();const input=taskGridInput(page);phase='native-title-input-identity';await expect(input).toHaveCount(1);phase='native-title-input-visible';await expect(input).toBeVisible();await expect(input).toBeEditable();latency('native-input-visible',nativeStart);
+ phase='native-title-open';const nativeStart=performance.now();await taskGridTitleButton(page,synthetic.title).press('F2');const input=taskGridInput(page);phase='native-title-input-identity';await expect(input).toHaveCount(1);phase='native-title-input-visible';await expect(input).toBeVisible();await expect(input).toBeEditable();latency('native-input-visible',nativeStart);
  phase='native-title-invalid-retained';await input.fill(' ');await input.press('Enter');await expect(input).toHaveValue(' ');await expect(input).toBeVisible();await readTodo(page,todo,[domain,project,todo]);
  phase='native-title-draft-fill';await input.fill(synthetic.title+'（表格）');let hiddenMutations=0;const countHidden=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))hiddenMutations++;};page.on('request',countHidden);
  try{phase='native-draft-conceal';await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(input).toHaveCount(0);
   phase='native-draft-verify-restore';await page.evaluate(()=>{Reflect.deleteProperty(document,'visibilityState');document.dispatchEvent(new Event('visibilitychange'));});await workspaceReady(page);await expect(input).toHaveCount(1);await expect(input).toBeVisible();await expect(input).toBeEditable();await expect(input).toHaveValue(synthetic.title+'（表格）');assert.equal(hiddenMutations,0);
  }finally{page.off('request',countHidden);await page.evaluate(()=>Reflect.deleteProperty(document,'visibilityState'));}
  const cellReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');phase='native-title-submit';await input.press('Enter');phase='native-title-receipt';todo=(await(await cellReceipt).json()).entry;assert.equal('title'in todo.draft?todo.draft.title:null,synthetic.title+'（表格）');phase='native-title-projection';await expect(page.getByRole('button',{name:'打开任务：'+synthetic.title+'（表格）',exact:true})).toBeAttached();phase='native-title-input-closed';await expect(input).toBeHidden();
- phase='native-title-restore-open';await taskGridTitleCell(page,synthetic.title+'（表格）').dblclick();phase='native-title-restore-visible';await expect(input).toHaveCount(1);await expect(input).toBeVisible();await expect(input).toBeEditable();await input.fill(synthetic.title);const restoreReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');phase='native-title-restore-submit';await input.press('Enter');phase='native-title-restore-receipt';todo=(await(await restoreReceipt).json()).entry;phase='native-title-restore-projection';await expect(page.getByRole('button',{name:'打开任务：'+synthetic.title,exact:true})).toBeAttached();phase='native-title-restore-closed';await expect(input).toBeHidden();phase='native-title-final-readback';await readTodo(page,todo,[domain,project,todo]);
+ phase='native-title-restore-open';await taskGridTitleButton(page,synthetic.title+'（表格）').press('F2');phase='native-title-restore-visible';await expect(input).toHaveCount(1);await expect(input).toBeVisible();await expect(input).toBeEditable();await input.fill(synthetic.title);const restoreReceipt=page.waitForResponse(r=>r.url()===origin+'/api/platform/personal/todo/'+todo.id&&r.request().method()==='PATCH');phase='native-title-restore-submit';await input.press('Enter');phase='native-title-restore-receipt';todo=(await(await restoreReceipt).json()).entry;phase='native-title-restore-projection';await expect(page.getByRole('button',{name:'打开任务：'+synthetic.title,exact:true})).toBeAttached();phase='native-title-restore-closed';await expect(input).toBeHidden();phase='native-title-final-readback';await readTodo(page,todo,[domain,project,todo]);
  const saveNativeField=async(column:'status'|'due',label:string,value:string,field:'status'|'dueOn')=>{
   const cell=taskGridRoot(page).locator('tr[data-row-id="'+todo.id+'"] td[data-col-id="'+column+'"]');
   phase='native-'+field+'-cell';
@@ -433,15 +433,14 @@ export async function verifyPersonalWorkspace(page:Page){
  await saveNativeField('due','编辑到期日','2030-11-04','dueOn');
  await saveNativeField('due','编辑到期日',synthetic.editedDate,'dueOn');
  phase='native-keyboard-cancel';
- const titleCell=taskGridTitleCell(page,synthetic.title);
+ const titleCell=taskGridTitleButton(page,synthetic.title);
  let cancelledWrites=0;
  const trackCancelledWrite=(request:import('@playwright/test').Request)=>{
   if(request.method()==='PATCH'&&request.url()===origin+'/api/platform/personal/todo/'+todo.id)cancelledWrites++;
  };
  page.on('request',trackCancelledWrite);
  try{
-  await titleCell.click();
-  await page.keyboard.press('a');
+  await titleCell.press('a');
   await expect(input).toHaveValue('a');
   await expect(input).toBeFocused();
   await input.fill('合成未提交表格草稿');
@@ -498,7 +497,7 @@ export async function verifyPersonalWorkspace(page:Page){
  try{
   phase='readonly-load';await page.goto(tasksURL,{waitUntil:'domcontentloaded'});
   phase='readonly-create-hidden';await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
-  phase='readonly-grid-ready';await requireTaskGrid(page,synthetic.title);
+  phase='readonly-grid-ready';await requireTaskGrid(page,synthetic.title,1,true);
   phase='readonly-list';await page.getByRole('group',{name:'待办视图',exact:true}).getByRole('button',{name:'列表',exact:true}).click();
   phase='readonly-title-visible';await expect(page.getByRole('button',{name:'查看待办：'+synthetic.title,exact:true})).toBeVisible();
   const complete=page.getByRole('button',{name:'完成：'+synthetic.title,exact:true});
@@ -533,7 +532,7 @@ export async function verifyPersonalWorkspace(page:Page){
  await page.goBack();await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  await page.reload({waitUntil:'domcontentloaded'});await expect(page).toHaveURL(tasksURL);await requireNativeTable(page);
  phase='workspace-history-draft-refusal';
- await taskGridTitleCell(page,synthetic.title).dblclick();const historyField=taskGridInput(page);
+ await taskGridTitleButton(page,synthetic.title).press('F2');const historyField=taskGridInput(page);
  await historyField.fill('合成后退保留草稿');
  const countHistory=(request:import('@playwright/test').Request)=>{if(['POST','PATCH'].includes(request.method()))historyWrites++;};
  page.on('request',countHistory);
@@ -549,7 +548,7 @@ export async function verifyPersonalWorkspace(page:Page){
   phase='workspace-history-legacy-back-navigation';await page.goBack();
   phase='workspace-history-legacy-back-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-legacy-back-grid';await requireNativeTable(page);
-  phase='workspace-history-legacy-input';await taskGridTitleCell(page,synthetic.title).dblclick();const legacyField=taskGridInput(page);await legacyField.fill('合成旧历史保留草稿');
+  phase='workspace-history-legacy-input';await taskGridTitleButton(page,synthetic.title).press('F2');const legacyField=taskGridInput(page);await legacyField.fill('合成旧历史保留草稿');
   phase='workspace-history-legacy-refusal-confirm';await confirmDiscard(page,false,async()=>{await page.goForward();});
   phase='workspace-history-legacy-refusal-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-legacy-refusal-draft';await expect(legacyField).toHaveValue('合成旧历史保留草稿');assert.equal(historyWrites,0);
@@ -560,7 +559,7 @@ export async function verifyPersonalWorkspace(page:Page){
   phase='workspace-history-accepted-legacy-back-navigation';historyCanary='accepted';await page.goBack();
   phase='workspace-history-accepted-legacy-back-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-accepted-legacy-back-grid';await requireNativeTable(page);
-  phase='workspace-history-accepted-legacy-input';await taskGridTitleCell(page,synthetic.title).dblclick();const acceptedLegacyField=taskGridInput(page);await acceptedLegacyField.fill('合成已接收旧历史草稿');
+  phase='workspace-history-accepted-legacy-input';await taskGridTitleButton(page,synthetic.title).press('F2');const acceptedLegacyField=taskGridInput(page);await acceptedLegacyField.fill('合成已接收旧历史草稿');
   phase='workspace-history-accepted-legacy-refusal-confirm';await confirmDiscard(page,false,async()=>{await page.goForward();});
   phase='workspace-history-accepted-legacy-refusal-url';await expect(page).toHaveURL(tasksURL);
   phase='workspace-history-accepted-legacy-refusal-draft';await expect(acceptedLegacyField).toHaveValue('合成已接收旧历史草稿');

@@ -49,7 +49,7 @@ import { TaskTable, statusLabels } from "./task-table";
 import {projectDetailHref} from '../personal-candidate/project-detail-href';
 import {TaskProjectGantt} from './task-project-gantt';
 import {TaskBoard} from "./task-board";
-import { TaskTitleField } from "./task-grid";
+import { TaskLabels, TaskTitleField } from "./task-grid";
 import type {
   LifeOSWorkspaceProps,
   TaskRow,
@@ -739,7 +739,19 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       </div>
     </>
   );
+  const labelsInTaskView=props.flatTaskLabels===true&&page==="tasks";
   function taskCard(task: TaskRow, board = false, overview = false) {
+    const title = <TaskTitleField
+      task={task}
+      writable={canWrite}
+      blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain || pendingIds.has(task.id)}
+      onSave={props.onSaveTask}
+      getTaskFields={props.getTaskFields}
+      draftMemory={props.taskCellDraftMemory}
+      className="lo-task-title"
+      onOpen={openTask}
+      openDetailsOnClick
+    />;
     return (
       <article
         className={board ? "lo-board-card" : overview ? "lo-task-row lo-overview-task" : "lo-task-row"}
@@ -763,19 +775,9 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
             <span className="lo-unchecked" />
           )}
         </Button>
-        <TaskTitleField
-          task={task}
-          writable={canWrite}
-          blocked={settingsOpen || !!classificationPlanId || mobileOpen || !!props.saving || !!props.uncertain || pendingIds.has(task.id)}
-          onSave={props.onSaveTask}
-          getTaskFields={props.getTaskFields}
-          draftMemory={props.taskCellDraftMemory}
-          className="lo-task-title"
-          onOpen={openTask}
-          openDetailsOnClick
-        />
+        {labelsInTaskView?<div className="lo-task-label-title">{title}<TaskLabels labels={task.labels}/></div>:title}
         <span className="lo-task-date">{task.dueOn ?? "—"}</span>
-        {!board && (
+        {!board && !labelsInTaskView && (
           task.project ? <a className="lo-task-project" href={projectDetailHref(task.project.id)}>{task.project.title}</a>
             : <span className="lo-task-project">—</span>
         )}
@@ -783,7 +785,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
           {statusLabels[task.status]}
         </Badge>
         <div className="lo-task-actions">
-          <Button variant="ghost" className="lo-icon-button" aria-label={`展开详情：${task.title}`} title="展开详情" onClick={event => openTask(task,event.currentTarget)}><ArrowUpRight size={17}/></Button>
+          <Button variant="ghost" className="lo-icon-button" aria-label={`展开详情：${task.title}`} title="展开详情" data-task-detail-focus onClick={event => openTask(task,event.currentTarget)}><ArrowUpRight size={17}/></Button>
         </div>
       </article>
     );
@@ -791,7 +793,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   function taskContent() {
     if (state.status !== "ready")
       return <DataState state={state} onRefresh={onRefresh} />;
-    if (view === "gantt") return <TaskProjectGantt label="待办" rows={rows} renderTitle={task=><button type="button" aria-label={`查看待办 ${task.title}`} onClick={event=>openTask(task,event.currentTarget)}>{task.title}</button>} partial={data?.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setView('table');}}/>;
+    if (view === "gantt") return <TaskProjectGantt label="待办" rows={rows} renderTitle={task=><button type="button" data-task-detail-focus aria-label={`查看待办 ${task.title}`} onClick={event=>openTask(task,event.currentTarget)}>{task.title}</button>} partial={data?.coverage==='partial'} onShowTable={()=>{if(props.onBeforeNavigate?.()===false)return;setView('table');}}/>;
     const emptyMessage = filterActive ? "没有符合条件的待办"
       : page === "inbox" && tasks.some(task => task.inInbox === null) ? "收件箱分类尚未提供"
       : data?.coverage === "partial" ? "当前已加载范围暂无待办" : "暂无待办";
@@ -800,6 +802,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         <TaskTable
           viewPreferenceScope={props.viewPreferenceScope}
           flatProjects
+          flatLabels={labelsInTaskView}
           tasks={rows}
           emptyMessage={emptyMessage}
           writable={canWrite}
@@ -824,17 +827,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       );
     if (view === "list")
       return (
-        <div className="lo-task-list">
+        <div className={labelsInTaskView?"lo-task-list lo-flat-task-list":"lo-task-list"}>
           <div className="lo-list-columns">
             <span>待办</span>
             <span>到期日</span>
-            <span>项目</span>
+            {!labelsInTaskView&&<span>项目</span>}
             <span>状态</span>
           </div>
           <div className="lo-list-rows">{rows.map((task) => taskCard(task))}</div>
         </div>
       );
-    return <TaskBoard flatProjects tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
+    const board=<TaskBoard flatProjects tasks={rows} writable={canWrite} blocked={settingsOpen||!!classificationPlanId||mobileOpen||!!props.saving||!!props.uncertain} pendingTaskIds={props.pendingTaskIds} scope={props.viewPreferenceScope} onSetTaskStatus={props.onSetTaskStatus} renderCard={task=>taskCard(task,true)}/>;
+    return labelsInTaskView?<div className="lo-flat-task-board">{board}</div>:board;
   }
   function keepFocusedWorkspaceField(event: Event) {
     const field=document.activeElement;

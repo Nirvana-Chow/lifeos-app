@@ -1397,3 +1397,15 @@
 .lo-native-board .lo-board-card{grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:4px 8px;padding:4px 8px 8px}.lo-native-board .lo-board-card .lo-task-actions{grid-column:3;grid-row:1 / span 2}.lo-native-board .lo-board-empty{color:var(--muted-foreground)}
 @media(min-width:1024px) and (pointer:fine){.lo-native-board .lo-board-card .lo-task-title{font-size:14px;line-height:20px;min-height:32px;padding:2px 0}.lo-native-board .lo-board-card .lo-task-date{font-size:12px;line-height:18px}}
 .lo-task-sections [aria-pressed="true"]{color:var(--lo-selected-foreground);background:var(--lo-selected);box-shadow:inset 0 -2px var(--ring)}
+
+.lo-task-label-title { min-width:0; overflow-wrap:anywhere; }
+.lo-task-label-title > [aria-label="待办标签"] { display:flex; flex-wrap:wrap; max-inline-size:100%; margin:0 0 6px; }
+.lo-flat-task-board { display:contents; }
+.lo-flat-task-board [aria-label="待办分类"] { display:none; }
+@media (min-width:851px) {
+ .lo-flat-task-list .lo-list-columns { grid-template-columns:minmax(0,1fr) 96px 96px 44px; }
+ .lo-flat-task-list .lo-task-row { grid-template-columns:44px minmax(0,1fr) 96px 96px 44px; }
+}
+@media (max-width:850px) {
+ .lo-flat-task-list .lo-task-label-title { grid-column:2; grid-row:1; }
+}

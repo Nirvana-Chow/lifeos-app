@@ -151,17 +151,10 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await expect(page).toHaveURL(origin+'/personal/edit?type=todo&id='+taskId);
   await page.keyboard.press('Escape');
   await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded',timeout:60000});const grid=page.locator('[data-task-grid="reui"]');await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();
-  const grouping=grid.getByRole('combobox',{name:'待办表格分组'});
-  await expect(grouping).toHaveValue('none');
-  await expect(grouping.getByRole('option',{name:'按领域'})).toHaveCount(0);
-  await expect(grid.getByRole('columnheader',{name:/项目/})).toBeVisible();
-  await expect(grid.getByRole('columnheader',{name:/领域/})).toHaveCount(0);
-  await grouping.selectOption('project');
-  await expect(grid.locator('[data-task-group="project"]').first()).toBeVisible();
-  await grouping.selectOption('none');
+  await expect(grid.getByRole('combobox',{name:'待办表格分组'})).toHaveCount(0);
+  await expect(grid.locator('th[data-col-id="project"],th[data-col-id="area"],[data-task-group]')).toHaveCount(0);
   await page.getByRole('button',{name:'甘特',exact:true}).click();let gantt=page.getByRole('region',{name:'待办甘特',exact:true});await expect(gantt.getByRole('heading',{name:'尚无完整排期',exact:true})).toBeVisible();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();await gantt.getByRole('button',{name:'查看待办表格',exact:true}).click();
-  await expect(grid.getByRole('link',{name:'查看项目：合成排期项目',exact:true})).toBeVisible();
-  await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
+  await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();let dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await dialog.getByText('关联',{exact:true}).click();await expect(dialog.getByRole('link',{name:'合成排期项目',exact:true})).toBeVisible();await dialog.getByText('关联',{exact:true}).click();await dialog.getByLabel('计划开始',{exact:true}).fill('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('2030-11-10');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect.poll(()=>taskReads).toBe(1);await expect(dialog).toBeVisible();holdReadback=false;releaseReadback();await expect(dialog).toHaveCount(0);
   await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-05 至 2030-11-10',exact:true})).toBeVisible();
   await page.reload({waitUntil:'domcontentloaded'});await expect(grid).toBeVisible();await expect(page.locator('[data-slot="theme-toggle"]')).toBeEnabled();await page.getByRole('button',{name:'甘特',exact:true}).click();await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true}).click();dialog=page.getByRole('dialog',{name:'待办详情',exact:true});await expect(dialog.getByLabel('计划开始',{exact:true})).toHaveValue('2030-11-05');await dialog.getByLabel('计划结束',{exact:true}).fill('');await dialog.getByRole('button',{name:'保存待办',exact:true}).click();await expect(dialog).toHaveCount(0);await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await expect(gantt.getByRole('button',{name:'查看待办 合成排期待办',exact:true})).toBeVisible();await expect(gantt.getByRole('img',{name:'截止 2030-12-31',exact:true})).toBeVisible();
   const create=page.getByRole('button',{name:'新建待办',exact:true});
@@ -200,7 +193,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await page.getByRole('button',{name:'看板',exact:true}).click();
   const board=page.locator('[data-task-board="reui"]');
   const card=board.locator('[data-kanban-task="'+taskId+'"]');
-  await expect(card.getByRole('link',{name:'合成排期项目',exact:true})).toBeVisible();
+  await expect(card.getByRole('link',{name:'合成排期项目',exact:true})).toHaveCount(0);
   await expect(card.getByText('领域',{exact:true})).toHaveCount(0);
   await card.getByRole('button',{name:'查看待办：合成排期待办',exact:true}).click();
   await expect(existingDetail).toBeVisible();
@@ -346,6 +339,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await expect(page.getByRole('button',{name:'新建待办',exact:true})).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await grid.getByRole('button',{name:'查看待办详情：合成排期待办',exact:true}).click();
+  await page.getByRole('dialog',{name:'待办详情',exact:true}).getByText('关联',{exact:true}).click();
   const projectLink=page.getByRole('dialog',{name:'待办详情',exact:true}).getByRole('link',{name:'合成排期项目（版本已变化）',exact:true});
   await projectLink.click();
   await expect(page).toHaveURL(origin+'/personal/edit?type=project&id='+projectId);

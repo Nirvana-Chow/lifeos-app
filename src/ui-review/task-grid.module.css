@@ -154,3 +154,11 @@
     .row:has([data-task-group]) .tableCell:not([data-col-id="title"]) { display: none; }
   }
 }
+
+.root[data-flat-labels] .columnToolbar { justify-content: flex-end; }
+.labelTitle { display:flex; align-items:center; gap:6px; min-width:0; min-height:44px; padding:0; color:inherit; text-align:start; cursor:pointer; }
+.labelTitle:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.labelTitle:disabled { cursor:default; }
+.labels { display:inline-flex; align-items:center; gap:4px; flex:none; max-inline-size:45%; min-inline-size:0; margin-inline-start:6px; overflow:hidden; }
+.labels [role=listitem] { padding:1px 6px; border:1px solid var(--border); border-radius:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--lo-font-meta,12px); color:var(--muted-foreground); }
+@media(min-width:1024px) and (pointer:fine) { .labelTitle { min-height:32px; } }

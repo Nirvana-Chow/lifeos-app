@@ -189,11 +189,13 @@ test('denied command storage blocks direct save and status callbacks even when t
  }finally{h.dispose();}
 });
 
-test('new task exposes optional project and domain directly and hides business label editing',async()=>{
- const f=fixture(),h=harness(f);try{h.render();await flush();h.render();h.actions().onCreateTask();const tree=h.render();
- assert.ok(find(tree,n=>n.type==='label'&&text(n).startsWith('领域')&&!!find(n,x=>x.type==='select')));
- assert.ok(find(tree,n=>n.type==='label'&&text(n).startsWith('项目')&&!!find(n,x=>x.type==='select')));
- assert.equal(find(tree,n=>n.type==='details'),undefined);assert.equal(find(tree,n=>n.type==='legend'&&text(n)==='主题'),undefined);
+test('new task can select existing labels without a project or domain',async()=>{
+ const f=fixture();f.withTopics();const h=harness(f);try{h.render();await flush();h.render();h.actions().onCreateTask();const tree=h.render();
+ assert.equal(find(tree,n=>n.type==='label'&&/领域|项目/.test(text(n))&&!!find(n,x=>x.type==='select')),undefined);
+ const labels=find(tree,n=>n.type==='details'&&text(n).includes('标签（可选）'));
+ assert.ok(find(labels,n=>n.type==='label'&&text(n).includes('Available synthetic topic')));
+ assert.ok(find(labels,n=>n.type==='input'&&n.props.type==='checkbox'&&!n.props.checked));
+ assert.equal(f.writes.length,0);
  }finally{h.dispose();}
 });
 
