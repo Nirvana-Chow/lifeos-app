@@ -1,0 +1,11 @@
+.page{display:grid;gap:12px;padding:var(--lo-content-padding,16px);overflow-wrap:anywhere}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.header h1,.page p{margin:0}
+.page button,.selector select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 12px}
+.selector{display:grid;gap:6px;max-width:36rem}
+.selector select{width:100%;min-width:0}
+.panel{display:grid;gap:12px;padding:16px;border:1px solid var(--border);border-radius:10px}
+.panel h2,.panel h3,.panel ul{margin:0}
+.panel ul{display:grid;gap:10px;padding-left:20px}
+.panel a{text-decoration:underline}
+.panel small{display:block;color:var(--muted-foreground)}
