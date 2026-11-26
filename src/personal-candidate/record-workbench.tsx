@@ -17,6 +17,7 @@ import {type PersonPersonal} from '../personal-people/model';
 import {PersonFields} from '../personal-people/PersonFields';
 import {personSummary,projectPeopleEntries} from '../personal-people/projection';
 import {projectRelatedJournals,type RelatedJournals} from '../personal-people/journal-links';
+import {projectRelatedCalendarEvents,type RelatedCalendarEvents} from '../personal-people/calendar-links';
 import {PeopleOverview} from '../personal-people/PeopleOverview';
 import {HealthFields} from '../personal-health/fields';
 import type {HealthPersonal,HealthPersonalFields} from '../personal-health/domain';
@@ -50,7 +51,7 @@ const zone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UT
 const emptyLinks=()=>({project:null,domain:null,topics:[],people:[]});
 const fresh=(type:RecordModule,kind?:PortfolioKind)=>emptyRecordFields(type,zone(),kind);
 const emptyOptions=():Record<string,PublicEntry[]>=>({project:[],domain:[],topic:[],person:[],career:[],portfolio:[]});
-type Status=PersonalBinding&{writable:boolean;storageVerified:true;allowedTypes:string[];healthEnabled:boolean;peopleEnabled:boolean;mediaEnabled:boolean;careerEnabled:boolean;portfolioEnabled:boolean};
+type Status=PersonalBinding&{writable:boolean;storageVerified:true;allowedTypes:string[];healthEnabled:boolean;calendarEnabled?:boolean;peopleEnabled:boolean;mediaEnabled:boolean;careerEnabled:boolean;portfolioEnabled:boolean};
 const keyOf=(v:PersonalBinding)=>JSON.stringify([v.ownerId,v.spaceId]);
 const journalAutosaveDelayMs=1200;
 async function json(path:string){const response=await fetch('/api/platform/personal/'+path,{credentials:'same-origin',cache:'no-store'}),value=await response.json();if(!response.ok)throw Error(value?.error?.message||'读取未完成，请重试。');return value;}
@@ -62,6 +63,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  const [healthCategory,setHealthCategory]=useState<HealthRecordCategory>('all');
  const [healthStatus,setHealthStatus]=useState<HealthRecordStatus>('all');
  const [status,setStatus]=useState<Status|null>(null),[entries,setEntries]=useState<PublicEntry[]>([]),[options,setOptions]=useState<Record<string,PublicEntry[]>>(emptyOptions),[search,setSearch]=useState(''),[metric,setMetric]=useState<HealthMetric>('weight'),[view,setView]=useState<RecordView>(()=>initialRecordView(type,careerSection)),[resumeId,setResumeId]=useState('');
+ const [relatedEvents,setRelatedEvents]=useState<RelatedCalendarEvents|null>(null);
  const [relatedJournals,setRelatedJournals]=useState<RelatedJournals|null>(null),[linkedProfile,setLinkedProfile]=useState(linkedPersonId);
  const [mediaKind,setMediaKind]=useState<MediaBrowseFilter>('all');
  const [editor,setEditor]=useState<{entry:PublicEntry|null;fields:RecordFields;initial:string;fromNovelShelf?:boolean}|null>(null),[history,setHistory]=useState<PublicEntry[]>([]),[mutation,setMutation]=useState<PersonalState|null>(null),[error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
@@ -108,13 +110,17 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    const data=await json(type+'/snapshot');
    if(!Array.isArray(data.items)||data.truncated!==false||data.total!==data.items.length)throw Error('完整记录未读取完成。');
    const rows=data.items.map((entry:unknown)=>ownerRecord(entry,type,next.spaceId));
-   const references=await json('overview?today='+new Date().toISOString().slice(0,10));
+   const references=await json('overview?today='+new Date().toISOString().slice(0,10)).catch(error=>{
+    if(type!=='person')throw error;
+    return null;
+   });
    const after=readStatus(await json('status'));
    if(!recordModuleEnabled(type,after))throw Error('此模块尚未开放。');
    if(token!==generation.current)return;
    const scope=keyOf(after);
    if(keyOf(next)!==scope){
-    if(type==='journal'){discardJournalDraft();hide();setError('本人空间已变化，请重新核对。');}
+    if(type==='journal')discardJournalDraft();
+    if(type==='journal'||type==='person'){hide();setError('本人空间已变化，请重新核对。');}
     return;
    }
    if(type==='journal'&&draftCache.current?.scope!==scope)draftCache.current=null;
@@ -123,9 +129,14 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
     setEditor(null);setHistory([]);setResumeId('');session.current?.invalidateBinding();session.current=null;
    }
    current.current=after;setStatus(after);setEntries(rows);
-   if(type==='person')setRelatedJournals(projectRelatedJournals(references,projectPeopleEntries(rows,after.spaceId),after.spaceId));
+   if(type==='person'){
+    const profiles=projectPeopleEntries(rows,after.spaceId);
+    setRelatedJournals(projectRelatedJournals(references,profiles,after.spaceId));
+    setRelatedEvents(next.calendarEnabled===true&&after.calendarEnabled===true
+     ?projectRelatedCalendarEvents(references,profiles,after.spaceId):null);
+   }
    const refs=emptyOptions();
-   for(const entry of references.items??[]){
+   for(const entry of references?.items??[]){
     const kind=entry.draft?.personal?.type;
     if(kind in refs)refs[kind].push(entry);
    }
@@ -165,7 +176,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  function hide(){
   if(type==='journal')resetJournalAutosave();
   if(current.current&&editorRef.current)draftCache.current={scope:keyOf(current.current),editor:editorRef.current,history:[]};
-  generation.current++;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
+  generation.current++;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setRelatedEvents(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
  }
  useEffect(()=>{
   setView(initialRecordView(type,careerSection));
@@ -354,7 +365,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   {status&&type==='health'&&view==='table'&&<HealthRecordFilters category={healthCategory} status={healthStatus} onCategory={value=>{if(value!==healthCategory){setHealthCategory(value);setHealthStatus('all');}}} onStatus={setHealthStatus}/>}
   {status&&type==='media'&&(mediaKind==='music'||mediaKind==='photography')?
    <p role="status" className={s.description}>{mediaKind==='music'?'暂无音乐记录，音乐来源未接入。':'暂无摄影作品，日记照片关联尚未开放。'}</p>
-   :status&&view==='overview'&&type==='person'?<div className={s.contentView}><PeopleOverview people={people} allPeople={allPeople} onOpen={openById} journals={relatedJournals} journalEnabled={status.allowedTypes.includes('journal')} onBeforeNavigate={leave}/></div>:status&&view==='board'&&type==='media'?<div className={s.contentView}><MediaBoard showSearch={false} filterKind={mediaKind==='film'||mediaKind==='series'||mediaKind==='screen'?mediaKind:mediaKind==='all'?'all':'book'} records={mediaEntries} onOpenRecord={openById} onMoveRecord={(id,state)=>void move(id,state)} disabled={blocked||!!editor||!status.writable}/></div>:status&&view==='board'&&type==='career'?<div className={s.contentView}><CareerBoard records={careerEntries.filter(row=>rows.some(entry=>entry.id===row.id))} onOpenRecord={row=>openById(row.id)} onMoveRecord={(row,state)=>move(row.id,state)} disabled={blocked||!!editor||!status.writable}/></div>:status&&view==='resume'&&type==='career'?<div className={s.contentView}><label className={s.metric}>简历版本<select aria-label="简历版本" value={selectedResume?.id??''} disabled={!resumes.length} onChange={event=>setResumeId(event.target.value)}>{!selectedResume&&<option value="">暂无可预览版本</option>}{resumes.map(row=><option key={row.id} value={row.id}>{row.fields.title} · 版本 {row.revision}</option>)}</select></label><ResumePreview records={careerEntries} selected={selectedResume}/></div>:status&&view==='overview'&&type==='portfolio'?<div className={s.contentView}><PortfolioOverview records={portfolioEntries} onOpenRecord={row=>openById(row.id)} onCreateKind={status.writable&&!blocked?kind=>create(kind):undefined}/></div>:status&&view==='training'&&type==='health'?<TrainingCalendar records={healthEntries} onOpenRecord={id=>{const entry=entries.find(entry=>entry.id===id);if(entry)void open(entry);}}/>:status&&view==='trend'&&type==='health'?<><label className={s.metric}>查看指标<select value={metric} onChange={event=>setMetric(event.target.value as HealthMetric)}>{Object.entries(healthMetricLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthTrendView trend={projectHealthTrend(healthEntries,metric)}/></>:status&&<div className={s.grid}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual height="100%" estimateSize={44} overscan={8}/></DataGrid></DataGridContainer></div>}
+   :status&&view==='overview'&&type==='person'?<div className={s.contentView}><PeopleOverview people={people} allPeople={allPeople} onOpen={openById} journals={relatedJournals} calendarEvents={relatedEvents} calendarEnabled={status.calendarEnabled===true} journalEnabled={status.allowedTypes.includes('journal')} onBeforeNavigate={leave}/></div>:status&&view==='board'&&type==='media'?<div className={s.contentView}><MediaBoard showSearch={false} filterKind={mediaKind==='film'||mediaKind==='series'||mediaKind==='screen'?mediaKind:mediaKind==='all'?'all':'book'} records={mediaEntries} onOpenRecord={openById} onMoveRecord={(id,state)=>void move(id,state)} disabled={blocked||!!editor||!status.writable}/></div>:status&&view==='board'&&type==='career'?<div className={s.contentView}><CareerBoard records={careerEntries.filter(row=>rows.some(entry=>entry.id===row.id))} onOpenRecord={row=>openById(row.id)} onMoveRecord={(row,state)=>move(row.id,state)} disabled={blocked||!!editor||!status.writable}/></div>:status&&view==='resume'&&type==='career'?<div className={s.contentView}><label className={s.metric}>简历版本<select aria-label="简历版本" value={selectedResume?.id??''} disabled={!resumes.length} onChange={event=>setResumeId(event.target.value)}>{!selectedResume&&<option value="">暂无可预览版本</option>}{resumes.map(row=><option key={row.id} value={row.id}>{row.fields.title} · 版本 {row.revision}</option>)}</select></label><ResumePreview records={careerEntries} selected={selectedResume}/></div>:status&&view==='overview'&&type==='portfolio'?<div className={s.contentView}><PortfolioOverview records={portfolioEntries} onOpenRecord={row=>openById(row.id)} onCreateKind={status.writable&&!blocked?kind=>create(kind):undefined}/></div>:status&&view==='training'&&type==='health'?<TrainingCalendar records={healthEntries} onOpenRecord={id=>{const entry=entries.find(entry=>entry.id===id);if(entry)void open(entry);}}/>:status&&view==='trend'&&type==='health'?<><label className={s.metric}>查看指标<select value={metric} onChange={event=>setMetric(event.target.value as HealthMetric)}>{Object.entries(healthMetricLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><HealthTrendView trend={projectHealthTrend(healthEntries,metric)}/></>:status&&<div className={s.grid}><DataGridContainer><DataGrid table={table} recordCount={tableRows.length} i18n={{labels:{empty:emptyTable}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual height="100%" estimateSize={44} overscan={8}/></DataGrid></DataGridContainer></div>}
  </>;
  return <div ref={root} className={s.workbench} data-personal-record-module={type}>
   {writeJournal?<><div className={s.toolbar}>
