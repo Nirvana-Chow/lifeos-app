@@ -232,6 +232,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  const pool=page.getByRole('region',{name:'需求池',exact:true});
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  const range=pool.getByLabel('显示范围',{exact:true});
  const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});
  await expect(range).toHaveValue('pending');
@@ -280,6 +281,9 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
  await expect(detail.getByRole('heading',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await expect(pool.getByRole('button',{name:'总需求 8',exact:true})).toBeVisible();
+ await expect(pool.getByRole('list',{name:'需求清单'}).getByRole('button',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await expect(pool.getByText('7 / 8 项',{exact:true})).toBeVisible();
  await expect(pool.getByRole('button',{name:/查看需求 .* Synthetic newly saved requirement$/})).toBeVisible();
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});

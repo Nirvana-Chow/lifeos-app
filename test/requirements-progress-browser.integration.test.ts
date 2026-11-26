@@ -40,7 +40,14 @@ test('OPT-IN requirement delivery filters, refresh and results render without re
  for(const width of [1365,390])for(const theme of ['light','dark'] as const)await t.test(`${width}x768 ${theme}`,async()=>{
   const page=await browser.newPage({viewport:{width,height:768},colorScheme:theme});t.after(()=>page.close());page.setDefaultTimeout(10000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/platform/personal/**',async route=>{const path=new URL(route.request().url()).pathname;await route.fulfill({json:path.endsWith('/status')?{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,requirementsEnabled:true,requirementSupportEnabled:true,writable:false}:structuredClone(snapshot)});});
-  await page.goto(origin+'/personal?page=requirements',{waitUntil:'networkidle',timeout:60000});const filter=page.getByRole('combobox',{name:'交付状态',exact:true});
+  await page.goto(origin+'/personal?page=requirements',{waitUntil:'networkidle',timeout:60000});
+  await page.getByRole('button',{name:'管理视图',exact:true}).click();
+  await expect(page.locator('[data-requirements-filters]')).toBeVisible();
+  await expect(page.getByRole('combobox',{name:'表格分组'})).toHaveValue('none');
+  await page.getByText('更多筛选',{exact:true}).click();
+  await expect(page.getByLabel('优先级',{exact:true}).locator('option',{hasText:'P3'})).toHaveCount(1);
+  await page.getByText('更多筛选',{exact:true}).click();
+  const filter=page.getByRole('combobox',{name:'交付状态',exact:true});
   for(const label of ['尚未实现','进行中','已合并待上线','已上线','待核实'])await expect(filter.locator('option').filter({hasText:label})).toHaveCount(1);
   await filter.selectOption('unverified');
   await expect(page.locator('[data-requirement-id="'+snapshot.items[0].id+'"]')).toBeVisible();
@@ -65,6 +72,8 @@ test('OPT-IN requirement delivery filters, refresh and results render without re
   await expect(people.locator('time')).toHaveAttribute('datetime','2026-11-25T00:29:27Z');
   await expect(people.locator('time').locator('..')).toContainText('部分合并');
   await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.getByRole('group',{name:'需求统计'})).toBeVisible();
+  await page.getByRole('button',{name:'管理视图',exact:true}).click();
   await expect(savedFollowUp).toHaveText('2026/11/13 09:00');
   await expect(page.getByRole('link',{name:'人物只读总览（合并记录）',exact:true})).toHaveAttribute('href','https://github.com/Nirvana-Chow/lifeos-app/pull/93');
   await page.getByRole('button',{name:'看板视图',exact:true}).click();
