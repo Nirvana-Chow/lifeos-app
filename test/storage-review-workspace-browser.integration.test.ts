@@ -268,6 +268,9 @@ test('OPT-IN authoritative storage route in the personal workspace preserves she
   await page.close();
  }
  const anonymous=await browser.newPage();
+ const missing=await anonymous.request.get(origin+'/Personal/Storage-Review');
+ assert.equal(missing.status(),404);
+ assert.match(missing.headers()['content-security-policy'],/default-src 'self'/);
  await anonymous.goto(origin+canonical);
  await expect(anonymous).toHaveURL(origin+'/login');
  await expect(anonymous.locator('[data-storage-review-body]')).toHaveCount(0);

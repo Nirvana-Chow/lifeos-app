@@ -24,7 +24,8 @@ const config: NextConfig = {
     ]},
     // Next gives config headers precedence over route-handler headers. Let
     // the standalone HTML supply its own script/style hashes and no-referrer.
-    {source:'/:path((?!personal/storage-review$).*)',headers:documentHeaders},
+    // Config matchers ignore case; only the exact filesystem route owns a policy.
+    {source:'/:path((?!(?-i:personal/storage-review)$).*)',headers:documentHeaders},
     {source:'/personal/storage-review',has:[{type:'header',key:'rsc',value:'1'}],headers:documentHeaders},
     {source:'/:path((?!_next/static/).*)',headers:[{key:'Cache-Control',value:'private, no-store'}]},
   ]; },
