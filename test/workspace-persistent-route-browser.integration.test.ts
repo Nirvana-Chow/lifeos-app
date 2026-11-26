@@ -159,11 +159,25 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    assert.deepEqual(documents,['/personal']);
    await expect.poll(()=>taskRows.evaluate(region=>region.scrollTop)).toBe(240);
    const taskHeading=page.getByRole('heading',{name:'待办',exact:true,level:1});
-   await expect(taskHeading).toBeFocused();
+   await expect(width===1365?link:width===390?menuButton:taskHeading).toBeFocused();
    const nav=await openNav();
    await expect(nav.getByRole('button',{name:'待办',exact:true})).toHaveAttribute('aria-current','page');
    if(await page.getByRole('button',{name:'关闭导航',exact:true}).isVisible())await page.keyboard.press('Escape');
    console.log('WORKSPACE_ROUTE_RETURN '+JSON.stringify({width,restoredScrollTop:240,draftGuard:width===1365,nativeBack:width!==430}));
+   if(width===430){
+    await page.getByRole('button',{name:'LifeOS 总览',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
+    const overviewUrl=page.url();
+    await (await openNav()).getByRole('link',{name:/^(日记|记录)$/}).click();
+    await expect(page.getByRole('link',{name:'Synthetic diary 25',exact:true})).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(overviewUrl);
+    await expect(page.getByRole('heading',{name:'总览',exact:true,level:1})).toBeVisible();
+    await expect(menuButton).toBeFocused();
+    assert.deepEqual(await compare(),{sameDocument:true,sameNodes:[true,true,true,true,true]});
+    assert.deepEqual(documents,['/personal']);
+    console.log('WORKSPACE_OVERVIEW_RETURN '+JSON.stringify({width,restoredFocus:'打开导航',documents}));
+   }
   }
   assert.deepEqual(errors,[]);
   assert.deepEqual(writes,[]);

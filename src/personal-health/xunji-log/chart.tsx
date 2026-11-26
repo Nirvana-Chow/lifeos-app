@@ -37,5 +37,5 @@ export default function Chart({option,height=280,className,onEvents}:Props) {
     return () => {stopped = true;paintRef.current = () => {};for (const cleanup of cleanups.splice(0).reverse()) cleanup();};
   },[]);
   useEffect(() => {paintRef.current();},[option]);
-  return error ? <p role="alert">运动日历图未能加载，仍可使用下方记录列表。</p> : <div ref={host} className={className ?? s.chart} style={{height}} role="img" aria-label="已读运动日历热力图"/>;
+  return error ? <p role="alert">运动日历图未能加载，仍可查看「最近已读运动」。</p> : <div ref={host} className={className ?? s.chart} style={{height}} role="img" aria-label="已读运动日历热力图"/>;
 }

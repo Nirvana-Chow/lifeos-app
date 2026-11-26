@@ -21,6 +21,7 @@ import {readWritePermit,type WritePermitBinding} from '../deployment-candidate/w
 import type {PersonalConfig} from './config.ts';
 import {PersonalService} from './service.ts';
 import {handlePersonalRequest} from './http.ts';
+import {readTaskWorkspaceSnapshot,taskWorkspaceSnapshotPath,type TaskWorkspaceReader} from './task-workspace-read.ts';
 export const personalPermitPath='/run/lifeos-platform/write-gate/permit.json';
 /** No password, URL credentials, API secret or owner content participates in this digest. */
 export function personalPermitBinding(config:PersonalConfig,sourceSha:string):WritePermitBinding{
@@ -37,8 +38,8 @@ export function requirePersonalBusinessWrite(config:PersonalConfig,sourceSha:str
  if(config.businessWriteMode==='disabled')throw new PlatformError(503,'PERSONAL_WRITES_LOCKED','本人空间业务写入已关闭，请保留原保存请求。');
  requirePersonalWritePermit(config,sourceSha);
 }
-const respond=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'}});
-export function createPersonalPlatformHandler(options:{repository:PlatformRepository;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
+const respond=(value:unknown,status=200,extra:Record<string,string>={})=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff',...extra}});
+export function createPersonalPlatformHandler(options:{repository:PlatformRepository & Partial<TaskWorkspaceReader>;sessions:SessionReader;config:PersonalConfig;storageVerified:boolean;appleCalendarPreview?:AppleCalendarPreviewReader;classification?:{authority:AuthorityService;service:ClassificationService};fileHandoff?:{runtime:FileHandoffRuntime;authority:AuthorityService};releaseArtifact?:()=>ReleaseArtifact|null;assertWritable:()=>Promise<void>}):(request:Request)=>Promise<Response>{
  const artifact=options.releaseArtifact??readReleaseArtifact;
  const serviceConfig=options.storageVerified?options.config:{...options.config,mediaEnabled:undefined,careerEnabled:undefined,portfolioEnabled:undefined,cookingEnabled:undefined};
  const service=new PersonalService(options.repository,serviceConfig,{currentSourceSha:()=>artifact()?.sourceSha??null});
@@ -74,6 +75,16 @@ export function createPersonalPlatformHandler(options:{repository:PlatformReposi
    }
    // Personal mode has a narrow independent API. Legacy fixture/AI/import/finance routes stay closed.
    if(!url.pathname.startsWith('/api/platform/personal/'))throw new PlatformError(404,'PERSONAL_ROUTE_ONLY','本人模式仅开放手工待办与日记入口。');
+   if(url.pathname===taskWorkspaceSnapshotPath){
+    if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','待办工作区仅限本人会话。');
+    const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');
+    if(origin!==null&&origin!==new URL(options.config.baseURL).origin||site==='cross-site'||site==='same-site')
+     throw new PlatformError(403,'ORIGIN_DENIED','待办工作区需要相同来源。');
+    if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'待办工作区仅可读取。'}},405,{Allow:'GET'});
+    const value=await readTaskWorkspaceSnapshot(request,options.config,options.storageVerified,options.repository);
+    await assertOwner();
+    return respond(value);
+   }
    if(url.pathname==='/api/platform/personal/todo-classifications'||url.pathname.startsWith('/api/platform/personal/todo-classifications/')){
     if(!options.classification)return respond({error:{code:'NOT_FOUND',message:'分类尚未开放。'}},404);
     if(request.headers.has('authorization'))throw new PlatformError(403,'OWNER_ONLY','仅限本人会话。');

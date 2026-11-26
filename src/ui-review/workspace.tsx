@@ -228,21 +228,23 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const currentHref = useRef("");
   const committedRoute=useRef(routePath);
   const pendingRoutePush=useRef(false);
-  const routeScroll=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[]}>());
+  const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:HTMLElement|null}>());
   const restoreRouteScroll=useRef(false);
   const mainRegion=useRef<HTMLElement>(null);
   function scrollRegions(main:HTMLElement){
     return [main,...main.querySelectorAll<HTMLElement>(':scope > .lo-content, .lo-list-rows, .lo-board-cards, [data-slot="data-grid-table-viewport"]')];
   }
-  function rememberRouteScroll(){
+  function rememberRoutePosition(){
     const main=mainRegion.current;
-    if(main&&currentHref.current)routeScroll.current.set(currentHref.current,{
+    const focused=document.activeElement;
+    if(main&&currentHref.current)routePositions.current.set(currentHref.current,{
       windowY:window.scrollY,regions:scrollRegions(main).map(region=>({x:region.scrollLeft,y:region.scrollTop})),
+      focus:mobileOpen?menuButton.current:focused instanceof HTMLElement&&focused!==document.body?focused:null,
     });
   }
   function pushUnifiedRoute(destination:string){
     if(!props.unifiedRoute||window.location.pathname+window.location.search===destination)return;
-    rememberRouteScroll();
+    rememberRoutePosition();
     pendingRoutePush.current=true;
     setMobileOpen(false);
     props.unifiedRoute.push(destination);
@@ -354,6 +356,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     const old=currentHistory.current;
     const entry=pendingRoutePush.current&&old?{scope:old.scope,index:old.index+1}:
       workspaceHistoryEntry(window.history.state)??{scope:old?.scope??crypto.randomUUID(),index:old?.index??0};
+    const returnFocus=pendingRoutePush.current?null:routePositions.current.get(href)?.focus;
     pendingRoutePush.current=false;
     window.history.replaceState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
     currentHistory.current=entry;
@@ -371,14 +374,18 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     }
     restoreRouteScroll.current=true;
     updateHistoryControls();
-    const frame=requestAnimationFrame(()=>mainRegion.current?.querySelector<HTMLElement>('h1')?.focus({preventScroll:true}));
+    const frame=requestAnimationFrame(()=>{
+      const heading=mainRegion.current?.querySelector<HTMLElement>('h1');
+      const target=returnFocus?.isConnected&&returnFocus.getClientRects().length?returnFocus:heading;
+      target?.focus({preventScroll:true});
+    });
     return()=>cancelAnimationFrame(frame);
   },[routePath]);
   useLayoutEffect(()=>{
     if(!restoreRouteScroll.current)return;
     const main=mainRegion.current;
     if(!main)return;
-    const position=routeScroll.current.get(currentHref.current);
+    const position=routePositions.current.get(currentHref.current);
     scrollRegions(main).forEach((region,index)=>region.scrollTo(position?.regions[index]?.x??0,position?.regions[index]?.y??0));
     window.scrollTo(0,position?.windowY??0);
     if(routePath!=='/personal'||state.status==='ready')restoreRouteScroll.current=false;
@@ -443,7 +450,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
         return;
       }
       if(crossUnifiedRoute){
-        rememberRouteScroll();
+        rememberRoutePosition();
         pendingRoutePush.current=false;
         return;
       }

@@ -69,10 +69,10 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
   if(url.origin!==origin){external.push(url.origin);return route.abort();}
   if(!url.pathname.startsWith('/api/'))return route.continue();
   if(request.method()!=='GET')writes.push(request.method());
-  if(url.pathname==='/api/platform/personal/overview'){
+  if(url.pathname==='/api/platform/personal/todo/workspace-snapshot'){
    if(overviewGate)await overviewGate;
    if(statusCode!==200)return route.fulfill({status:statusCode,json:{error:{code:'PERSONAL_SNAPSHOT_UNAVAILABLE'}}});
-   return route.fulfill({json:{scope:'full-current-snapshot',items:[entry],truncated:false,total:1,today:url.searchParams.get('today'),observedAt:at}});
+   return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[entry],truncated:false,total:1,today:url.searchParams.get('today'),observedAt:at}});
   }
   if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin}});
   return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'overview-owner',spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']}});
