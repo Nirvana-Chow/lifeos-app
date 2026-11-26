@@ -1,3 +1,4 @@
+import {isExpressionType,manualSourceKeys,todoCapture,type ExpressionType} from '../todo-provenance/domain.ts';
 import {clonePersonalJSON} from './editor.ts';
 import {preserveOmittedPlanning} from './planning.ts';
 import {appleOriginMarker,readAppleOrigin} from './apple-origin.ts';
@@ -20,19 +21,25 @@ function checked(value:unknown,binding:PersonalBinding):PersonalCommand{
  checkBinding(binding);const raw=object(value,['ownerId','spaceId','type','id','key','method','body']);
  if(raw.ownerId!==binding.ownerId||raw.spaceId!==binding.spaceId||!personalTypes.includes(raw.type as PersonalType)||raw.method!==(raw.id===null?'POST':'PATCH'))throw Error('请求与当前本人身份或空间不符。');
  validateIdempotencyKey(raw.key);if(raw.id!==null)validateId(raw.id);
- const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:[])]);
+ const body=object(raw.body,['spaceId','confirmed','fields',...(raw.id!==null?['expectedRevision']:raw.type==='todo'?['expression']:[])]);
  if(body.spaceId!==binding.spaceId||body.confirmed!==true)throw Error('请先确认本次本人手动保存。');
+ if(Object.hasOwn(body,'expression')&&!isExpressionType(body.expression))throw Error('表达类型无效。');
  normalizePersonalFields(raw.type as string,body.fields);
  if(raw.id!==null)validateRevision(body.expectedRevision);
  return freeze(clonePersonalJSON(raw) as PersonalCommand);
 }
-export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number):PersonalCommand{
- return checked({...binding,type,id,key,method:id===null?'POST':'PATCH',body:{spaceId:binding.spaceId,confirmed,fields,...(id===null?{}:{expectedRevision})}},binding);
+export function makePersonalCommand(binding:PersonalBinding,type:PersonalType,id:string|null,fields:PersonalFields,key:string,confirmed:boolean,expectedRevision?:number,expression?:ExpressionType):PersonalCommand{
+ return checked({...binding,type,id,key,method:id===null?'POST':'PATCH',body:{spaceId:binding.spaceId,confirmed,fields,...(id===null?{}:{expectedRevision}),...(expression!==undefined?{expression}:{})}},binding);
 }
 function matches(command:PersonalCommand,value:unknown):value is PublicEntry{
  if(!obj(value)||!obj(value.source)||!obj(value.source.original)||!obj(value.draft)||'ownerId'in value)return false;
  const original=value.source.original;if(original.marker!=='personal-manual-v1'&&!(command.id&&command.type==='todo'&&original.marker===appleOriginMarker)||original.spaceId!==command.spaceId||original.type!==command.type||value.kind!==(command.type==='todo'?'todo':'inbox')||value.syncState!=='draft'||value.externalStatus!==null||value.source.externalId!==value.id||value.source.system!=='website'||value.source.version!==1)return false;
- try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else object(original,['marker','spaceId','type','input']);validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
+ try{if(original.marker===appleOriginMarker)readAppleOrigin(original,command.spaceId);else{
+ const capture=todoCapture(original);
+ object(original,manualSourceKeys(command.type));
+ if(Object.hasOwn(original,'capture')&&!capture)return false;
+ if(!command.id&&(capture&&capture.channel!=='owner-web'||command.body.expression!==undefined&&capture?.expression!==command.body.expression))return false;
+ }validateId(value.id);validateId(value.source.id);validateRevision(value.revision);const fields=command.body.fields,normalized=command.type==='todo'?validateTodo(fields):validateInbox({...normalizePersonalFields(command.type,fields),disposition:'reference'});if(canonical(command.id?preserveOmittedPlanning(command.type,fields,value.draft,normalized):normalized)!==canonical(value.draft))return false;return command.id?value.id===command.id&&value.revision===command.body.expectedRevision!+1:value.revision===1&&canonical(original.input)===canonical(command.body);}catch{return false;}
 }
 function observedReadback(command:PersonalCommand,receipt:PublicEntry,value:unknown):value is PublicEntry{
  try{const row=object(value,['id','kind','draft','source','revision','createdAt','updatedAt','syncState','externalStatus']);validateRevision(row.revision);

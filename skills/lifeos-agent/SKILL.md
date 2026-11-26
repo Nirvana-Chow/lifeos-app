@@ -111,6 +111,10 @@ Use these operations only after exact v2 discovery; the three native module gate
 `portfolio` metadata has `type:'portfolio'`, `schemaVersion:1`, explicit currency, project/domain/topic links and `portfolioKind`: account, asset or investment. Accounts preserve account type and `{balanceMinor,asOf}`; assets preserve asset type and `{valuationMinor,valuationOn,account}`; investments preserve symbol/name, decimal-string quantity, exact `{costMinor,valuationMinor,asOf}` and optional account/asset pins. Amounts are exact integer minor-unit strings; null means unknown and zero remains zero. Monetary values need their actual as-of/valuation date. Keep currencies separate; do not guess exchange rates, current prices, balances or return. Portfolio account references must point to portfolio account records, and asset references to portfolio asset records; the shared transaction verifies subtype, owner, source ID and current revision after locking. These are manual dated account/asset/investment records, separate from finance transactions; no bank/broker connection, trading, payment, automatic valuation or reconciliation is enabled.
 
 
+## Todo provenance
+
+When creating a Todo, pass the optional top-level `expression` as `written` or `spoken` only when explicitly supplied by the user. Omit it if unknown. The API sets the verified capture channel server-side and rejects a channel in the request. Writing style is not evidence of an expression type or recording. Detail and receipt may include immutable `provenance` with `channel` and `expression`; for old sources their absence means unknown. Preserve the original key and body on retries. Corrections do not replace the original text or provenance.
+
 ## Vocabulary cards and reviews
 
 Discover through `GET /v2/capabilities` using the same dedicated learning credential that will read or write. An existing broad, Article, or OAuth grant does not imply learning access. This is a scoped REST contract.

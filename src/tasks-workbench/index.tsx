@@ -1,4 +1,5 @@
 'use client';
+import {captureLabels,pinnedInboxOrigin} from '../todo-provenance/domain';
 import Link from 'next/link';
 import {useCallback,useEffect,useRef,useState,useSyncExternalStore,type FormEvent} from 'react';
 import {TasksClient,TaskRequestError,type TaskEntry,type TaskFields} from './client';
@@ -9,6 +10,17 @@ import {resolveTasksAccess,type TasksAccess,type TasksAccountState} from './acce
 import s from './styles.module.css';
 export type {TasksAccess,TasksAccountState} from './access';
 export type TasksWorkbenchProps={access?:TasksAccess;accountState?:TasksAccountState;loginHref?:string;onNavigationLockChange?:(locked:boolean)=>void};
+function OriginalInbox({pin}:{pin:{id:string;sourceId:string;revision:number}}){
+ const [text,setText]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(false);
+ return <section>
+  <p>派生原件 · 收件箱修订 {pin.revision} · 来源 ID {pin.sourceId}</p>
+  <button type="button" disabled={busy} onClick={async()=>{
+   setText(null);setError(false);setBusy(true);
+   try{setText(await client.originalInbox(pin));}catch{setError(true);}finally{setBusy(false);}
+  }}>读取原件对应修订</button>
+  {error&&<p role="alert">无法读取对应的原件修订。</p>}{text!==null&&<pre>{text}</pre>}
+ </section>;
+}
 const client=new TasksClient();
 let browserSession:TasksSaveSession|undefined;
 const empty=():TaskFields=>({title:'',notes:'',dueOn:'',status:'open'});
@@ -76,7 +88,7 @@ function TasksContent({session,loginHref,onNavigationLockChange}:{session:TasksS
      <div className={s.actions}><button className={s.primary} type="submit" disabled={save.phase==='conflict'}>保存站内草稿</button><button type="button" onClick={()=>{session.reset();setEditing(false);setLatest(null);setError('');if(selected)setFields({...selected.draft,dueOn:selected.draft.dueOn??''});}}>取消编辑</button></div>
     </fieldset></form>
     {save.phase==='conflict'&&<div className={s.notice}><h3>先核对修订冲突</h3><p>你的修改已保留。读取最新版本后，明确选择以它为基础，再次保存。</p><button type="button" disabled={detailLoading} onClick={()=>void readConflict()}>读取最新版本</button>{latest&&<><h4>服务器当前版本 {latest.revision}</h4><TaskText entry={latest}/><button type="button" onClick={rebase}>已核对，保留我的修改并使用此版本</button></>}</div>}</>:selected?<><div className={s.toolbar}><h2>{selected.draft.title}</h2><span className={s.badge}>{labels[selected.draft.status]}</span></div><TaskText entry={selected}/><div className={s.actions}><button type="button" disabled={locked} onClick={()=>{session.reset();setEditing(true);setMessage('');}}>编辑</button><button type="button" disabled={locked} onClick={()=>void transition(selected.draft.status==='done'?'open':'done')}>{selected.draft.status==='done'?'重新打开':'标记完成'}</button></div></>:!detailLoading&&<p className={s.empty}>选择一条待办查看详情，或新建待办。</p>}
-    {selected&&<details className={s.provenance}><summary>来源与修订历史</summary><dl><dt>记录 ID</dt><dd>{selected.id}</dd><dt>来源 ID</dt><dd>{selected.source.id}</dd><dt>来源系统</dt><dd>站内输入（website）</dd><dt>来源版本</dt><dd>{selected.source.version}</dd><dt>来源时间</dt><dd>{selected.source.asOf}</dd><dt>记录修订</dt><dd>{selected.revision}</dd><dt>更新时间</dt><dd>{selected.updatedAt}</dd>{selected.inboxId&&<><dt>关联收件箱 ID</dt><dd>{selected.inboxId}</dd></>}<dt>同步状态</dt><dd>站内草稿 · 外部来源未同步</dd></dl><h3>原始输入</h3><pre>{JSON.stringify(selected.source.original,null,2)}</pre><button type="button" disabled={historyLoading||locked} onClick={()=>void readHistory()}>{historyLoading?'正在读取历史…':'读取最近 100 个修订'}</button>{historyError&&<p role="alert" className={s.error}>{historyError}</p>}{history?.length===0&&<p>接口没有返回历史修订。</p>}{history?.map(entry=><details key={entry.revision}><summary>修订 {entry.revision} · {entry.updatedAt}</summary><TaskText entry={entry}/></details>)}</details>}
+    {selected&&<details className={s.provenance}><summary>来源与修订历史</summary><dl><dt>记录 ID</dt><dd>{selected.id}</dd><dt>来源 ID</dt><dd>{selected.source.id}</dd><dt>输入渠道</dt><dd>{captureLabels(selected.source.original).channel}</dd><dt>表达类型</dt><dd>{captureLabels(selected.source.original).expression}</dd><dt>来源版本</dt><dd>{selected.source.version}</dd><dt>来源时间</dt><dd>{selected.source.asOf}</dd><dt>记录修订</dt><dd>{selected.revision}</dd><dt>更新时间</dt><dd>{selected.updatedAt}</dd>{selected.inboxId&&<><dt>关联收件箱 ID</dt><dd>{selected.inboxId}</dd></>}<dt>同步状态</dt><dd>站内草稿 · 外部来源未同步</dd></dl>{(()=>{const pin=pinnedInboxOrigin(selected.source.original,selected.inboxId);return pin?<OriginalInbox key={pin.id+':'+pin.revision} pin={pin}/>:null;})()}<h3>原始输入</h3><pre>{JSON.stringify(selected.source.original,null,2)}</pre><button type="button" disabled={historyLoading||locked} onClick={()=>void readHistory()}>{historyLoading?'正在读取历史…':'读取最近 100 个修订'}</button>{historyError&&<p role="alert" className={s.error}>{historyError}</p>}{history?.length===0&&<p>接口没有返回历史修订。</p>}{history?.map(entry=><details key={entry.revision}><summary>修订 {entry.revision} · {entry.updatedAt}</summary><TaskText entry={entry}/></details>)}</details>}
    </section>
   </div>
  </>;

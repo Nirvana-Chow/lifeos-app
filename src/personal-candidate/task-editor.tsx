@@ -1,4 +1,6 @@
 'use client';
+import {expressionLabels,expressionTypes,isExpressionType} from '../todo-provenance/domain';
+import {TaskSourceHistory} from '../todo-provenance/task-history';
 import {projectDetailHref} from './project-detail-href';
 import {PlanningInputs} from './planning-inputs';
 import{useEffect,useRef,useState}from'react';
@@ -114,6 +116,11 @@ export function TaskEditor({
   </div>:<form className={styles.form} onSubmit={async event=>{event.preventDefault();if(blocked)return;submitted.current=clonePersonalJSON(fields);setSubmitting(true);setLocalError(null);try{const saved=await onSave(editTask,fields);if(saved)onClose();}catch{setLocalError('保存失败，请保留内容后重试。');}finally{setSubmitting(false);}}}>
    <div className={styles.body}><fieldset disabled={blocked}>
     <label>标题<input autoFocus required maxLength={240} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
+    {target.mode==='create'&&<label>表达类型（可选）<select value={fields.expression??''} onChange={event=>{
+     const expression=event.currentTarget.value;
+     setFields(current=>{const {expression:_,...rest}=current;void _;
+      return isExpressionType(expression)?{...rest,expression}:rest;});
+    }}><option value="">未知</option>{expressionTypes.map(type=><option key={type} value={type}>{expressionLabels[type]}</option>)}</select></label>}
     <label>正文<textarea rows={6} maxLength={16384} value={fields.text} onChange={e=>setFields({...fields,text:e.target.value})}/></label>
     <div className={styles.row}><label>到期日<input type="date" value={fields.date} onChange={e=>setFields({...fields,date:e.target.value})}/></label><label>状态<select value={fields.status} onChange={e=>setFields({...fields,status:e.target.value as PersonalEditorFields['status']})}>{Object.entries(taskStatusLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></div>
     <PlanningInputs className={styles.row} value={{plannedStartOn:fields.plannedStartOn||null,plannedEndOn:fields.plannedEndOn||null}} onChange={(field,value)=>setFields({...fields,[field]:value??''})}/>
@@ -126,5 +133,6 @@ export function TaskEditor({
  return <div data-lifeos-surface="personal"><Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className={styles.editor} data-lifeos-surface="personal" onCloseAutoFocus={event=>{event.preventDefault();onRestoreFocus?.();}} showCloseButton={false} onEscapeKeyDown={event=>{if(busy)event.preventDefault();}} onPointerDownOutside={event=>{event.preventDefault();close();}}>
   <header className={styles.header}><div><DialogTitle>{heading}</DialogTitle><DialogDescription className={styles.accessibleDescription}>{missing?'无法读取所选待办。':!writable?'当前为只读，可查看内容。':viewing?'查看待办内容及分类。':'待办内容'}</DialogDescription>{!missing&&!writable&&<p role="status">当前为只读，可查看内容。</p>}</div><button type="button" aria-label={target.mode==='create'?'关闭待办编辑':'关闭待办详情'} disabled={busy} onClick={close}>关闭</button></header>
   {content}
+  {entry&&spaceId&&target.mode==='edit'&&<TaskSourceHistory key={entry.id+':'+entry.revision} entry={entry} spaceId={spaceId}/>}
  </DialogContent></Dialog></div>;
 }

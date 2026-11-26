@@ -1,3 +1,4 @@
+import {isExpressionType,manualSourceKeys,todoCapture,type CaptureChannel,type ExpressionType} from '../todo-provenance/domain.ts';
 import {matchesPersonalSearchDate,personalSearchRecordDate,readPersonalSearchDateRange,type PersonalSearchDateRange} from './search-dates.ts';
 import {getRecipe} from '../cooking/catalog.ts';
 import type {CookingRecipePin} from '../cooking/log-domain.ts';
@@ -15,7 +16,7 @@ import {compareWindowKeys,windowKey} from '../platform/window-domain.ts';
 import type {PersonalConfig,PersonalType} from './config.ts';
 export type PersonalGuard=()=>Promise<void>;
 export type PersonalFields=TodoDraft|ObjectFields|Pick<InboxDraft,'title'|'text'|'occurredOn'>;
-export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number};
+export type PersonalBody={spaceId:string;confirmed:true;fields:PersonalFields;expectedRevision?:number;expression?:ExpressionType};
 export type PersonalPage={items:PublicEntry[];truncated:boolean;scanned:number;limit:number;scope:'bounded-window';total:null};
 const fail=(status:number,code:string,message:string):never=>{throw new PlatformError(status,code,message);};
 const missing=():never=>fail(404,'NOT_FOUND','没有可访问的本人记录。');
@@ -58,13 +59,14 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
+ try{object(original,manualSourceKeys(type));if((Object.hasOwn(original,'capture')||Object.hasOwn(original.input,'expression'))&&!todoCapture(original))return null;const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
- const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);
+ const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:type==='todo'?['expression']:[])]);
  if(raw.spaceId!==spaceId||raw.confirmed!==true)return fail(403,'PERSONAL_CONFIRMATION_REQUIRED','需要核对本人空间并明确确认保存。');
  const fields=normalizePersonalFields(type,raw.fields);
- return{spaceId,confirmed:true,fields,...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{})};
+ if(Object.hasOwn(raw,'expression')&&!isExpressionType(raw.expression))return fail(400,'INVALID_TODO_EXPRESSION','请明确选择已支持的表达类型。');
+ return{spaceId,confirmed:true,fields,...(isExpressionType(raw.expression)?{expression:raw.expression}:{}),...(id?{expectedRevision:validateRevision(raw.expectedRevision)}:{})};
 }
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
@@ -108,18 +110,20 @@ export class PersonalService{
   return{scope:'full-current-snapshot' as const,items,query,...range,coverage:{types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length}};
  }
  async referenceStates(owner:string,id:string){this.owner(owner);const entry=await this.repository.get(owner,'todo',validateId(id));if(!this.matches(entry,owner,'todo',id))return missing();return Promise.all(personalReferences(entry.draft as TodoDraft).map(async({type,link})=>{const target=await this.repository.get(owner,'inbox',link.id),allowed=this.matches(target,owner,type,link.id)&&target.source.id===link.sourceId;return{type,link,status:!allowed?'unavailable':target!.revision===link.revision?'current':'updated',current:allowed?publicEntry(target!):null};}));}
- async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<MutationResult>{
+ async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>,channel?:CaptureChannel):Promise<MutationResult>{
   this.owner(owner);this.enabled(type);validateIdempotencyKey(key);if(id)id=validateId(id);validatePersonalBody(type,id,input,this.config.spaceId);const raw=structuredClone(input),body=validatePersonalBody(type,id,raw,this.config.spaceId),kind=type==='todo'?'todo':'inbox';
+  const capture=type==='todo'&&!id&&channel?{version:1,channel,expression:body.expression??null}:undefined;
+  if(body.expression&&!capture)return fail(400,'INVALID_TODO_EXPRESSION','表达类型需要经核实的待办创建入口。');
   const digest=createHash('sha256').update(canonical({action:'personal-manual-v1',owner,spaceId:this.config.spaceId,type,id,raw})).digest('hex');
   await guard();
   return this.repository.transaction(owner,key,async tx=>{
    await guard();await transactionGuard?.(tx);const receipt=await tx.receipt();
-   if(receipt){if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!personalEntryType(receipt.result.entry,this.config.spaceId))return missing();return{...structuredClone(receipt.result),duplicate:true};}
+   if(receipt){if(receipt.digest!==digest)fail(409,'COMMAND_CONFLICT','该请求标识已用于不同内容。');if(!personalEntryType(receipt.result.entry,this.config.spaceId))return missing();const prior=todoCapture(receipt.result.entry.source.original);if(capture&&prior&&capture.channel!==prior.channel)fail(409,'COMMAND_CONFLICT','该请求标识已用于另一录入通道。');return{...structuredClone(receipt.result),duplicate:true};}
    const now=new Date().toISOString(),draft=type==='todo'?body.fields as TodoDraft:{...body.fields,disposition:'reference'} as InboxDraft;let entry:StoredEntry;
    const references=personalReferences(draft);
    const records=await lockPersonalRecords(tx,[...(id?[{kind,id} as const]:[]),...references.map(({link})=>({kind:'inbox' as const,id:link.id}))]);
    if(id){const old=records.get(JSON.stringify([kind,id]))??null;if(!this.matches(old,owner,type,id))return missing();if(old.revision!==body.expectedRevision||old.revision===2147483647)fail(409,'REVISION_CONFLICT','记录版本已变化，请重新核对。');if(type==='cooking')checkNewCookingPin(draft,old.draft);entry={...old,draft:preserveOmittedPlanning(type,(raw as {fields:unknown}).fields,old.draft,draft),revision:old.revision+1,updatedAt:now};}
-   else{if(type==='cooking')checkNewCookingPin(draft);const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
+   else{if(type==='cooking')checkNewCookingPin(draft);const recordId=randomUUID();entry={id:recordId,ownerId:owner,kind,draft,source:{id:randomUUID(),system:'website',externalId:recordId,version:1,asOf:now,original:{marker:'personal-manual-v1',spaceId:this.config.spaceId,type,input:raw,...(capture?{capture}:{})}},revision:1,createdAt:now,updatedAt:now,syncState:'draft',externalStatus:null};}
    for(const reference of references){
     const {type:targetType,link}=reference,target=records.get(JSON.stringify(['inbox',link.id]))??null;
     if(!this.matches(target,owner,targetType,link.id)||target.source.id!==link.sourceId||target.revision!==link.revision)fail(409,'REFERENCE_CONFLICT','关联记录已变化或不可访问，请重新核对。');

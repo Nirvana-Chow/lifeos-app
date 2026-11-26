@@ -85,7 +85,7 @@ Read [the credential-runtime guide](credential-runtime.md) for server MCP versus
 | `listTodos` | `GET` | `/v1/todos` | `todo:read` | Read a bounded list of todo summaries. |
 | `snapshotTodos` | `GET` | `/v1/todos/snapshot` | `todo:read` | Read the complete current todo snapshot with fields and revisions, or fail if complete coverage cannot be verified. |
 | `getTodo` | `GET` | `/v1/todos/{id}` | `todo:read` | Read a todo and its current revision. |
-| `createTodo` | `POST` | `/v1/todos` | `todo:write` | Create one todo with an idempotency key; optional plannedStartOn/plannedEndOn are explicit ISO dates or null, separate from dueOn. |
+| `createTodo` | `POST` | `/v1/todos` | `todo:write` | Create one todo with an idempotency key; optional explicit expression (written or spoken) is independent of the server-proven channel. Omit if unknown. Optional plannedStartOn/plannedEndOn are explicit ISO dates or null, separate from dueOn. |
 | `updateTodo` | `PATCH` | `/v1/todos/{id}` | `todo:write` | Update one todo with its expected revision, original five required fields and an idempotency key; omitted optional plannedStartOn/plannedEndOn preserve saved dates, explicit null clears. |
 | `snapshotOrganization` | `GET` | `/v1/organization/snapshot` | `organization:read` | Read the complete current project, domain and topic snapshot with source IDs and revisions, or fail without returning a partial inventory. |
 | `getOrganization` | `GET` | `/v1/organization/{type}/{id}` | `organization:read` | Read one project, domain or topic with complete fields and its current revision. |

@@ -1,3 +1,4 @@
+import {todoCapture} from '../todo-provenance/domain.ts';
 import type {LearningService} from '../personal-learning/service.ts';
 import {readBusinessBearer} from '../business-mcp-oauth/boundary.ts';
 import type {FilePermission} from '../file-handoff/authorization.ts';
@@ -57,7 +58,8 @@ function respondBase(status: number, body: unknown, retryAfterSeconds?:number) {
 
 function detail(entry: PublicEntry) {
   if (!('status' in entry.draft)) throw Error('Unexpected todo projection');
-  return {id: entry.id, sourceId: entry.source.id, revision: entry.revision,
+  const provenance=todoCapture(entry.source.original);
+  return {id: entry.id, sourceId: entry.source.id, revision: entry.revision,...(provenance?{provenance}:{}),
     fields: {...entry.draft, personal: entry.draft.personal ?? null}};
 }
 
@@ -275,13 +277,13 @@ export function createAgentHandler(options: Options) {
       }
 
       if (options.mountPath && options.fenceWrites !== true) return respond(503, {error: 'AGENT_WRITE_FENCE_UNAVAILABLE'});
-      const input = object(await readJSONBody(request), operation.id === 'updateTodo' ? ['fields', 'expectedRevision'] : ['fields']);
+      const input = object(await readJSONBody(request), operation.id === 'updateTodo' ? ['fields', 'expectedRevision'] : ['fields','expression']);
       const result = await service.mutate(grant.ownerId, 'todo', recordId ?? null,
         {...input, ...(operation.id === 'updateTodo' ? {fields: updateFields(input.fields)} : {}), spaceId: config.spaceId, confirmed: true}, request.headers.get('idempotency-key') ?? '',
         async () => {
           if (request.signal.aborted) throw new PlatformError(499, 'REQUEST_CANCELLED', '已取消。');
           await options.assertWritable(grant);
-        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant,operation.id) : undefined);
+        }, options.fenceWrites ? tx => assertAgentTodoWriteGrant(tx, grant,operation.id) : undefined,operation.id==='createTodo'?'agent-api':undefined);
       return respond(operation.id === 'createTodo' && !result.duplicate ? 201 : 200,
         {entry: detail(result.entry), duplicate: result.duplicate});
     } catch (error) {
