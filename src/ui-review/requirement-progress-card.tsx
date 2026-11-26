@@ -8,25 +8,20 @@ import type {RequirementItem} from '../requirements-candidate/service.ts';
 import {formatDeliveryTime, requirementDelivery, requirementIsComplete} from './requirements-delivery.ts';
 import styles from './requirement-progress-card.module.css';
 
-const workflowLabels = {
-  planned:'计划',in_progress:'推进中',awaiting_review:'工程审查',blocked:'受阻',done:'标记开发完成',unrecorded:'未标记',
-} as const;
 const deliveryLabels = {
   unconfirmed:'交付证据待核实',merged:'已合并待上线',awaitingAcceptance:'已上线待本人验收',completed:'已上线且本人验收',
 } as const;
 
 function summarize(items: RequirementItem[], observedAt: string) {
-  const workflow = {planned:0,in_progress:0,awaiting_review:0,blocked:0,done:0,unrecorded:0};
   const delivery = {unconfirmed:0,merged:0,awaitingAcceptance:0,completed:0};
-  for (const {requirement, fields} of items) {
-    workflow[fields.workflow?.state ?? 'unrecorded']++;
+  for (const {requirement} of items) {
     const evidence = requirementDelivery(requirement);
     if (evidence.state === 'merged') delivery.merged++;
     else if (evidence.state === 'live') {
       delivery[requirementIsComplete(requirement, evidence) ? 'completed' : 'awaitingAcceptance']++;
     } else delivery.unconfirmed++;
   }
-  return {workflow, delivery, observedAt, total:items.length};
+  return {delivery, observedAt, total:items.length};
 }
 
 export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen: () => void}) {
@@ -64,29 +59,24 @@ export function RequirementProgressCard({scope, onOpen}: {scope: string; onOpen:
     return () => { request?.abort(); window.removeEventListener('focus', refresh); };
   }, [scope]);
 
-  return <section className={`lo-panel ${styles.card}`} aria-label="需求进度">
+  return <section className={`lo-panel ${styles.card}`} aria-label="需求交付与验收">
     <div className="lo-panel-heading">
-      <h2>需求进度</h2>
+      <h2>需求交付与验收</h2>
       <Button variant="ghost" aria-label="查看全部需求" data-workspace-nav onClick={onOpen}>
         查看全部<ArrowUpRight size={18} aria-hidden="true" />
       </Button>
     </div>
     {summary ? <>
       {summary.total===0 ? <p className="lo-empty-compact" role="status">暂无需求。</p> : <>
-        <h3 className={styles.dimension}>推进状态（需求池标记）</h3>
-        <dl className={styles.counts} aria-label="推进状态">
-          {Object.entries(summary.workflow).filter(([key,count])=>key!=='unrecorded'||count>0)
-            .map(([key,count])=><div key={key}><dt>{workflowLabels[key as keyof typeof workflowLabels]}</dt><dd>{count}</dd></div>)}
-        </dl>
         <h3 className={styles.dimension}>交付证据</h3>
         <dl className={styles.counts} aria-label="交付证据">
           {Object.entries(summary.delivery)
             .map(([key,count])=><div key={key}><dt>{deliveryLabels[key as keyof typeof deliveryLabels]}</dt><dd>{count}</dd></div>)}
         </dl>
       </>}
-      <p className={styles.date}>{summary.total>0 && <>待处理 {summary.total-summary.delivery.completed} / {summary.total} 项 · </>}{summary.observedAt
+      <p className={styles.date}>{summary.total>0 && <>待交付或验收 {summary.total-summary.delivery.completed} / {summary.total} 项 · </>}{summary.observedAt
         ? <>读取时间 <time dateTime={summary.observedAt}>{formatDeliveryTime(summary.observedAt)}</time>（北京时间）</>
         : '读取时间待核实'}</p>
-    </> : <p className="lo-empty-compact" role="status">{reading?.scope!==scope ? '正在读取需求进度…' : '需求进度暂不可用'}</p>}
+    </> : <p className="lo-empty-compact" role="status">{reading?.scope!==scope ? '正在读取需求交付与验收…' : '需求交付与验收暂不可用'}</p>}
   </section>;
 }
