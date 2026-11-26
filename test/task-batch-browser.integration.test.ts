@@ -38,8 +38,13 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   const calls:{key:string;body:any}[]=[],errors:string[]=[];
   const sequence:string[]=[];
   let readbacks=0,loseSecond=true,expired=false,expireDetail=false;
+  let switchOnDetail=false,switchedSpace=false;
   const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,
    sessions:{read:async headers=>expired||headers.has('x-fixture-revoked')?null:{userId:ownerId,email:config.ownerEmail}},
+   assertWritable:async()=>{},
+  });
+  const otherSpaceHandler=createPersonalPlatformHandler({repository:repo,config:{...config,spaceId:'synthetic-other-space'},storageVerified:true,
+   sessions:{read:async()=>({userId:ownerId,email:config.ownerEmail})},
    assertWritable:async()=>{},
   });
   page.on('pageerror',e=>errors.push(e.message));
@@ -61,7 +66,10 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
      if(loseSecond)return route.abort();
     }
    }
-   const reply=await handler(new Request(url,{method,headers,body}));
+   const reply=await (switchedSpace?otherSpaceHandler:handler)(new Request(url,{method,headers,body}));
+   if(switchOnDetail&&detail&&detail.id===entries[1]?.id&&reply.ok){
+    switchedSpace=true;switchOnDetail=false;
+   }
    if(method==='POST'&&reply.status===201&&JSON.parse(body!).fields.title==='合成原单条待确认')return route.abort();
    return route.fulfill({status:reply.status,headers:Object.fromEntries(reply.headers),body:await reply.text()});
   });
@@ -97,7 +105,19 @@ test('OPT-IN multiline todo preview sequential readback reload and mobile keyboa
   await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
   await expect(dialog).toHaveCount(0);assert.equal(calls.length,2);await expect(page.getByRole('textbox',{name:'第3项标题',exact:true})).toHaveCount(0);
   expired=false;page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});await expect(dialog).toBeVisible();
-  loseSecond=false;expireDetail=true;
+  loseSecond=false;switchOnDetail=true;
+  const beforeSpaceSwitch=sequence.length;
+  await dialog.getByRole('button',{name:'核对原请求并继续'}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('第二项',{exact:true})).toHaveCount(0);
+  assert.equal(switchedSpace,true);
+  assert.deepEqual(sequence.slice(beforeSpaceSwitch),['GET '+second.id]);
+  assert.equal(calls.length,2);assert.equal(repo.rows.size,2);assert.equal(repo.receipts.size,2);
+  switchedSpace=false;page.once('dialog',d=>d.accept());await page.reload({waitUntil:'networkidle'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('textbox',{name:'第4项标题',exact:true})).toHaveValue('第三项');
+
+  expireDetail=true;
   const revokedAt=sequence.length;
   await dialog.getByRole('button',{name:'核对原请求并继续'}).click();await expect(dialog).toHaveCount(0);
   assert.deepEqual(sequence.slice(revokedAt),['GET '+second.id]);

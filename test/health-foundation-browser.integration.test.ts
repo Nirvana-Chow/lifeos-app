@@ -469,6 +469,61 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
     await exercise.click();
     await expect(completed).toBeVisible();
     await expect(exerciseStatus).toHaveValue('completed');
+
+    await body.click();
+    for(const [category,link] of [['weight',weight],['fat',fat],['circumference',circumference]] as const){
+      await link.click();
+      const listLocation=new URL(beforeSleep);
+      listLocation.hash='body-'+category;
+      const sourceLocation=new URL(listLocation);
+      sourceLocation.hash+='/'+id;
+      await expect(page).toHaveURL(listLocation.href);
+      await complete.click();
+      await expect(page).toHaveURL(sourceLocation.href);
+      await expect(titleField).toHaveValue('合成完整测量');
+      assert.equal(detailReads.at(-1),id);
+      await page.goBack();
+      await expect(page).toHaveURL(listLocation.href);
+      await expect(dialog).toHaveCount(0);
+      await expect(complete).toBeFocused();
+      await page.goForward();
+      await expect(page).toHaveURL(sourceLocation.href);
+      await expect(titleField).toHaveValue('合成完整测量');
+      await page.keyboard.press('Escape');
+      await expect(complete).toBeFocused();
+    }
+    await sleep.click();
+    await expect(page).toHaveURL(sleepLocation.href);
+    await expect(row('合成睡眠')).toBeVisible();
+    await page.goBack();
+    await expect(circumference).toHaveAttribute('aria-current','location');
+    await expect(complete).toBeVisible();
+    await exercise.click();
+    await expect(page).toHaveURL(beforeSleep);
+    await expect(completed).toBeVisible();
+    await expect(frisbee).toHaveAttribute('aria-pressed','true');
+    await expect(exerciseStatus).toHaveValue('completed');
+
+    if(width===390){
+      await body.click();
+      await weight.click();
+      revokeAfterHistory=true;
+      await complete.click();
+      const closed=page.getByRole('alert').filter({hasText:'此模块尚未开放。'});
+      await expect(closed).toBeVisible();
+      assert.equal(detailReads.at(-1),id);
+      await page.goBack();
+      await page.goForward();
+      await expect(closed).toBeVisible();
+      await expect(dialog).toHaveCount(0);
+      await expect(complete).toHaveCount(0);
+      await expect(completed).toHaveCount(0);
+      healthEnabled=true;
+      await page.goto(beforeSleep);
+      await page.reload();
+      await expect(completed).toBeVisible();
+    }
+    t.diagnostic('exercise history, three body originals, sleep and restored exercise filters at '+width+' px');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     assert.deepEqual(writes,[]);
   }
