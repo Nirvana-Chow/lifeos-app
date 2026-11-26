@@ -5,7 +5,7 @@ import {ownerModules,verifiedModuleScope,type OwnerModuleLink} from './owner-mod
 import {supportJSON} from './requirement-support-hooks';
 import {PersonalSearchDialogTrigger} from '../personal-search/dialog';
 import {ScheduleNavigationIcon,SearchNavigationIcon} from '../workbench/navigation-icons';
-const icons={'file-handoffs':FileDown,'storage-review':FolderCheck,'development-projects':FolderGit2,search:SearchNavigationIcon,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,resume:FileText,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:ScheduleNavigationIcon,roadmap:MapIcon,feedback:MessageSquare,updates:History};
+const icons={'project-reports':FileText,'file-handoffs':FileDown,'storage-review':FolderCheck,'development-projects':FolderGit2,search:SearchNavigationIcon,cooking:ChefHat,media:BookOpen,career:BriefcaseBusiness,resume:FileText,portfolio:Landmark,journal:NotebookPen,health:HeartPulse,people:Users,finance:Wallet,calendar:ScheduleNavigationIcon,roadmap:MapIcon,feedback:MessageSquare,updates:History};
 /** Status composes existing owner capabilities; it grants no write authority. */
 export function useOwnerModules(enabled:boolean,scope:string|null){
  const [value,setValue]=useState<unknown>(null),[path,setPath]=useState('');

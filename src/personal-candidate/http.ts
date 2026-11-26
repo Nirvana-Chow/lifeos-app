@@ -27,6 +27,17 @@ export async function handlePersonalRequest(request:Request,owner:string,baseURL
  }
  const allowed=type==='export'||history?['GET']:id?['GET','PATCH']:['GET','POST'];
  if(!allowed.includes(request.method))return respond({error:{code:'METHOD_NOT_ALLOWED',message:'此本人空间操作不支持该方法。'}},405,{Allow:allowed.join(', ')});
+ if(type==='project'&&id&&history&&request.method==='GET'&&url.searchParams.get('view')==='review-evidence'){
+  if([...url.searchParams.keys()].length!==1||request.body!==null)throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
+  const current=await service.get(owner,'project',id);
+  const versions=await service.history(owner,'project',id);
+  const revisions=versions.items.filter(item=>item.id===id&&item.source.id===current.source.id&&item.revision<=current.revision)
+   .map(item=>item.revision);
+  const complete=!versions.truncated&&revisions.length===current.revision&&revisions.every((revision,index)=>revision===current.revision-index);
+  await guard();
+  return respond({scope:'project-review-evidence',projectId:id,sourceId:current.source.id,revision:current.revision,
+    historyCoverage:complete?'complete':'partial',originalDecision:null});
+ }
  const queries=[...url.searchParams.keys()];if(queries.some(key=>key!=='limit')||url.searchParams.getAll('limit').length>1)throw new PlatformError(400,'INVALID_QUERY','读取参数无效。');const text=url.searchParams.get('limit'),limit=text===null?50:/^[1-9]\d{0,2}$/.test(text)?Number(text):NaN;
  if(type==='export'){if(id||history)throw new PlatformError(404,'NOT_FOUND','无此本人空间操作。');const value=await service.exportSnapshot(owner,limit);await guard();return respond(value);}
  const personalType=type as PersonalType;
