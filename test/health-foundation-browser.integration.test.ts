@@ -108,7 +108,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
       const snapshot = foreign ? items.map(item=>({...item,source:{...item.source,original:{...item.source.original,spaceId:'synthetic-foreign-space'}}})) : items;
       return route.fulfill({json:{scope:'full-current-snapshot',total:snapshot.length,truncated,items:snapshot,observedAt}});
     }
-    if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
+    if(url.pathname.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-health-owner',spaceId:spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']},total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:0,truncated:false,items:[],today:url.searchParams.get('today'),observedAt}});
     const record = items.find(item=>url.pathname.endsWith('/health/'+item.id));
     if(record)return route.fulfill({json:{entry:record}});
