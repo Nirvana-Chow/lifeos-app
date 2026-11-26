@@ -2,6 +2,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { Recipe } from './catalog';
 import { CookingRecordAction } from './log-action';
+import { RecipePhoto } from './recipe-photo';
 import styles from './workspace.module.css';
 
 const sectionNames = {
@@ -31,7 +32,7 @@ function groupLines(lines: string[]) {
   return groups.filter(group => group.entries.length > 0);
 }
 
-export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; categoryLabel: string}) {
+export function CookingRecipe({ recipe, categoryLabel, backHref }: {recipe: Recipe; categoryLabel: string; backHref: string}) {
   const sections = recipe.sections.flatMap(section => {
     const label = sectionNames[section.title as keyof typeof sectionNames];
     const groups = groupLines(section.lines);
@@ -41,7 +42,7 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
   return (
     <article className={styles.recipe}>
       <header className={styles.recipeHeader}>
-        <Link href="/personal/cooking" className={styles.recipeLink}>
+        <Link href={backHref} className={styles.recipeLink}>
           <ArrowLeft aria-hidden="true" size={17} />返回菜谱
         </Link>
         <p className={styles.meta}>{categoryLabel} · 难度 {recipe.difficulty}/5</p>
@@ -65,6 +66,7 @@ export function CookingRecipe({ recipe, categoryLabel }: {recipe: Recipe; catego
         {recipe.attribution && <p className={styles.meta}>{recipe.attribution.changes}</p>}
         {recipe.referenceOnly && <p className={styles.meta}>参考菜谱，暂不支持关联做饭记录。</p>}
       </header>
+      <RecipePhoto id={recipe.id} name={recipe.name} detail />
 
       {sections.map(section => (
         <section className={styles.recipeSection} key={section.id} aria-labelledby={section.id}>

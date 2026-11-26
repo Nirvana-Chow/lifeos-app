@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import ts from 'typescript';
 import {ownerModules} from '../src/ui-review/owner-modules.ts';
+import * as browseLocation from '../src/cooking/browse-location.ts';
 
 const recipe={id:'0123456789abcdef',name:'合成菜谱',category:'vegetable_dish',difficulty:1,ingredients:['合成食材'],sourceUrl:'https://example.invalid',sections:[]};
 const scope=JSON.stringify(['fixture-owner','fixture-space']);
 const status={scope:'personal-manual-candidate',storageVerified:true,ownerId:'fixture-owner',spaceId:'fixture-space'};
 const routes=['app/personal/cooking/page.tsx','app/personal/cooking/[id]/page.tsx'];
+type RecipeQuery=Record<string,string|string[]|undefined>;
 function loadRoute(path:string,identity:unknown) {
- const mod={exports:{} as {default:(input:{params:Promise<{id:string}>})=>Promise<any>}};
+ const mod={exports:{} as {default:(input:{params:Promise<{id:string}>;searchParams:Promise<RecipeQuery>})=>Promise<any>}};
  const catalogReads:string[]=[];
  const jsx=(type:unknown,props:unknown)=>({type,props});
  const imports:Record<string,unknown>={
@@ -20,13 +22,14 @@ function loadRoute(path:string,identity:unknown) {
   frame:{CookingFrame:'frame'},
   catalog:{categories:[{id:recipe.category,label:'素菜'}],listRecipes:()=>{catalogReads.push('all');return [recipe];},getRecipe:(id:string)=>{catalogReads.push(id);return id===recipe.id?recipe:undefined;}},
   workspace:{CookingWorkspace:'workspace'},detail:{CookingRecipe:'recipe'},
+  'browse-location':browseLocation,
  };
  const output=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  new Function('require','module','exports',output)((name:string)=>{
   const key=name.startsWith('.')?name.split('/').at(-1)!:name;
   assert.ok(key in imports,'Unexpected import '+name);return imports[key];
  },mod,mod.exports);
- return {page:(id=recipe.id)=>mod.exports.default({params:Promise.resolve({id})}),catalogReads};
+ return {page:(id=recipe.id,query:RecipeQuery={})=>mod.exports.default({params:Promise.resolve({id}),searchParams:Promise.resolve(query)}),catalogReads};
 }
 
 test('cooking entry is available to the verified owner scope only',()=>{
@@ -52,6 +55,10 @@ test('owner can open catalog and direct details; unknown IDs fail closed',async(
  const detail=loadRoute(routes[1]!,{ownerId:'fixture-owner'});
  const selected=await detail.page();
  assert.equal(selected.type,'frame');
- assert.deepEqual(selected.props.children.props,{recipe,categoryLabel:'素菜'});
+ assert.deepEqual(selected.props.children.props,{recipe,categoryLabel:'素菜',backHref:'/personal/cooking'});
+ const filtered=await detail.page(recipe.id,{browse:'1',category:recipe.category,ingredients:'番茄',q:'鸡蛋',page:'2',group:'-3',next:'https://example.invalid'});
+ const back=new URL(filtered.props.children.props.backHref,'https://lifeos.example');
+ assert.equal(back.pathname,'/personal/cooking');
+ assert.deepEqual(Object.fromEntries(back.searchParams),{browse:'1',ingredients:'番茄',category:recipe.category,q:'鸡蛋',page:'2'});
  await assert.rejects(detail.page('0000000000000000'),/not found/);
 });

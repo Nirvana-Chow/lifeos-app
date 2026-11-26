@@ -42,17 +42,18 @@ function canLeave(editor: Editor | null, mutation: PersonalState | undefined) {
   return !changed(editor) || window.confirm('放弃尚未保存的做饭记录修改？');
 }
 
-export function CookingHistoryPage({ recipe }: {recipe: RecipeSeed | null}) {
+export function CookingHistoryPage({ recipe, autoStart=false }: {recipe: RecipeSeed | null;autoStart?:boolean}) {
   const navigation = useRef<() => boolean>(() => true);
   return (
     <CookingFrame title="做饭历史" canNavigate={() => navigation.current()}>
-      <CookingLogWorkbench recipe={recipe} navigation={navigation} />
+      <CookingLogWorkbench recipe={recipe} autoStart={autoStart} navigation={navigation} />
     </CookingFrame>
   );
 }
 
-function CookingLogWorkbench({ recipe, navigation }: {
+function CookingLogWorkbench({ recipe, autoStart, navigation }: {
   recipe: RecipeSeed | null;
+  autoStart:boolean;
   navigation: {current: () => boolean};
 }) {
   const [access, setAccess] = useState<CookingAccess | null>(null);
@@ -67,7 +68,8 @@ function CookingLogWorkbench({ recipe, navigation }: {
   const request = useRef<AbortController | null>(null);
   const currentEditor = useRef<Editor | null>(null);
   const retainedDraft = useRef<{access:CookingAccess; editor:Editor} | null>(null);
-  const seededRecipe = useRef<string | null>(null);
+  const openedSeed = useRef<string | null>(null);
+  const editorSeed = recipe?.id ?? (autoStart ? 'manual-entry' : null);
   const editorHeading = useRef<HTMLHeadingElement>(null);
   const historyHeading = useRef<HTMLHeadingElement>(null);
   const locked = busy || mutation?.phase === 'saving' || mutation?.phase === 'uncertain';
@@ -147,8 +149,8 @@ function CookingLogWorkbench({ recipe, navigation }: {
       retainedDraft.current = null;
       if (draft && sameCookingBinding(draft.access, verified)) {
         setForm(draft.editor);
-      } else if (recipe && seededRecipe.current !== recipe.id && verified.writable && pending.phase !== 'uncertain') {
-        seededRecipe.current = recipe.id;
+      } else if (editorSeed && openedSeed.current !== editorSeed && verified.writable && pending.phase !== 'uncertain') {
+        openedSeed.current = editorSeed;
         setForm(newEditor(recipe));
       }
     } catch (failure) {
@@ -200,7 +202,7 @@ function CookingLogWorkbench({ recipe, navigation }: {
       window.removeEventListener('pageshow', restore);
       window.removeEventListener('beforeunload', warn);
     };
-  }, [recipe, navigation]);
+  }, [recipe, editorSeed, navigation]);
 
   useEffect(() => {
     if (editor) editorHeading.current?.focus();
@@ -284,7 +286,7 @@ function CookingLogWorkbench({ recipe, navigation }: {
   return (
     <div className={styles.workbench}>
       <div className={styles.toolbar}>
-        <Link href="/personal/cooking" className={styles.link}>返回菜谱库</Link>
+        <Link href="/personal/cooking" className={styles.link}>返回做饭</Link>
         {access?.writable && <Button type="button" disabled={locked} onClick={begin}>记录做饭</Button>}
         <Button type="button" variant="outline" disabled={locked || dirty} onClick={() => void refresh()}>重新读取</Button>
       </div>
@@ -348,7 +350,6 @@ function CookingLogWorkbench({ recipe, navigation }: {
           </nav>}
         </section>
       )}
-      {access && <p className={styles.meta}>照片待接入。</p>}
     </div>
   );
 }

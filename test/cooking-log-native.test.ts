@@ -96,6 +96,7 @@ test('missing date, wrong recipe pins and unsupported fields reject without pers
     {...fields, personal: {...fields.personal, recipe: {...recipe, sourceUrl: 'https://example.test/recipe'}}},
     {...fields, personal: {...fields.personal, recipe: {...recipe, sourceUrl: recipe.sourceUrl.replace('a0b14bd388ee996943173679c3a7c9db7da04a6c', 'b'.repeat(40))}}},
     {...fields, personal: {...fields.personal, attachment: 'synthetic-photo'}},
+    {...fields, personal: {...fields.personal, status: 'planned'}},
   ]) assert.equal((await send('cooking', 'POST', {...command, fields: candidate})).status, 400);
   assert.equal(repo.rows.size, 0);
   assert.equal(repo.receipts.size, 0);
