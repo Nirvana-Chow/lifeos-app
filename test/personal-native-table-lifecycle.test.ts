@@ -71,6 +71,7 @@ function harness(f: ReturnType<typeof fixture>, presentation:'grid'|'title'='gri
     './ui/button': { Button: 'button' },
     '../personal-candidate/project-detail-href': {projectDetailHref},
     './task-grid.module.css': { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) },
+    '../personal-candidate/editor': {clonePersonalJSON: editorModule.clonePersonalJSON},
     '../personal-candidate/task-editor-state': stateModule,
     '../personal-candidate/task-grid-editor': gridEditorModule,
   });
