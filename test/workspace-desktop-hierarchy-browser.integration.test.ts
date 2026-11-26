@@ -53,7 +53,7 @@ test('OPT-IN desktop hierarchy preserves authorized destinations, real domain re
  await expect(page.locator('header')).toHaveCSS('background-image','none');
  await expect(page.getByRole('button',{name:'LifeOS 总览',exact:true}).locator('svg path')).toHaveCount(1);
  const todoCard=page.getByRole('region',{name:'未完待办',exact:true});
- const overviewCards=['未完待办','近期日程','最近思考','需求进度'].map(name=>page.getByRole('region',{name,exact:true}));
+ const overviewCards=['未完待办','近期日程','最近思考','需求交付与验收'].map(name=>page.getByRole('region',{name,exact:true}));
  for(const card of overviewCards)await expect(card).toBeVisible();
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
