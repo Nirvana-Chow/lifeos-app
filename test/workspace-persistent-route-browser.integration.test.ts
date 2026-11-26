@@ -68,10 +68,12 @@ test('OPT-IN actual tasks and journal navigation preserve the owner shell across
    const path=url.pathname;
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/auth/get-session'))return route.fulfill({json:{user:{id:ownerId},session:{mfaVerified,sessionDurationMode:'fixed',sessionDurationSeconds:1800,expiresAt:new Date(Date.now()+600000).toISOString()}}});
-   if(path.endsWith('/status'))return route.fulfill({json:{...journalStatus,ownerId,spaceId,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal']}});
+   const access={...journalStatus,ownerId,spaceId,scope:'personal-manual-candidate',writable:true,allowedTypes:['todo','journal']};
+   if(path.endsWith('/status'))return route.fulfill({json:access});
    if(path.endsWith('/overview')||path.endsWith('/workspace-snapshot')){
     const tasks=tasksForSpace();
-    return route.fulfill({json:{scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
+    const includeAccess=path==='/api/platform/personal/todo/workspace-snapshot'&&url.searchParams.get('include')==='access';
+    return route.fulfill({json:{...(includeAccess?{access}:{}),scope:path.endsWith('/overview')?'full-current-snapshot':'task-workspace-current-snapshot',truncated:false,total:tasks.length,items:tasks,today:url.searchParams.get('today'),observedAt:'2030-11-26T00:00:00.000Z'}});
    }
    if(path.endsWith('/journal/snapshot')){
     const original={marker:'personal-manual-v1',type:'journal',spaceId,input:{spaceId,confirmed:true,
