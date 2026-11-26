@@ -207,7 +207,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    writable=false;
    await page.reload({waitUntil:'domcontentloaded'});
    await oldButton.click();
-   await expect(detail.getByText('当前为只读，可查看内容。',{exact:true})).toBeVisible();
+   await expect(detail.getByRole('status')).toHaveText('当前为只读，可查看内容。');
    await expect(detail.getByRole('button',{name:'保存待办',exact:true})).toHaveCount(0);
    assert.equal((await detail.locator('p').filter({hasText:'合成只用于长内容边界。'}).textContent())?.length,notes.length);
    assert.equal(writes().length,2);
