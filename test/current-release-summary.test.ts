@@ -6,44 +6,70 @@ import {readReleaseNotice} from '../src/ui-review/owner-modules.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
-const sha='d'.repeat(40);
+const finance='2d0c8df0d83a39a01984f72bcb217de4de3caf7b';
+const projects='40f40919cb8ac3a38caca22e2c7c3a83dc9ec3d0';
+const historical='e83e8133fe014afd36ba154927572bd51a7e2aca';
+const unknown='d'.repeat(40);
 const files=['Dockerfile.platform-review','next.config.ts','package-lock.json','package.json','proxy.ts'].sort((a,b)=>a.localeCompare(b,'en')).map(path=>({path,sha256:'b'.repeat(64)}));
-const proof={version:1,sourceSha:sha,sourceTreeDigest:createHash('sha256').update(JSON.stringify(files)).digest('hex'),files};
-const changes=['待办支持按项目或领域分组，未分配项目或领域的事项单独展示。','待办支持多行预检、逐项编辑与选择，确认后按顺序保存并独立回读；批次非原子，失败或结果未确认时停止并保留原请求。','可搜索当前授权本人记录的标题与正文，查看覆盖范围，并打开独立读取的原记录只读详情；返回时保留搜索词。','存储审核支持站内进入与返回、按编号展开层级并单独选择待审叶项；保留已有决定和草稿，审核选择不执行文件删除。','菜谱库提供377道带来源的中外菜谱，支持按食材与分类筛选并查看步骤。','日记新增历史上的今天，可查看库内日期覆盖并打开原始记录。','导航按生活维度分组，设置入口更集中，总览可查看领域、项目与下一步。'];
+const proof={version:1,sourceTreeDigest:createHash('sha256').update(JSON.stringify(files)).digest('hex'),files};
+const artifact=(sourceSha:string)=>validateReleaseArtifact({...proof,sourceSha},'synthetic-current-build',sourceSha)!;
+const selected=(sourceSha:string)=>releaseNotes(artifact(sourceSha)).records.filter(row=>row.runningExactSource);
 
-test('an actual image absent from static history receives its finite owner summary with exact source identity',()=>{
- const artifact=validateReleaseArtifact(proof,'synthetic-current-build',sha);assert.ok(artifact);
- const notes=releaseNotes(artifact),current=notes.records.filter(row=>row.runningExactSource);
- assert.equal(current.length,1);
- assert.equal(current[0].sourceSha,sha);
- assert.equal(current[0].sourceURL,'https://github.com/Nirvana-Chow/lifeos-app/commit/'+sha);
- assert.deepEqual(current[0].changes,changes);
- assert.equal(notes.records.find(row=>row.id==='requirements-owner-source')?.runningExactSource,false);
- assert.deepEqual(notes.current,artifact);assert.equal(notes.ownerAccepted,false);assert.equal(notes.visualQualification,'not-attested');
+test('each known running source selects just its own reviewed record',()=>{
+ const first=selected(finance),second=selected(projects);
+ assert.equal(first.length,1);assert.equal(second.length,1);
+ assert.equal(first[0].sourceURL,'https://github.com/Nirvana-Chow/lifeos-app/commit/'+finance);
+ assert.equal(second[0].sourceURL,'https://github.com/Nirvana-Chow/lifeos-app/commit/'+projects);
+ assert.equal(first[0].title,'财务、日记复盘与时间线');
+ assert.equal(second[0].title,'开发项目首屏摘要');
+ assert.notDeepEqual(first[0].changes,second[0].changes);
+ const old=selected(historical);
+ assert.equal(old.length,1);assert.equal(old[0].id,'requirements-owner-source');
 });
 
-test('missing or rejected image proof never promotes the finite descriptor or history to current',()=>{
- for(const artifact of [null,validateReleaseArtifact({...proof,sourceTreeDigest:'0'.repeat(64)},'synthetic-current-build',sha),validateReleaseArtifact(proof,'bad/build',sha),validateReleaseArtifact(proof,'synthetic-current-build','e'.repeat(40))]){
-  const notes=releaseNotes(artifact);
-  assert.equal(notes.current,null);assert.ok(notes.records.length>0);assert.equal(notes.records.some(row=>row.runningExactSource),false);
+test('unknown running identity is retained without borrowing a historical note',()=>{
+ const current=artifact(unknown),notes=releaseNotes(current);
+ assert.deepEqual(notes.current,current);
+ assert.deepEqual(selected(unknown),[]);
+ assert.deepEqual(selected('e'.repeat(40)),[]);
+ assert.ok(notes.records.some(row=>row.id==='owner-workspace-20261113'&&row.sourceSha==='c2458a8f9786f992b19a6a14209e25e47f3d0925'));
+ assert.ok(notes.records.some(row=>row.sourceSha===historical));
+ assert.equal(notes.ownerAccepted,false);assert.equal(notes.visualQualification,'not-attested');
+});
+
+test('missing or rejected image proof never promotes history to current',()=>{
+ for(const invalid of [null,validateReleaseArtifact({...proof,sourceSha:finance,sourceTreeDigest:'0'.repeat(64)},'synthetic-current-build',finance),validateReleaseArtifact({...proof,sourceSha:finance},'bad/build',finance),validateReleaseArtifact({...proof,sourceSha:finance},'synthetic-current-build',unknown)]){
+  const notes=releaseNotes(invalid);
+  assert.equal(notes.current,null);assert.ok(notes.records.length>0);
+  assert.equal(notes.records.some(row=>row.runningExactSource),false);
   assert.equal(readReleaseNotice({...notes,preferencesEnabled:true,readState:null}),null);
  }
 });
 
-test('an exact historical source keeps its original summary instead of receiving newer feature copy',()=>{
- const historical='e83e8133fe014afd36ba154927572bd51a7e2aca';
- const artifact=validateReleaseArtifact({...proof,sourceSha:historical},'synthetic-history-build',historical);assert.ok(artifact);
- const current=releaseNotes(artifact).records.filter(row=>row.runningExactSource);
- assert.equal(current.length,1);assert.equal(current[0].id,'requirements-owner-source');assert.equal(current[0].title,'需求池持久化与交付流程调整');
-});
-
-test('the existing owner releases endpoint projects the actual summary into the original unread notice without writing records',async()=>{
- const repository=new MemoryPort(),artifact=validateReleaseArtifact(proof,'synthetic-current-build',sha);assert.ok(artifact);
+test('owner endpoint reads old version preferences without leaking them into a new running version',async()=>{
+ const repository=new MemoryPort(),native=repository.transaction.bind(repository);
+ repository.transaction=(owner,key,fn)=>native(owner,key,tx=>fn({...tx,lockRecordIdentity:async()=>{}}));
+ let current=artifact(historical);
  const config={ownerId:'summary-owner',ownerEmail:'fixture@example.test',spaceId:'summary-space',databaseName:'fixture',baseURL:'https://summary.example.test',approval:'personal-manual-v1',allowedTypes:['todo','journal'],requirementsEnabled:true,requirementSupportEnabled:true} as const;
- const handler=createPersonalPlatformHandler({config,repository,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{throw Error('Read must not request a writer');},releaseArtifact:()=>artifact});
- const response=await handler(new Request(config.baseURL+'/api/platform/personal/requirement-support/releases',{headers:{host:'summary.example.test'}}));
- assert.equal(response.status,200);const value=await response.json(),notice=readReleaseNotice(value);
- assert.ok(notice);assert.equal(notice.sourceSha,sha);assert.equal(notice.records.length,1);assert.deepEqual(notice.records[0].changes,changes);
- assert.equal(readReleaseNotice({...value,readState:{...value.readState,seen:true}}),null);
- assert.equal(repository.rows.size,0);assert.equal(repository.receipts.size,0);
+ let owner=config.ownerId as string;
+ const handler=createPersonalPlatformHandler({config,repository,storageVerified:true,sessions:{read:async()=>({userId:owner,email:config.ownerEmail})},assertWritable:async()=>{},releaseArtifact:()=>current});
+ const endpoint=config.baseURL+'/api/platform/personal/requirement-support/releases';
+ const read=()=>handler(new Request(endpoint,{headers:{host:'summary.example.test'}}));
+ const first=await handler(new Request(endpoint+'/read',{method:'POST',headers:{host:'summary.example.test',origin:config.baseURL,'content-type':'application/json','idempotency-key':'synthetic-previously-read'},body:JSON.stringify({spaceId:config.spaceId,confirmed:true,sourceSha:historical})}));
+ assert.equal(first.status,200);
+ current=artifact(finance);
+ let value=await (await read()).json();
+ assert.equal(value.readState.seen,false);
+ assert.equal(readReleaseNotice(value)?.records[0]?.title,'财务、日记复盘与时间线');
+ current=artifact(unknown);
+ value=await (await read()).json();
+ assert.equal(value.readState.sourceSha,unknown);
+ assert.deepEqual(readReleaseNotice(value)?.records,[]);
+ current=artifact(historical);
+ value=await (await read()).json();
+ assert.equal(value.readState.seen,true);
+ assert.equal(repository.rows.size,1);
+ assert.equal(repository.receipts.size,1);
+ owner='foreign-owner';
+ assert.equal((await read()).status,403);
 });
