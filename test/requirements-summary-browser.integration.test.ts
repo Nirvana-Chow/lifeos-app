@@ -98,7 +98,7 @@ test('OPT-IN native requirements route shows complete owner counts, filters and 
    if(req.method()!=='GET'){writes.push(path);return route.fulfill({status:405});}
    if(path.endsWith('/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId:'synthetic-space',storageVerified:true,writable,requirementsEnabled:true,allowedTypes:['todo']}});
-   if(path.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',truncated:false,total:0,items:[],observedAt:snapshot.observedAt,today:url.searchParams.get('today')}});
+   if(path.endsWith('/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId,spaceId:'synthetic-space',storageVerified:true,writable,allowedTypes:['todo']},truncated:false,total:0,items:[],observedAt:snapshot.observedAt,today:url.searchParams.get('today')}});
    if(path.endsWith('/requirements/snapshot')){
     snapshotReads++;
     const snapshotItems=currentItems;

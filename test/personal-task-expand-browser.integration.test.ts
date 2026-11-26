@@ -22,7 +22,7 @@ test('OPT-IN mobile Expand survives missing native clone and recovers after a st
    cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
    symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
   ]);
-  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
+  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false,reactStrictMode:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),`
 export const readPlatformPagePrincipal=async()=>({id:'synthetic-expand-owner'});
 export const readPlatformPasswordCapability=async()=>false;
@@ -66,7 +66,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     initialDraft:reminderFields,
    }},
   };
-  let heldReads=0,workspaceReads=0,wideReads=0;
+  let heldReads=0,workspaceReads=0,wideReads=0,earlyStandaloneStatus=0;
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url()),path=url.pathname;
    if(url.origin!==origin)return route.abort();
@@ -74,6 +74,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    if(request.method()!=='GET'){writes.push(request.method());return route.fulfill({status:405});}
    if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
    if(path.endsWith('/personal/status')){
+    if(workspaceReads===0)earlyStandaloneStatus++;
     return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
    }
    if(path.endsWith('/personal/overview')){wideReads++;return route.fulfill({status:500});}
@@ -92,9 +93,9 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   const boundary=page.getByRole('heading',{name:'本人工作台暂不可用',exact:true});
   assert.equal(await page.evaluate(()=>typeof window.structuredClone),'undefined');
   await expect(workspace).toHaveAttribute('data-workspace-state','ready');
-  // Next dev may start and cancel an extra request during React Strict Mode's initial remount.
   const initialReads=workspaceReads;
-  assert.ok(initialReads===1||initialReads===2);
+  assert.equal(initialReads,1,'cold entry reads the narrow workspace once');
+  assert.equal(earlyStandaloneStatus,0,'the task workspace does not wait for a separate status request');
   for(let iteration=0;iteration<2;iteration++){
    await expand.tap();
    await expect(details.getByLabel('标题',{exact:true})).toHaveValue(title);
@@ -105,21 +106,25 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
   await expect(details.getByLabel('标题',{exact:true})).toHaveValue(reminderTitle);
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
-  assert.equal(workspaceReads,initialReads,'repeat expands do not request a snapshot');
-  await expand.tap();
-  holdSnapshot=true;
-  await page.evaluate(()=>{
+  assert.equal(workspaceReads,initialReads,'opening details does not reload the workspace');
+  const returnToForeground=()=>page.evaluate(()=>{
    for(const visibilityState of ['hidden','visible']){
     Object.defineProperty(document,'visibilityState',{configurable:true,value:visibilityState});
     document.dispatchEvent(new Event('visibilitychange'));
    }
   });
+  await returnToForeground();
+  await expect.poll(()=>workspaceReads).toBe(initialReads+1);
+  await expect(workspace).toHaveAttribute('data-workspace-state','ready');
+  await expand.tap();
+  holdSnapshot=true;
+  await returnToForeground();
   await expect(details).toHaveCount(0);
   await expect.poll(()=>heldReads).toBeGreaterThan(0);
   await expect(workspace).toHaveAttribute('data-workspace-state','error',{timeout:12_000});
   await expect(page.getByText('本人空间读取超时，请重试。',{exact:true})).toBeVisible();
   const attempts=workspaceReads;
-  assert.equal(attempts,initialReads+1,'resuming requests one snapshot');
+  assert.equal(attempts,initialReads+2,'a stalled foreground return requests one snapshot');
   holdSnapshot=false;
   releaseSnapshot();
   await expect(workspace).toHaveAttribute('data-workspace-state','error');

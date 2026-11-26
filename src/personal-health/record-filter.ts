@@ -24,3 +24,12 @@ export function matchesHealthRecord(
   const frisbee = personal.activity === 'other' && /飞盘|飛盤|\bfrisbee\b/i.test(title);
   return frisbee === (category === 'frisbee') && (status === 'all' || personal.state === status);
 }
+
+export type ExerciseCategory = Extract<HealthRecordCategory,'all'|'training'|'frisbee'>;
+
+export function matchesExerciseRecord(fields:HealthPersonalFields,category:ExerciseCategory,status:HealthRecordStatus):boolean {
+  const personal = fields.personal;
+  if (personal.healthKind!=='training') return false;
+  if (category==='all') return status==='all' || personal.state===status;
+  return matchesHealthRecord(fields,category,status);
+}
