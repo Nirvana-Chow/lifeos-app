@@ -25,7 +25,7 @@ function dateLabel(record:CalendarRecord){const p=record.fields.personal;if(p.ca
 function shiftMonth(month:string, offset:number) {
  const next=new Date(month+'-01T00:00:00Z');next.setUTCMonth(next.getUTCMonth()+offset);return next.toISOString().slice(0,10);
 }
-export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,referenceOptions:providedReferences=emptyOptions}:{linkedRecordId?:string;navigationGuard?:{current:(()=>boolean)|null};referenceOptions?:CalendarReferenceOptions}){
+export function PersonalCalendarWorkbench({navigationGuard,referenceOptions:providedReferences=emptyOptions}:{navigationGuard?:{current:(()=>boolean)|null};referenceOptions?:CalendarReferenceOptions}){
  const [rowEstimate,setRowEstimate]=useState(52);
  useEffect(()=>{if(typeof window.matchMedia!=='function')return;const media=window.matchMedia('(min-width:1024px) and (pointer:fine)');const update=()=>setRowEstimate(media.matches?40:52);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
  const [status,setStatus]=useState<PersonalCalendarStatus|null>(null),[snapshot,setSnapshot]=useState<{scope:string;requestKey:string;value:CalendarSnapshot}|null>(null),[view,setView]=useState<View|'week'>('calendar');
@@ -33,9 +33,6 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  const [referenceNotice,setReferenceNotice]=useState<{scope:string;text:string}|null>(null);
  const [loadedReferences,setLoadedReferences]=useState<{scope:string;value:CalendarReferenceOptions}|null>(null);
  const [editor,setEditor]=useState<Editor|null>(null),[pending,setPending]=useState<PersonalCalendarCommand|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[conflict,setConflict]=useState(false);
- const openedLink=useRef<{key:string;opened:boolean}|null>(null);
- const [linkRetry,setLinkRetry]=useState(0);
- const editorIntent=useRef(0);
  const generation=useRef(0),saving=useRef(false),statusRef=useRef(status),editorRef=useRef(editor);statusRef.current=status;editorRef.current=editor;
  const month=day.slice(0,7),weekly=view==='week',periodStart=weekly?calendarWeekStart(day):month+'-01';
  const requestKey=JSON.stringify([weekly,periodStart,zone,search,kind]);
@@ -52,68 +49,13 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  useEffect(()=>{const listener=(event:BeforeUnloadEvent)=>{if(dirty||busy||shownPending){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',listener);return()=>window.removeEventListener('beforeunload',listener);},[dirty,busy,shownPending]);
  async function refresh(){const token=++generation.current;let verifiedStatus=false;setError('');try{const next=await readPersonalCalendarStatus(fetch);verifiedStatus=true;if(token!==generation.current)return;setStatus(next);if(!next.configured){setSnapshot(null);setPending(null);return;}const binding={ownerId:next.ownerId,spaceId:next.spaceId},nextScope=scopeOf(binding);if(statusRef.current?.configured&&scopeOf(statusRef.current)!==nextScope||editorRef.current&&editorRef.current.scope!==nextScope){setSnapshot(null);setEditor(null);setPending(null);}const recovery=readPersonalCalendarCommand(sessionStorage,binding);if(token!==generation.current)return;setPending(recovery);if(recovery&&!editorRef.current)setEditor({scope:nextScope,record:null,fields:structuredClone(recovery.body.fields),initial:''});const window=validateCalendarWindow({from:periodStart,to:weekly?shiftCalendarDate(periodStart,7):shiftMonth(month,1),timeZone:zone,search,calendarKind:kind,limit:100});const data=await readPersonalCalendarSnapshot(fetch,binding,window);if(token===generation.current)setSnapshot({scope:nextScope,requestKey,value:data});}catch(cause){if(token===generation.current){setError(errorText(cause));setSnapshot(null);if(!verifiedStatus||cause instanceof PersonalCalendarClientError&&(cause.status===401||cause.status===403)){setStatus({scope:'personal-calendar-v1',configured:false,writable:false,reason:cause instanceof PersonalCalendarClientError&&(cause.status===401||cause.status===403)?'请重新登录并核对当前私人空间。':'日程服务尚未开放或暂时无法读取。'});setPending(null);}}}}
  useEffect(()=>{void refresh();return()=>{generation.current++;};},[requestKey]);
- function close(){if(canLeave()){editorIntent.current++;setEditor(null);}}
- function reread(){
-  if(!shownEditor&&!blocked&&openedLink.current?.opened===false){
-   openedLink.current=null;
-   setLinkRetry(attempt=>attempt+1);
-  }
-  void refresh();
- }
- async function open(recordId:string|null,onOpened?:()=>void){
-  const openingStatus=statusRef.current;
-  if(!owner||!scope||!openingStatus?.configured||scopeOf(openingStatus)!==scope||blocked||!canLeave())return;
-  if(recordId===null&&!openingStatus.writable)return;
-  const intent=++editorIntent.current,token=generation.current;
-  const isCurrent=()=>token===generation.current&&intent===editorIntent.current&&!saving.current;
-  setError('');setMessage('');
-  if(providedReferences===emptyOptions)void readPersonalCalendarReferences(fetch,owner).then(value=>{
-   if(isCurrent()){setLoadedReferences({scope,value});setReferenceNotice(null);}
-  }).catch(()=>{
-   if(isCurrent())setReferenceNotice({scope,text:'关联选项读取失败，已有引用仍保留。'});
-  });
-  if(recordId===null){
-   const fields=fresh('event',zone);
-   setEditor({scope,record:null,fields,initial:JSON.stringify(fields)});
-   return;
-  }
-  try{
-   const current=await readPersonalCalendarRecord(fetch,owner,recordId);
-   const after=await readPersonalCalendarStatus(fetch);
-   if(!isCurrent())return;
-   setStatus(after);
-   if(!after.configured||scopeOf(after)!==scope){
-    generation.current++;
-    setEditor(null);setSnapshot(null);setLoadedReferences(null);
-    setError('本人日程空间已变化，请重新核对。');
-    return;
-   }
-   if(openingStatus.writable!==after.writable){
-    editorIntent.current++;
-    setLoadedReferences(null);
-    setError('日程读写权限已变化，请重新读取。');
-    return;
-   }
-   setEditor({scope,record:current,fields:structuredClone(current.fields),initial:JSON.stringify(current.fields)});
-   onOpened?.();
-  }catch(cause){
-   if(isCurrent())setError(errorText(cause));
-  }
- }
- useEffect(()=>{
-  if(!linkedRecordId){openedLink.current=null;return;}
-  if(!scope||blocked||shownEditor)return;
-  const key=JSON.stringify([scope,linkedRecordId]);
-  if(openedLink.current?.key===key)return;
-  const attempt={key,opened:false};
-  openedLink.current=attempt;
-  void open(linkedRecordId,()=>{attempt.opened=true;});
- },[linkedRecordId,scope,blocked,shownEditor,linkRetry]);
- async function send(command:PersonalCalendarCommand){if(saving.current||!writable||!owner||scopeOf(command.binding)!==scope)return;const token=generation.current;editorIntent.current++;saving.current=true;setBusy(true);setError('');setConflict(false);try{try{keepPersonalCalendarCommand(sessionStorage,command);}catch{throw new PersonalCalendarClientError('浏览器不能保留待确认请求，保存尚未发送。');}setPending(command);const result=await sendPersonalCalendarCommand(fetch,sessionStorage,command);if(token!==generation.current)return;setPending(null);setEditor(null);setMessage(result.current.revision===result.receipt.revision?'已保存并读回日程。':'保存已确认；这条日程随后还有新版本。');await refresh();}catch(cause){if(token===generation.current){setError(errorText(cause));setConflict(cause instanceof PersonalCalendarClientError&&cause.status===409&&!cause.uncertain);}}finally{saving.current=false;setBusy(false);}}
+ function close(){if(canLeave())setEditor(null);}
+ async function open(record:CalendarRecord|null){if(!owner||blocked||!canLeave())return;setError('');setMessage('');const referenceToken=generation.current;if(providedReferences===emptyOptions)void readPersonalCalendarReferences(fetch,owner).then(value=>{if(referenceToken===generation.current){setLoadedReferences({scope:scope!,value});setReferenceNotice(null);}}).catch(()=>{if(referenceToken===generation.current)setReferenceNotice({scope:scope!,text:'关联选项读取失败，已有引用仍保留。'});});if(!record){const fields=fresh('event',zone);setEditor({scope:scope!,record:null,fields,initial:JSON.stringify(fields)});return;}const token=generation.current;try{const current=await readPersonalCalendarRecord(fetch,owner,record.id);if(token!==generation.current)return;setEditor({scope:scope!,record:current,fields:structuredClone(current.fields),initial:JSON.stringify(current.fields)});}catch(cause){setError(errorText(cause));}}
+ async function send(command:PersonalCalendarCommand){if(saving.current||!writable||!owner||scopeOf(command.binding)!==scope)return;const token=generation.current;saving.current=true;setBusy(true);setError('');setConflict(false);try{try{keepPersonalCalendarCommand(sessionStorage,command);}catch{throw new PersonalCalendarClientError('浏览器不能保留待确认请求，保存尚未发送。');}setPending(command);const result=await sendPersonalCalendarCommand(fetch,sessionStorage,command);if(token!==generation.current)return;setPending(null);setEditor(null);setMessage(result.current.revision===result.receipt.revision?'已保存并读回日程。':'保存已确认；这条日程随后还有新版本。');await refresh();}catch(cause){if(token===generation.current){setError(errorText(cause));setConflict(cause instanceof PersonalCalendarClientError&&cause.status===409&&!cause.uncertain);}}finally{saving.current=false;setBusy(false);}}
  async function save(){if(!shownEditor||!owner)return;try{await send(shownPending??freezePersonalCalendarCommand(owner,shownEditor.fields,shownEditor.record,crypto.randomUUID()));}catch(cause){setError(errorText(cause));}}
- async function rebase(){if(!shownPending?.path||!owner||!conflict||busy)return;editorIntent.current++;setBusy(true);try{const current=await readPersonalCalendarRecord(fetch,owner,shownPending.path.slice(1));clearPersonalCalendarCommand(sessionStorage,shownPending);setEditor({scope:scope!,record:current,fields:structuredClone(shownPending.body.fields),initial:JSON.stringify(current.fields)});setPending(null);setConflict(false);setError('');setMessage('已读取最新版本，原草稿保留，请核对后保存。');}catch(cause){setError(errorText(cause));}finally{setBusy(false);}}
+ async function rebase(){if(!shownPending?.path||!owner||!conflict||busy)return;setBusy(true);try{const current=await readPersonalCalendarRecord(fetch,owner,shownPending.path.slice(1));clearPersonalCalendarCommand(sessionStorage,shownPending);setEditor({scope:scope!,record:current,fields:structuredClone(shownPending.body.fields),initial:JSON.stringify(current.fields)});setPending(null);setConflict(false);setError('');setMessage('已读取最新版本，原草稿保留，请核对后保存。');}catch(cause){setError(errorText(cause));}finally{setBusy(false);}}
  const columns=useMemo<ColumnDef<typeof dataGridFeatures,CalendarRecord>[]>(()=>[
- {id:'title',header:'名称',size:250,minSize:180,accessorFn:record=>record.fields.title,cell:({row})=><button className={s.title} onClick={()=>void open(row.original.id)} aria-label={`查看日程：${row.original.fields.title}`}>{row.original.fields.title}</button>},
+ {id:'title',header:'名称',size:250,minSize:180,accessorFn:record=>record.fields.title,cell:({row})=><button className={s.title} onClick={()=>void open(row.original)} aria-label={`查看日程：${row.original.fields.title}`}>{row.original.fields.title}</button>},
  {id:'kind',header:'类别',size:150,accessorFn:record=>labels[record.fields.personal.calendarKind]},
  {id:'date',header:'日期与时区',size:330,accessorFn:dateLabel},
  {id:'source',header:'来源',size:130,accessorFn:()=>'个人录入'},
@@ -121,15 +63,12 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  ],[scope,blocked,zone]);
  const table=useTable({features:dataGridFeatures,data:shown?.entries??[],columns,getRowId:record=>record.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(shown?.entries.length??0,1)}},autoResetPageIndex:false});
  const p=shownEditor?.fields.personal;
- const editFields=(patch:Partial<CalendarPersonalFields>)=>{
-  editorIntent.current++;
-  setEditor(current=>current?{...current,fields:{...current.fields,...patch}}:current);
- };
+ const editFields=(patch:Partial<CalendarPersonalFields>)=>setEditor(current=>current?{...current,fields:{...current.fields,...patch}}:current);
  const editPersonal=(patch:Record<string,unknown>)=>{if(p)editFields({personal:{...p,...patch} as CalendarPersonal});};
  const stageRows=shown?.entries.filter(record=>record.fields.personal.calendarKind==='life-stage')??[];
  const datedStages=stageRows.flatMap(record=>{const stage=record.fields.personal as Extract<CalendarPersonal,{calendarKind:'life-stage'}>;return stage.startOn&&stage.endOn?[stage]:[];}),stageStart=datedStages.length?Math.min(...datedStages.map(stage=>calendarDayNumber(stage.startOn!))):0,stageEnd=datedStages.length?Math.max(...datedStages.map(stage=>calendarDayNumber(stage.endOn!)))+1:1;
  return <section className={s.page+' '+layout.workbench} aria-label="个人日程">
-  <div className={s.toolbar}>{weekly?<label>所在周日期<input type="date" value={day} disabled={blocked} onChange={event=>{if(/^\d{4}-\d{2}-\d{2}$/.test(event.target.value))setDay(event.target.value);}}/></label>:<label>月历月份<input type="month" value={month} disabled={blocked} onChange={event=>{if(/^\d{4}-\d{2}$/.test(event.target.value))setDay(event.target.value+'-01');}}/></label>}<Button type="button" variant="outline" disabled={blocked} onClick={()=>navigatePeriod(-1)}>{weekly?'上周':'上月'}</Button><Button type="button" variant="outline" disabled={blocked||!today} onClick={()=>{if(today)setDay(today);}}>今天</Button><Button type="button" variant="outline" disabled={blocked} onClick={()=>navigatePeriod(1)}>{weekly?'下周':'下月'}</Button><label>查看时区<input aria-label="查看时区" value={zone} disabled={blocked} onChange={event=>setZone(event.target.value)}/></label><label className={s.search}>搜索<input type="search" value={search} disabled={blocked} onChange={event=>setSearch(event.target.value)} placeholder="名称或正文"/></label><label>类别<select aria-label="日程类别筛选" value={kind} disabled={blocked} onChange={event=>setKind(event.target.value)}><option value="all">全部类别</option>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><Button variant="outline" disabled={busy} onClick={reread}>重新读取</Button><Button disabled={!writable||blocked} onClick={()=>void open(null)}>新建日程</Button></div>
+  <div className={s.toolbar}>{weekly?<label>所在周日期<input type="date" value={day} disabled={blocked} onChange={event=>{if(/^\d{4}-\d{2}-\d{2}$/.test(event.target.value))setDay(event.target.value);}}/></label>:<label>月历月份<input type="month" value={month} disabled={blocked} onChange={event=>{if(/^\d{4}-\d{2}$/.test(event.target.value))setDay(event.target.value+'-01');}}/></label>}<Button type="button" variant="outline" disabled={blocked} onClick={()=>navigatePeriod(-1)}>{weekly?'上周':'上月'}</Button><Button type="button" variant="outline" disabled={blocked||!today} onClick={()=>{if(today)setDay(today);}}>今天</Button><Button type="button" variant="outline" disabled={blocked} onClick={()=>navigatePeriod(1)}>{weekly?'下周':'下月'}</Button><label>查看时区<input aria-label="查看时区" value={zone} disabled={blocked} onChange={event=>setZone(event.target.value)}/></label><label className={s.search}>搜索<input type="search" value={search} disabled={blocked} onChange={event=>setSearch(event.target.value)} placeholder="名称或正文"/></label><label>类别<select aria-label="日程类别筛选" value={kind} disabled={blocked} onChange={event=>setKind(event.target.value)}><option value="all">全部类别</option>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><Button variant="outline" disabled={busy} onClick={()=>void refresh()}>重新读取</Button><Button disabled={!writable||blocked} onClick={()=>void open(null)}>新建日程</Button></div>
   {error&&<p role="alert" className={s.error}>{error}</p>}{message&&<p role="status">{message}</p>}
   <AppleCalendarPreview key={JSON.stringify([month,zone,scope])} month={month} timeZone={zone}/>
   {!status?<p role="status">正在核对日程模块…</p>:!status.configured?<div className={s.unavailable}><h2>个人日程尚未开放</h2><p>{status.reason??'共享存储与权限尚未就绪，当前没有读取或保存日程。'}</p></div>:<>
@@ -137,8 +76,8 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
    <div className={s.views}><div role="group" aria-label="日程视图">{([['table','表格'],['calendar','月历'],['week','周历'],['life-stages','人生阶段']] as const).map(([value,label])=><Button variant="ghost" key={value} aria-pressed={view===value} onClick={()=>setView(value)}>{label}</Button>)}</div><span role="status">{shown?`${shown.total} 条 · 已完整读取`:'尚未完整读到记录'}</span></div>
    {shownPending&&<div className={s.pending} role="status"><p>保存结果尚未确认，原请求已保留。</p><Button variant="outline" disabled={busy||!writable} onClick={()=>void send(shownPending)}>重试原请求</Button>{conflict&&shownPending.path&&<Button variant="outline" disabled={busy} onClick={()=>void rebase()}>读取最新版本，保留草稿</Button>}</div>}
    {shown&&view==='table'&&<div className={s.table} data-personal-calendar-grid="reui"><DataGridContainer><DataGrid table={table} recordCount={shown.total} i18n={{labels:{empty:'没有符合条件的日程'}}} tableLayout={{width:'fixed',headerSticky:true,columnsResizable:true,cellSelection:false}}><DataGridTableVirtual height="100%" estimateSize={rowEstimate} overscan={10}/></DataGrid></DataGridContainer></div>}
-   {shown&&(view==='calendar'||view==='week')&&<PersonalCalendarGrid snapshot={shown} mode={weekly?'week':'month'} day={day} today={today} selectDay={setDay} openRecord={record=>void open(record.id)}/>}
-   {shown&&view==='life-stages'&&<section className={s.stages} aria-label="人生阶段记录">{stageRows.length?<ol>{stageRows.map(record=>{const stage=record.fields.personal as Extract<CalendarPersonal,{calendarKind:'life-stage'}>;return<li key={record.id}><Button variant="ghost" onClick={()=>void open(record.id)}>{record.fields.title}</Button><p>{stage.startOn?<time dateTime={stage.startOn}>{stage.startOn}</time>:'开始未知'} 至 {stage.endOn?<time dateTime={stage.endOn}>{stage.endOn}</time>:'结束未设置'}</p>{stage.startOn&&stage.endOn?<><svg className={s.stageTrack} viewBox="0 0 1000 18" preserveAspectRatio="none" role="img" aria-label={`${record.fields.title}：${stage.startOn} 至 ${stage.endOn}`}><rect x={(calendarDayNumber(stage.startOn)-stageStart)/(stageEnd-stageStart)*1000} y={3} width={(calendarDayNumber(stage.endOn)-calendarDayNumber(stage.startOn)+1)/(stageEnd-stageStart)*1000} height={12} rx={3}/></svg><p className={s.stageDuration}>共 {calendarDayNumber(stage.endOn)-calendarDayNumber(stage.startOn)+1} 个自然日（含首尾）</p></>:<p>日期尚不完整，未生成时间区间。</p>}</li>;})}</ol>:<p>还没有人生阶段记录。可以新建并明确起止日期。</p>}</section>}
+   {shown&&(view==='calendar'||view==='week')&&<PersonalCalendarGrid snapshot={shown} mode={weekly?'week':'month'} day={day} today={today} selectDay={setDay} openRecord={record=>void open(record)}/>}
+   {shown&&view==='life-stages'&&<section className={s.stages} aria-label="人生阶段记录">{stageRows.length?<ol>{stageRows.map(record=>{const stage=record.fields.personal as Extract<CalendarPersonal,{calendarKind:'life-stage'}>;return<li key={record.id}><Button variant="ghost" onClick={()=>void open(record)}>{record.fields.title}</Button><p>{stage.startOn?<time dateTime={stage.startOn}>{stage.startOn}</time>:'开始未知'} 至 {stage.endOn?<time dateTime={stage.endOn}>{stage.endOn}</time>:'结束未设置'}</p>{stage.startOn&&stage.endOn?<><svg className={s.stageTrack} viewBox="0 0 1000 18" preserveAspectRatio="none" role="img" aria-label={`${record.fields.title}：${stage.startOn} 至 ${stage.endOn}`}><rect x={(calendarDayNumber(stage.startOn)-stageStart)/(stageEnd-stageStart)*1000} y={3} width={(calendarDayNumber(stage.endOn)-calendarDayNumber(stage.startOn)+1)/(stageEnd-stageStart)*1000} height={12} rx={3}/></svg><p className={s.stageDuration}>共 {calendarDayNumber(stage.endOn)-calendarDayNumber(stage.startOn)+1} 个自然日（含首尾）</p></>:<p>日期尚不完整，未生成时间区间。</p>}</li>;})}</ol>:<p>还没有人生阶段记录。可以新建并明确起止日期。</p>}</section>}
    {!!shown?.projection.countdowns.length&&<section className={s.countdowns} aria-label="倒计时"><h3>倒计时</h3>{shown.projection.countdowns.map(item=><p key={item.recordId}>{shown.entries.find(record=>record.id===item.recordId)?.fields.title}：{item.daysRemaining===null?'日期未设置':item.daysRemaining===0?'今天':item.daysRemaining>0?`还有 ${item.daysRemaining} 天`:`已过去 ${-item.daysRemaining} 天`}<small>（按记录时区，截至 {item.asOfDate}）</small></p>)}</section>}
    {!!shown?.projection.unscheduled.length&&<p className={s.meta}>另有 {shown.projection.unscheduled.length} 条日期未完整设置，保留在表格中。</p>}
   </>}
