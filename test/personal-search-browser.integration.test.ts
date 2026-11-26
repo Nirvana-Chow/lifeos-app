@@ -69,6 +69,9 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
    await expect(trigger).toBeVisible();
    const draftInput=page.getByRole('textbox',{name:'编辑待办',exact:true});
    if(url===taskUrl){
+    const grouping=page.getByRole('combobox',{name:'待办表格分组'});
+    await grouping.selectOption('area');
+    await expect(page.locator('[data-task-group="area"]')).toHaveText('未关联领域1 项');
     const title=page.locator('[data-task-grid="reui"] tr[data-row-id="'+todo.id+'"] td[data-col-id="title"]');
     await title.dblclick();
     await draftInput.fill('Unsent synthetic task title');
@@ -139,6 +142,7 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
     await expect(draftInput).toHaveValue('Unsent synthetic task title');
+    await expect(page.getByRole('combobox',{name:'待办表格分组'})).toHaveValue('area');
     assert.deepEqual(writes,[],'Keyboard focus moving into search must also preserve the task draft');
    }
   }
