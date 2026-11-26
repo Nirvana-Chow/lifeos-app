@@ -201,7 +201,7 @@ test('OPT-IN project history uses the saved revision on the owner detail route',
  assert.equal(todoHistory.status(),200);
  assert.equal((await todoHistory.json()).items[0].draft.notes,'原待办历史正文');
  await edit('todo',ids.todo);
- await expect(page.getByRole('dialog',{name:'待办详情',exact:true}).getByLabel('正文',{exact:true})).toHaveValue('原待办历史正文');
+ await expect(page.getByRole('dialog',{name:'待办详情',exact:true}).getByRole('textbox',{name:'正文',exact:true})).toHaveValue('原待办历史正文');
 
  await edit('project',ids.project);
  await expect(value(await open(3),'下一步')).toHaveText(nextStep);
