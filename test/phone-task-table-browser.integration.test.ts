@@ -79,8 +79,9 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     if(path==='/api/platform/personal/todo/workspace-snapshot'){
      const today=url.searchParams.get('today')??'';
      assert.match(today,/^\d{4}-\d{2}-\d{2}$/);
+     assert.equal(url.searchParams.get('include'),'access');
      snapshotReads++;
-     return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:1,items:[task],today,observedAt:at}});
+     return route.fulfill({json:{scope:'task-workspace-current-snapshot',truncated:false,total:1,items:[task],today,observedAt:at,access:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}}});
     }
     if(path.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo'],writable:true}});
     return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}}});

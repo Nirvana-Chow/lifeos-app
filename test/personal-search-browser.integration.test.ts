@@ -47,8 +47,13 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic Shanghai calendar',text:'Boundary needle',personal:{...calendarFields.personal,schedule:{kind:'timed',startAt:'2025-12-31T16:00:00Z',endAt:'2025-12-31T17:00:00Z',timeZone:'UTC'}}}},'browser-search-shanghai');
   const todo=(await service.mutate(config.ownerId,'todo',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic workspace task',notes:'Keep as-is',dueOn:null,status:'open'}},'browser-search-workspace-task')).entry;
   const snapshot=JSON.stringify([...repo.rows.values()]);
-  const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{throw Error('No synthetic writes allowed');}});
-  await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){outside.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET')writes.push(request.method()+' '+url.pathname);reads.push(url.pathname);
+  const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{}});
+  await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){outside.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET'){
+    writes.push(request.method()+' '+url.pathname);
+    return route.fulfill({status:405,json:{error:{code:'NO_SYNTHETIC_WRITES'}}});
+   }
+   if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')assert.equal(url.searchParams.get('include'),'access');
+   reads.push(url.pathname);
    if(expired)return route.fulfill({status:401,json:{error:{code:'AUTH_REQUIRED'}}});
    if(url.pathname==='/api/platform/personal/status'||url.pathname==='/api/platform/status')return route.fulfill({status:200,json:{...config,scope:'personal-manual-candidate',storageVerified:true,writable:true}});
    if(url.pathname.endsWith('/search')&&broken)return route.fulfill({status:503,json:{error:{code:'UNAVAILABLE'}}});

@@ -68,7 +68,8 @@ test('OPT-IN public navigation aligns semantic Lucide icons across actual owner,
    if(url.pathname==='/api/platform/personal/todo/workspace-snapshot'){
     const today=url.searchParams.get('today')??'';
     assert.match(today,/^\d{4}-\d{2}-\d{2}$/);
-    return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today,observedAt:'2026-11-26T00:00:00Z'}});
+    assert.equal(url.searchParams.get('include'),'access');
+    return route.fulfill({json:{scope:'task-workspace-current-snapshot',items:[],total:0,truncated:false,today,observedAt:'2026-11-26T00:00:00Z',access:{scope:'personal-manual-candidate',ownerId:'icons-synthetic-owner',spaceId:'icons-synthetic-space',storageVerified:true,allowedTypes:['todo'],writable:false}}});
    }
    if(url.pathname.endsWith('/overview'))return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today'),observedAt:'2026-11-26T00:00:00Z'}});
    return route.fulfill({status:404,json:{}});
