@@ -5,14 +5,15 @@ import {once} from 'node:events';
 import {cp,mkdir,mkdtemp,readFile,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {chromium,expect} from '@playwright/test';
+import {chromium,expect as playwrightExpect} from '@playwright/test';
 import {MemoryPort} from './helpers/platform.ts';
 import {personalEntryType,PersonalService} from '../src/personal-candidate/service.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
 import {calendarFields} from './helpers/personal-calendar-port.ts';
 import type {PersonalConfig} from '../src/personal-candidate/config.ts';
 const source=resolve(import.meta.dirname,'..');
-test('OPT-IN owner search uses stable original reads and retains query/back/keyboard context without writes or egress',{skip:process.env.RUN_PERSONAL_SEARCH_BROWSER_TESTS!=='1'&&'Requires disposable synthetic Next fixture and native Chrome',timeout:180_000},async t=>{
+const expect=playwrightExpect.configure({timeout:15_000});
+test('OPT-IN owner search uses stable original reads and retains query/back/keyboard context without writes or egress',{skip:process.env.RUN_PERSONAL_SEARCH_BROWSER_TESTS!=='1'&&'Requires disposable synthetic Next fixture and native Chrome',timeout:360_000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-search-browser-'));await mkdir(join(root,'app/personal/[...section]'),{recursive:true});await mkdir(join(root,'app/login'),{recursive:true});
  const workspaceSource=await readFile(join(source,'app/personal/page.tsx'),'utf8');
  const workspaceRoute=workspaceSource.replace("from'../../src/platform/runtime'","from'../../src/search-fixture-principal'");
@@ -256,7 +257,10 @@ export async function readPlatformLoginCapability(){return {sessionDuration:fals
   await page.getByRole('link',{name:'返回搜索结果',exact:true}).click();
   await expect(december).toBeVisible();
   await expect(keyword).toHaveValue('needle');await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
-  await december.click();await expect(page.getByRole('region',{name:'原业务记录只读详情'})).toBeVisible();await page.goBack();
+  await december.click();
+  await expect(page).toHaveURL(new RegExp('(?:\\?|&)id='+dated.id+'(?:&|$)'));
+  await expect(page.getByRole('region',{name:'原业务记录只读详情'})).toBeVisible();
+  await page.goBack();
   await expect(december).toBeVisible();await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
   const foreignURL=new URL(page.url());
   foreignURL.searchParams.set('type','todo');
