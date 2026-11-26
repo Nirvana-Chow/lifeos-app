@@ -1,4 +1,4 @@
-import {matchesPersonalSearchDate,personalSearchRecordDate,readPersonalSearchDateRange,type PersonalSearchDateRange} from './search-dates.ts';
+import {matchesPersonalSearchDate,personalMonthDayPageSize,personalSearchRecordDate,readPersonalSearchDateRange,readPersonalSearchPage,type PersonalSearchDateRange} from './search-dates.ts';
 import {getRecipe} from '../cooking/catalog.ts';
 import type {CookingRecipePin} from '../cooking/log-domain.ts';
 import {RequirementsService} from '../requirements-candidate/service.ts';
@@ -58,7 +58,7 @@ export function personalEntryType(entry:PublicEntry|StoredEntry,spaceId:string):
  if(!obj(original.input)||original.input.spaceId!==spaceId||original.input.confirmed!==true)return null;
  const type=personalTypes.includes(original.type as PersonalType)&&entry.kind===(original.type==='todo'?'todo':'inbox')?original.type as PersonalType:null;
  if(!type)return null;
- try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
+ try{object(original,['marker','spaceId','type','input']);const originalFields=validatePersonalBody(type,null,original.input,spaceId).fields;validateId(entry.id);validateId(source.id);validateRevision(entry.revision);if(type==='todo')validateTodo(entry.draft);else{const draft=validateInbox(entry.draft);if(draft.record||draft.disposition!=='reference'||type==='journal'&&(!draft.text.trim()||draft.personal&&draft.personal.type!=='journal')||type!=='journal'&&draft.personal?.type!==type)return null;if(type==='article')normalizePersonalFields(type,{title:draft.title,text:draft.text,occurredOn:draft.occurredOn,personal:draft.personal});if(type==='cooking'&&(!draft.occurredOn||draft.occurredOn.startsWith('0000-')||!storedCookingPin(cookingRecipe(draft))||!storedCookingPin(cookingRecipe(originalFields))))return null;}return type;}catch{return null;}
 }
 export function validatePersonalBody(type:PersonalType,id:string|null,input:unknown,spaceId:string):PersonalBody{
  const raw=object(input,['spaceId','confirmed','fields',...(id?['expectedRevision']:[])]);
@@ -69,13 +69,13 @@ export function validatePersonalBody(type:PersonalType,id:string|null,input:unkn
 export class PersonalService{
  readonly config:PersonalConfig;readonly requirements:RequirementsService;readonly requirementSupport:RequirementSupportService;private repository:PlatformRepository;
  constructor(repository:PlatformRepository,config:PersonalConfig,options:{currentSourceSha?:()=>string|null}={}){this.repository=repository;this.config=Object.freeze(structuredClone(config));this.requirements=new RequirementsService(repository,this.config);this.requirementSupport=new RequirementSupportService(repository,this.config,this.requirements,options);}
- private allows(type:PersonalType){return type==='cooking'?this.config.cookingEnabled===true:type==='media'?this.config.mediaEnabled===true:type==='career'?this.config.careerEnabled===true:type==='portfolio'?this.config.portfolioEnabled===true:type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
+ private allows(type:PersonalType){return type==='article'?this.config.articleEnabled===true:type==='cooking'?this.config.cookingEnabled===true:type==='media'?this.config.mediaEnabled===true:type==='career'?this.config.careerEnabled===true:type==='portfolio'?this.config.portfolioEnabled===true:type==='calendar'?this.config.calendarEnabled===true:type==='health'?this.config.healthEnabled===true:type==='person'?this.config.peopleEnabled===true:this.config.allowedTypes.includes(type);}
  private enabled(type:PersonalType){if(!this.allows(type))fail(400,'PERSONAL_TYPE_DENIED','此本人记录类别未开放。');}
  private owner(owner:string){if(owner!==this.config.ownerId)fail(403,'OWNER_ONLY','只允许已绑定本人身份。');}
  private matches(entry:StoredEntry|null,owner:string,type?:PersonalType|'person',id?:string):entry is StoredEntry{return !!entry&&entry.ownerId===owner&&(!id||entry.id===id)&&!!personalEntryType(entry,this.config.spaceId)&&this.allows(personalEntryType(entry,this.config.spaceId)!)&&(!type||personalEntryType(entry,this.config.spaceId)===type);}
  async get(owner:string,type:PersonalType,id:string):Promise<PublicEntry>{this.owner(owner);this.enabled(type);id=validateId(id);const entry=await this.repository.get(owner,type==='todo'?'todo':'inbox',id);if(!this.matches(entry,owner,type,id))return missing();return publicEntry(entry);}
  private async page(owner:string,mode:'current'|'history',limit:number,type?:PersonalType,id?:string):Promise<PersonalPage>{
-  this.owner(owner);if(type&&['media','career','portfolio','cooking'].includes(type))this.enabled(type);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
+  this.owner(owner);if(type&&['media','career','portfolio','cooking','article'].includes(type))this.enabled(type);if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   if(!this.repository.readWindow)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','未配置有界读取，已停止。');
   const rows=await this.repository.readWindow(owner,mode,{anchor:null,after:null},limit+1);
   if(!Array.isArray(rows)||rows.length>limit+1)return fail(503,'PERSONAL_WINDOW_UNAVAILABLE','有界存储响应无效。');
@@ -87,25 +87,30 @@ export class PersonalService{
  }
  async list(owner:string,type?:PersonalType,limit=50){return this.page(owner,'current',limit,type);}
  async history(owner:string,type:PersonalType,id:string,limit=50){
-  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person','media','career','portfolio','cooking'].includes(type))return this.page(owner,'history',limit,type,id);
+  const current=await this.get(owner,type,id);if(!['calendar','journal','health','person','media','career','portfolio','cooking','article'].includes(type))return this.page(owner,'history',limit,type,id);
   if(!Number.isInteger(limit)||limit<1||limit>100)fail(400,'INVALID_LIMIT','读取上限为1至100。');
   const rows=await this.repository.history(owner,'inbox',id);
-  if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,'CALENDAR_HISTORY_UNAVAILABLE','日程历史读取无效。');
+  if(!Array.isArray(rows)||rows.length!==Math.min(current.revision,100)||rows[0]?.revision!==current.revision||rows.some((row,index)=>!this.matches(row,owner,type,id)||row.id!==id||row.source.id!==current.source.id||row.revision>current.revision||index>0&&rows[index-1].revision!==row.revision+1))fail(503,type==='article'?'ARTICLE_HISTORY_UNAVAILABLE':'CALENDAR_HISTORY_UNAVAILABLE',type==='article'?'文章历史读取无效。':'日程历史读取无效。');
   return{items:rows.slice(0,limit).map(publicEntry),truncated:rows.length>limit||rows.length===100&&rows.at(-1)!.revision>1,scope:'bounded-record-history' as const,scanned:rows.length,limit,total:null};
  }
 
  async exportSnapshot(owner:string,limit=50){const [entries,history]=await Promise.all([this.page(owner,'current',limit),this.page(owner,'history',limit)]);return{format:'lifeos.personal.manual.export.v1',spaceId:this.config.spaceId,entries:entries.items,history:history.items,truncated:entries.truncated||history.truncated,windows:{entries,history},backupOrRestoreVerified:false};}
  async currentSnapshot(owner:string){this.owner(owner);if(!this.repository.readCurrentSnapshot)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询未配置，不能计算总数。');const rows=await this.repository.readCurrentSnapshot!(owner);if(!Array.isArray(rows)||rows.length>10000||rows.some(r=>!r||r.ownerId!==owner)||new Set(rows.map(r=>r.id)).size!==rows.length)fail(503,'PERSONAL_SNAPSHOT_UNAVAILABLE','全量查询超过安全上限或响应无效，未返回部分统计。');return rows.filter(r=>this.matches(r,owner)).map(publicEntry);}
  async overview(owner:string,today:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(today)||Number.isNaN(Date.parse(today+'T00:00:00Z'))||new Date(today+'T00:00:00Z').toISOString().slice(0,10)!==today)fail(400,'INVALID_DATE','需要有效日期。');const items=await this.currentSnapshot(owner),drafts=items.filter(e=>personalEntryType(e,this.config.spaceId)==='todo').map(e=>e.draft as TodoDraft);return{items,scope:'full-current-snapshot' as const,total:items.length,truncated:false,observedAt:new Date().toISOString(),today,counts:{open:drafts.filter(d=>d.status==='open'||d.status==='in_progress').length,done:drafts.filter(d=>d.status==='done').length,cancelled:drafts.filter(d=>d.status==='cancelled').length,overdue:drafts.filter(d=>(d.status==='open'||d.status==='in_progress')&&d.dueOn&&d.dueOn<today).length},projects:items.filter(e=>personalEntryType(e,this.config.spaceId)==='project'),domains:items.filter(e=>personalEntryType(e,this.config.spaceId)==='domain')};}
- async search(owner:string,query:string,dates:PersonalSearchDateRange={}){
+ async search(owner:string,query:string,dates:PersonalSearchDateRange={},requestedPage?:string){
   if(typeof query!=='string'||query.length>240)fail(400,'INVALID_QUERY','搜索内容过长。');
-  const range=readPersonalSearchDateRange(dates.from,dates.to),snapshot=await this.currentSnapshot(owner),q=query.trim().toLowerCase();
+  const range=readPersonalSearchDateRange(dates.from,dates.to,dates.monthDay),page=readPersonalSearchPage(requestedPage,range.monthDay),snapshot=await this.currentSnapshot(owner),q=query.trim().toLowerCase();
   // Search entered prose only: serialized schema keys, state and relation IDs are not content.
   const items=snapshot.filter(({draft})=>{
    if(!['title'in draft?draft.title:'','notes'in draft?draft.notes:'text'in draft?draft.text:''].some(text=>text.toLowerCase().includes(q)))return false;
-   return !range.from&&!range.to||matchesPersonalSearchDate(personalSearchRecordDate(draft as TodoDraft|InboxDraft).date,range);
+   return !range.from&&!range.to&&!range.monthDay||matchesPersonalSearchDate(personalSearchRecordDate(draft as TodoDraft|InboxDraft).date,range);
   }).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.createdAt.localeCompare(a.createdAt)||b.id.localeCompare(a.id));
-  return{scope:'full-current-snapshot' as const,items,query,...range,coverage:{types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length}};
+  const coverage={types:personalTypes.filter(type=>this.allows(type)),scanned:snapshot.length,matched:items.length};
+  if(range.monthDay){
+   const start=(page-1)*personalMonthDayPageSize;
+   return {scope:'filtered-current-page' as const,items:items.slice(start,start+personalMonthDayPageSize),query,...range,coverage,page};
+  }
+  return{scope:'full-current-snapshot' as const,items,query,...range,coverage};
  }
  async referenceStates(owner:string,id:string){this.owner(owner);const entry=await this.repository.get(owner,'todo',validateId(id));if(!this.matches(entry,owner,'todo',id))return missing();return Promise.all(personalReferences(entry.draft as TodoDraft).map(async({type,link})=>{const target=await this.repository.get(owner,'inbox',link.id),allowed=this.matches(target,owner,type,link.id)&&target.source.id===link.sourceId;return{type,link,status:!allowed?'unavailable':target!.revision===link.revision?'current':'updated',current:allowed?publicEntry(target!):null};}));}
  async mutate(owner:string,type:PersonalType,id:string|null,input:unknown,key:string,guard:PersonalGuard=async()=>{},transactionGuard?:(tx:Transaction)=>Promise<void>):Promise<MutationResult>{

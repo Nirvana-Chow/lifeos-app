@@ -91,6 +91,42 @@ test('owner generation changes reject a late review response without reviving ol
  const response=request();context.reviewGeneration++;context.reviewScope=null;finish(Response.json({review:{private:'synthetic old owner'}}));
  await assert.rejects(response,{status:403});
 });
+test('an invalidated write waiting on owner verification never reaches the API',async()=>{
+ let verified!:(value:string)=>void;
+ let writes=0;
+ const command={url:'/api/platform/personal/storage-review',method:'PATCH',key:'synthetic-key',body:'{}'};
+ const context={reviewScope:'owner-scope',reviewGeneration:1,pendingDecision:{scope:'owner-scope'},
+  readReviewScope:()=>new Promise<string>(resolve=>{verified=resolve;}),fetch:()=>{writes++;},AbortSignal};
+ const request=runInNewContext(fn('requestReview')+'; requestReview',context);
+ const result=request('PATCH',{},command);
+ // The same scope can be verified again while the old check is in flight.
+ context.reviewGeneration++;
+ verified('owner-scope');
+ await assert.rejects(result,{status:403});
+ assert.equal(writes,0);
+});
+test('a stale write completion leaves the newer operation busy and skips readback',async()=>{
+ let finish!:(value:unknown)=>void;
+ let reads=0,syncs=0;
+ const context={reviewGeneration:0,busy:false,sessionDenied:false,syncStatus:'saved',pendingDecision:null,
+  syncControls:()=>{syncs++;},announce(){},
+  requestReview:(method='GET')=>{
+   if(method==='PATCH')return new Promise(resolve=>{finish=resolve;});
+   reads++;
+  }};
+ const api=runInNewContext([fn('writeServer'),fn('invalidateReview')].join('\n')+'; ({writeServer,invalidateReview})',context);
+ const original=api.writeServer('PATCH',{},()=>true);
+ assert.equal(context.busy,true);
+ api.invalidateReview();
+ assert.equal(context.busy,false);
+ context.reviewGeneration++;
+ context.busy=true;
+ finish({});
+ await original;
+ assert.equal(context.busy,true);
+ assert.equal(reads,0);
+ assert.equal(syncs,1);
+});
 test('group parents and unknown identities cannot send a decision while standalone folders remain writable',async()=>{
  const records=[{...item,id:'G43'}, {...item,id:'G43.01'}, {...item,id:'LEAF'}];let writes=0;
  const context:any={review:{items:records,revision:'v1'},pendingDecision:null,choices:new Map([['G43','trash']]),canEdit:()=>true,synced:false,store(){writes++;},render(){},focusDecision(){}};
@@ -109,7 +145,7 @@ test('selected and group filters distinguish undecided from defer',()=>{
 async function writeCase(status:number|null,readbackFails=false){
  const original={revision:1,checklist:{revision:'synthetic-v1'},decisions:[]};
  const fresh={...original,revision:2};const notices:string[]=[];let shown:unknown;
- const context:any={busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',retainPendingDecision:()=>true,clearPendingDecision(){context.pendingDecision=null;},syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
+ const context:any={reviewGeneration:0,busy:false,remote:original,uncertain:false,sessionDenied:false,synced:true,pendingDecision:{id:'S-1',decision:'keep',checklistRevision:'synthetic-v1'},syncStatus:'saved',retainPendingDecision:()=>true,clearPendingDecision(){context.pendingDecision=null;},syncControls(){},announce:(s:string)=>notices.push(s),requestReview:async(method='GET')=>{if(method==='PATCH'&&status)throw Object.assign(Error('failure'),{status});if(method==='GET'&&readbackFails)throw Error('offline');return fresh;},useReview:(_:unknown,s:unknown)=>{shown=s;},isSessionDenial:()=>false,hideDeniedServerReview(){}};
  await runInNewContext(fn('writeServer')+'; writeServer',context)('PATCH',{},()=>false);
  return {context,notices,shown};
 }
@@ -130,7 +166,7 @@ function recoveryFixture(){
  let key=0,failRead=true,patchMode:'lost'|'conflict'|'receipt'|'reject'='lost';
  const snapshot=(revision:number,decision?:string)=>({revision,checklist:{revision:'wire-v1',items:[item,{...item,id:'S-2'}]},decisions:[...(decision?[{id:'S-1',decision}]:[]),{id:'S-2',decision:'trash'}]});
  let fresh=snapshot(1),receipt=snapshot(2,'keep');
- const context:any={REVIEW_API:'/api/platform/personal/storage-review',reviewScope:scope,reviewGeneration:0,recoveryBlocked:false,noteDraftCorrupt:false,loadNoteDrafts(){},pendingRetained:false,readReviewScope:async()=>scope,sessionStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value),removeItem:(key:string)=>storage.delete(key)},OWN:(v:object,k:string)=>Object.hasOwn(v,k),review:fresh.checklist,choices:new Map(),remote:fresh,synced:true,busy:false,uncertain:false,sessionDenied:false,localSaved:true,pendingDecision:null,syncStatus:'saved',AbortSignal,crypto:{randomUUID:()=>`synthetic-key-${++key}`},DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},
+ const context:any={ownEvent:undefined,REVIEW_API:'/api/platform/personal/storage-review',reviewScope:scope,reviewGeneration:0,recoveryBlocked:false,noteDraftCorrupt:false,loadNoteDrafts(){},pendingRetained:false,readReviewScope:async()=>scope,sessionStorage:{getItem:(key:string)=>storage.get(key)??null,setItem:(key:string,value:string)=>storage.set(key,value),removeItem:(key:string)=>storage.delete(key)},OWN:(v:object,k:string)=>Object.hasOwn(v,k),review:fresh.checklist,choices:new Map(),remote:fresh,synced:true,busy:false,uncertain:false,sessionDenied:false,localSaved:true,pendingDecision:null,syncStatus:'saved',AbortSignal,crypto:{randomUUID:()=>`synthetic-key-${++key}`},DECISIONS:{keep:'留',trash:'删除候选',defer:'暂缓'},
   byId:(id:string)=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false,focus(){},addEventListener:(_:string,fn:Function)=>listeners.set(id,fn)});return nodes.get(id);},syncControls(){},render(){},focusDecision(){},canEdit:()=>!context.busy&&!context.uncertain,announce:(value:string)=>notices.push(value),isSessionDenial:()=>false,hideDeniedServerReview(){},parseSnapshot:(value:unknown)=>value,
   useReview:(review:any,s:any)=>{context.review=review;context.choices=new Map(s.decisions.map((row:any)=>[row.id,row.decision]));},
   fetch:async(url:string,options:any)=>{
@@ -142,7 +178,7 @@ function recoveryFixture(){
   },
  };
  const functions=['reviewRecoveryKey','parsePendingReview','retainPendingDecision','restorePendingDecision','clearPendingDecision','reviewTree','requestReview','writeServer','savePreview','choose','openServer','decisionMatches','freezeReviewCommand','retryDecision'].filter(name=>script.includes('function '+name+'(')).map(fn).join('\n');
- const handlers=['retry-decision','discard-decision'].map(id=>{const start=script.indexOf("byId('"+id+"').addEventListener(");return script.slice(start,script.indexOf('\n});',start)+4);}).join('\n');
+ const handlers=['retry-decision','discard-decision'].map(id=>{const start=script.indexOf("byId('"+id+"').addEventListener(");return script.slice(start,script.indexOf('\n},ownEvent);',start)+'\n},ownEvent);'.length);}).join('\n');
  runInNewContext(functions+'\n'+handlers+'\nObject.assign(globalThis,{choose,openServer,savePreview});',context);
  const click=async(id:string)=>{await listeners.get(id)!();for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
  return{context,wire,notices,click,snapshot,setRead:(value:boolean)=>{failRead=value;},setPatch:(value:typeof patchMode)=>{patchMode=value;},setFresh:(value:any)=>{fresh=value;},setReceipt:(value:any)=>{receipt=value;}};

@@ -4,6 +4,8 @@
 
 Settings follow-up (LO-UI-001 / LO-AGENT-001, #30 / #35, same 1.2 and 3.1): remove the empty General category, keep legacy Settings links working, and open Security and Password first. Bound the password form and use the workspace content scroll. Keep authorized creation reachable when the key list fails, preserve distinct loading, error and confirmed-empty states, and remove the Skill-only connection section while retaining the download API. Verify in the existing synthetic Settings and key-management browser flows. Release and owner acceptance remain separate.
 
+2026-11-26 · LO-REQ-001 · Issue #30 · existing 1.2/3.1/3.2. Default to total, completed and unfinished counts and their lists from one complete authorized snapshot. Complete requires verified production delivery and the recorded owner acceptance evidence. Keep owner workflow statuses in requirement details and management views. Preserve title detail and editing, and keep the existing advanced views behind the management action. Verify desktop and 390px, zero, rejected and incomplete snapshots. Production and owner acceptance stay open.
+
 2026-11-25 · LO-REQ-001 · Issue #30 · existing 1.2/3.1/3.2. The requirements pool prioritizes requirement rows, evidence-backed delivery states and direct result links. Remove the phase roadmap, feedback Inbox and update history from the requirements destination, retaining persistence, existing direct routes and the original delivery gates. Keep merged slices distinct from whole-requirement publication and use the official route and verification record for published results. Verify via `/personal?page=requirements` and the existing read-only fixture before release.
 
 Desktop continuation (2026-11-12; LO-UI-001, LO-REQ-001; same 1.1/1.2/3.1/3.2, execution #30): the current owner review supersedes the old settings-modal choice with a dedicated Settings page. Keep the old decision as history, compatible deep links and all unsaved/uncertain-command departure guards. Group requirements, roadmap, feedback Inbox and updates under Settings; add content breadcrumbs and guarded history navigation. Reuse the existing ReUI title-column fill capability for full-width todo tables and label existing project/domain references without changing records. Requirements boards use development progress, tables support explicit grouping, and Gantt intervals use real saved dates only. Desktop usability is the immediate priority; mobile, themes, keyboard, privacy and original acceptance gates remain. Parallel slices have separate worktrees and named file owners; root alone integrates shared files and main. Business intake is stored through the reviewed private API, not this engineering index. No task is closed by this continuation; rendered checks, fixed-SHA CI, runtime readback and owner experience are still required.
@@ -127,6 +129,8 @@ Current-release summary clarification (2026-11-05; LO-VERSION-001 / LO-REQ-001, 
 
 ## Training analysis (LO-HEALTH-001, Issue #15)
 
+Exercise calendar follow-up (existing 1.2/3.1/3.2): show read manual plans as a separate linked list, including plans outside the completed calendar range. Keep completed heatmap and local file analytics unchanged. Spell out unknown blank days and unavailable automatic sources. Verify the existing private health route with synthetic plan, completion and empty states; source intake, release and owner acceptance stay open.
+
 2026-11-25 · LO-HEALTH-001 / LO-TIME-001 · #15 · existing 1.2/3.1/3.2. From the Body Basics module in #115, filter the existing owner-only health records by sleep, fitness training or frisbee and filter training and frisbee by their recorded status. Frisbee uses the existing Other activity and an explicit record title. Dietary records and automatic sources are unavailable. Preserve the health editor and its readback, trends, exercise calendar, previous URLs and unknown historical coverage. Verify via the canonical desktop entry with synthetic records and existing permission boundaries. Deployment and owner acceptance remain open.
 
 The owner approved implementation and ordinary main deployment on 2026-11-09. Continue within the existing health workspace and task 3.1. Use a versioned, read-only analytics snapshot projected from owner-authorized Xunji full exports. The first delivery opens the file locally in the browser and uses the existing authenticated health workspace. It does not create a business record, upload the file or store it in the browser. Scheduled source retrieval, deployed storage and optional AI summaries are separate scopes. Existing summary and source-intake acceptance stays open.
@@ -211,3 +215,27 @@ The owner clarified that manual entry and conversation intake coexist. Verify a 
 For the existing owner workspace read flow, verify neutral page recovery and a read-only historical task link when the confirmed owner cannot load the full snapshot. Require an independently validated response before showing details, preserve failed-list and missing-record states, and leave authenticated production incident attribution and rollout pending independent evidence.
 
 With the flat Todo table and its previous candidate integrated, keep existing status filtering, single-entry creation and project relationships. Finish the compact Todo timeline and make the Kanban title open the existing in-place detail; verify the independent plan and deadline scales, keyboard editing and receipt-driven moves.
+
+## LO-UI-001 persistent workspace shell checkpoint (2026-11-26)
+
+Continue [Issue #30](https://github.com/Nirvana-Chow/lifeos-app/issues/30) under existing 1.2 / 3.1 / 3.2. The first slice gives the canonical task workspace `/personal?page=tasks` and records at `/personal/journal` one persistent ReUI chrome under the personal layout. The root's existing overview, inbox, projects, areas, requirements, settings and classification query states continue through the same root workspace. Journal record queries keep their existing route and server verification. Task and journal readers and editors remain route-owned.
+
+Migration inventory for the existing personal app:
+
+| Surface | Disposition |
+| --- | --- |
+| Root query workspace and journal | First slice. Verify the representative task-to-journal transition and return. |
+| Schedule, health, activity, people, finance, media, career, resume, portfolio, development projects and cooking (index, history and detail) | Route-owned business bodies still need adapters and route-by-route validation. |
+| Search, the records redirect, task classification preview, and dedicated requirement roadmap, feedback and updates | Keep existing deep links. Global search overlay work is tracked by #9. |
+| `/personal/edit` including task and journal aliases | Keep the legacy editor entry and return contracts. |
+| Catch-all workbench surfaces: growth, articles, albums, time, files, reports, outputs, chat, knowledge, RAG, agents, workflows, executions, approvals, tools, settings/ai and settings/data | Later route-by-route adapters need to preserve existing capability and unavailable states. |
+| File handoffs and standalone storage review HTML | Retain independent route authorization and storage review's native document and recovery workflow. |
+| OAuth continuation, login, session recovery and external routes | Preserve their current security and document boundaries. |
+
+Use synthetic browser evidence at desktop, 390px and 430px to distinguish document and shell-node preservation from identical-looking markup. Keep existing fixed-main CI, published version and owner experience gates open.
+
+### Storage review workspace entry (EXEC-STORAGE-ENTRY-001)
+
+Continue 1.2/3.1/3.2 and [Issue #41](https://github.com/Nirvana-Chow/lifeos-app/issues/41#issuecomment-7182201330). The storage content shares the existing checklist, decision and note controller with the standalone response. Its review is loaded on mount after verifying the owner and space. The shared personal layout owns canonical navigation, history, focus, scroll restoration and the active content guard. Keep the current direct entry until the host is qualified. Preserve the standalone CSP and the existing save, receipt and independent readback rules. Fixed-source integration, production readback and owner experience remain pending.
+
+The storage host candidate connects the Settings link at the canonical URL to the reviewed body during workspace navigation. Direct document requests keep the standalone response. Browser qualification uses synthetic owners and independently verifies both paths. Fixed-main integration, deployment and owner acceptance remain pending.

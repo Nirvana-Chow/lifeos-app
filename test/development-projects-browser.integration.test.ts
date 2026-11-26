@@ -56,6 +56,8 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const items=baseline.requirements.map(requirement=>({id:requirement.id,revision:0,sourceId:null,
   fields:{title:'Synthetic requirement',body:'Private fixture body',phaseId:'foundation',priority:'P2',plannedStartOn:null,plannedEndOn:null},
   baselineBinding:{baselineVersion:baseline.baselineVersion,itemVersion:requirement.version,digest:'a'.repeat(64)},baselineConflict:false,requirement}));
+ const expectedRequirement=items.find(item=>item.id==='LO-REQ-001');
+ assert.ok(expectedRequirement);
  const ownerId='synthetic-owner',spaceId='synthetic-space';
  const id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';
  const fields={title:'Synthetic career record',text:'Synthetic career original',occurredOn:'2026-11-20',personal:emptyCareerPersonal('achievement')};
@@ -66,10 +68,13 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const resumeFields={...fields,title:'Synthetic resume version',personal:{...emptyCareerPersonal('resume'),facts:[{id,sourceId,revision:1}]}};
  const resumeEntry={...entry,id:resumeId,draft:{...resumeFields,disposition:'reference'},source:{...entry.source,id:resumeSourceId,externalId:resumeId,
   original:{...entry.source.original,input:{spaceId,confirmed:true,fields:resumeFields}}}};
- let denied=false,writable=false;
+ let summaryError: {status:number; code:string}|null=null;
+ let ownerCheckFailure:403|503|null=null;
+ let summaryGate:Promise<void>|null=null;
+ let writable=false,poolStorageVerified=true;
  let summaries=0,snapshots=0,careerReads=0,revisionReads=0;
  const requests:string[]=[];
- const snapshot={scope:'full-current-requirements-snapshot',truncated:false,items,total:items.length,observedAt:time};
+ const snapshot={scope:'full-current-requirements-snapshot',truncated:false,items,total:items.length,observedAt:time,baseline};
 
  const errors:string[]=[],writes:string[]=[],external:string[]=[];
  page.on('pageerror',error=>errors.push(error.message));
@@ -80,26 +85,63 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   if(request.method()!=='GET')writes.push(request.method());
   const path=url.pathname;
   requests.push(path);
+  if(path==='/api/platform/status'&&ownerCheckFailure)return route.fulfill({status:ownerCheckFailure,json:{}});
   if(path.endsWith('/personal/requirements/snapshot')){
    if(request.frame().url()===development)snapshots++;
    return route.fulfill({json:snapshot});
   }
+  if(path==='/api/platform/personal/requirements/'+expectedRequirement.id){
+   return route.fulfill({json:{entry:expectedRequirement}});
+  }
   if(path.endsWith('/personal/requirements/development-progress')){
    summaries++;
-   if(denied)return route.fulfill({status:403,json:{}});
+   const gate=summaryGate,error=summaryError;
+   if(gate)await gate;
+   if(error)return route.fulfill({status:error.status,json:{error:{code:error.code}}});
    return route.fulfill({json:readLifeOSDevelopmentProgress(snapshot)});
   }
   if(path.endsWith('/personal/career/snapshot'))return route.fulfill({json:{items:[entry,resumeEntry],truncated:false,total:2}});
   if(path.endsWith('/personal/career/'+id)){careerReads++;return route.fulfill({json:{entry}});}
   if(path.endsWith('/personal/career/'+id+'/history')){revisionReads++;return route.fulfill({json:{items:[entry]}});}
   if(path.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId,
-   spaceId,storageVerified:true,writable,
+   spaceId,storageVerified:poolStorageVerified,writable,
    requirementsEnabled:true,careerEnabled:true,allowedTypes:['todo','career','project','domain']}});
   if(path.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable}});
-  if(path.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+  if(path.endsWith('/personal/todo/workspace-snapshot')||path.endsWith('/personal/overview')){
+   const narrow=path.endsWith('/workspace-snapshot');
+   if(narrow&&!poolStorageVerified)return route.fulfill({status:503,json:{error:{code:'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'}}});
+   const scope=narrow?'task-workspace-current-snapshot':'full-current-snapshot';
+   const access=narrow&&url.searchParams.get('include')==='access'?{
+    scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:poolStorageVerified,writable,
+    allowedTypes:['todo','career','project','domain'],
+   }:undefined;
+   return route.fulfill({json:{scope,access,items:[],total:0,truncated:false,today:url.searchParams.get('today')??'2026-11-25',observedAt:time}});
+  }
   return route.fulfill({json:{scope:'isolated-synthetic-review'}});
  });
  const card=page.getByRole('region',{name:'LifeOS 网站需求进度',exact:true});
+ const poolLink=card.getByRole('link',{name:'打开需求池',exact:true});
+ const pool=page.getByRole('region',{name:'需求池',exact:true});
+ const poolUrl=origin+'/personal?page=requirements';
+ const requirementRow=pool.getByRole('list',{name:'需求清单',exact:true})
+  .getByRole('button',{name:expectedRequirement.requirement.title,exact:true});
+ const openPool=async()=>{
+  await expect(poolLink).toHaveAttribute('href','/personal?page=requirements');
+  await poolLink.click();
+  await expect(page).toHaveURL(poolUrl);
+  const summary=pool.getByRole('group',{name:'需求统计',exact:true});
+  await expect(summary.getByRole('button',{name:'总需求 '+items.length,exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(summary.getByRole('button',{name:'已完成 0',exact:true})).toHaveAttribute('aria-pressed','false');
+  await expect(summary.getByRole('button',{name:'未完成 '+items.length,exact:true})).toHaveAttribute('aria-pressed','false');
+  await expect(requirementRow).toBeVisible();
+  const detailRead=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/requirements/'+expectedRequirement.id);
+  await requirementRow.click();
+  assert.equal((await detailRead).status(),200);
+  const detail=page.getByRole('dialog',{name:expectedRequirement.requirement.title,exact:true});
+  await expect(detail.getByText(expectedRequirement.id,{exact:true})).toBeVisible();
+  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+  await expect(requirementRow).toBeFocused();
+ };
  const firstCareerRecord=page.getByRole('button',{name:fields.title,exact:true});
  const openLegacyResume=async()=>{
   await expect(firstCareerRecord).toBeVisible({timeout:30000});
@@ -143,7 +185,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  const drawer=page.getByRole('dialog',{name:'LifeOS',exact:true});
  const openHome=async()=>{
   await page.goto(origin+'/personal',{waitUntil:'networkidle',timeout:60000});
-  await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toBeVisible();
+  await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toBeVisible();
  };
  const openMobileNavigation=async()=>{
   await expect(header.getByRole('button',{name:'切换到桌面版',exact:true})).toBeVisible();
@@ -173,11 +215,112 @@ test('OPT-IN development projects respects owner binding and preserves the caree
   // Observe a full browser turn after the focus event.
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert.equal(summaries-before,1);
+  await openPool();
+
+  summaryError={status:503,code:'PERSONAL_STORAGE_UNAVAILABLE'};
+  await page.goto(development,{waitUntil:'domcontentloaded'});
+  await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
+  await expect(card.locator('dd')).toHaveCount(0);
+  assert.equal(snapshots,beforeSnapshots);
+  await openPool();
+
+  for(const denial of [
+   {status:401,code:'AUTHENTICATION_REQUIRED'},
+   {status:403,code:'OWNER_ONLY'},
+   {status:503,code:'PERSONAL_PLATFORM_UNAVAILABLE'},
+  ]){
+   summaryError=denial;
+   await page.goto(development,{waitUntil:'domcontentloaded'});
+   await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
+   await expect(poolLink).toHaveCount(0);
+   await expect(card.locator('dd')).toHaveCount(0);
+   assert.equal(snapshots,beforeSnapshots);
+  }
+  summaryError=null;
  }
- denied=true;
- await page.reload();
- await expect(card.getByText('需求进度暂不可用。')).toBeVisible();
+
+ // The canonical workspace still enforces its own storage gate.
+ summaryError={status:503,code:'PERSONAL_STORAGE_UNAVAILABLE'};
+ poolStorageVerified=false;
+ await page.goto(development,{waitUntil:'domcontentloaded'});
+ await expect(poolLink).toBeVisible();
+ const blockedSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/todo/workspace-snapshot');
+ await poolLink.click();
+ await expect(page).toHaveURL(poolUrl);
+ const blocked=await blockedSnapshot;
+ assert.equal(blocked.status(),503);
+ assert.equal((await blocked.json()).error.code,'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE');
+ await expect(page.getByText('暂时无法读取完整待办列表，请重试。',{exact:true})).toBeVisible();
+ await expect(requirementRow).toHaveCount(0);
+ poolStorageVerified=true;
+ summaryError=null;
+
+ // The same document must discard an earlier successful read once re-verification starts.
+ await page.goto(development,{waitUntil:'domcontentloaded'});
+ await expect(card.locator('dd').last()).toBeVisible();
+ ownerCheckFailure=503;
+ await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+ await expect(page.getByText('暂时无法核对登录状态。私人页面已隐藏。',{exact:true})).toBeVisible();
+ await expect(card).toHaveCount(0);
+
+ const beforeRecovery=summaries;
+ let releaseSummary:()=>void=()=>{};
+ summaryGate=new Promise(resolve=>{releaseSummary=resolve;});
+ summaryError={status:403,code:'OWNER_ONLY'};
+ ownerCheckFailure=null;
+ try{
+  await page.getByRole('button',{name:'重新核对',exact:true}).click();
+  await expect(card.getByText('正在读取需求进度…',{exact:true})).toBeVisible();
+  await expect(card.locator('dd')).toHaveCount(0);
+  await expect(poolLink).toHaveCount(0);
+  await expect.poll(()=>summaries).toBe(beforeRecovery+1);
+ }finally{
+  releaseSummary();
+  summaryGate=null;
+ }
+ await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
  await expect(card.locator('dd')).toHaveCount(0);
+ await expect(poolLink).toHaveCount(0);
+
+ // An earlier storage failure must not reopen the fallback after current owner denial.
+ const beforeSuperseded=summaries;
+ let releaseSuperseded:()=>void=()=>{};
+ summaryError={status:503,code:'PERSONAL_STORAGE_UNAVAILABLE'};
+ summaryGate=new Promise(resolve=>{releaseSuperseded=resolve;});
+ try{
+  await page.goto(development,{waitUntil:'domcontentloaded'});
+  await expect(card.getByText('正在读取需求进度…',{exact:true})).toBeVisible();
+  await expect.poll(()=>summaries).toBe(beforeSuperseded+1);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal(summaries,beforeSuperseded+1);
+
+  const oldAbort=page.waitForEvent('requestfailed',request=>new URL(request.url()).pathname.endsWith('/development-progress'));
+  ownerCheckFailure=503;
+  await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+  await expect(card).toHaveCount(0);
+  await oldAbort;
+
+  summaryError={status:403,code:'OWNER_ONLY'};
+  summaryGate=null;
+  ownerCheckFailure=null;
+  await page.getByRole('button',{name:'重新核对',exact:true}).click();
+  await expect(card.getByText('需求进度暂不可用。',{exact:true})).toBeVisible();
+  assert.equal(summaries,beforeSuperseded+2);
+ }finally{
+  releaseSuperseded();
+  summaryGate=null;
+ }
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ await expect(card.locator('dd')).toHaveCount(0);
+ await expect(poolLink).toHaveCount(0);
+ ownerCheckFailure=403;
+ await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
+ await expect(page).toHaveURL(origin+'/login');
+ await expect(card).toHaveCount(0);
+ ownerCheckFailure=null;
+ summaryError=null;
+
  await openHome();
  await openMobileNavigation();
  await drawer.getByRole('button',{name:'职业成长',exact:true}).click();
@@ -198,7 +341,7 @@ test('OPT-IN development projects respects owner binding and preserves the caree
  await expect(dialog.getByText('历史版本（1）')).toBeVisible();
  assert.equal(careerReads,1);assert.equal(revisionReads,1);
  await page.goto(origin+'/personal?page=tasks',{waitUntil:'networkidle',timeout:60000});
- await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toBeVisible();
+ await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'项目分类视图',exact:true}).click();
  await expect(page.getByRole('group',{name:/项目视图/})).toBeVisible({timeout:30000});
  await expect(page).toHaveURL(origin+'/personal?page=projects');

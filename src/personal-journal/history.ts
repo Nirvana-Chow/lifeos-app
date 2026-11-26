@@ -1,3 +1,4 @@
+import {memoTopicNames} from './memo-topics.ts';
 import type {PublicEntry} from '../platform/contracts.ts';
 import {validateId} from '../platform/domain.ts';
 import {normalizePersonalFields} from '../personal-candidate/business.ts';
@@ -41,7 +42,7 @@ async function journalAccess(fetcher:Fetcher){
 }
 async function status(fetcher:Fetcher):Promise<JournalBinding>{return (await journalAccess(fetcher)).binding;}
 const pins=(row:JournalHistoryRow)=>row.personal?.type==='journal'?row.personal.links.topics:[];
-const memoTopicNames=new Set(['随手记','思考','Memos']);
+const memoNames=new Set<string>(memoTopicNames);
 function recordSources(history:JournalHistory,topics:PublicEntry[]){
  const byId=new Map(topics.map(topic=>[topic.id,topic]));
  const diary:JournalHistoryRow[]=[],memos:JournalHistoryRow[]=[],unclassified:JournalHistoryRow[]=[];
@@ -50,13 +51,13 @@ function recordSources(history:JournalHistory,topics:PublicEntry[]){
   for(const pin of pins(row)){
    const topic=byId.get(pin.id);
    if(!topic||topic.source.id!==pin.sourceId||topic.revision!==pin.revision){unknown=true;continue;}
-   if(memoTopicNames.has(recordFields(topic,'topic').title))memo=true;
+   if(memoNames.has(recordFields(topic,'topic').title))memo=true;
   }
   (memo?memos:unknown?unclassified:diary).push(row);
  }
  return {diary:historyOf(diary,history.observedAt),memos:historyOf(memos,history.observedAt),unclassified};
 }
-export async function readJournalHistory(fetcher:Fetcher=fetch){
+export async function readJournalHistory(fetcher:Fetcher=fetch,{includeRecordedTimes=false}={}){
  const {binding:before,canReadTopics}=await journalAccess(fetcher),snapshot=await read(fetcher,'journal/snapshot');
  if(snapshot.scope!=='full-current-snapshot'||snapshot.truncated!==false||!Array.isArray(snapshot.items)||snapshot.total!==snapshot.items.length||snapshot.items.length>10000||typeof snapshot.observedAt!=='string')return invalid();
  const entries=snapshot.items.map(entry=>ownerRecord(entry,'journal',before.spaceId));
@@ -74,7 +75,9 @@ export async function readJournalHistory(fetcher:Fetcher=fetch){
  }
  const {binding:after,canReadTopics:topicsStillAllowed}=await journalAccess(fetcher);
  if(bindingKey(before)!==bindingKey(after))throw Error('本人空间已变化，请重新读取。');
- return {binding:after,history,sources:recordSources(history,topicsStillAllowed?topics:[])};
+ return {binding:after,history,sources:recordSources(history,topicsStillAllowed?topics:[]),
+  ...(includeRecordedTimes&&{recordedAtById:new Map(entries.map(entry=>[entry.id,entry.createdAt]))}),
+ };
 }
 export type JournalOriginal={entry:PublicEntry;current:RecordFields;original:RecordFields;history:PublicEntry[];historyTruncated:boolean};
 export async function readJournalOriginal(fetcher:Fetcher,id:string,expected:JournalBinding,reference?:JournalReference):Promise<JournalOriginal>{

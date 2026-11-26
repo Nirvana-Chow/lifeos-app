@@ -9,6 +9,7 @@ import {chromium,expect} from '@playwright/test';
 import {requirements,type Requirement} from '../src/platform/requirements.ts';
 import {dateInCalendarZone,shiftCalendarDate} from '../src/calendar-candidate/personal-projection.ts';
 import {createPersonalPlatformHandler} from '../src/personal-candidate/runtime-http.ts';
+import {readJournalHistory} from '../src/personal-journal/history.ts';
 import {MemoryPort} from './helpers/platform.ts';
 
 test('owner overview shows live-source snippets, honest fallbacks and existing routes on desktop and phone',{
@@ -66,7 +67,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  });
  const config={ownerId:'overview-owner',ownerEmail:'fixture@example.test',spaceId:'overview-space',baseURL:origin,
   databaseName:'fixture',approval:'personal-manual-v1',allowedTypes:['todo','journal','topic'],calendarEnabled:true,requirementsEnabled:true} as const;
- const repo=new MemoryPort();
+ const repo=Object.assign(new MemoryPort(),{readRecentMemos:async()=>{
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>handler(new Request(origin+String(input),{...init,headers:{host:new URL(origin).host}}));
+  const {sources,recordedAtById}=await readJournalHistory(fetcher,{includeRecordedTimes:true});
+  return {rows:sources.memos.rows.map(({id,title,text,occurredOn})=>({id,title,text,occurredOn,recordedAt:recordedAtById!.get(id)!}))
+   .sort((a,b)=>Date.parse(b.recordedAt)-Date.parse(a.recordedAt)||b.id.localeCompare(a.id)).slice(0,5),
+   classificationPending:sources.unclassified.length>0};
+ }});
  repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));
  const transaction=repo.transaction.bind(repo);
  repo.transaction=(owner,key,run)=>transaction(owner,key,tx=>run({...tx,lockRecordIdentity:async()=>{}}));
@@ -88,8 +95,21 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  const topic=[...repo.rows.values()].find(row=>row.id===topicId)!;
  const journalId=await seed('journal',{title:'合成思考近期',text:'合成日记正文第一行\n第二行保持原文。',occurredOn:day,personal:{type:'journal',
   links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-journal');
+ const backdatedId=await seed('journal',{title:'合成新录入旧事',text:'合成补录正文',occurredOn:shiftCalendarDate(day,-10),personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-backdated');
+ const notDatedId=await seed('journal',{title:'合成未记发生日期',text:'合成未记日期正文',occurredOn:null,personal:{type:'journal',
+  links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-undated');
+ const stamp=(offset:number)=>new Date(Date.now()+offset*60_000).toISOString();
+ const older=[...repo.rows.values()].find(row=>row.id===journalId)!;
+ older.createdAt=stamp(-30);older.updatedAt=stamp(0);
+ const backdated=[...repo.rows.values()].find(row=>row.id===backdatedId)!;
+ backdated.createdAt=stamp(-1);backdated.updatedAt=backdated.createdAt;
+ const undated=[...repo.rows.values()].find(row=>row.id===notDatedId)!;
+ undated.createdAt=stamp(-3);undated.updatedAt=undated.createdAt;
  await seed('journal',{title:'合成正式日记',text:'未标记的正式日记',occurredOn:day},'overview-formal-diary');
- await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicateId=await seed('journal',{title:'合成标题与原文相同',text:'合成标题与原文相同',occurredOn:day,personal:{type:'journal',links:{project:null,domain:null,people:[],topics:[{id:topic.id,sourceId:topic.source.id,revision:topic.revision}]}}},'overview-memo-duplicate');
+ const duplicate=[...repo.rows.values()].find(row=>row.id===duplicateId)!;
+ duplicate.createdAt=stamp(-60);duplicate.updatedAt=duplicate.createdAt;
  await seed('calendar',{title:'合成明日日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
   links:{project:null,domain:null,people:[]},schedule:{kind:'all-day',startDate:tomorrow,endDate:shiftCalendarDate(tomorrow,1)}}},'overview-calendar');
  await seed('calendar',{title:'合成已过期日程',text:'',occurredOn:null,personal:{type:'calendar',schemaVersion:1,calendarKind:'event',
@@ -97,8 +117,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  writable=false;
  const beforeRows=structuredClone(repo.rows);
  let readsDisabled=false, emptySources=false, exerciseCreate=false;
+ const journalReads:string[]=[];
  await page.route('**/api/platform/**',async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
+  if(path.includes('/journal/')||path.endsWith('/topic/snapshot'))journalReads.push(path);
   assert.ok(request.method()==='GET'||(exerciseCreate&&request.method()==='POST'&&path.endsWith('/personal/requirements')));
   const apiRequest=()=>new Request(url,{method:request.method(),headers:{...request.headers(),host:url.host},body:request.postData()??undefined});
   if(path.endsWith('/requirements/snapshot')){
@@ -117,24 +139,29 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   }
   const fixtureItem=items.find(item=>path.endsWith('/requirements/'+item.id));
   if(fixtureItem)return route.fulfill({json:{entry:fixtureItem}});
-  if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/snapshot')))return route.fulfill({status:503,json:{}});
+  if(mode==='denied'&&path.endsWith('/journal/recent-memos'))return route.fulfill({status:403,json:{}});
+  if(readsDisabled&&(path.includes('/calendar')||path.endsWith('/journal/recent-memos')))return route.fulfill({status:503,json:{}});
   const response=await handler(apiRequest());
   const result=await response.json();
-  if(mode==='wrong-space'&&path.endsWith('/personal/status'))result.spaceId='another-space';
+  if(mode==='wrong-space'&&(path.endsWith('/personal/status')||path.endsWith('/journal/recent-memos')))result.spaceId='another-space';
   if(mode==='disabled'&&path.endsWith('/personal/status'))result.requirementsEnabled=false;
-  if(emptySources&&path.endsWith('/journal/snapshot')){result.items=[];result.total=0;}
+  if(emptySources&&path.endsWith('/journal/recent-memos')){result.rows=[];result.classificationPending=false;}
   if(emptySources&&path.endsWith('/personal/calendar')){result.entries=[];result.total=0;}
   return route.fulfill({status:response.status,json:result});
  });
  const firstSnapshot=page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/requirements/snapshot')&&response.ok(),{timeout:45000});
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded',timeout:70000});
  await firstSnapshot;
- const card=page.getByRole('region',{name:'需求进度',exact:true});
+ assert.ok(journalReads.every(path=>path.endsWith('/journal/recent-memos')));
+ const card=page.getByRole('region',{name:'需求交付与验收',exact:true});
  const count=(label:string)=>card.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
- for(const [label,value] of [['计划','2'],['推进中','1'],['工程审查','1'],['受阻','1'],['标记开发完成','2'],['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
+ for(const [label,value] of [['交付证据待核实','4'],['已合并待上线','1'],['已上线待本人验收','1'],['已上线且本人验收','1']]){
   await expect(count(label)).toHaveText(value);
  }
- await expect(card.locator('dl[aria-label="推进状态"]')).toHaveCount(1);
+ await expect(page.getByRole('region',{name:'需求进度',exact:true})).toHaveCount(0);
+ await expect(card.getByText('待交付或验收 6 / 7 项',{exact:false})).toBeVisible();
+ await expect(card.getByRole('heading',{name:/推进状态/})).toHaveCount(0);
+ await expect(card.getByText('标记开发完成',{exact:true})).toHaveCount(0);
  await expect(card.locator('dl[aria-label="交付证据"]')).toHaveCount(1);
  await expect(card.locator('time')).toHaveAttribute('datetime','2026-11-25T00:00:00Z');
  await expect(card.locator('time')).toContainText('08:00');
@@ -150,7 +177,14 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(schedule.getByText('Apple 日历尚未连接')).toBeVisible();
  await expect(schedule.getByRole('link',{name:'查看日程'})).toHaveAttribute('href','/personal/schedule');
  await expect(thoughts.getByRole('link',{name:'合成思考近期'})).toHaveAttribute('href','/personal/journal?record='+journalId);
+ assert.ok(journalReads.length>0&&journalReads.every(path=>path.endsWith('/journal/recent-memos')));
  await expect(thoughts.getByRole('link',{name:'查看记录'})).toHaveAttribute('href','/personal/journal');
+ const thoughtRows=thoughts.getByRole('listitem');
+ await expect(thoughtRows.first().getByRole('link')).toHaveText('合成新录入旧事');
+ await expect(thoughtRows.first().locator('time').first()).toHaveAttribute('datetime',backdated.createdAt);
+ await expect(thoughtRows.first().locator('time').last()).toHaveAttribute('datetime',shiftCalendarDate(day,-10));
+ await expect(thoughtRows.filter({hasText:'合成未记发生日期'}).getByText('发生日期未记录')).toBeVisible();
+
  await expect(thoughts.getByText(/Memos.*接入/)).toHaveCount(0);
  const excerpt=thoughts.getByText('合成日记正文第一行 第二行保持原文。',{exact:true});
  await expect(excerpt).toBeVisible();
@@ -164,7 +198,7 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(title).toHaveCSS('font-size','14px');
  await expect(page.locator('main .lo-page-heading')).toHaveCount(0);
  await expect(page.locator('main').getByRole('button',{name:/^(新建待办|刷新数据)$/})).toHaveCount(0);
- await expect(page.locator('header').getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(page.locator('header').getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
  await expect(thoughts.getByText('合成正式日记')).toHaveCount(0);
  await expect(page.getByRole('region',{name:'生活维度',exact:true})).toHaveCount(0);
  await expect(page.getByRole('region',{name:'任务指标',exact:true})).toHaveCount(0);
@@ -188,8 +222,8 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  try{
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await refreshing;
-  await expect(card.getByText('待处理 6 / 7 项', {exact:false})).toBeVisible();
-  await expect(card.getByText('正在读取需求进度…',{exact:true})).toHaveCount(0);
+  await expect(card.getByText('待交付或验收 6 / 7 项', {exact:false})).toBeVisible();
+  await expect(card.getByText('正在读取需求交付与验收…',{exact:true})).toHaveCount(0);
  }finally{holdSnapshot=false;snapshotGate.resolve();}
  for(const invalid of ['truncated','wrong-space','disabled','denied'] as const){
   mode='ok';
@@ -197,10 +231,10 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
   await expect(count('已上线且本人验收')).toHaveText('1');
   const before=reads;mode=invalid;
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-  await expect(card.getByText('需求进度暂不可用')).toBeVisible();
+  await expect(card.getByText('需求交付与验收暂不可用')).toBeVisible();
   await expect(card.locator('dd')).toHaveCount(0);
-  if(invalid==='wrong-space'){
-   assert.equal(reads,before);
+  if(invalid==='wrong-space'||invalid==='denied'){
+   if(invalid==='wrong-space')assert.equal(reads,before);
    await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
    await expect(excerpt).toHaveCount(0);
   }
@@ -213,6 +247,13 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await card.getByRole('button',{name:'查看全部需求'}).click();
  await expect(page).toHaveURL(/\/personal\?page=requirements$/);
  const pool=page.getByRole('region',{name:'需求池',exact:true});
+ await expect(pool.getByRole('button',{name:'总需求 7',exact:true})).toBeVisible();
+ await expect(pool.getByRole('button',{name:'未完成 6',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'已完成 1',exact:true}).click();
+ const summaryRows=pool.getByRole('list',{name:'需求清单'}).getByRole('listitem');
+ await expect(summaryRows).toHaveCount(1);
+ await expect(summaryRows.first()).toHaveText('Synthetic private requirement 6');
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  const range=pool.getByLabel('显示范围',{exact:true});
  const row=(index:number)=>pool.getByRole('button',{name:new RegExp('查看需求 .* Synthetic private requirement '+index+'$')});
  await expect(range).toHaveValue('pending');
@@ -243,6 +284,19 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  await expect(thoughts.getByText('随手记暂不可用')).toBeVisible();
  assert.deepEqual(repo.rows,beforeRows);
  readsDisabled=false;
+ const beforeTasks=journalReads.length;
+ await page.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+ await expect(page.getByRole('heading',{name:'待办',level:1,exact:true})).toBeVisible();
+ await page.evaluate(()=>{
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+  document.dispatchEvent(new Event('visibilitychange'));
+  Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});
+  document.dispatchEvent(new Event('visibilitychange'));
+  window.dispatchEvent(new Event('focus'));
+ });
+ await expect(page.locator('header.lo-header').getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
+ assert.equal(journalReads.length,beforeTasks,'task-only entry and foreground events must not perform journal reads');
+ console.log('RECENT_MEMOS_BROWSER task direct entry and foreground issued zero journal and topic requests');
  await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});
  await expect(page.getByRole('heading',{name:'个人项目',level:1,exact:true})).toBeVisible();
  await expect(page.getByRole('navigation',{name:'切换模块'}).getByRole('button',{name:'兴趣学习',exact:true})).toBeVisible();
@@ -255,16 +309,22 @@ test('owner overview shows live-source snippets, honest fallbacks and existing r
  exerciseCreate=true;
  writable=true;
  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await expect(pool.getByRole('group',{name:'需求统计'})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await pool.getByRole('button',{name:'新增需求',exact:true}).click();
  await detail.getByLabel('需求标题',{exact:true}).fill('Synthetic newly saved requirement');
  await detail.getByLabel('需求描述',{exact:true}).fill('Check the same owner snapshot in the pool and overview.');
  await detail.getByRole('button',{name:'保存需求',exact:true}).click();
  await expect(detail.getByRole('heading',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
  await detail.getByRole('button',{name:'关闭',exact:true}).click();
+ await pool.getByRole('button',{name:'返回需求清单',exact:true}).click();
+ await expect(pool.getByRole('button',{name:'总需求 8',exact:true})).toBeVisible();
+ await expect(pool.getByRole('list',{name:'需求清单'}).getByRole('button',{name:'Synthetic newly saved requirement',exact:true})).toBeVisible();
+ await pool.getByRole('button',{name:'管理视图',exact:true}).click();
  await expect(pool.getByText('7 / 8 项',{exact:true})).toBeVisible();
  await expect(pool.getByRole('button',{name:/查看需求 .* Synthetic newly saved requirement$/})).toBeVisible();
  await page.goto(origin+'/personal',{waitUntil:'domcontentloaded'});
- await expect(card.getByText('待处理 7 / 8 项',{exact:false})).toBeVisible();
+ await expect(card.getByText('待交付或验收 7 / 8 项',{exact:false})).toBeVisible();
 
  const before=reads;
  await page.goto(origin+'/personal?guest=1',{waitUntil:'domcontentloaded',timeout:70000});

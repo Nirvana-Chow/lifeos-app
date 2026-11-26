@@ -19,7 +19,15 @@ export function emptyHealthFields(kind:HealthPersonal['healthKind'],timeZone:str
 
 export function healthSummary(fields:HealthPersonalFields):string {
   const p = fields.personal;
-  if (p.healthKind === 'body') return (p.weight ? `${p.weight.value} ${p.weight.unit}` : '体重未知') + ' · ' + (p.bodyFatPercent !== null ? `${p.bodyFatPercent}%` : '体脂未知');
+  if (p.healthKind === 'body') {
+    const measures = [p.weight ? `${p.weight.value} ${p.weight.unit}` : '体重未知',
+      p.bodyFatPercent === null ? '体脂未知' : `${p.bodyFatPercent}%`];
+    for (const site of circumferenceSites) {
+      const measurement = p.circumference[site];
+      if (measurement) measures.push(`${circumferenceLabels[site]} ${measurement.value} ${measurement.unit}`);
+    }
+    return measures.join(' · ');
+  }
   if (p.healthKind === 'sleep') {
     const elapsed = sleepElapsedMinutes(p);
     return (p.asleepMinutes !== null ? `实睡 ${p.asleepMinutes} min` : '实睡未知') + ' · ' + (elapsed === null ? '间隔未知' : `间隔 ${elapsed} min`);

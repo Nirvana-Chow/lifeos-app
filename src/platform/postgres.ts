@@ -1,9 +1,11 @@
+import {queryRecentMemos} from '../personal-journal/recent-memos-postgres.ts';
 import {assertPostgresExecutionLease} from '../requirement-events/transaction.ts';
 import {projectPostgresExecution,admitPostgresExecution} from '../requirement-events/admission-postgres.ts';
 import {readExecutionCommand} from '../requirement-events/command-postgres.ts';
+import type {TaskWorkspaceType} from '../personal-candidate/task-workspace-read.ts';
 import {classificationQueries,classificationCommandKey,classificationUnavailable,verifyClassificationClient} from '../personal-candidate/classification-postgres.ts';
 import type {AgentModules} from '../agent-api/config.ts';
-import type {OperationScope} from '../agent-api/personal-operation-registry.ts';
+import {requiresExplicitArticlePermission,type OperationScope} from '../agent-api/personal-operation-registry.ts';
 import type {AgentGrantBinding} from '../agent-api/grant-fence.ts';
 import type {WindowMode,WindowPosition,WindowRow} from './window-contracts.ts';
 import {windowKey} from './window-domain.ts';
@@ -51,8 +53,13 @@ function decode(row:Record<string,unknown>):StoredEntry{
 export async function readPlatformEntryOnClient(client:SqlClient,owner:string,kind:Kind,id:string,lock=false):Promise<StoredEntry|null>{
  const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3'+(lock?' FOR UPDATE OF r':''),[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;
 }
-export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false):Promise<boolean>{
+export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false,articleEnabled=false):Promise<boolean>{
  if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled)return false;
+ if(requiresExplicitArticlePermission(grant.operationId,requiredScopes)){
+  if(!articleEnabled||grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff)return false;
+  const article=await client.query('SELECT lifeos_agent.assert_article_grant($1,$2,$3,$4::text[],$5::text) AS allowed',[grant.grantId,owner,grant.spaceId,requiredScopes,grant.operationId??null]);
+  return article.rows[0]?.allowed===true;
+ }
  if(grant.oauthFence){
   if(grant.oauthFence.policy!==undefined&&(grant.oauthFence.policy!=='all-personal-business-v1'||grant.businessDataPolicy!=='all-personal-business-v1'))return false;
   const fn=grant.oauthFence.policy==='all-personal-business-v1'?'assert_policy_oauth_business_grant':'assert_oauth_business_grant';
@@ -84,6 +91,16 @@ export class PostgresPlatformRepository implements ClassificationRepository{
   },true);
  }
  async readCurrentSnapshot(owner:string):Promise<StoredEntry[]>{return this.scoped(owner,async c=>(await c.query(select+' WHERE r.owner_id=$1 ORDER BY r.id LIMIT 10001',[owner])).rows.map(decode),true);}
+ async readRecentMemos(owner:string,space:string,canReadTopics:boolean){return this.scoped(owner,client=>queryRecentMemos(client,owner,space,canReadTopics),true);}
+ async readTaskWorkspaceSnapshot(owner:string,spaceId:string,types:readonly TaskWorkspaceType[]):Promise<StoredEntry[]>{
+  return this.scoped(owner,async client=>(await client.query(select+`
+   WHERE r.owner_id=$1 AND s.original->>'spaceId'=$2 AND s.original->>'type'=ANY($3::text[])
+   AND (
+    (s.original->>'marker'='personal-manual-v1' AND r.kind=CASE WHEN s.original->>'type'='todo' THEN 'todo' ELSE 'inbox' END)
+    OR (s.original->>'marker'='personal-apple-reminders-v1' AND s.original->>'type'='todo' AND r.kind='todo')
+   )
+   ORDER BY r.id LIMIT 10001`,[owner,spaceId,types])).rows.map(decode),true);
+ }
  async list(owner:string,kind:Kind):Promise<StoredEntry[]>{return this.scoped(owner,async c=>(await c.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 ORDER BY r.created_at DESC,r.id',[owner,kind])).rows.map(decode));}
  async exportSnapshot(owner:string):Promise<{entries:StoredEntry[];history:StoredEntry[]}>{return this.scoped(owner,async client=>({entries:(await client.query(select+' WHERE r.owner_id=$1 ORDER BY r.id',[owner])).rows.map(decode),history:(await client.query('SELECT snapshot FROM lifeos_platform.platform_history WHERE owner_id=$1 ORDER BY record_id,revision',[owner])).rows.map(row=>row.snapshot as StoredEntry)}),true);}
  async history(owner:string,kind:Kind,id:string):Promise<StoredEntry[]>{return this.scoped(owner,async client=>(await client.query('SELECT h.snapshot FROM lifeos_platform.platform_history h JOIN lifeos_platform.platform_record r ON r.owner_id=h.owner_id AND r.id=h.record_id WHERE h.owner_id=$1 AND r.kind=$2 AND h.record_id=$3 ORDER BY h.revision DESC LIMIT 100',[owner,kind,id])).rows.map(row=>row.snapshot as StoredEntry));}
@@ -96,7 +113,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
  private async transactionImpl<T>(owner:string,key:string,fn:(tx:Transaction,client:SqlClient)=>Promise<T>,commandLock=JSON.stringify([owner,key])):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
-  const lockGrant=(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>lockCurrentAgentGrant(client,owner,grant,requiredScopes,this.businessFeatures?.businessDataPolicy);
+  const ordinaryGrants=this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements;
+  const lockGrant=(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>lockCurrentAgentGrant(client,owner,grant,requiredScopes,this.businessFeatures?.businessDataPolicy,this.businessFeatures?.article);
   const tx:Transaction={
    ...(this.requirementEventsEnabled?{
     assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding),
@@ -106,7 +124,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
    }:{}),
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
    lockOAuthAgentGrant:(grant,scopes)=>grant.oauthFence?lockGrant(grant,scopes):Promise.resolve(false),
-   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:lockGrant}:{}),
+   ...(ordinaryGrants?{lockAgentGrant:lockGrant}:{}),
+   ...(this.businessFeatures?.article?{lockArticleAgentGrant:(grant:AgentGrantBinding,scopes:readonly OperationScope[])=>requiresExplicitArticlePermission(grant.operationId,scopes)?lockGrant(grant,scopes):Promise.resolve(false)}:{}),
    ...(this.agentWriteFenceEnabled?{lockAgentTodoWriteGrant:async(grant:Readonly<{grantId:string;ownerId:string;spaceId:string}>)=>{
     if(grant.ownerId!==owner)return false;
     const result=await client.query('SELECT lifeos_agent.assert_todo_write_grant($1,$2,$3) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId]);

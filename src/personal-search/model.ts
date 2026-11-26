@@ -1,17 +1,23 @@
 import {personalSearchRecordDate,type PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
 import {validateCalendarRecord} from '../calendar-candidate/personal-record.ts';
 import type {CalendarPersonal} from '../calendar-candidate/personal-domain.ts';
-import {object,validateId,validateRevision,validateTodo,type TodoDraft} from '../platform/domain.ts';
+import {object,validateId,validateRevision,validateTodo} from '../platform/domain.ts';
 import {normalizePersonalFields,personalTypes,type ObjectFields} from '../personal-candidate/business.ts';
 import {appleOriginMarker,readAppleOrigin} from '../personal-candidate/apple-origin.ts';
 import type {PersonalType} from '../personal-candidate/config.ts';
-import type {PublicEntry} from '../platform/contracts.ts';
-export const searchTypeLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
+import type {PublicEntry,TodoDraft} from '../platform/contracts.ts';
+export const searchTypeLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',article:'文章',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
 export type SearchSelection={type:PersonalType;id:string};
 export type SearchRow=SearchSelection&{sourceId:string;revision:number;title:string;text:string;excerpt:string;date:string|null;dateLabel:string;sourceLabel:string;todoStatus?:TodoDraft['status'];calendar?:CalendarPersonal};
 export type SearchCoverage={types:PersonalType[];scanned:number;matched:number};
-export function searchParams(query:string,{from,to}:PersonalSearchDateRange={}){const params=new URLSearchParams({q:query});if(from)params.set('from',from);if(to)params.set('to',to);return params;}
-export function searchHref(query:string,selection?:SearchSelection,range:PersonalSearchDateRange={}):string{const params=searchParams(query,range);if(selection){if(!personalTypes.includes(selection.type))throw Error('记录类别无法核对。');params.set('type',selection.type);params.set('id',validateId(selection.id));}return '/personal/search?'+params;}
+export function searchParams(query:string,{from,to,monthDay}:PersonalSearchDateRange={},page=1){
+ const params=new URLSearchParams({q:query});
+ if(from)params.set('from',from);
+ if(to)params.set('to',to);
+ if(monthDay){params.set('monthDay',monthDay);if(page>1)params.set('searchPage',String(page));}
+ return params;
+}
+export function searchHref(query:string,selection?:SearchSelection,range:PersonalSearchDateRange={},page=1):string{const params=searchParams(query,range,page);if(selection){if(!personalTypes.includes(selection.type))throw Error('记录类别无法核对。');params.set('type',selection.type);params.set('id',validateId(selection.id));}return '/personal/search?'+params;}
 export function readSearchSelection(type:unknown,id:unknown):SearchSelection|null{if(type===undefined&&id===undefined)return null;if(!personalTypes.includes(type as PersonalType))throw Error('记录类别无法核对。');return{type:type as PersonalType,id:validateId(id)};}
 export function searchRow(value:unknown,spaceId:string,query:string):SearchRow{
  const entry=value as PublicEntry;if(!entry||typeof entry!=='object'||'ownerId'in entry)throw Error('记录来源无法核对。');

@@ -4,7 +4,7 @@ import {ArrowUpRight} from 'lucide-react';
 import {useEffect, useState, type ReactNode} from 'react';
 import {readPersonalCalendarSnapshot, readPersonalCalendarStatus} from '../calendar-candidate/personal-client.ts';
 import {dateInCalendarZone, shiftCalendarDate} from '../calendar-candidate/personal-projection.ts';
-import {readJournalHistory} from '../personal-journal/history.ts';
+import {loadRecentMemos} from '../personal-journal/recent-memos.ts';
 import type {TaskRow, WorkspaceState} from './contract.ts';
 import {RequirementProgressCard} from './requirement-progress-card';
 import {filterTasks, metricTaskFilter} from './selectors.ts';
@@ -39,31 +39,22 @@ async function upcoming(fetcher: typeof fetch, scope: string) {
   return {rows:rows.slice(0,5), appleMissing:!snapshot.sources.some(source=>source.id==='apple-calendar'&&source.connected)};
 }
 
-async function recentMemos(fetcher: typeof fetch, scope: string) {
-  const {binding,sources:{memos:history,unclassified}} = await readJournalHistory(fetcher);
-  if (JSON.stringify([binding.ownerId,binding.spaceId]) !== scope) throw Error();
-  const rows = history.rows.filter(row=>!row.occurredOn||row.occurredOn<=history.today)
-    .toSorted((a,b)=>(b.occurredOn??'').localeCompare(a.occurredOn??''))
-    .slice(0,5).map(({id,title,text,occurredOn,href})=>({id,title,text,occurredOn,href}));
-  return {rows, classificationPending: unclassified.length > 0};
-}
-
 function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string)=>Promise<T>): Source<T> {
-  const [state,setState] = useState<Source<T>>({state:'loading'});
+  const [result,setResult] = useState<{scope:string;state:Source<T>}|null>(null);
   useEffect(()=>{
-    if (!scope) return;
+    if (!scope) {setResult(null);return;}
     const verified = scope;
     let pending: AbortController | undefined;
     function refresh() {
       pending?.abort();
-      setState({state:'loading'});
+      setResult({scope:verified,state:{state:'loading'}});
       if (document.visibilityState === 'hidden') return;
       const controller = new AbortController();
       pending = controller;
       const {signal} = controller;
       void read((url,init)=>fetch(url,{...init,signal}),verified).then(
-        value=>{if(!signal.aborted)setState({state:'ready',value});},
-        ()=>{if(!signal.aborted)setState({state:'unavailable'});},
+        value=>{if(!signal.aborted)setResult({scope:verified,state:{state:'ready',value}});},
+        ()=>{if(!signal.aborted)setResult({scope:verified,state:{state:'unavailable'}});},
       );
     }
     refresh();
@@ -71,7 +62,7 @@ function useSource<T>(scope:string|null, read:(fetcher:typeof fetch,scope:string
     document.addEventListener('visibilitychange',refresh);
     return ()=>{pending?.abort();window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
   },[scope,read]);
-  return scope ? state : {state:'unavailable'};
+  return !scope ? {state:'unavailable'} : result?.scope===scope ? result.state : {state:'loading'};
 }
 
 function OverviewPanel({title,action,children}: {title:string;action?:ReactNode;children:ReactNode}) {
@@ -83,7 +74,7 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
   onRequirements:()=>void;onTasks:()=>void;renderTask:(row:TaskRow)=>ReactNode;
 }) {
   const calendar = useSource(scope && scheduleHref ? scope : null,upcoming);
-  const memos = useSource(scope && journalHref ? scope : null,recentMemos);
+  const memos = useSource(scope && journalHref ? scope : null,loadRecentMemos);
   const tasks = showTasks && state.status === 'ready' ? filterTasks(state.data.tasks, metricTaskFilter('pending')) : null;
   const partial = state.status === 'ready' && state.data.coverage === 'partial';
   return <div className={s.overview}>
@@ -105,7 +96,10 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
       {memos.state === 'ready' ? memos.value.rows.length ? <ul className={`${s.rows} ${s.thoughts}`}>{memos.value.rows.map(row=><li key={row.id}>
         <div className={s.thoughtHeading}>
           <a href={row.href}>{row.title}</a>
-          {row.occurredOn ? <time dateTime={row.occurredOn}>{row.occurredOn}</time> : <span className={s.date}>日期未记录</span>}
+          <div className={s.timestamps}>
+            {row.recordedAt ? <time dateTime={row.recordedAt}>录入 {dateInCalendarZone(row.recordedAt,shanghai)} {clock.format(new Date(row.recordedAt))}</time> : <span className={s.date}>录入时间未知</span>}
+            {row.occurredOn ? <time dateTime={row.occurredOn}>发生 {row.occurredOn}</time> : <span className={s.date}>发生日期未记录</span>}
+          </div>
         </div>
         {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
       </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : <p className="lo-empty-compact" role="status">{memos.state === 'loading'?'正在读取随手记…':'随手记暂不可用'}</p>}

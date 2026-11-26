@@ -29,19 +29,15 @@ function renderPage(file='requirements-page.tsx',exportName='RequirementsPage',p
  return renderToStaticMarkup(React.createElement(Page,props));
 }
 
-test('requirement pool renders its compact table and views without rows before status is checked',()=>{
+test('requirement pool starts without counts or rows before its complete snapshot',()=>{
  const html=renderPage();
  assert.doesNotMatch(html,/<(?:h[1-6]|summary)\b[^>]*>\s*(?:开发路线|每日进展|当前阶段|阶段路线图|反馈 Inbox|更新记录)/);
  assert.doesNotMatch(html,/href="\/personal\/requirements\/(?:roadmap|feedback|updates)(?:[?#][^"]*)?"/);
- assert.match(html,/按交付状态排序/);assert.match(html,/按时间排序/);assert.doesNotMatch(html,/按下一步排序/);
- assert.match(html,/<input[^>]*type="search"/);
- for(const id of ['phase','priority','implementation','acceptance'])assert.match(html,new RegExp('<label[^>]*for="requirements-'+id+'"'));
- assert.match(html,/data-requirements-grid="reui"/);
- for(const label of ['表格','看板','甘特'])assert.match(html,new RegExp('aria-label="'+label+'视图"'));
+ assert.match(html,/管理视图/);
+ assert.doesNotMatch(html,/aria-label="需求统计"|data-requirements-grid="reui"|aria-label="需求视图"/);
  assert.match(html,/正在读取需求/);assert.doesNotMatch(html,/data-requirement-id|LO-TASK-001|LO-PROJECT-001/);
  assert.doesNotMatch(html,/<h4>验收条件|来源与源码依据/);
  assert.doesNotMatch(html,/<h1\b|<main\b|javascript:/);
- assert.match(html,/已合并待上线/);assert.match(html,/已上线/);
 });
 
 
@@ -62,11 +58,6 @@ test('board retains legacy undated requirements without optional roadmap metadat
  assert.match(html,/待核验/);
  assert.match(html,/data-requirement-id="LO-LEGACY-001"/);
  assert.match(html,/查看需求 LO-LEGACY-001 保留旧基线需求/);
-});
-
-test('requirement filters are disclosed on demand and default table is ungrouped',()=>{
- const html=renderPage();assert.match(html,/<details[^>]*data-requirements-filters/);assert.match(html,/<summary[^>]*>更多筛选/);
- assert.doesNotMatch(html,/data-requirements-phase=/);assert.match(html,/<option[^>]*>P3/);
 });
 
 test('P3 can be validated and filtered without changing other public requirement metadata',()=>{
@@ -106,7 +97,7 @@ test('requirements table grouping is optional and reuses the native grouped row 
  }
  const plain=renderPage('requirements-views.tsx','RequirementsTable',{rows,phases:baseline.roadmap!.phases,onOpen:()=>{},grouping:'none'});
  assert.doesNotMatch(plain,/data-requirements-group=/);
- assert.match(renderPage(),/aria-label="表格分组"/);
+ assert.doesNotMatch(renderPage(),/aria-label="表格分组"/);
 });
 
 

@@ -18,12 +18,81 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
  try{
   await mkdir(join(root,'app/personal/edit'),{recursive:true});
   await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),...['layout.tsx','globals.css','theme.css'].map(file=>cp(join(source,'app',file),join(root,'app',file))),cp(join(source,'app/personal/page.tsx'),join(root,'app/personal/page.tsx')),cp(join(source,'app/personal/edit/page.tsx'),join(root,'app/personal/edit/page.tsx')),cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+  await mkdir(join(root,'app/kanban-fixture'));
+  await cp(join(source,'test/fixtures/kanban-keyboard-cancel.tsx'),join(root,'app/kanban-fixture/page.tsx'));
   await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),'export const readPlatformPagePrincipal=async()=>({id:"synthetic-planning-owner"});export const readPlatformPasswordCapability=async()=>false;\n');
   const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe'],detached:true});serverProcess=trackAuthThemeProcess(server,true);server.stderr.resume();
   const origin=await new Promise<string>((accept,reject)=>{let output='';const timer=setTimeout(()=>reject(Error('Fixture startup timeout')),30_000);server.once('exit',()=>{clearTimeout(timer);reject(Error('Fixture exited'));});server.once('error',error=>{clearTimeout(timer);reject(error);});server.stdout.on('data',chunk=>{output=(output+String(chunk)).slice(-65536);const match=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);accept(match[0]);}});});
   browserServer=await chromium.launchServer({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH,host:'127.0.0.1'});browserProcess=trackAuthThemeProcess(browserServer.process());browser=await chromium.connect(browserServer.wsEndpoint());
   const page=await browser.newPage({viewport:{width:1365,height:900},colorScheme:'light'});page.setDefaultTimeout(9000);
+  {
+   await page.goto(origin+'/kanban-fixture',{waitUntil:'domcontentloaded',timeout:60000});
+   await expect(page.getByTestId('escaped-events')).toHaveText('0 Escape events');
+   for(const restoreFocus of [true,false]){
+    const fixture=page.getByTestId(restoreFocus?'default-focus':'no-focus-restore');
+    const handle=fixture.locator('[data-slot="kanban-item-handle"]');
+    const originColumn=fixture.locator('[data-slot="kanban-column"][data-value="left"]');
+    const targetColumn=fixture.locator('[data-slot="kanban-column"][data-value="right"]');
+    const counts=fixture.getByTestId('counts');
+    await fixture.getByRole('button',{name:'Before board'}).focus();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await expect(handle).toBeFocused();
+
+    async function preview(){
+     await page.keyboard.press('Space');
+     await expect(fixture.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
+     await page.keyboard.press('ArrowRight');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+    }
+
+    for(const key of ['Tab','Shift+Tab']){
+     await preview();
+     await page.keyboard.press(key);
+     await expect(fixture.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','false');
+     await expect(counts).toHaveText('0 commits');
+     await expect(originColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+     await expect(page.getByTestId('escaped-events')).toHaveText(restoreFocus?'0 Escape events':'1 Escape events');
+     if(restoreFocus){
+      if(key==='Tab'){
+       await expect(fixture.getByRole('button',{name:'After board'})).toBeFocused();
+       await page.keyboard.press('Shift+Tab');
+      }else{
+       await expect(originColumn.locator('[data-slot="kanban-item"]')).toBeFocused();
+       await page.keyboard.press('Tab');
+      }
+     }else{
+      await expect(handle).not.toBeFocused();
+      await fixture.getByRole('button',{name:'Before board'}).focus();
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+     }
+     await expect(handle).toBeFocused();
+    }
+    await preview();
+    await page.keyboard.press('Escape');
+    if(restoreFocus){
+     // Generic default retains the existing Escape behavior.
+     await expect(counts).toHaveText('1 commits');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).toBeFocused();
+    }else{
+     await expect(counts).toHaveText('0 commits');
+     await expect(originColumn.locator('[data-slot="kanban-item-handle"]')).toBeVisible();
+     await expect(handle).not.toBeFocused();
+     await fixture.getByRole('button',{name:'Before board'}).focus();
+     await page.keyboard.press('Tab');
+     await page.keyboard.press('Tab');
+     await expect(handle).toBeFocused();
+     await preview();
+     await page.keyboard.press('Space');
+     await expect(counts).toHaveText('1 commits');
+     await expect(targetColumn.locator('[data-slot="kanban-item-handle"]')).not.toBeFocused();
+    }
+   }
+   console.log('KANBAN_GENERIC_CANCEL_PASS '+JSON.stringify({tab:['Tab','Shift+Tab'],commits:0,documentEscapeEventsOnTab:0,defaultEscapeCommits:1,explicitFocusOptOut:true}));
+  }
   const taskId='11111111-1111-4111-8111-111111111111',projectId='33333333-3333-4333-8333-333333333333',newId='55555555-5555-4555-8555-555555555555',spaceId='synthetic-planning-space',ownerId='synthetic-planning-owner';
   const makeEntry=(id:string,type:string,fields:any,input:any={spaceId,confirmed:true,fields})=>({id,kind:type==='todo'?'todo':'inbox',revision:1,draft:type==='todo'?fields:{...fields,disposition:'reference'},source:{id:id===taskId?'22222222-2222-4222-8222-222222222222':id===projectId?'44444444-4444-4444-8444-444444444444':'66666666-6666-4666-8666-666666666666',system:'website',externalId:id,version:1,asOf:'2030-11-01T00:00:00Z',original:{marker:'personal-manual-v1',spaceId,type,input}},createdAt:'2030-11-01T00:00:00Z',updatedAt:'2030-11-01T00:00:00Z',syncState:'draft',externalStatus:null});
   // Only this private test's Node memory is written. No remote service, real record or database.
@@ -39,7 +108,8 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    if(method==='GET'){
     if(url.pathname==='/api/platform/personal/availability')value={configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin,writable:true};
     else if(url.pathname==='/api/platform/personal/status')value={scope:'personal-manual-candidate',ownerId,spaceId,storageVerified:true,allowedTypes:['todo','journal','project','domain','topic'],writable};
-    else if(url.pathname==='/api/platform/personal/overview'&&overviewUnavailable)return route.fulfill({status:503,json:{error:{code:'PERSONAL_SNAPSHOT_UNAVAILABLE'}},headers});
+    else if(url.pathname==='/api/platform/personal/todo/workspace-snapshot'&&overviewUnavailable)return route.fulfill({status:503,json:{error:{code:'TASK_WORKSPACE_SNAPSHOT_UNAVAILABLE'}},headers});
+    else if(url.pathname==='/api/platform/personal/todo/workspace-snapshot')value={scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:ownerId,spaceId:spaceId,storageVerified:true,writable:writable,allowedTypes:['todo','journal','project','domain','topic']},truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
     else if(url.pathname==='/api/platform/personal/overview')value={scope:'full-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
     else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;if(entry.id===newId){newTaskReads++;await newReadback;}}else projectReads++;value={entry};}}
    }else if(method==='PATCH'||method==='POST'){
@@ -166,32 +236,75 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
    assert.equal(entries.find(entry=>entry.id===taskId).draft.status,status);
    assert.deepEqual(counts(),{writes:before.writes+1,requests:before.requests+1});
   }
-  async function dropWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
+  const kanban=board.locator('[data-slot="kanban"]');
+  const moveMenu=card.getByRole('combobox',{name:'移动到',exact:true});
+  for(let step=0;step<30;step++){
+   if(await drag.evaluate(node=>node===node.ownerDocument.activeElement))break;
+   await page.keyboard.press('Tab');
+  }
+  await expect(drag).toBeFocused();
+
+  async function previewWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
    const before=counts();
    await expect(column(status).locator('[data-kanban-task]')).toHaveCount(0);
    await expect(drag).toBeEnabled();
-   await drag.focus();
    await expect(drag).toBeFocused();
    await page.keyboard.press('Space');
-   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+   await expect(kanban).toHaveAttribute('data-dragging','true');
    // dnd-kit attaches the keyboard movement listener in a deferred task.
    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
    await page.keyboard.press(key);
    await expect(stagedCard(status)).toBeVisible();
    assert.deepEqual(counts(),before,'keyboard preview must not send a PATCH');
-   await page.keyboard.press('Space');
-   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','false');
-   await requireStatusReceipt(status,before);
+   return before;
   }
+  async function dropWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
+   const before=await previewWithKeyboard(key,status);
+   await page.keyboard.press('Space');
+   await expect(kanban).toHaveAttribute('data-dragging','false');
+   await requireStatusReceipt(status,before);
+   await expect(drag).toBeFocused();
+  }
+  async function expectCanceled(status:'open'|'in_progress',before:ReturnType<typeof counts>){
+   await expect(kanban).toHaveAttribute('data-dragging','false');
+   await expect(stagedCard(status)).toBeVisible();
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
+   assert.deepEqual(counts(),before,'canceling keyboard preview must not send a PATCH');
+  }
+  const beforeTab=await previewWithKeyboard('ArrowLeft','open');
+  await page.keyboard.press('Tab');
+  await expectCanceled('in_progress',beforeTab);
+  await expect(moveMenu).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(drag).toBeFocused();
+
+  const beforeEscape=await previewWithKeyboard('ArrowLeft','open');
+  await page.keyboard.press('Escape');
+  await expectCanceled('in_progress',beforeEscape);
+  await expect(drag).toBeFocused();
   await dropWithKeyboard('ArrowLeft','open');
-  await dropWithKeyboard('ArrowRight','in_progress');
+
+  const beforeShiftTab=await previewWithKeyboard('ArrowRight','in_progress');
+  await page.keyboard.press('Shift+Tab');
+  await expectCanceled('open',beforeShiftTab);
+  await expect(card).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(drag).toBeFocused();
+
+  const beforeEnter=await previewWithKeyboard('ArrowRight','in_progress');
+  await page.keyboard.press('Enter');
+  await expect(kanban).toHaveAttribute('data-dragging','true');
+  assert.deepEqual(counts(),beforeEnter,'Enter must not confirm a keyboard drag');
+  await page.keyboard.press('Space');
+  await requireStatusReceipt('in_progress',beforeEnter);
+  await expect(drag).toBeFocused();
 
   await page.setViewportSize({width:390,height:844});
   await dropWithKeyboard('ArrowLeft','open');
   await dropWithKeyboard('ArrowRight','in_progress');
   const beforeMenu=counts();
-  const moveMenu=card.getByRole('combobox',{name:'移动到',exact:true});
-  await moveMenu.focus();
+  await page.keyboard.press('Tab');
+  await expect(moveMenu).toBeFocused();
   await moveMenu.press('ArrowUp');
   await requireStatusReceipt('open',beforeMenu);
 
@@ -223,7 +336,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   }
   const boardInputs={writes:writes-beforeBoardInputs.writes,requests:taskPatchRequests-beforeBoardInputs.requests};
   assert.deepEqual(boardInputs,{writes:6,requests:6});
-  console.log('TASK_BOARD_INPUTS_PASS '+JSON.stringify({keyboard:[1365,390],directions:['left','right'],menu:true,touch:390,boardInputs}));
+  console.log('TASK_BOARD_INPUTS_PASS '+JSON.stringify({keyboard:[1365,390],directions:['left','right'],cancelWithoutWrites:['Tab','Shift+Tab','Escape'],confirmation:'Space',menu:true,touch:390,boardInputs}));
   await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await gantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await page.getByRole('link',{name:'编辑项目：合成排期项目',exact:true}).click({noWaitAfter:true});
   await expect(page.getByLabel('计划开始',{exact:true})).toBeVisible();await page.getByLabel('计划开始',{exact:true}).fill('2030-11-01');await page.getByLabel('计划结束',{exact:true}).fill('2030-11-20');await page.getByRole('checkbox',{name:'我已核对这一条内容，确认保存到本人空间。',exact:true}).check();const projectReadsBeforeSave=projectReads;await page.getByRole('button',{name:'确认保存',exact:true}).click();await expect.poll(()=>projectReads).toBeGreaterThan(projectReadsBeforeSave);await expect(page.getByLabel('计划结束',{exact:true})).toHaveValue('2030-11-20');
   await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();await expect(page.getByRole('columnheader',{name:/领域/})).toHaveCount(0);await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-01 至 2030-11-20',exact:true})).toBeVisible();await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

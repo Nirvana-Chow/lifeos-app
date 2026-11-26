@@ -44,7 +44,7 @@ async function installSyntheticReads(page:Page,origin:string){
   if(!['GET','HEAD'].includes(request.method())){writes++;return route.fulfill({status:405});}
   if(url.pathname.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']}});
   if(url.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-  if(url.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+  if(url.pathname.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']},total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
   return route.continue();
  });
  return ()=>writes;
@@ -267,7 +267,7 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const writes=await installSyntheticReads(page,origin);
  let overviewReads=0;
  page.on('request',request=>{
-  if(request.method()==='GET'&&new URL(request.url()).pathname==='/api/platform/personal/overview')overviewReads++;
+  if(request.method()==='GET'&&new URL(request.url()).pathname==='/api/platform/personal/todo/workspace-snapshot')overviewReads++;
  });
  let financeEnabled=true,portfolioEnabled=true;
  await page.route(origin+'/api/platform/personal/status',route=>route.fulfill({json:{
@@ -310,7 +310,7 @@ test('OPT-IN desktop modules and both Settings entry points follow the existing 
  const finance=modules.getByRole('link',{name:'财务',exact:true});
  await expect(finance).toHaveAttribute('href','/personal/finance');
  await expect(nav.getByRole('link',{name:'账户资产投资',exact:true})).toHaveCount(0);
- await expect(header.getByRole('link',{name:'搜索本人记录',exact:true})).toHaveAttribute('href','/personal/search');
+ await expect(header.getByRole('button',{name:'搜索本人记录',exact:true})).toHaveAttribute('aria-haspopup','dialog');
  const mainNav=nav.getByRole('button').or(nav.getByRole('link'));
  for(const [module,items] of expected){
   const tab=modules.getByRole('button',{name:module,exact:true});
@@ -635,10 +635,10 @@ test('OPT-IN standalone settings preserves drafts/history and bounded task viewp
    if(r.method()==='POST'&&u.pathname==='/__nextjs_original-stack-frames')return route.continue();
    if(!['GET','HEAD'].includes(r.method())){writes++;return route.fulfill({status:405});}
    // Overview widgets verify the owner independently. Count the workspace controller's availability and data reads.
-   if(u.pathname.endsWith('/personal/availability')||u.pathname.endsWith('/personal/overview'))personalReads++;
+   if(u.pathname.endsWith('/personal/availability')||u.pathname.endsWith('/personal/todo/workspace-snapshot'))personalReads++;
    if(u.pathname.endsWith('/personal/status'))return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']}});
    if(u.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-   if(u.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:u.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+   if(u.pathname.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill({json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']},total:items.length,truncated:false,items,today:u.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
    return route.continue();
   });
   await page.goto(origin+'/personal?page=tasks');await expect(page.locator('[data-task-grid="reui"]')).toBeVisible();
@@ -888,7 +888,7 @@ test('OPT-IN feedback dirty and uncertain state guards settings links and docume
   if(url.pathname==='/api/platform/status')return route.fulfill(authorized?{json:{scope:'isolated-synthetic-review',personalAccountReady:false,personalDataAuthorized:false,storage:{type:'postgresql',schemaVersion:2,restrictedRoleVerified:true},features:{training:{readable:true,writesEnabled:false,activationRequiresAcceptance:true}},extensions:{calendar:{configured:false,restrictedRoleVerified:false},chat:{configured:false,restrictedRoleVerified:false}},ai:{configured:false,settingsPersistable:false,secretStoreReady:false,externalCallsEnabled:false}}}:{status:403,json:{error:{message:'Synthetic revoked'}}});
   if(url.pathname.endsWith('/personal/status'))return route.fulfill(authorized?{json:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic'],requirementsEnabled:true,requirementSupportEnabled:true}}:{status:403,json:{error:{message:'Synthetic revoked'}}});
   if(url.pathname.endsWith('/personal/availability'))return route.fulfill({json:{configured:true,loginAllowed:true,transport:'ssh-loopback',origin}});
-  if(url.pathname.endsWith('/personal/overview'))return route.fulfill({json:{scope:'full-current-snapshot',total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
+  if(url.pathname.endsWith('/personal/todo/workspace-snapshot'))return route.fulfill(!authorized?{status:403,json:{error:{code:'ACCOUNT_NOT_ALLOWED'}}}:{json:{scope:'task-workspace-current-snapshot',access:{scope:'personal-manual-candidate',ownerId:'synthetic-owner',spaceId:'synthetic-space',storageVerified:true,writable:true,allowedTypes:['todo','journal','domain','project','topic']},total:items.length,truncated:false,items,today:url.searchParams.get('today'),observedAt:'2030-11-02T00:00:00Z'}});
   if(url.pathname.endsWith('/requirements/snapshot'))return route.fulfill({json:{scope:'full-current-requirements-snapshot',total:0,truncated:false,items:[],baseline:requirements()}});
   if(url.pathname.endsWith('/requirement-support/feedback/snapshot'))return route.fulfill({json:{scope:'full-current-feedback-snapshot',total:0,truncated:false,items:[]}});
   if(url.pathname.endsWith('/requirement-support/updates'))return route.fulfill({json:{}});

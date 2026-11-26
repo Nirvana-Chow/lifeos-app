@@ -75,10 +75,16 @@ function parseComparison(input:unknown,query:TimelineComparisonQuery):TimelineCo
   return {...raw,query:checked,comparison:{a,b,overlap},coverage} as TimelineComparisonResponse;
  }catch{throw invalid();}
 }
-export function formatTimelineTime(item:Pick<TimelineItem,'dateKind'|'date'|'at'>,zone:string):string{
+export function formatTimelineTime(item:Pick<TimelineItem,'dateKind'|'date'|'at'>&Partial<Pick<TimelineItem,'timeRole'>>,zone:string):string{
  if(item.dateKind==='unknown')return '日期未知';if(item.dateKind==='date')return item.date+'（仅日期）';
- validateCalendarZone(zone);instant(item.at);const parts=new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(item.at)),part=(kind:string)=>parts.find(value=>value.type===kind)!.value;
- return part('year')+'-'+part('month')+'-'+part('day')+' '+part('hour')+':'+part('minute')+':'+part('second')+'（'+zone+'）';
+ validateCalendarZone(zone);instant(item.at);
+ const correction=item.timeRole==='changed';
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23',timeZoneName:correction?'longOffset':undefined}).formatToParts(new Date(item.at));
+ const part=(kind:Intl.DateTimeFormatPartTypes)=>parts.find(value=>value.type===kind)!.value;
+ const local=`${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')}`;
+ if(!correction)return `${local}（${zone}）`;
+ const offset=part('timeZoneName').slice('GMT'.length)||'+00:00';
+ return `${local}（${zone} · UTC${offset}）`;
 }
 export function validateTimelineSource(item:TimelineItem,value:SourceResponse):{selected:SearchDocument|null;selectedOutsideHistory:boolean;currentChanged:boolean}{
  const current=value.current;if([current,value.original,...value.history].some(doc=>doc.id!==item.id||doc.kind!==item.kind||doc.type!==item.type||doc.sourceId!==item.sourceId)||current.revision<item.currentRevision)throw invalid();

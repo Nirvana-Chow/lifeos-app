@@ -1,7 +1,7 @@
 import {operationWireContract,projectMcpBusinessOperations} from './mcp-exposure.ts';
 export {projectMcpBusinessOperations} from './mcp-exposure.ts';
 import {requirementEventOperations,requirementEventTransports} from '../requirement-events/operations.ts';
-import {personalRecordOperations,feedbackOperations} from './personal-operation-registry.ts';
+import {personalRecordOperations,feedbackOperations,learningOperations} from './personal-operation-registry.ts';
 import {storageReviewOperations} from '../storage-review/operations.ts';
 import {fileHandoffOperations} from '../file-handoff/operations.ts';
 import type {AgentScope} from './scopes.ts';
@@ -10,7 +10,7 @@ export const agentApiVersion = '1';
 
 export const agentOperationRegistry = [
   ...fileHandoffOperations.map(operation=>({...operation,mcpExposure:operation.id==='stageFileHandoff'||operation.id==='getFileHandoff'?'explicit-file' as const:'native' as const})),
-  ...personalRecordOperations,...feedbackOperations,...storageReviewOperations.map(operation=>({...operation,mcpExposure:'business-json' as const})),...requirementEventOperations.map(operation=>({...operation,mcpExposure:'engineering' as const})),
+  ...personalRecordOperations,...feedbackOperations,...learningOperations,...storageReviewOperations.map(operation=>({...operation,mcpExposure:'business-json' as const})),...requirementEventOperations.map(operation=>({...operation,mcpExposure:'engineering' as const})),
   {id:'snapshotRequirements',method:'GET',path:'/v1/requirements/snapshot',module:'requirements',policyClass:'personal-business-data',mcpExposure:'business-json',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read the complete server-composed public and own private requirement pool, optional owner workflow (state/purpose/nextStep), exact baseline bindings and revisions, or fail without a partial inventory.'},
   {id:'getRequirement',method:'GET',path:'/v1/requirements/{id}',module:'requirements',policyClass:'personal-business-data',mcpExposure:'business-json',requiredScopes:['requirements:read'] as readonly AgentScope[],description:'Read one stable public LO-ID or private UUID, full editable fields including optional workflow (state/purpose/nextStep) and its baseline binding.'},
   {id:'createRequirement',method:'POST',path:'/v1/requirements',module:'requirements',policyClass:'personal-business-data',mcpExposure:'business-json',requiredScopes:['requirements:read','requirements:write'] as readonly AgentScope[],description:'Create one private requirement with six required fields, optional workflow (state/purpose/nextStep) and an idempotency key; engineering evidence and owner acceptance remain authoritative.'},

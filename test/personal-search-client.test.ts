@@ -44,3 +44,52 @@ test('date-filtered client preserves URL context and rejects a mismatched or out
   },range),{kind:'unavailable'});
  }
 });
+
+test('one dialog result rereads only its bound original, and a changed owner or source releases no details',async()=>{
+ assert.ok(mod);
+ const f=await fixture(),signal=new AbortController().signal;
+ const results=await mod.loadPersonalSearch('needle',null,signal,f.fetcher);
+ const row=results.rows[0];
+ const visits=f.paths.length;
+ const detail=await mod.loadPersonalSearchOriginal(results,row,signal,f.fetcher);
+ assert.equal(detail.detail?.sourceId,row.sourceId);
+ assert.deepEqual(f.paths.slice(visits),['/api/platform/personal/status','/api/platform/personal/todo/'+row.id,'/api/platform/personal/status']);
+ await assert.rejects(mod.loadPersonalSearchOriginal(results,{...row,sourceId:'11111111-1111-4111-8111-111111111111'},signal,f.fetcher),{kind:'unavailable'});
+ for(const changedAt of [1,2]){
+  const paths:string[]=[];
+  let checks=0;
+  const fetcher=async(input:RequestInfo|URL,init?:RequestInit)=>{
+   const path=String(input);paths.push(path);
+   if(path.endsWith('/status')&&++checks===changedAt)return Response.json({scope:'personal-manual-candidate',storageVerified:true,ownerId:'changed-owner',spaceId:config.spaceId});
+   return f.fetcher(input,init);
+  };
+  await assert.rejects(mod.loadPersonalSearchOriginal(results,row,signal,fetcher),{kind:'auth'});
+  assert.equal(paths.includes('/api/platform/personal/todo/'+row.id),changedAt===2);
+ }
+});
+
+test('month-day page rejects wrong date or page metadata and hides previously read rows after lost access',async()=>{
+ assert.ok(mod);
+ const f=await fixture();
+ let identityChecks=0;
+ const fetchPage=(fault:'date'|'page'|'length'|'revoked'|null):typeof fetch=>async(input,init)=>{
+  const value=await f.fetcher(input,init);
+  const url=new URL(String(input),config.baseURL);
+  if(url.pathname.endsWith('/status')&&++identityChecks===2&&fault==='revoked')
+   return Response.json({error:{code:'AUTH_REQUIRED'}},{status:403});
+  if(!url.pathname.endsWith('/search'))return value;
+  assert.equal(url.searchParams.get('monthDay'),'02-29');
+  assert.equal(url.searchParams.get('searchPage'),'2');
+  const entry={...f.entry,draft:{...f.entry.draft,dueOn:fault==='date'?'2024-02-28':'2024-02-29'}};
+  return Response.json({scope:'filtered-current-page',query:'needle',monthDay:'02-29',page:fault==='page'?1:2,
+   items:fault==='length'?[]:[entry],coverage:{types:['todo'],scanned:51,matched:51}});
+ };
+ const dates={monthDay:'02-29'};
+ const result=await mod.loadPersonalSearch('needle',null,undefined,fetchPage(null),dates,2);
+ assert.equal(result.page,2);
+ assert.equal(result.rows[0].id,f.entry.id);
+ for(const fault of ['date','page','length','revoked'] as const){
+  identityChecks=0;
+  await assert.rejects(mod.loadPersonalSearch('needle',null,undefined,fetchPage(fault),dates,2),{kind:fault==='revoked'?'auth':'unavailable'});
+ }
+});

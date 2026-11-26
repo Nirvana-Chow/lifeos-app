@@ -33,11 +33,11 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   let items=[current,today,undated,memo,journalFixture(4,'2025-12-29'),journalFixture(5,'2026-01-01'),journalFixture(71,'2026-11-14','Future record not counted'),...Array.from({length:21},(_,i)=>journalFixture(10+i,'2026-11-13'))];
   let authorized=true,wrongScope=false,detail=current,delayed=false;
   let release:(()=>void)|undefined;const held:Promise<void>[]=[];
-  const external:string[]=[],writes:string[]=[],errors:string[]=[],originalReads:string[]=[];
+  const external:string[]=[],writes:string[]=[],errors:string[]=[],originalReads:string[]=[],apiReads:string[]=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());if(url.origin!==origin){external.push(url.origin);return route.abort();}
-   if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET')writes.push(request.method());
+   if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()==='GET')apiReads.push(url.pathname);else writes.push(request.method());
    if(!authorized)return route.fulfill({status:401,json:{error:{message:'Synthetic session ended'}}});
    const snapshot={scope:'full-current-snapshot',items,total:items.length,truncated:false,observedAt:'2026-11-12T16:00:00.000Z'};
    if(url.pathname==='/api/platform/personal/journal/snapshot'&&delayed){
@@ -90,6 +90,18 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   await expect(calendar.getByRole('heading',{name:'日记日历',exact:true})).toBeVisible();
   await expect(calendar.getByText('北京时间 2026-11-13',{exact:true})).toBeVisible();
   await expect(calendar.getByText('显示 20 / 22 条日记',{exact:true})).toBeVisible();
+  const reviewToggle=calendar.getByText('核对本期复盘资料',{exact:true});
+  const review=calendar.getByRole('region',{name:'本期复盘资料核对',exact:true});
+  const readsBeforeReview=apiReads.length;
+  await expect(review).toBeHidden();
+  await reviewToggle.click();
+  await expect(review.locator('time')).toHaveAttribute('datetime','2026-11-12T16:00:00.000Z');
+  await expect(review.locator('time')).toHaveText('2026-11-13 00:00');
+  await expect(review.getByText('日记 22 条，已核对随手记 0 条。',{exact:true})).toBeVisible();
+  await expect(review.getByText('日期未知的记录未计入本期。',{exact:true})).toBeVisible();
+  assert.equal(apiReads.length,readsBeforeReview,'opening the review must reuse the verified snapshot');
+  await reviewToggle.click();
+  await expect(review).toBeHidden();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   await expect(calendar.getByRole('button',{name:'2026-11-14，未到日期',exact:true})).toHaveText('14');
   const day=calendar.getByRole('button',{name:'2026-11-13，22 条记录',exact:true});
@@ -108,9 +120,18 @@ test('OPT-IN canonical journal calendar filters verified periods, preserves draf
   await expect(calendar.getByText('2026-01-01 至 2026-12-31（含首尾日）',{exact:true})).toBeVisible();
   await expect(calendar.getByRole('region',{name:'日期未知的日记'}).getByRole('link',{name:'Synthetic diary 3',exact:true})).toBeVisible();
   await calendar.getByLabel('参考日期').fill('2025-11-13');await calendar.getByLabel('资料周期').selectOption('day');
+  await reviewToggle.click();
+  await expect(review.getByText('日记 1 条，已核对随手记 1 条。',{exact:true})).toBeVisible();
+  assert.equal(apiReads.length,readsBeforeReview,'period changes and checks must stay local');
+  assert.deepEqual(writes,[]);
   const coverageLink=calendar.getByRole('link',{name:'Synthetic diary 1',exact:true});
-  await expect(coverageLink).toHaveAttribute('href','/personal/journal?record='+current.id);await coverageLink.click();
+  await expect(coverageLink).toHaveAttribute('href','/personal/journal?record='+current.id);
+  const coverageRow=calendar.getByRole('listitem').filter({has:page.getByRole('link',{name:'Synthetic diary 1',exact:true})});
+  await coverageRow.getByText('来源引用',{exact:true}).click();
+  await expect(coverageRow.getByText(/读取版本：2/)).toContainText(current.source.id);
+  await coverageLink.click();
   await expect(page.getByRole('article',{name:'日记原文'}).getByText('Synthetic current revision',{exact:true})).toBeVisible();
+  console.log('JOURNAL_PERIOD_MATERIALS_PASS '+JSON.stringify({width,theme,timezone:'America/Los_Angeles',reviewRequests:0,writes:0,stableSource:true,independentReadback:true}));
   // A current editor draft stays mounted when local read filters change. The modal deliberately
   // blocks normal pointer access to the background, so dispatch only this filter's native event.
   await journal.getByText('历史上的今天',{exact:true}).click();

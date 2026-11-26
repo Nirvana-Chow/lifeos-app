@@ -50,3 +50,107 @@
 }
 .cellText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .titleDetails { flex: none; }
+
+/* Keep one virtual grid and one editor. The narrow workspace lays out the
+   existing cells in reading rows while the desktop keeps its native columns. */
+@media (max-width: 850px) {
+  :global(html:not([data-lifeos-workspace-layout="desktop"]))
+  :global(.lo-task-toolbar):has(~ :global(.lo-workspace-view) > .root[data-flat-projects]) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+    margin-bottom: 8px;
+
+    > :is(a, button):not(:global(.lo-filter-button)) {
+      grid-area: 1 / 1;
+      min-height: 44px;
+      padding-inline: 8px;
+      font-size: 14px;
+    }
+    > :global(.lo-search) { grid-area: 1 / 2 / 2 / -1; min-width: 0; }
+    > :global(.lo-search):first-child { grid-column: 1 / -1; }
+    > :global(.lo-view-switch) {
+      grid-area: 2 / 1 / 3 / 3;
+      min-width: 0;
+      margin-inline: 0;
+    }
+    > :global(.lo-view-switch) button {
+      flex: 1;
+      justify-content: center;
+      min-width: 0;
+      padding-inline: 4px;
+      font-size: 14px;
+    }
+    > :global(.lo-view-switch) svg { display: none; }
+    > :global(.lo-filter-button) { grid-area: 2 / 3; min-height: 44px; }
+  }
+
+  :global(html:not([data-lifeos-workspace-layout="desktop"])) .root[data-flat-projects] {
+    .columnToolbar { padding-block: 0; }
+    .groupingControl > span { display: none; }
+    .table { display: block; width: 100% !important; }
+    .table > :is(thead, tbody) { display: block; }
+    .table > colgroup { display: none; }
+    .header { display: flex; overflow-x: auto; scrollbar-width: thin; }
+    .header th { flex: none; width: auto !important; padding-inline: 6px; }
+    .header th:is([data-col-id="complete"], [data-col-id="detail"]) {
+      position: absolute;
+      width: 1px !important;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .sort { gap: 4px; font-size: 14px; }
+    .table :global([data-slot="data-grid-table-resize-handle"]) { display: none; }
+    .table tbody > tr:not([data-row-id]) { display: block; width: 100%; }
+    .row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) minmax(108px, 1.2fr) 44px;
+      height: auto;
+      border-bottom: 1px solid var(--border);
+      padding: 4px 6px;
+    }
+    .row .tableCell {
+      width: auto !important;
+      min-width: 0;
+      height: auto;
+      padding: 0 4px;
+      border: 0;
+    }
+    .row .tableCell[data-col-id="complete"] { grid-area: 1 / 1; padding: 0; }
+    .row .tableCell[data-col-id="title"] { grid-area: 1 / 2 / 2 / -1; }
+    .row .tableCell[data-col-id="status"] { grid-area: 2 / 2; }
+    .row .tableCell[data-col-id="due"] { grid-area: 2 / 3; }
+    .row .tableCell[data-col-id="detail"] { grid-area: 2 / 4; }
+    .row .tableCell[data-col-id="project"] { grid-area: 3 / 2 / 4 / -1; }
+    .row .tableCell[data-col-id="project"]:not(:has(a)) { grid-area: 2 / 1; }
+    .row .tableCell[data-col-id="title"] :is(.cell, .cellText) {
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.45;
+    }
+    .row .titleDetails { min-width: 44px; min-height: 44px; margin-inline-start: 0; }
+    .row .tableCell:is([data-col-id="status"], [data-col-id="due"]) .cell {
+      font-size: 14px;
+      color: var(--muted-foreground);
+    }
+    .row .tableCell[data-col-id="detail"] .open {
+      width: 100%;
+      justify-content: center;
+    }
+    .row .tableCell[data-col-id="detail"] .open span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      clip-path: inset(50%);
+    }
+    .row .tableCell[data-col-id="detail"] .open::before { content: "⋯"; }
+    .row:has([data-task-group]) .tableCell[data-col-id="title"] {
+      grid-area: 1 / 1 / 2 / -1;
+      padding-block: 6px;
+    }
+    .row:has([data-task-group]) .tableCell:not([data-col-id="title"]) { display: none; }
+  }
+}

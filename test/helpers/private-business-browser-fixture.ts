@@ -37,8 +37,8 @@ export function assertPrivateHandoff(h:PrivateBrowserHandoff|undefined):asserts 
   const c=h.cookies[0];if(c.name!=='__Secure-lifeos-platform-candidate.session_token'||c.domain!=='review.example.test'||c.path!=='/'||!c.secure||!c.httpOnly||c.sameSite!=='Strict'||!c.value||(c.expires!==-1&&(!Number.isFinite(c.expires)||c.expires<=Date.now()/1000)))throw Error();
  }catch{throw Error('BROWSER_PRIVATE_HANDOFF_UNAVAILABLE');}
 }
-export function assertPrivateSnapshot(value:unknown,entries:readonly PublicEntry[]):void{
- try{const s=value as {scope:string;truncated:boolean;total:number;items:PublicEntry[]};assert.equal(s.scope,'full-current-snapshot');assert.equal(s.truncated,false);assert.equal(s.total,3);assert.equal(s.items.length,3);assert.equal(new Set(s.items.map(e=>e.id)).size,3);assert.equal(new Set(entries.map(e=>e.id)).size,3);for(const e of s.items)assert.deepEqual(e,entries.find(expected=>expected.id===e.id));}catch{throw Error('PRIVATE_SNAPSHOT_DENIED');}
+export function assertPrivateSnapshot(value:unknown,entries:readonly PublicEntry[],scope='full-current-snapshot'):void{
+ try{const s=value as {scope:string;truncated:boolean;total:number;items:PublicEntry[]};assert.equal(s.scope,scope);assert.equal(s.truncated,false);assert.equal(s.total,3);assert.equal(s.items.length,3);assert.equal(new Set(s.items.map(e=>e.id)).size,3);assert.equal(new Set(entries.map(e=>e.id)).size,3);for(const e of s.items)assert.deepEqual(e,entries.find(expected=>expected.id===e.id));}catch{throw Error('PRIVATE_SNAPSHOT_DENIED');}
 }
 export async function privateRead(page:Page,path:string):Promise<any>{
  const value=await page.evaluate(async path=>{const r=await fetch(path,{credentials:'same-origin',cache:'no-store'});return {ok:r.ok,cache:r.headers.get('cache-control'),body:await r.json()};},path);
@@ -278,11 +278,11 @@ export async function assertPrivateFixtureNavigation(page:Page){
  const switcher=(drawerOpen?page.getByRole('dialog',{name:'LifeOS',exact:true}):page.locator('header')).getByRole('navigation',{name:'切换模块',exact:true});
  await expect(switcher.getByRole('button')).toHaveText(['日常','兴趣学习']);
  // The modal drawer hides the header from the accessibility tree until it closes.
- const headerSearch=page.locator('header a[aria-label="搜索本人记录"]');
+ const headerSearch=page.locator('header button[aria-label="搜索本人记录"]');
  const searchInHeader=await headerSearch.count()>0;
- if(searchInHeader)await expect(headerSearch).toHaveAttribute('href','/personal/search');
+ if(searchInHeader)await expect(headerSearch).toHaveAttribute('aria-haspopup','dialog');
  const modules=[
-  ['日常',[['总览'],['待办'],['个人项目'],['领域'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录','/personal/search']] as const)]],
+  ['日常',[['总览'],['待办'],['个人项目'],['领域'],['记录','/personal/journal'],...(searchInHeader?[]:[['搜索本人记录']] as const)]],
   ['兴趣学习',[['做饭','/personal/cooking']]],
  ] as const;
  for(const [module,items] of modules){
@@ -635,8 +635,8 @@ async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture[
  const [response]=await Promise.all([
   page.waitForResponse(response=>{
    const url=new URL(response.url());
-   return url.origin===privateOrigin&&url.pathname==='/api/platform/personal/overview'
-     &&/^\?today=\d{4}-\d{2}-\d{2}$/.test(url.search)&&response.request().method()==='GET'
+   return url.origin===privateOrigin&&url.pathname==='/api/platform/personal/todo/workspace-snapshot'
+     &&/^\?today=\d{4}-\d{2}-\d{2}&include=access$/.test(url.search)&&response.request().method()==='GET'
      &&response.frame()===page.mainFrame();
   }),
   page.goto(privateOrigin+path,{waitUntil:'domcontentloaded'}),
@@ -644,7 +644,7 @@ async function openPrivateSettings(page:Page,path:string,entries:PrivateFixture[
  assert.equal(response.ok(),true);
  assert.match((await response.allHeaders())['cache-control']??'',/private.*no-store/);
  const snapshot=await response.json();
- assertPrivateSnapshot(snapshot,entries);
+ assertPrivateSnapshot(snapshot,entries,'task-workspace-current-snapshot');
  const {observedAt}=snapshot;
  if(typeof observedAt!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(observedAt)
    ||!Number.isFinite(Date.parse(observedAt))||new Date(observedAt).toISOString()!==observedAt)throw Error('PRIVATE_SNAPSHOT_DENIED');

@@ -1,0 +1,78 @@
+.storage-review-body {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+
+  [hidden] { display: none !important; }
+  :is(.actions, .controls, .meta) { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  :is(.meta, #notice, #note-draft-state, footer, .status) { color: var(--muted-foreground); }
+  :is(.meta, .controls, .actions, .review-summary, .group) { margin-block-end: 12px; }
+  :is(#notice, #note-draft-state):empty { display: none; }
+  #notice, #note-draft-state { margin-block-end: 8px; }
+  .meta { justify-content: space-between; }
+  .meta .actions { margin: 0; }
+  .review-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  .review-summary section { min-width: min(200px, 100%); }
+  progress { display: block; width: 100%; accent-color: var(--primary); }
+  .controls { align-items: end; }
+  .controls label { min-width: 0; display: grid; gap: 4px; }
+  .search { flex: 1 1 190px; }
+  .controls select, textarea, .choices button, .choices span, .note-actions button {
+    color: var(--foreground);
+    background: var(--background);
+    border: 1px solid var(--input);
+    border-radius: var(--radius);
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  textarea { display: block; width: 100%; min-height: 76px; resize: vertical; }
+  .rows, .pending-input, .empty {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+  .pending-input, .empty { padding: 12px; margin-block: 12px; }
+  .pending-input .actions { margin-block-start: 8px; margin-block-end: 0; }
+  .group h2, .row h3 { font-weight: 650; }
+  .group h2 { margin-block-end: 6px; }
+  .row {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) minmax(180px, 240px);
+    padding: 12px;
+    gap: 10px;
+    border-inline-start: 4px solid transparent;
+  }
+  .row + .row, .directory-children { border-top: 1px solid var(--border); }
+  .row[data-decision] { border-inline-start-color: var(--primary); }
+  .row[data-status=protected], .row[data-context=true] { background: var(--muted); }
+  .rowhead, .choices, .note-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .row-note { margin-block-start: 8px; }
+  .note-actions { margin-block-start: 6px; }
+  .choices { align-content: start; }
+  .choices input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .choices span { display: grid; place-items: center; }
+  .choices input:checked + span { background: var(--primary); color: var(--primary-foreground); }
+  :is(button, select, textarea, summary, a):focus-visible, .choices input:focus-visible + span {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .choices :disabled, .choices :disabled + span, .note-actions :disabled { opacity: .55; }
+  :is(.body, .question, .evidence, .note-status, #summary) { white-space: pre-wrap; }
+  .icon svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+  .directory-children > summary { padding-inline: 12px; }
+  .child-rows { margin-inline-start: 12px; border-inline-start: 2px solid var(--border); }
+  dialog { margin: auto; max-width: min(480px, 90vw); padding: 16px; background: var(--card); color: var(--card-foreground); }
+  dialog::backdrop { background: rgb(0 0 0 / 50%); }
+  dialog textarea { min-height: 130px; margin-block: 8px; }
+
+  @media (max-width: 740px) {
+    .row { grid-template-columns: 20px minmax(0, 1fr); padding: 8px; }
+    .choices, .readonly { grid-column: 2; }
+    .child-rows { margin-inline-start: 5px; }
+    .actions button { max-width: 100%; white-space: normal; }
+  }
+}

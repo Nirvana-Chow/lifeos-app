@@ -15,14 +15,23 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
  skip:process.env.RUN_PERSONAL_FINANCE_BROWSER_TESTS!=='1'&&'Requires disposable internal fixture and native Chrome',timeout:180_000,
 },async t=>{
  const root=await mkdtemp(join(tmpdir(),'lifeos-personal-finance-browser-'));
- await mkdir(join(root,'app/personal/finance'),{recursive:true});
+ // Without the optional persistent host, the real finance route must supply
+ // its own privacy boundary.
+ await mkdir(join(root,'app/personal/[...section]'),{recursive:true});
+ await mkdir(join(root,'app/login'),{recursive:true});
  await Promise.all([
-  ...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
+  ...['layout.tsx','globals.css','theme.css','personal/[...section]/page.tsx'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   cp(join(source,'src'),join(root,'src'),{recursive:true}),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components')),
-  writeFile(join(root,'app/personal/finance/page.tsx'),`import {PersonalFinancePage} from '../../../src/personal-finance/page';import '../../../src/ui-review/review.css';export default PersonalFinancePage;`),
+  writeFile(join(root,'app/login/page.tsx'),`export default function Page(){return <h1>Synthetic login</h1>}`),
  ]);
+ await writeFile(join(root,'src/platform/runtime.ts'),`
+export async function readPlatformPagePrincipal(headers:Headers) {
+ return headers.get('cookie')?.split('; ').includes('finance_fixture=isolated')
+  ? {userId:'finance-browser-fixture-owner'} : null;
+}
+`);
  const server=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{cwd:root,env:{PATH:process.env.PATH,NODE_ENV:'development',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
  const stopped=once(server,'exit');let log='';server.stderr.on('data',chunk=>{log+=String(chunk);});
  t.after(async()=>{server.kill('SIGTERM');await stopped;await rm(root,{recursive:true,force:true});});
@@ -31,17 +40,21 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
  const evidence=join(tmpdir(),'lifeos-finance-browser-evidence-20261105');await mkdir(evidence,{recursive:true});
  for(const width of [360,1365])for(const theme of ['light','dark'] as const){
   const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai'}),errors:string[]=[],writes:{method:string;key:string}[]=[];
+  await page.context().addCookies([{name:'finance_fixture',value:'isolated',url:origin}]);
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const ownerId='finance-browser-fixture-owner',spaceId='finance-browser-fixture-space',service=new PersonalFinanceService(repo,{ownerId,spaceId,enabled:true,writable:true});
   let denySnapshot=false;
+  let sessionDenial:401|403|undefined;
   page.on('pageerror',error=>errors.push(error.message));
-  await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/platform/personal/finance'))return route.continue();
+  await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();
+   if(url.pathname==='/api/platform/status')return route.fulfill({status:sessionDenial??200,json:{synthetic:true}});
+   if(!url.pathname.startsWith('/api/platform/personal/finance'))return route.continue();
    if(denySnapshot&&url.pathname.endsWith('/snapshot'))return route.fulfill({status:403,json:{error:{code:'FORBIDDEN',message:'合成验收：快照授权已撤回'}}});
    const headers=new Headers(request.headers());headers.set('host',url.host);const body=request.postData();
    if(!['GET','HEAD'].includes(request.method()))writes.push({method:request.method(),key:headers.get('idempotency-key')!});
    try{const response=await handlePersonalFinance(new Request(url,{method:request.method(),headers,...(body?{body}:{})}),{ownerId,baseURL:origin,service,assertOwner:async()=>{},guard:async()=>{}});assert.ok(response);return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}
    catch(error:any){return route.fulfill({status:error.status??503,json:{error:{code:error.code??'UNAVAILABLE',message:error.message}}});}
   });
-  await page.goto(origin+'/personal/finance',{waitUntil:'domcontentloaded',timeout:60000});await expect(page.getByRole('heading',{name:'还没有个人流水',exact:true})).toBeVisible();
+  await page.goto(origin+'/personal/finance',{waitUntil:'domcontentloaded',timeout:60000});await expect(page.getByRole('heading',{name:'还没有个人流水',exact:true})).toBeVisible({timeout:30_000});
   await page.getByRole('button',{name:'记一笔',exact:true}).click();await page.getByLabel('金额（元 · CNY）',{exact:true}).fill('29.01');await page.getByLabel('摘要 / 备注',{exact:true}).fill('Explicit synthetic finance fixture');await page.getByRole('button',{name:'保存流水',exact:true}).click();
   await expect(page.getByText('流水已保存并独立读回。',{exact:true})).toBeVisible();assert.equal(repo.rows.size,1);
   await expect(page.locator('[data-personal-finance-grid="reui"]')).toBeVisible();const rowButton=page.getByRole('button',{name:/^查看流水：/});await rowButton.click();
@@ -91,7 +104,29 @@ test('OPT-IN personal finance real Chrome flow in the established shell, mobile/
    await expect(page.getByRole('region',{name:'账户间转账'})).toHaveCount(0);
    await expect(page.getByRole('region',{name:'资产快照'})).toHaveCount(0);
   }
+  if(theme==='light'){
+   denySnapshot=false;
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   await expect(chart).toBeVisible();
+   await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));
+   await expect(page.locator('html'),'standalone finance privacy boundary must conceal cached data before rechecking').toHaveCSS('visibility','hidden');
+   await expect(chart).toBeHidden();
+   sessionDenial=width===360?401:403;
+   const checked=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/status'&&response.status()===sessionDenial);
+   await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+   await checked;
+   await expect(page).toHaveURL(origin+'/login');
+   await expect(page.getByRole('heading',{name:'Synthetic login',exact:true})).toBeVisible();
+   await expect(chart).toHaveCount(0);
+   assert.deepEqual(writes.map(write=>write.method),['POST','PATCH']);
+   console.log('FINANCE_STANDALONE_PRIVACY '+JSON.stringify({width,sessionDenial,concealedBeforeCheck:true,redirect:'/login'}));
+  }
   await page.close();
  }
+ const anonymous=await browser.newPage();
+ await anonymous.goto(origin+'/personal/finance');
+ await expect(anonymous).toHaveURL(origin+'/login');
+ await expect(anonymous.locator('.lo-shell')).toHaveCount(0);
+ await anonymous.close();
  assert.ok(!/Failed to compile|Module not found/.test(log),'fixture compiled actual UI');
 });

@@ -37,13 +37,18 @@ export default function Page(){const [records,setRecords]=useState<TrainingCalen
   const errors:string[] = [];page.on('pageerror',error => errors.push(error.message));
   await page.goto(origin,{waitUntil:'networkidle',timeout:60_000});
   const calendar = page.getByRole('region',{name:'运动日历与记录',exact:true});
-  await expect(page.getByText(/暂无已完成的运动记录/)).toBeVisible();
+  await expect(page.getByText('暂无已读完成记录。',{exact:true})).toBeVisible();
   await expect(calendar.getByRole('img')).toHaveCount(0);
   await page.getByRole('button',{name:'加载内部合成记录',exact:true}).click();
   const chart = calendar.getByRole('img',{name:/^已读运动日历，2 个/});
   await expect(chart.locator('svg')).toBeVisible();
-  await expect(page.getByText(/1 条计划单独保留/)).toBeVisible();
-  await expect(page.getByRole('button',{name:'周末计划',exact:true})).toHaveCount(0);
+  await expect(page.getByText(/空白日期的实际活动未知/)).toBeVisible();
+  const plans = calendar.getByRole('region',{name:'运动计划',exact:true});
+  await expect(plans.getByRole('button',{name:'周末计划',exact:true})).toBeVisible();
+  await expect(plans.getByRole('button',{name:'公园慢跑',exact:true})).toHaveCount(0);
+  await plans.getByRole('button',{name:'周末计划',exact:true}).click();
+  await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('plan');
+  await chart.scrollIntoViewIfNeeded();
   const cell = await chart.locator('svg path').evaluateAll(nodes => {
     const color = document.createElement('span');color.style.color = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
     return nodes.map(node => ({fill:getComputedStyle(node).fill,box:node.getBoundingClientRect()})).filter(value => value.fill === color.style.color && value.box.width > 0 && value.box.height > 0 && value.box.height <= 24).map(value => ({x:value.box.x+value.box.width/2,y:value.box.y+value.box.height/2}))[0] ?? null;
@@ -53,11 +58,14 @@ export default function Page(){const [records,setRecords]=useState<TrainingCalen
   await group.getByRole('button',{name:/飞盘投掷与对抗/}).click();await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('frisbee');
   await page.getByRole('button',{name:'公园慢跑',exact:true}).click();await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('run');
   await page.getByRole('button',{name:'运动时长（分钟）',exact:true}).click();await expect(chart.locator('svg')).toBeVisible();
+  await chart.scrollIntoViewIfNeeded();
   const unknownCell = await chart.locator('svg path').evaluateAll(nodes => {
     const color = document.createElement('span');color.style.color = getComputedStyle(document.documentElement).getPropertyValue('--input').trim();
     return nodes.map(node => ({fill:getComputedStyle(node).fill,box:node.getBoundingClientRect()})).filter(value => value.fill === color.style.color && value.box.width > 0 && value.box.height > 0 && value.box.height <= 24).map(value => ({x:value.box.x+value.box.width/2,y:value.box.y+value.box.height/2}))[0] ?? null;
   });
-  assert.ok(unknownCell,'a missing metric keeps a neutral actual-record cell');await page.mouse.click(unknownCell.x,unknownCell.y);await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('unknown');
+  assert.ok(unknownCell,'a missing metric keeps a neutral actual-record cell');
+  await page.mouse.click(unknownCell.x,unknownCell.y);
+  await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('unknown');
   await expect(page.getByText('其他运动 · 60 分钟 · 2 mi',{exact:true}).first()).toBeVisible();
   await mkdir(join(source,'.review-results'),{recursive:true});
   await page.screenshot({path:join(source,'.review-results/xunji-log-1366-light.png'),fullPage:true});

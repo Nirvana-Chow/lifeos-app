@@ -8,7 +8,7 @@ const {parseUrl}=require('next/dist/shared/lib/router/utils/parse-url.js');
 const {getPathMatch}=require('next/dist/shared/lib/router/utils/path-match.js');
 const {modifyRouteRegex}=require('next/dist/lib/redirect-status.js');
 const {tryToParsePath}=require('next/dist/lib/try-to-parse-path.js');
-type Rule={source:string;headers:{key:string;value:string}[]};
+type Rule={has?:{type:string;key:string;value:string}[];source:string;headers:{key:string;value:string}[]};
 async function rules():Promise<Rule[]>{
  const module={exports:{} as {default:{headers:()=>Promise<Rule[]>}}};
  const code=ts.transpileModule(readFileSync('next.config.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
@@ -24,7 +24,7 @@ test('returned config uses locked native matchers to reserve private cache overr
  const actual=await rules(),compiled=actual.map(rule=>{assert.equal(tryToParsePath(rule.source).error,undefined);return{...rule,match:getPathMatch(rule.source,{strict:true,sensitive:false,removeUnnamedParams:true,regexModifier:(regex:string)=>modifyRouteRegex(regex)})};});
  // These are path-policy cases, not fabricated proof that a static file exists or is cacheable.
  const cases:[string,string,boolean][]=[
-  ['root','/',true],['login','/login',true],['mfa','/account/mfa',true],['password','/account/password',true],['personal','/personal',true],['edit','/personal/edit?type=todo',true],['api','/api/platform/personal/overview',true],['RSC-shaped page','/personal?_rsc=synthetic',true],['image optimizer','/_next/image?url=%2Fpersonal%2Fprivate.png&w=100&q=75',true],['data route','/_next/data/synthetic/personal.json',true],['public file','/favicon.ico',true],['unknown page','/does-not-exist-synthetic',true],
+  ['root','/',true],['login','/login',true],['mfa','/account/mfa',true],['password','/account/password',true],['personal','/personal',true],['storage workbench','/personal/storage-review/workbench',true],['storage sibling','/personal/storage-review-other',true],['case-sensitive storage miss','/Personal/Storage-Review',true],['edit','/personal/edit?type=todo',true],['api','/api/platform/personal/overview',true],['RSC-shaped page','/personal?_rsc=synthetic',true],['image optimizer','/_next/image?url=%2Fpersonal%2Fprivate.png&w=100&q=75',true],['data route','/_next/data/synthetic/personal.json',true],['public file','/favicon.ico',true],['unknown page','/does-not-exist-synthetic',true],
   ['JS build path','/_next/static/chunks/5994.synthetic.js',false],['CSS build path','/_next/static/css/synthetic.css',false],['JS query','/_next/static/chunks/5994.synthetic.js?synthetic=1',false],['encoded filename','/_next/static/chunks/%35994.synthetic.js',false],['encoded directory','/_next/static/%63hunks/5994.synthetic.js',false],['encoded prefix','/%5Fnext/static/chunks/5994.synthetic.js',true],['lookalike static','/_next/staticity/5994.synthetic.js',true],['lookalike next','/__next/static/chunks/5994.synthetic.js',true],['directory without slash','/_next/static',true],['directory slash','/_next/static/',false],['missing build name','/_next/static/chunks/not-present-synthetic.js',false],['case mismatch','/_NEXT/static/chunks/5994.synthetic.js',false],['encoded prefix slash','/_next/static%2Fchunks/5994.synthetic.js',true],['raw traversal','/_next/static/../../personal',true],['encoded traversal','/_next/static/%2e%2e/%2e%2e/personal',true],['encoded slash traversal','/_next/static/%2e%2e%2f%2e%2e%2fpersonal',false],['double encoding','/_next/static/%252e%252e/personal',false],['malformed encoding','/_next/static/%ZZ',false],
  ];
  for(const [label,url,privatePreset] of cases)await t.test(label,()=>{
@@ -33,5 +33,10 @@ test('returned config uses locked native matchers to reserve private cache overr
   assert.equal(headers.get('cache-control'),privatePreset?'private, no-store':undefined);
   assert.deepEqual(Object.fromEntries([...headers].filter(([key])=>key!=='cache-control')),security);
  });
- assert.equal(actual.length,2);assert.equal(actual.some(rule=>rule.headers.some(h=>h.key.toLowerCase()==='cache-control'&&/public|immutable/.test(h.value))),false,'Real static cache policy belongs to Next filesystem handling');
+ const canonical='/personal/storage-review';
+ const direct=compiled.filter(rule=>rule.match(canonical)&&!rule.has).flatMap(rule=>rule.headers);
+ assert.deepEqual(direct.map(header=>header.key.toLowerCase()).sort(),['cache-control','x-content-type-options','x-frame-options']);
+ const flight=compiled.filter(rule=>rule.match(canonical)&&rule.has);
+ assert.equal(flight.length,1);assert.deepEqual(flight[0].has,[{type:'header',key:'rsc',value:'1'}]);
+ assert.equal(actual.length,4);assert.equal(actual.some(rule=>rule.headers.some(h=>h.key.toLowerCase()==='cache-control'&&/public|immutable/.test(h.value))),false,'Real static cache policy belongs to Next filesystem handling');
 });

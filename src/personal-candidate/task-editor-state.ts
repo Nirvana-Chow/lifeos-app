@@ -1,4 +1,4 @@
-import{editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
+import{clonePersonalJSON,editorFromEntry,todoDraftFromEditor,type PersonalEditorFields}from'./editor.ts';
 import type{WorkspaceTask}from'./workspace-data.ts';
 import type{PublicEntry}from'../platform/contracts.ts';
 import{validateTodo}from'../platform/domain.ts';
@@ -19,7 +19,7 @@ export function resolveTaskTarget(id:string|undefined,create:boolean,tasks:reado
  if(id!==undefined){const task=tasks.find(t=>t.id===id);return task?{mode:'edit',task:{id:task.id,revision:task.revision}}:{mode:'missing',id};}return create?{mode:'create'}:null;
 }
 export function taskCellFields(fields:PersonalEditorFields,field:'title'|'status'|'due',value:unknown):PersonalEditorFields{
- const next=structuredClone(fields);if(typeof value!=='string')throw Error('输入无效。');
+ const next=clonePersonalJSON(fields);if(typeof value!=='string')throw Error('输入无效。');
  if(field==='title')next.title=value;
  if(field==='due')next.date=value;
  if(field==='status'){const status=Object.entries(taskStatusLabels).find(([key,label])=>key===value||label===value)?.[0];if(!status)throw Error('状态无效。');next.status=status as PersonalEditorFields['status'];}
@@ -45,7 +45,7 @@ export type ReceiptEditor = NativeReceiptEditor & {
 export function receiptEditor(native:NativeReceiptEditor,options:{field?:'title'|'status'|'due';capture:(context:Parameters<NativeReceiptEditor['onStart']>[0])=>{task:TaskIdentity;fields:PersonalEditorFields}|null;save:(task:TaskIdentity,fields:PersonalEditorFields)=>Promise<PublicEntry|null>;active:()=>boolean;canSave?:()=>boolean;cancel:()=>void;style:(element?:HTMLElement)=>void;onDraft?:(draft:TaskCellDraft|null)=>void;onError?:(message:string)=>void}):ReceiptEditor{
  let context:ReturnType<typeof options.capture>=null,epoch=0,busy=false,discarded=false,removeInputListener:(()=>void)|null=null;
  const element=()=>native.getInputElement?.()??native.element;
- const captureDraft=()=>{if(!context||discarded)return;const value=native.getValue(),field=options.field??'title';if(typeof value!=='string')return;const old=field==='title'?context.fields.title:field==='due'?context.fields.date:taskStatusLabels[context.fields.status];options.onDraft?.(value===old?null:{task:{...context.task},fields:structuredClone(context.fields),field,value});};
+ const captureDraft=()=>{if(!context||discarded)return;const value=native.getValue(),field=options.field??'title';if(typeof value!=='string')return;const old=field==='title'?context.fields.title:field==='due'?context.fields.date:taskStatusLabels[context.fields.status];options.onDraft?.(value===old?null:{task:{...context.task},fields:clonePersonalJSON(context.fields),field,value});};
  const editor:ReceiptEditor={
   captureDraft,discard(){discarded=true;options.onDraft?.(null);},setDisabled(disabled){const input=element();if(input)(input as HTMLInputElement|HTMLSelectElement).disabled=disabled;},
   onStart(start){context=options.capture(start);++epoch;busy=false;discarded=false;if(!context){if(options.active())options.cancel();return;}native.onStart({...start,value:options.field==='status'?taskStatusLabels[start.value as keyof typeof taskStatusLabels]??start.value:start.value});options.style(element());
