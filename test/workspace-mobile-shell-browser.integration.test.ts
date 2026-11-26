@@ -8,20 +8,30 @@ import test from 'node:test';
 import {chromium,expect} from '@playwright/test';
 
 test('mobile shell keeps readable content, existing navigation and saved layout across reopened pages',{
- skip:process.env.RUN_WORKSPACE_MOBILE_SHELL_BROWSER_TESTS!=='1'&&'Requires isolated Next and Chromium',timeout:180000,
+ skip:process.env.RUN_WORKSPACE_MOBILE_SHELL_BROWSER_TESTS!=='1'&&'Requires isolated Next and Chromium',timeout:240000,
 },async t=>{
  const source=resolve(import.meta.dirname,'..'),root=await mkdtemp(join(tmpdir(),'lifeos-mobile-shell-'));
  await mkdir(join(root,'app','personal'),{recursive:true});
  await Promise.all([cp(join(source,'src'),join(root,'src'),{recursive:true}),
   ...['layout.tsx','globals.css','theme.css'].map(name=>cp(join(source,'app',name),join(root,'app',name))),
   cp(join(source,'app','personal','layout.tsx'),join(root,'app','personal','layout.tsx')),
+  cp(join(source,'app','personal','page.tsx'),join(root,'app','personal','owner-page.tsx')),
   cp(join(source,'postcss.config.mjs'),join(root,'postcss.config.mjs')),
   symlink(join(source,'node_modules'),join(root,'node_modules')),symlink(join(source,'components'),join(root,'components'))]);
+ await writeFile(join(root,'src','platform','runtime.ts'),`
+  export const readPlatformPagePrincipal=async()=>({userId:'overview-owner'});
+  export const readPlatformPasswordCapability=async()=>false;
+  export const readPlatformLoginCapability=async()=>({sessionDuration:false});
+ `);
+ await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
  await writeFile(join(root,'app','personal','page.tsx'),`import {LifeOSWorkspace} from '../../src/ui-review/workspace';
  import {readWorkspaceLocation} from '../../src/workbench/private-navigation';
- export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;page?:string;panel?:string}>}){
+ import {cookies} from 'next/headers';
+ import OwnerPage from './owner-page';
+ export default async function Page({searchParams}:{searchParams:Promise<{guest?:string;page?:string;panel?:string;idle?:string}>}){
   const params=await searchParams,owner=!params.guest,location=readWorkspaceLocation(params);
-  return <LifeOSWorkspace desktopNavigation syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={{status:'ready',data:{tasks:[],projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
+  if((await cookies()).get('quiet-shell')?.value==='canonical')return OwnerPage({searchParams});
+  return <LifeOSWorkspace desktopNavigation syncUrl initialPage={location.page} initialSettingsPanel={location.panel} state={params.idle?{status:'unknown',message:'此页面未配置数据来源。'}:{status:'ready',data:{tasks:[],projects:[],areas:[],today:'2026-11-25',asOf:'2026-11-25T00:00:00Z',coverage:'complete'}}}
   access={{authenticated:owner,writable:false,loginAllowed:true}} availableSettingsPanels={['security']} viewPreferenceScope={owner?JSON.stringify(['overview-owner','overview-space']):null}/>;
  }`);
  const child=spawn(process.execPath,[join(source,'node_modules/next/dist/bin/next'),'dev','--webpack','--hostname','127.0.0.1','--port','0'],{
@@ -41,7 +51,83 @@ test('mobile shell keeps readable content, existing navigation and saved layout 
  });
  const browser=await chromium.launch({executablePath:process.env.LIFEOS_TEST_CHROMIUM_PATH});
  t.after(()=>browser.close());
+ const actual=await browser.newPage({viewport:{width:1365,height:900}});
+ await actual.context().addCookies([{name:'quiet-shell',value:'canonical',url:origin}]);
+ const title='合成私人待办';
+ const id='11111111-1111-4111-8111-111111111111',sourceId='22222222-2222-4222-8222-222222222222';
+ const at='2026-11-25T00:00:00.000Z',spaceId='overview-space';
+ const fields={title,notes:'',status:'open',dueOn:null};
+ const entry={id,kind:'todo',revision:1,draft:fields,source:{id:sourceId,system:'website',externalId:id,version:1,asOf:at,
+  original:{marker:'personal-manual-v1',spaceId,type:'todo',input:{spaceId,confirmed:true,fields}}},createdAt:at,updatedAt:at,syncState:'draft',externalStatus:null};
+ let finishOverview: (()=>void)|undefined, statusCode=200;
+ let overviewGate: Promise<void>|undefined;
+ const holdOverview=()=>{overviewGate=new Promise<void>(done=>{finishOverview=done;});};
+ const releaseOverview=()=>{finishOverview?.();overviewGate=undefined;};
+ const writes:string[]=[],external:string[]=[];
+ await actual.route('**/*',async route=>{
+  const request=route.request(),url=new URL(request.url());
+  if(url.origin!==origin){external.push(url.origin);return route.abort();}
+  if(!url.pathname.startsWith('/api/'))return route.continue();
+  if(request.method()!=='GET')writes.push(request.method());
+  if(url.pathname==='/api/platform/personal/overview'){
+   if(overviewGate)await overviewGate;
+   if(statusCode!==200)return route.fulfill({status:statusCode,json:{error:{code:'PERSONAL_SNAPSHOT_UNAVAILABLE'}}});
+   return route.fulfill({json:{scope:'full-current-snapshot',items:[entry],truncated:false,total:1,today:url.searchParams.get('today'),observedAt:at}});
+  }
+  if(url.pathname==='/api/platform/personal/availability')return route.fulfill({json:{configured:true,loginAllowed:true,https:false,transport:'ssh-loopback',origin}});
+  return route.fulfill({json:{scope:'personal-manual-candidate',ownerId:'overview-owner',spaceId,storageVerified:true,writable:false,allowedTypes:['todo','journal']}});
+ });
+ const shellHeader=actual.locator('header.lo-header'),main=actual.locator('#personal-main'),view=main.locator('.lo-workspace-view');
+ const task=main.getByRole('button',{name:'查看待办详情：'+title,exact:true});
+ try {
+  for(const width of [1365,390]){
+   await actual.setViewportSize({width,height:900});
+   holdOverview();
+   await actual.goto(origin+'/personal?page=tasks',{waitUntil:'domcontentloaded'});
+   await expect(shellHeader).toBeVisible();
+   await expect(view.getByText(/正在读取数据|等待数据连接/)).toHaveCount(0,{timeout:1500});
+   await expect(view.locator('[aria-busy="true"]')).toBeVisible();
+   await expect(task).toHaveCount(0);
+   const headerHeight=(await shellHeader.boundingBox())!.height,mainTop=(await main.boundingBox())!.y;
+   const mountedView=await view.elementHandle();
+   releaseOverview();
+   await expect(task).toBeVisible();
+   await expect(view.locator('[aria-busy="true"]')).toHaveCount(0);
+   assert.equal((await shellHeader.boundingBox())!.height,headerHeight);
+   assert.equal((await main.boundingBox())!.y,mainTop);
+   assert.equal(await mountedView!.evaluate(node=>node.isConnected),true);
+
+   holdOverview();
+   await actual.evaluate(()=>{
+    Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});
+    document.dispatchEvent(new Event('visibilitychange'));
+   });
+   await expect(task).toHaveCount(0);
+   await expect(view.locator('[aria-busy="true"]')).toBeVisible();
+   await expect(view.getByText(/正在读取数据|等待数据连接/)).toHaveCount(0);
+   assert.equal((await actual.evaluate(()=>document.querySelector('#personal-main')!.scrollTop)),0);
+   statusCode=503;
+   releaseOverview();
+   const alert=view.getByRole('alert');
+   await expect(alert).toContainText('暂时无法读取完整待办列表');
+   await expect(view.locator('[aria-busy="true"]')).toHaveCount(0);
+   statusCode=200;
+   await view.getByRole('button',{name:'重新读取',exact:true}).click();
+   await expect(task).toBeVisible();
+  }
+ } finally {
+  releaseOverview();
+  await actual.close();
+ }
+ assert.deepEqual(writes,[]);
+ assert.deepEqual(external,[]);
+
  const page=await browser.newPage({viewport:{width:1365,height:900}});
+ await page.goto(origin+'/personal?page=tasks&idle=1',{waitUntil:'domcontentloaded'});
+ await expect(page.getByRole('status').filter({hasText:'此页面未配置数据来源。'})).toBeVisible();
+ await expect(page.getByText('等待数据连接',{exact:true})).toHaveCount(0);
  const pageErrors:string[]=[];page.on('pageerror',error=>pageErrors.push(error.message));
  const header=page.locator('header.lo-header');
  const more=header.getByRole('button',{name:'账号与更多操作'});
