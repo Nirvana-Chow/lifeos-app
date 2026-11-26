@@ -1,5 +1,6 @@
 'use client';
 
+import {Frame,FramePanel} from '../../business-reui/frame';
 import {useDeferredValue,useId,useMemo,useState} from 'react';
 import type {TrainingAnalyticsSnapshot} from '../training-analytics/model';
 import {buildExerciseLibrary,filterExerciseLibrary} from './model';
@@ -27,12 +28,12 @@ export function ExerciseLibrary({source}:{source?:TrainingAnalyticsSnapshot|null
           <input id={id} type="search" value={query} onChange={event => {setQuery(event.target.value);setShown(pageSize);}} placeholder="例如：鸟狗式、核心、腘绳肌"/>
         </label>
         <p className={s.hint} role="status">找到 {filtered.length} 个动作{filtered.length > shown ? `，先显示 ${shown} 个` : ''}。</p>
-        {filtered.length ? <ul className={s.list}>{filtered.slice(0,shown).map(row => <li key={row.name}>
+        {filtered.length ? <ul className={s.list}>{filtered.slice(0,shown).map(row => <Frame asChild key={row.name} dense spacing="sm"><li><FramePanel className={s.item}>
           <h4>{row.name}</h4>
           <p>{row.guide?.purpose ?? '用途资料待补充，暂不推断这个动作的训练目标。'}</p>
           {row.observed && <p className={s.hint}>本次文件已读 {row.observed.sets} 个完成组 · 最近日期 {row.observed.lastDate}</p>}
           {row.guide && <a href={row.guide.source.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{row.guide.source.label}<span className={s.srOnly}>：{row.name}（在新标签页打开）</span></a>}
-        </li>)}</ul> : <p className={s.hint}>没有匹配的动作，试试动作名或训练部位。</p>}
+        </FramePanel></li></Frame>)}</ul> : <p className={s.hint}>没有匹配的动作，试试动作名或训练部位。</p>}
         {filtered.length > shown && <button type="button" className={s.more} onClick={() => setShown(value => value+pageSize)}>再显示 {Math.min(pageSize,filtered.length-shown)} 个</button>}
         <p className={s.hint}>用途说明关联现有精确动作名，不代表本人练过或已掌握。完成组仅来自本次已读文件，未出现的动作保持未知。</p>
       </div>
