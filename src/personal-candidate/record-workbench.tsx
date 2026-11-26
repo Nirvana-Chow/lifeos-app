@@ -55,7 +55,7 @@ const keyOf=(v:PersonalBinding)=>JSON.stringify([v.ownerId,v.spaceId]);
 const journalAutosaveDelayMs=1200;
 async function json(path:string){const response=await fetch('/api/platform/personal/'+path,{credentials:'same-origin',cache:'no-store'}),value=await response.json();if(!response.ok)throw Error(value?.error?.message||'读取未完成，请重试。');return value;}
 function readStatus(v:unknown):Status{const value=v as Status;if(!value||typeof value.ownerId!=='string'||typeof value.spaceId!=='string'||value.storageVerified!==true||!Array.isArray(value.allowedTypes))throw Error('本人空间尚未就绪。');return {...value,writable:value.writable===true};}
-export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,careerSection,writeJournal,journalDay,onJournalSaved}:{type:RecordModule;linkedPersonId?:string;careerSection?:CareerSection;writeJournal?:boolean;journalDay?:string;onJournalSaved?:()=>void;navigationGuard?:{current:(()=>boolean)|null}}){
+export function PersonalRecordWorkbench({type,navigationGuard,allowNavigationDuringRefresh=false,linkedPersonId,careerSection,writeJournal,journalDay,onJournalSaved}:{type:RecordModule;allowNavigationDuringRefresh?:boolean;linkedPersonId?:string;careerSection?:CareerSection;writeJournal?:boolean;journalDay?:string;onJournalSaved?:()=>void;navigationGuard?:{current:(()=>boolean)|null}}){
  const title=labels[careerSection??type];
  const awaitingJournalDay=writeJournal===true&&!journalDay;
  const verified=useOwnerPageVerification(),hasPrivacyBoundary=verified!==null;
@@ -91,17 +91,19 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
   field.focus({preventScroll:true});
   field.setSelectionRange(start,end,direction);
  },[blocked,editor,verified]);
- function leave(){
+ // Hosted traversal may cancel a passive refresh. Detail reads and mutations still own the guard.
+ const refreshing=useRef(false);
+ function leave(allowRefresh=false){
   const draft=currentDraft();
-  const allowed=!busyRef.current&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));
+  const allowed=(!busyRef.current||allowRefresh&&refreshing.current)&&!['saving','uncertain'].includes(session.current?.getSnapshot().phase??'')&&(!draft||JSON.stringify(draft.fields)===draft.initial||window.confirm('放弃尚未保存的修改？'));
   if(allowed&&type==='journal')resetJournalAutosave();
   return allowed;
  }
- useEffect(()=>{if(navigationGuard)navigationGuard.current=leave;return()=>{if(navigationGuard)navigationGuard.current=null;};});
+ useEffect(()=>{if(navigationGuard)navigationGuard.current=()=>leave(allowNavigationDuringRefresh);return()=>{if(navigationGuard)navigationGuard.current=null;};});
  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dirty||blocked){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty,blocked]);
  async function refresh(){
   const token=++generation.current;
-  setBusy(true);setError('');
+  refreshing.current=true;setBusy(true);setError('');
   try{
    const next=readStatus(await json('status'));
    if(!recordModuleEnabled(type,next))throw Error('此模块尚未开放。');
@@ -151,7 +153,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
    hide();
    if(type!=='journal')draftCache.current=retained;
    setError(e instanceof Error?e.message:'读取未完成。');
-  }finally{if(token===generation.current)setBusy(false);}
+  }finally{if(token===generation.current){refreshing.current=false;setBusy(false);}}
  }
  function recheckJournalAuthorization(){
   hide();
@@ -165,7 +167,7 @@ export function PersonalRecordWorkbench({type,navigationGuard,linkedPersonId,car
  function hide(){
   if(type==='journal')resetJournalAutosave();
   if(current.current&&editorRef.current)draftCache.current={scope:keyOf(current.current),editor:editorRef.current,history:[]};
-  generation.current++;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
+  generation.current++;refreshing.current=false;current.current=null;setStatus(null);setEntries([]);setRelatedJournals(null);setResumeId('');setEditor(null);setHistory([]);setOptions(emptyOptions());session.current?.invalidateBinding();session.current=null;setMutation(null);setBusy(false);
  }
  useEffect(()=>{
   setView(initialRecordView(type,careerSection));
