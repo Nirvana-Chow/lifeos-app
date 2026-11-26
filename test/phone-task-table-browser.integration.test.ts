@@ -93,7 +93,7 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
    const grid=page.locator('[data-task-grid="reui"]');
    const view=page.getByRole('button',{name:'表格',exact:true});
    if(!await grid.isVisible())await view.click();
-   const row=grid.locator('tbody tr[data-row-id]').first(),heading=row.locator('td[data-col-id="title"]').getByText(title,{exact:true});
+   const row=grid.locator('tbody tr[data-row-id="'+id+'"]'),heading=row.locator('td[data-col-id="title"]').getByText(title,{exact:true});
    await expect(heading).toBeVisible({timeout:25000});
    assert.ok(snapshotReads>0,'actual tasks must use the narrow workspace read');
    const measured=await row.evaluate(node=>{
@@ -189,29 +189,35 @@ export const readPlatformLoginCapability=async()=>({sessionDuration:false});
     await expect(details(revisedTitle)).toBeFocused();
     console.log('PHONE_TASK_EDITOR_RECEIPTS '+JSON.stringify({width,cloneDisabled:process.env.PHONE_TASK_TABLE_NO_CLONE==='1',readbacks,focusAfterSave}));
    }
-   if(width===390&&failures.length===0){
+   if(failures.length===0){
     await view.click();
     const grouping=grid.getByLabel('待办表格分组');
-    await expect(grouping.getByRole('option',{name:'按领域',exact:true})).toHaveCount(0);
-    await expect(grouping.getByRole('option')).toHaveText(['不分组','按项目']);
+    await expect(grouping.getByRole('option')).toHaveText(['不分组','按项目','按领域']);
+    const writesBeforeGrouping=writes.length;
     await grouping.selectOption('project');
     await expect(grid.locator('[data-task-group="project"]')).toContainText('未关联项目');
     await expect(grid.locator('tbody tr[data-row-id]')).toHaveCount(2);
+    await grouping.selectOption('area');
+    await expect(grid.locator('[data-task-group="area"]')).toHaveText('未关联领域1 项');
+    await expect(row).toHaveCount(1);
     await grouping.selectOption('none');
     await expect(grid.locator('[data-task-group]')).toHaveCount(0);
+    assert.equal(writes.length,writesBeforeGrouping);
     const filter=page.getByRole('textbox',{name:'搜索待办'});
     await filter.fill('合成不存在');await expect(grid.getByText('没有符合条件的待办')).toBeVisible();
     await filter.fill('合成长中文');await expect(row).toBeVisible();
-    const toDesktop=page.getByRole('button',{name:'切换到桌面版'});
-    await toDesktop.click();
-    await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
-    await expect(filter).toHaveValue('合成长中文');
-    await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('table-row');
-    await page.reload({waitUntil:'domcontentloaded'});
-    await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
-    await expect(grid).toBeVisible();
-    await page.getByRole('button',{name:'切换到手机版'}).click();
-    await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('grid');
+    if(width===390){
+     const toDesktop=page.getByRole('button',{name:'切换到桌面版'});
+     await toDesktop.click();
+     await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
+     await expect(filter).toHaveValue('合成长中文');
+     await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('table-row');
+     await page.reload({waitUntil:'domcontentloaded'});
+     await expect(page.locator('html')).toHaveAttribute('data-lifeos-workspace-layout','desktop');
+     await expect(grid).toBeVisible();
+     await page.getByRole('button',{name:'切换到手机版'}).click();
+     await expect.poll(()=>row.evaluate(element=>getComputedStyle(element).display)).toBe('grid');
+    }
    }
    await page.close();
   }
