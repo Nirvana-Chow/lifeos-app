@@ -58,11 +58,14 @@ export default function Page(){const [records,setRecords]=useState<TrainingCalen
   await group.getByRole('button',{name:/飞盘投掷与对抗/}).click();await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('frisbee');
   await page.getByRole('button',{name:'公园慢跑',exact:true}).click();await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('run');
   await page.getByRole('button',{name:'运动时长（分钟）',exact:true}).click();await expect(chart.locator('svg')).toBeVisible();
+  await chart.scrollIntoViewIfNeeded();
   const unknownCell = await chart.locator('svg path').evaluateAll(nodes => {
     const color = document.createElement('span');color.style.color = getComputedStyle(document.documentElement).getPropertyValue('--input').trim();
     return nodes.map(node => ({fill:getComputedStyle(node).fill,box:node.getBoundingClientRect()})).filter(value => value.fill === color.style.color && value.box.width > 0 && value.box.height > 0 && value.box.height <= 24).map(value => ({x:value.box.x+value.box.width/2,y:value.box.y+value.box.height/2}))[0] ?? null;
   });
-  assert.ok(unknownCell,'a missing metric keeps a neutral actual-record cell');await page.mouse.click(unknownCell.x,unknownCell.y);await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('unknown');
+  assert.ok(unknownCell,'a missing metric keeps a neutral actual-record cell');
+  await page.mouse.click(unknownCell.x,unknownCell.y);
+  await expect(page.getByLabel('打开的原记录',{exact:true})).toHaveText('unknown');
   await expect(page.getByText('其他运动 · 60 分钟 · 2 mi',{exact:true}).first()).toBeVisible();
   await mkdir(join(source,'.review-results'),{recursive:true});
   await page.screenshot({path:join(source,'.review-results/xunji-log-1366-light.png'),fullPage:true});

@@ -44,7 +44,7 @@ export function TrainingCalendar({records,onOpenRecord}:TrainingCalendarProps) {
   // Retains the upstream calendar/visualMap/heatmap option structure. Dimension 1
   // is an actual session count; null metric values get a neutral color, never zero.
   const option = useCallback((theme:ChartTheme) => ({
-    aria:{enabled:true,label:{description:`已读运动日历，${days.length} 个有完成记录的日期。空白日期表示没有已读记录。可通过下方列表打开同一条详情。`}},
+    aria:{enabled:true,label:{description:`已读运动日历，${days.length} 个有完成记录的日期。空白日期表示没有已读记录。也可在「最近已读运动」打开同一条详情。`}},
     tooltip:{renderMode:'richText',backgroundColor:theme.surface,borderColor:theme.border,textStyle:{color:theme.foreground},formatter:(params:unknown) => {
       const date = trainingCalendarClickDate(params),day = days.find(day => day.date === date);if (!day) return '无已读记录';
       const value = trainingMetricValue(day,currentMetric);
