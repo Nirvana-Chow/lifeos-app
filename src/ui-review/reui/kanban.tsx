@@ -24,6 +24,7 @@ import type {
   DragOverEvent,
   DragStartEvent,
   DropAnimation,
+  KeyboardCoordinateGetter,
   Modifiers,
   UniqueIdentifier,
 } from "@dnd-kit/core"
@@ -141,9 +142,6 @@ const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 10 } }
 const TOUCH_SENSOR_OPTIONS = {
   activationConstraint: { delay: 250, tolerance: 5 },
 }
-const KEYBOARD_SENSOR_OPTIONS = {
-  coordinateGetter: sortableKeyboardCoordinates,
-}
 const MEASURING_CONFIG = {
   droppable: { strategy: MeasuringStrategy.Always },
 }
@@ -225,10 +223,36 @@ function Kanban<T>({
     index: number
   } | null>(null)
 
+  const keyboardCoordinates = useCallback<KeyboardCoordinateGetter>((event, args) => {
+    const step = event.code === "ArrowLeft" ? -1 : event.code === "ArrowRight" ? 1 : 0
+    const { active, collisionRect, droppableContainers, droppableRects } = args.context
+    if (step && active && collisionRect) {
+      const orderedColumns = Object.entries(valueRef.current)
+      const current = orderedColumns.findIndex(([, items]) =>
+        items.some(item => getItemValueRef.current(item) === active.id)
+      )
+      const neighbor = current < 0 ? undefined : orderedColumns[current + step]
+      if (neighbor?.[1].length === 0) {
+        const column = droppableContainers.get(neighbor[0])
+        const rect = column && !column.disabled ? droppableRects.get(column.id) : undefined
+        if (rect) {
+          // The sortable getter can pick the card's own column because its
+          // left edge is also left of the card. Aim inside the empty neighbor.
+          event.preventDefault()
+          return {
+            x: rect.left + (rect.width - collisionRect.width) / 2,
+            y: Math.max(rect.top, Math.min(collisionRect.top, rect.bottom - collisionRect.height)),
+          }
+        }
+      }
+    }
+    return sortableKeyboardCoordinates(event, args)
+  }, [])
+
   const sensors = useSensors(
     useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
     useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
-    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS)
+    useSensor(KeyboardSensor, { coordinateGetter: keyboardCoordinates })
   )
 
   const columnIds = useMemo(() => {

@@ -30,7 +30,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   let entries:any[]=[makeEntry(taskId,'todo',{title:'合成排期待办',notes:'Synthetic only',dueOn:'2030-12-31',status:'open',personal:{project:{id:projectId,sourceId:'44444444-4444-4444-8444-444444444444',revision:1},domain:null,topics:[]}}),makeEntry(projectId,'project',{title:'合成排期项目',text:'Synthetic only',occurredOn:'2030-12-31',personal:{type:'project',stage:'active',purpose:null,nextStep:'',domain:null,topics:[]}})];
   let overviewUnavailable=false;
   let writable=true,writes=0,taskReads=0,projectReads=0,holdReadback=true,releaseReadback!:()=>void;const gate=new Promise<void>(r=>{releaseReadback=r;releaseHeldReadback=r;}),receipts=new Map<string,any>(),errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-  let rejectNextCreate=false,createRequests=0,newTaskReads=0;
+  let rejectNextCreate=false,createRequests=0,newTaskReads=0,taskPatchRequests=0;
   let newReadback:Promise<void>|undefined;
   const headers={'cache-control':'private, no-store',vary:'Cookie','x-content-type-options':'nosniff'};
   await page.route('**/*',async route=>{
@@ -43,7 +43,7 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
     else if(url.pathname==='/api/platform/personal/overview')value={scope:'full-current-snapshot',truncated:false,total:entries.length,items:entries,today:url.searchParams.get('today'),observedAt:'2030-11-01T00:00:00Z'};
     else{const match=/^\/api\/platform\/personal\/(todo|project)\/([a-f0-9-]+)(\/history)?$/.exec(url.pathname),entry=match&&entries.find(entry=>entry.id===match[2]);if(!match||!entry)return route.fulfill({status:404,json:{error:{code:'NOT_FOUND'}},headers});if(match[3])value={items:[entry],truncated:false};else{if(match[1]==='todo'){taskReads++;if(holdReadback&&writes>0)await gate;if(entry.id===newId){newTaskReads++;await newReadback;}}else projectReads++;value={entry};}}
    }else if(method==='PATCH'||method==='POST'){
-    const match=/^\/api\/platform\/personal\/(todo|project)(?:\/([a-f0-9-]+))?$/.exec(url.pathname);if(!match)return route.abort();const body=request.postDataJSON(),key=request.headers()['idempotency-key'];if(receipts.has(key))return route.fulfill({json:{entry:receipts.get(key),duplicate:true},headers});
+    const match=/^\/api\/platform\/personal\/(todo|project)(?:\/([a-f0-9-]+))?$/.exec(url.pathname);if(!match)return route.abort();const body=request.postDataJSON(),key=request.headers()['idempotency-key'];if(method==='PATCH'&&match[1]==='todo')taskPatchRequests++;if(receipts.has(key))return route.fulfill({json:{entry:receipts.get(key),duplicate:true},headers});
     if(method==='POST'&&match[1]==='todo'){
      createRequests++;
      if(rejectNextCreate){rejectNextCreate=false;return route.fulfill({status:422,json:{error:{code:'VALIDATION_FAILED'}},headers});}
@@ -154,6 +154,76 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await expect.poll(()=>writes).toBe(4);
   await expect(board.locator('[data-kanban-status="in_progress"]').locator('[data-kanban-task="'+taskId+'"]')).toBeVisible();
   assert.equal(entries.find(entry=>entry.id===taskId).draft.status,'in_progress');
+  await page.getByRole('textbox',{name:'搜索待办',exact:true}).fill('合成排期待办');
+  const column=(status:'open'|'in_progress')=>board.locator('[data-kanban-status="'+status+'"] .lo-board-cards');
+  const stagedCard=(status:'open'|'in_progress')=>column(status).locator('[data-kanban-task="'+taskId+'"]');
+  const counts=()=>({writes,requests:taskPatchRequests});
+  const beforeBoardInputs=counts();
+  async function requireStatusReceipt(status:'open'|'in_progress',before:ReturnType<typeof counts>){
+   await expect.poll(()=>writes).toBe(before.writes+1);
+   await expect(stagedCard(status)).toBeVisible();
+   await expect(drag).toBeEnabled();
+   assert.equal(entries.find(entry=>entry.id===taskId).draft.status,status);
+   assert.deepEqual(counts(),{writes:before.writes+1,requests:before.requests+1});
+  }
+  async function dropWithKeyboard(key:'ArrowLeft'|'ArrowRight',status:'open'|'in_progress'){
+   const before=counts();
+   await expect(column(status).locator('[data-kanban-task]')).toHaveCount(0);
+   await expect(drag).toBeEnabled();
+   await drag.focus();
+   await expect(drag).toBeFocused();
+   await page.keyboard.press('Space');
+   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+   // dnd-kit attaches the keyboard movement listener in a deferred task.
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0))));
+   await page.keyboard.press(key);
+   await expect(stagedCard(status)).toBeVisible();
+   assert.deepEqual(counts(),before,'keyboard preview must not send a PATCH');
+   await page.keyboard.press('Space');
+   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','false');
+   await requireStatusReceipt(status,before);
+  }
+  await dropWithKeyboard('ArrowLeft','open');
+  await dropWithKeyboard('ArrowRight','in_progress');
+
+  await page.setViewportSize({width:390,height:844});
+  await dropWithKeyboard('ArrowLeft','open');
+  await dropWithKeyboard('ArrowRight','in_progress');
+  const beforeMenu=counts();
+  const moveMenu=card.getByRole('combobox',{name:'移动到',exact:true});
+  await moveMenu.focus();
+  await moveMenu.press('ArrowUp');
+  await requireStatusReceipt('open',beforeMenu);
+
+  const touch=await page.context().newCDPSession(page);
+  try{
+   await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+   await drag.scrollIntoViewIfNeeded();
+   const handleBounds=await drag.boundingBox(),targetBounds=await column('in_progress').boundingBox();
+   assert.ok(handleBounds&&targetBounds);
+   const from={x:handleBounds.x+handleBounds.width/2,y:handleBounds.y+handleBounds.height/2};
+   const to={x:Math.min(targetBounds.x+targetBounds.width/2,370),y:targetBounds.y+40};
+   assert.ok(to.x>targetBounds.x&&to.x<targetBounds.x+targetBounds.width);
+   const beforeTouch=counts();
+   await expect(column('in_progress').locator('[data-kanban-task]')).toHaveCount(0);
+   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[from]});
+   await expect(board.locator('[data-slot="kanban"]')).toHaveAttribute('data-dragging','true');
+   for(let step=1;step<=12;step++){
+    const x=from.x+(to.x-from.x)*step/12,y=from.y+(to.y-from.y)*step/12;
+    await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y}]});
+   }
+   await expect(stagedCard('in_progress')).toBeVisible();
+   assert.deepEqual(counts(),beforeTouch,'touch preview must not send a PATCH');
+   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await requireStatusReceipt('in_progress',beforeTouch);
+  }finally{
+   await touch.send('Emulation.setTouchEmulationEnabled',{enabled:false});
+   await touch.detach();
+   await page.setViewportSize({width:1365,height:900});
+  }
+  const boardInputs={writes:writes-beforeBoardInputs.writes,requests:taskPatchRequests-beforeBoardInputs.requests};
+  assert.deepEqual(boardInputs,{writes:6,requests:6});
+  console.log('TASK_BOARD_INPUTS_PASS '+JSON.stringify({keyboard:[1365,390],directions:['left','right'],menu:true,touch:390,boardInputs}));
   await page.getByRole('button',{name:'项目分类视图',exact:true}).click();await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(0);await gantt.getByRole('button',{name:'查看项目表格',exact:true}).click();await page.getByRole('link',{name:'编辑项目：合成排期项目',exact:true}).click({noWaitAfter:true});
   await expect(page.getByLabel('计划开始',{exact:true})).toBeVisible();await page.getByLabel('计划开始',{exact:true}).fill('2030-11-01');await page.getByLabel('计划结束',{exact:true}).fill('2030-11-20');await page.getByRole('checkbox',{name:'我已核对这一条内容，确认保存到本人空间。',exact:true}).check();const projectReadsBeforeSave=projectReads;await page.getByRole('button',{name:'确认保存',exact:true}).click();await expect.poll(()=>projectReads).toBeGreaterThan(projectReadsBeforeSave);await expect(page.getByLabel('计划结束',{exact:true})).toHaveValue('2030-11-20');
   await page.goto(origin+'/personal?page=projects',{waitUntil:'domcontentloaded'});await expect(page.getByRole('columnheader',{name:/下一步/})).toBeVisible();await expect(page.getByRole('columnheader',{name:/领域/})).toHaveCount(0);await page.getByRole('group',{name:'项目视图',exact:true}).getByRole('button',{name:'甘特',exact:true}).click();gantt=page.getByRole('region',{name:'项目甘特',exact:true});await expect(gantt.locator('[data-gantt-bar]')).toHaveCount(1);await expect(gantt.getByRole('img',{name:'计划 2030-11-01 至 2030-11-20',exact:true})).toBeVisible();await page.setViewportSize({width:360,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -213,6 +283,6 @@ test('OPT-IN saved task/project dates, individual readback and scheduled-only Ga
   await visibility('hidden');
   await visibility('visible');
   await expect(draftTitle).toHaveValue('仅保留在编辑器里的合成草稿');
-  assert.equal(writes,5);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,isolatedReadOnly:true,mobileOverflow:false}));
+  assert.equal(writes,11);assert.ok(taskReads>=3);assert.ok(projectReads>=2);assert.deepEqual(errors,[]);console.log('TASK_PROJECT_PLANNING_BROWSER_PASS '+JSON.stringify({syntheticWrites:writes,taskReads,projectReads,scheduledOnly:true,partialExcluded:true,heldReadback:true,createRequests,newTaskReads,definiteFailureVisible:true,isolatedReadOnly:true,mobileOverflow:false}));
  }finally{releaseHeldReadback?.();await cleanupAuthThemeFixture({root,browser,browserServer,browserProcess,server:serverProcess});}
 });
