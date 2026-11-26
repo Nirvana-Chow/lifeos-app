@@ -16,6 +16,7 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
  const request=useRef<AbortController|null>(null);
  const retry=useRef<(()=>void)|null>(null);
  const resultFocus=useRef<string|null>(null);
+ const pageFocus=useRef(false);
  const [context,setContext]=useState<SearchContext>({criteria:emptyDraft,selected:null,page:1});
  const [state,setState]=useState<SearchViewState>({phase:'idle'});
  useEffect(()=>()=>request.current?.abort(),[]);
@@ -27,6 +28,9 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
    const row=resultFocus.current;
    resultFocus.current=null;
    content.current?.querySelector<HTMLButtonElement>('[data-search-result="'+row+'"] button')?.focus();
+  }else if(pageFocus.current){
+   pageFocus.current=false;
+   content.current?.querySelector<HTMLButtonElement>('[data-search-result] button')?.focus();
   }
  },[context.selected,state]);
 
@@ -59,8 +63,9 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
   retry.current=()=>void run();
   retry.current();
  }
- function submit(criteria:SearchDraft,page=1){
+ function submit(criteria:SearchDraft,page=1,focusPage=false){
   resultFocus.current=null;
+  pageFocus.current=focusPage;
   read({criteria,selected:null,page},signal=>{
    let range;
    try{range=readPersonalSearchDateRange(criteria.range.from,criteria.range.to,criteria.range.monthDay);}
@@ -92,7 +97,7 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
    :href;
  return <div ref={content}>
   <PersonalSearchView query={criteria.query} range={criteria.range} selection={selected} state={state} onRetry={()=>retry.current?.()}
-   interaction={{prefix,standaloneHref:pageLink,draft,onChange,onSubmit:submit,onSelect:select,onBack:back,onPage:page=>submit(criteria,page)}}/>
+   interaction={{prefix,standaloneHref:pageLink,draft,onChange,onSubmit:submit,onSelect:select,onBack:back,onPage:page=>submit(criteria,page,true)}}/>
  </div>;
 }
 
