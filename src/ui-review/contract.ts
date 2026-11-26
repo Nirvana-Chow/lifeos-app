@@ -118,6 +118,7 @@ export type LifeOSWorkspaceProps = {
   contentPage?: {title: string; content: ReactNode;wide?:boolean};
   onNavigatePage?: (page: WorkspacePage) => void;
   syncUrl?: boolean;
+  unifiedRoute?: import('../personal-candidate/workspace-route-context').WorkspaceRoute;
   unavailablePage?: {title: string; message: string};
   /** QA-only banner, never a replacement for real data in the default route. */
   testLabel?: string;

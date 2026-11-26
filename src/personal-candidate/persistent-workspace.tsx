@@ -1,0 +1,64 @@
+'use client';
+import {usePathname,useRouter,useSearchParams} from 'next/navigation';
+import {useContext,useState,useSyncExternalStore,type ReactNode} from 'react';
+import {readWorkspaceLocation} from '../workbench/private-navigation';
+import {PersonalWorkspaceView} from './live-workspace';
+import {PrivacyBoundary,useOwnerPageVerification} from './privacy';
+import {WorkspaceRouteContext,type TaskShellFrame,type WorkspaceRoutePath} from './workspace-route-context';
+
+function createTaskFrame(){
+ let current:TaskShellFrame|null=null;
+ const listeners=new Set<()=>void>();
+ return {
+  read:()=>current,
+  subscribe(listener:()=>void){listeners.add(listener);return()=>listeners.delete(listener);},
+  publish(frame:TaskShellFrame|null){
+   current=frame;
+   for(const listener of listeners)listener();
+  },
+ };
+}
+type Frame=ReturnType<typeof createTaskFrame>;
+const emptyFrame=()=>null;
+
+type Options={children:ReactNode};
+
+export function PersistentPersonalWorkspace(props:Options){
+ const path=usePathname();
+ if(path!=='/personal'&&path!=='/personal/journal')return props.children;
+ return <PrivacyBoundary><WorkspaceRoutes path={path} {...props}/></PrivacyBoundary>;
+}
+
+function WorkspaceRoutes({path,children}:Options&{path:WorkspaceRoutePath}){
+ const router=useRouter(),query=useSearchParams();
+ const location=readWorkspaceLocation(path==='/personal'?Object.fromEntries(query):{});
+ const [store]=useState(createTaskFrame);
+ const [route]=useState(()=>({journalGuard:{current:null as (()=>boolean)|null},publishTaskFrame:store.publish}));
+ return <WorkspaceRouteContext.Provider value={route}>
+  <PersistentFrame path={path} store={store} location={location}
+   push={href=>router.push(href,{scroll:false})}>
+   {path==='/personal/journal'?children:null}
+  </PersistentFrame>
+  {path==='/personal'&&children}
+ </WorkspaceRouteContext.Provider>;
+}
+
+function PersistentFrame({path,store,location,push,children}:Options&{
+ path:WorkspaceRoutePath;store:Frame;location:ReturnType<typeof readWorkspaceLocation>;push:(href:string)=>void;
+}){
+ const task=useSyncExternalStore(store.subscribe,store.read,emptyFrame);
+ const journal=useContext(WorkspaceRouteContext);
+ const verified=useOwnerPageVerification();
+ const isJournal=path==='/personal/journal';
+ return <PersonalWorkspaceView {...(isJournal||!task?{
+  state:{status:'unknown'},access:{authenticated:isJournal&&verified===true,writable:null,loginAllowed:true},
+ }:task)}
+  initialPage={location.page} initialModal={location.page==='settings'?'settings':location.modal}
+  initialSettingsPanel={location.panel} initialClassificationPlanId={location.planId}
+  unifiedRoute={{path,push}}
+  {...(isJournal?{
+   contentPage:{wide:true,title:'记录',content:children},
+   onBeforeNavigate:()=>journal?.journalGuard.current?.()!==false,
+  }:{})}
+ />;
+}
