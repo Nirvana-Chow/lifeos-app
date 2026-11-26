@@ -40,11 +40,14 @@ async function upcoming(fetcher: typeof fetch, scope: string) {
 }
 
 async function recentMemos(fetcher: typeof fetch, scope: string) {
-  const {binding,sources:{memos:history,unclassified}} = await readJournalHistory(fetcher);
+  const {binding,sources:{memos:history,unclassified},recordedAtById} = await readJournalHistory(fetcher,{includeRecordedTimes:true});
   if (JSON.stringify([binding.ownerId,binding.spaceId]) !== scope) throw Error();
-  const rows = history.rows.filter(row=>!row.occurredOn||row.occurredOn<=history.today)
-    .toSorted((a,b)=>(b.occurredOn??'').localeCompare(a.occurredOn??''))
-    .slice(0,5).map(({id,title,text,occurredOn,href})=>({id,title,text,occurredOn,href}));
+  const rows = history.rows.map(({id,title,text,occurredOn,href})=>{
+    const createdAt = recordedAtById?.get(id) ?? '';
+    const timestamp = Date.parse(createdAt);
+    const recordedAt = Number.isFinite(timestamp) ? createdAt : null;
+    return {id,title,text,occurredOn,href,recordedAt,timestamp:recordedAt ? timestamp : -Infinity};
+  }).sort((a,b)=>b.timestamp-a.timestamp||b.id.localeCompare(a.id)).slice(0,5);
   return {rows, classificationPending: unclassified.length > 0};
 }
 
@@ -105,7 +108,10 @@ export function DailyOverview({state,scope,showTasks,scheduleHref,journalHref,on
       {memos.state === 'ready' ? memos.value.rows.length ? <ul className={`${s.rows} ${s.thoughts}`}>{memos.value.rows.map(row=><li key={row.id}>
         <div className={s.thoughtHeading}>
           <a href={row.href}>{row.title}</a>
-          {row.occurredOn ? <time dateTime={row.occurredOn}>{row.occurredOn}</time> : <span className={s.date}>日期未记录</span>}
+          <div className={s.timestamps}>
+            {row.recordedAt ? <time dateTime={row.recordedAt}>录入 {dateInCalendarZone(row.recordedAt,shanghai)} {clock.format(new Date(row.recordedAt))}</time> : <span className={s.date}>录入时间未知</span>}
+            {row.occurredOn ? <time dateTime={row.occurredOn}>发生 {row.occurredOn}</time> : <span className={s.date}>发生日期未记录</span>}
+          </div>
         </div>
         {row.text.trim() && row.text.trim() !== row.title.trim() && <p className={s.excerpt}>{row.text}</p>}
       </li>)}</ul> : <p className="lo-empty-compact">{memos.value.classificationPending?'部分记录分类待核对':'暂无已核对的随手记或思考'}</p> : <p className="lo-empty-compact" role="status">{memos.state === 'loading'?'正在读取随手记…':'随手记暂不可用'}</p>}

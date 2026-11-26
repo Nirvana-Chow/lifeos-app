@@ -11,9 +11,9 @@ import {cleanupAuthThemeFixture,trackAuthThemeProcess,type FixtureProcess} from 
 
 const spaceId = 'synthetic-health-space';
 const observedAt = '2030-11-02T00:00:00.000Z';
-function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body',state:'planned'|'completed'='completed') {
+function healthRecord(n:number,title:string,kind:'sleep'|'strength'|'frisbee'|'body',state:'planned'|'completed'='completed',occurredOn='2030-11-02') {
   const defaults = emptyHealthFields(kind==='sleep'||kind==='body'?kind:'training','Asia/Shanghai');
-  const fields = {...defaults,title,occurredOn:'2030-11-02'};
+  const fields = {...defaults,title,occurredOn};
   if (fields.personal.healthKind==='training') {
     fields.personal.activity = kind==='frisbee'?'other':'strength';
     fields.personal.state = state;
@@ -51,6 +51,7 @@ test('OPT-IN desktop Body Basics uses the canonical owner health route', {
     symlink(join(source,'components'),join(root,'components')),
   ]);
   await writeFile(join(root,'app/login/page.tsx'),'export default function Login(){return <h1>合成登录页</h1>}');
+  await writeFile(join(root,'next.config.mjs'),'export default {devIndicators:false};\n');
   await writeFile(join(root,'src/platform/runtime.ts'),`
 export const readPlatformPagePrincipal = async (headers:Headers) => headers.get('cookie')?.includes('health-fixture=owner') ? {id:'synthetic-health-owner'} : null;
 export const readPlatformPasswordCapability = async () => false;
@@ -92,7 +93,7 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   let items = [
     healthRecord(1,'合成睡眠','sleep'),healthRecord(2,'合成健身','strength'),
     healthRecord(3,'合成飞盘计划','frisbee','planned'),healthRecord(4,'合成飞盘实绩','frisbee'),
-    healthRecord(5,'合成健身计划','strength','planned'),healthRecord(6,'合成体重体脂','body'),
+    healthRecord(5,'合成健身计划','strength','planned','2031-02-01'),healthRecord(6,'合成体重体脂','body'),
   ];
   const writes:string[] = [];
   await page.route('**/api/platform/**',async route => {
@@ -154,6 +155,39 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await expect(dialog).toHaveCount(0);
   await row('运动').click();
   await expect(page.getByRole('heading',{name:'运动日历',exact:true})).toBeVisible();
+  await expect(page.getByText(/空白日期的实际活动未知.*自动同步未接入/)).toBeVisible();
+  const plans = page.getByRole('region',{name:'运动计划',exact:true});
+  const plan = plans.getByRole('button',{name:'合成健身计划',exact:true});
+  const completion = row('合成健身');
+  const calendar = page.getByRole('region',{name:'运动日历与记录',exact:true});
+  await expect(calendar.getByRole('img',{name:/^已读运动日历，1 个/})).toBeVisible();
+  await expect(plans.getByRole('row',{name:/2031-02-01.*合成健身计划/})).toBeVisible();
+  for (const width of [1365,390]) {
+    await page.setViewportSize({width,height:900});
+    await expect(plans.getByRole('button',{name:'合成健身',exact:true})).toHaveCount(0);
+    await expect(completion).toHaveCount(1);
+    for (const [button,title] of [[plan,'合成健身计划'],[completion,'合成健身']] as const) {
+      await button.click();
+      await expect(dialog.getByRole('textbox',{name:'标题',exact:true})).toHaveValue(title);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    }
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    if(width===1365&&process.env.LIFEOS_HEALTH_PLAN_SCREENSHOT){
+      await plans.scrollIntoViewIfNeeded();
+      await page.screenshot({path:process.env.LIFEOS_HEALTH_PLAN_SCREENSHOT,animations:'disabled'});
+    }
+  }
+  await page.setViewportSize({width:1365,height:900});
+  const search = page.getByRole('textbox',{name:'搜索健康',exact:true});
+  await search.fill('合成飞盘实绩');
+  await expect(calendar.getByRole('button',{name:'合成飞盘实绩',exact:true})).toBeVisible();
+  await expect(calendar.getByRole('img',{name:/^已读运动日历，1 个/})).toBeVisible();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toBeVisible();
+  await expect(plan).toHaveCount(0);
+  await search.clear();
+  await expect(plan).toBeVisible();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toHaveCount(0);
   await row('趋势').click();
   await expect(page.getByLabel('查看指标')).toBeVisible();
   await page.getByLabel('查看指标').selectOption('trainingMinutes');
@@ -179,6 +213,14 @@ export const readPlatformLoginCapability = async () => ({sessionDuration:false})
   await row('刷新').click();
   await expect(page.getByText('当前筛选下暂无已读记录。',{exact:true})).toBeVisible();
   await expect(filters.getByText(/历史覆盖未知/)).toBeVisible();
+  await row('运动').click();
+  await expect(plans.getByText('当前没有匹配的运动计划。',{exact:true})).toBeVisible();
+  await expect(page.getByText('暂无已读完成记录。',{exact:true})).toBeVisible();
+  items = [healthRecord(5,'合成健身计划','strength','planned','2031-02-01')];
+  await row('刷新').click();
+  await expect(plan).toBeVisible();
+  await expect(calendar.getByRole('img',{name:/^已读运动日历/})).toHaveCount(0);
+  await row('表格').click();
 
   items = [healthRecord(4,'合成飞盘实绩','frisbee')];
   await row('刷新').click();
