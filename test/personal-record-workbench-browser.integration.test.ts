@@ -197,7 +197,7 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    assert.deepEqual(writes,[]);
    await filter.selectOption('all');
   }
-  const baselineRows=repo.rows.size;const label={journal:'日记',person:'人物',health:'健康',media:'书影音',career:'职业',portfolio:'账户资产投资'}[type];await page.getByRole('button',{name:'新增'+label,exact:true}).click();const title=page.getByLabel(type==='person'?'姓名':'标题',{exact:true});await title.fill('Synthetic '+type);if(type==='career')await page.getByRole('combobox',{name:'记录类别',exact:true}).selectOption('opportunity');if(type==='journal')await page.getByLabel('正文',{exact:true}).fill('Internal synthetic journal fixture');await page.getByRole('button',{name:'保存',exact:true}).click();await expect(page.locator('[data-record-notice]')).toHaveText('已保存');assert.equal(repo.rows.size,baselineRows+1);const saved=[...repo.rows.values()].find(entry=>(entry.source.original as {type?:string}).type===type&&'title'in entry.draft&&entry.draft.title==='Synthetic '+type)!;const id=saved.id;assert.ok(reads.includes('/api/platform/personal/'+type+'/'+id),'independent GET before save confirmation');
+  const baselineRows=repo.rows.size;const label={journal:'日记',person:'人物',health:'身体测量',media:'书影音',career:'职业',portfolio:'账户资产投资'}[type];await page.getByRole('button',{name:'新增'+label,exact:true}).click();const title=page.getByLabel(type==='person'?'姓名':'标题',{exact:true});await title.fill('Synthetic '+type);if(type==='career')await page.getByRole('combobox',{name:'记录类别',exact:true}).selectOption('opportunity');if(type==='journal')await page.getByLabel('正文',{exact:true}).fill('Internal synthetic journal fixture');await page.getByRole('button',{name:'保存',exact:true}).click();await expect(page.locator('[data-record-notice]')).toHaveText('已保存');assert.equal(repo.rows.size,baselineRows+1);const saved=[...repo.rows.values()].find(entry=>(entry.source.original as {type?:string}).type===type&&'title'in entry.draft&&entry.draft.title==='Synthetic '+type)!;const id=saved.id;assert.ok(reads.includes('/api/platform/personal/'+type+'/'+id),'independent GET before save confirmation');
   if(type==='media'||type==='career'){
    await page.getByRole('button',{name:type==='career'?'求职看板':'看板',exact:true}).click();
    const state=page.getByRole('combobox',{name:type==='media'?'Synthetic media的状态':'更新状态',exact:true});await state.selectOption(type==='media'?'in_progress':'interview');await expect(page.locator('[data-record-notice]')).toHaveText('已更新状态');
@@ -213,7 +213,15 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('button',{name:'表格',exact:true}).click();
   }
   if(type==='health'){
-   await page.getByRole('button',{name:'运动',exact:true}).click();
+   const healthNav=page.getByRole('navigation',{name:'健康分区',exact:true});
+   const exercise=healthNav.getByRole('link',{name:'运动',exact:true});
+   await exercise.click();
+   await expect(page).toHaveURL(origin+'/?type=health#exercise');
+   await expect(exercise).toHaveAttribute('aria-current','location');
+   await page.getByRole('button',{name:'新增训练 / 有氧',exact:true}).click();
+   const exerciseDraft=page.getByRole('dialog');
+   await expect(exerciseDraft.getByRole('combobox',{name:'记录类型',exact:true})).toHaveValue('training');
+   await exerciseDraft.getByRole('button',{name:'关闭',exact:true}).click();
    const calendar=page.getByRole('region',{name:'运动日历与记录',exact:true});
    const plans=calendar.getByRole('region',{name:'运动计划',exact:true});
    const noMatchingPlan=plans.getByText('当前没有匹配的运动计划。',{exact:true});
@@ -240,7 +248,10 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await search.clear();
    await expect(plan).toBeVisible();
    await expect(noMatchingPlan).toHaveCount(0);
-   await page.getByRole('button',{name:'表格',exact:true}).click();
+   const body=healthNav.getByRole('link',{name:'身体指标',exact:true});
+   await body.click();
+   await expect(page).toHaveURL(origin+'/?type=health#body');
+   await expect(body).toHaveAttribute('aria-current','location');
   }
   await page.getByRole('button',{name:'Unsent synthetic '+type,exact:true}).click();const dialog=page.getByRole('dialog');assert.ok(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1));await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(errors,[]);assert.deepEqual(writes,type==='health'?['POST','POST','PATCH']:type==='career'||type==='media'?['POST','PATCH','PATCH']:['POST','PATCH']);assert.equal(repo.rows.get(id)!.revision,type==='career'||type==='media'?3:2);if(type==='media'||type==='career'||type==='portfolio')await page.getByRole('button',{name:type==='portfolio'?'概览':type==='career'?'求职看板':'看板',exact:true}).click();
   if(type==='person'){
