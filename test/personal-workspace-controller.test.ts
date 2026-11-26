@@ -260,3 +260,61 @@ test('only an explicitly identified task can open read-only after a compatible l
   assert.equal(controller.getSnapshot().singleTask,undefined);
  }
 });
+
+test('cold refresh and opening validated task snapshots survive without native structuredClone',async()=>{
+ const f=fixture(),descriptor=Object.getOwnPropertyDescriptor(globalThis,'structuredClone')!;
+ Object.defineProperty(globalThis,'structuredClone',{configurable:true,value:undefined});
+ try{
+  await f.controller.refresh();
+  assert.equal(f.controller.getSnapshot().state.status,'ready');
+  const task=f.controller.getTaskEntry({id,revision:3});
+  assert.ok(task);
+  task.revision=4;
+  assert.equal(f.controller.getTaskEntry({id,revision:3})?.revision,3);
+  assert.equal(f.writes.length,0);
+ }finally{Object.defineProperty(globalThis,'structuredClone',descriptor);}
+});
+
+test('refresh times out waiting for status transport or overview body and ignores late data',async()=>{
+ for(const stage of ['status-fetch','overview-body'] as const){
+  const f=fixture();
+  let release!:()=>void,enter!:()=>void,signal:AbortSignal|undefined,hold=true;
+  const stalled=new Promise<void>(resolve=>release=resolve),entered=new Promise<void>(resolve=>enter=resolve);
+  const c=new PersonalWorkspaceController({
+   fetcher:async(input,init)=>{
+    const path=String(input);
+    if(hold&&stage==='status-fetch'&&path.endsWith('/status')){
+     signal=init?.signal??undefined;enter();await stalled;
+    }
+    const response=await f.fetcher(input,init);
+    if(hold&&stage==='overview-body'&&path.includes('/overview')){
+     const json=response.json.bind(response);
+     signal=init?.signal??undefined;
+     response.json=async()=>{enter();await stalled;return json();};
+    }
+    return response;
+   },
+   origin:'http://127.0.0.1:3331',today:()=> '2026-10-27',key:()=>crypto.randomUUID(),readTimeoutMs:60,
+  });
+  const pending=c.refresh();
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try{
+   await entered;
+   const result=await Promise.race([pending.then(()=>true),new Promise<false>(resolve=>timer=setTimeout(()=>resolve(false),300))]);
+   assert.equal(result,true,stage+' must settle while transport/body remains stalled');
+   assert.equal(signal?.aborted,true);
+   const snapshot=c.getSnapshot();
+   assert.equal(snapshot.state.status,'error');
+   assert.match(snapshot.state.message??'',/读取超时/);
+   assert.equal(snapshot.access.writable,false);
+   assert.equal(c.getTaskEntry({id,revision:3}),null);
+   hold=false;f.setAuth(false);await c.refresh();
+   assert.equal(c.getSnapshot().state.status,'forbidden');
+   release();
+   await new Promise<void>(resolve=>setImmediate(resolve));
+   assert.equal(c.getSnapshot().state.status,'forbidden');
+   assert.equal(c.getTaskEntry({id,revision:3}),null);
+   assert.equal(f.writes.length,0);
+  }finally{clearTimeout(timer);release();await pending;}
+ }
+});
