@@ -19,10 +19,10 @@ export async function handlePersonalRequest(request:Request,owner:string,baseURL
  if(match[2]==='snapshot'&&!['overview','search','export'].includes(type)){if(request.method!=='GET'||url.search||match[3])throw new PlatformError(400,'INVALID_QUERY','完整快照仅可读取。');const items=(await service.currentSnapshot(owner)).filter(entry=>personalEntryType(entry,service.config.spaceId)===type);await guard();return respond({scope:'full-current-snapshot',items,total:items.length,truncated:false,observedAt:new Date().toISOString()});}
  const id=match[2]?validateId(match[2]):null,history=match[3]==='history';
  if(type==='overview'||type==='search'){if(id||history)throw new PlatformError(404,'NOT_FOUND','无此查询。');if(request.method!=='GET')return respond({error:{code:'METHOD_NOT_ALLOWED',message:'查询仅可读取。'}},405,{Allow:'GET'});const key=type==='overview'?'today':'q',params=url.searchParams,keys=[...params.keys()];
-  const allowed=type==='overview'?['today']:['q','from','to'];
+  const allowed=type==='overview'?['today']:['q','from','to','monthDay','searchPage'];
   if(!params.has(key)||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k)))throw new PlatformError(400,'INVALID_QUERY','查询参数无效。');
   const value=type==='overview'?await service.overview(owner,params.get(key)!):await service.search(owner,params.get(key)!,
-   {from:params.get('from')??undefined,to:params.get('to')??undefined});
+   {from:params.get('from')??undefined,to:params.get('to')??undefined,monthDay:params.get('monthDay')??undefined},params.get('searchPage')??undefined);
   await guard();return respond(value);
  }
  const allowed=type==='export'||history?['GET']:id?['GET','PATCH']:['GET','POST'];

@@ -10,13 +10,13 @@ import s from './styles.module.css';
 
 const emptyDraft:SearchDraft={query:'',range:{}};
 
-type SearchContext={criteria:SearchDraft;selected:SearchRow|null};
+type SearchContext={criteria:SearchDraft;selected:SearchRow|null;page:number};
 function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;onChange:(draft:SearchDraft)=>void}){
  const prefix=useId(),content=useRef<HTMLDivElement>(null);
  const request=useRef<AbortController|null>(null);
  const retry=useRef<(()=>void)|null>(null);
  const resultFocus=useRef<string|null>(null);
- const [context,setContext]=useState<SearchContext>({criteria:emptyDraft,selected:null});
+ const [context,setContext]=useState<SearchContext>({criteria:emptyDraft,selected:null,page:1});
  const [state,setState]=useState<SearchViewState>({phase:'idle'});
  useEffect(()=>()=>request.current?.abort(),[]);
  useEffect(()=>{
@@ -59,13 +59,13 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
   retry.current=()=>void run();
   retry.current();
  }
- function submit(criteria:SearchDraft){
+ function submit(criteria:SearchDraft,page=1){
   resultFocus.current=null;
-  read({criteria,selected:null},signal=>{
+  read({criteria,selected:null,page},signal=>{
    let range;
-   try{range=readPersonalSearchDateRange(criteria.range.from,criteria.range.to);}
-   catch{throw new PersonalSearchError('unavailable','请核对开始日期与结束日期。');}
-   return loadPersonalSearch(criteria.query,null,signal,fetch,range);
+   try{range=readPersonalSearchDateRange(criteria.range.from,criteria.range.to,criteria.range.monthDay);}
+   catch(error){throw new PersonalSearchError('unavailable',error instanceof Error?error.message:'请核对搜索日期。');}
+   return loadPersonalSearch(criteria.query,null,signal,fetch,range,page);
   });
  }
  function select(row:SearchRow){
@@ -83,13 +83,16 @@ function SearchDialogBody({href,draft,onChange}:{href:string;draft:SearchDraft;o
   });
  }
 
- const {criteria,selected}=context;
+ const {criteria,selected,page}=context;
+ const draftLink=searchHref(draft.query,undefined,draft.range);
  const pageLink=state.phase==='ready'&&selected
-  ?searchHref(criteria.query,selected,criteria.range)
-  :draft.query||draft.range.from||draft.range.to?searchHref(draft.query,undefined,draft.range):href;
+  ?searchHref(criteria.query,selected,criteria.range,page)
+  :draft.query||draft.range.from||draft.range.to||draft.range.monthDay
+   ?draftLink===searchHref(criteria.query,undefined,criteria.range)?searchHref(draft.query,undefined,draft.range,page):draftLink
+   :href;
  return <div ref={content}>
   <PersonalSearchView query={criteria.query} range={criteria.range} selection={selected} state={state} onRetry={()=>retry.current?.()}
-   interaction={{prefix,standaloneHref:pageLink,draft,onChange,onSubmit:submit,onSelect:select,onBack:back}}/>
+   interaction={{prefix,standaloneHref:pageLink,draft,onChange,onSubmit:submit,onSelect:select,onBack:back,onPage:page=>submit(criteria,page)}}/>
  </div>;
 }
 

@@ -1,9 +1,9 @@
-import {matchesPersonalSearchDate,readPersonalSearchDateRange,type PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
+import {matchesPersonalSearchDate,personalMonthDayPageSize,readPersonalSearchDateRange,readPersonalSearchPage,type PersonalSearchDateRange} from '../personal-candidate/search-dates.ts';
 import {object} from '../platform/domain.ts';
 import {personalTypes} from '../personal-candidate/business.ts';
 import {readSearchSelection,searchRow,searchCalendarRow,searchParams,type SearchSelection,type SearchRow,type SearchCoverage} from './model.ts';
 type SearchBinding={ownerId:string;spaceId:string};
-export type PersonalSearchData={binding:SearchBinding;query:string;rows:SearchRow[];coverage:SearchCoverage;detail:SearchRow|null;detailUnavailable:boolean};
+export type PersonalSearchData={binding:SearchBinding;query:string;rows:SearchRow[];coverage:SearchCoverage;page?:number;detail:SearchRow|null;detailUnavailable:boolean};
 type Fetcher=(input:RequestInfo|URL,init?:RequestInit)=>Promise<Response>;
 export class PersonalSearchError extends Error{readonly kind:'auth'|'unavailable';constructor(kind:'auth'|'unavailable',message:string){super(message);this.kind=kind;}}
 const unavailable=()=>new PersonalSearchError('unavailable','无法核对完整搜索结果，请重新读取。');
@@ -48,17 +48,21 @@ export async function loadPersonalSearchOriginal(results:PersonalSearchData,row:
  assertSameBinding(results.binding,await identity(),signal);
  return {...results,detail,detailUnavailable:detail===null};
 }
-export async function loadPersonalSearch(query:string,selection:SearchSelection|null,signal?:AbortSignal,fetcher:Fetcher=fetch,dates:PersonalSearchDateRange={}):Promise<PersonalSearchData>{
+export async function loadPersonalSearch(query:string,selection:SearchSelection|null,signal?:AbortSignal,fetcher:Fetcher=fetch,dates:PersonalSearchDateRange={},page=1):Promise<PersonalSearchData>{
  if(selection)selection=readSearchSelection(selection.type,selection.id);
- const range=readPersonalSearchDateRange(dates.from,dates.to);
+ const range=readPersonalSearchDateRange(dates.from,dates.to,dates.monthDay);
  if(query.length>240)throw new PersonalSearchError('unavailable','搜索内容最多240字。');
  const {read,identity,original}=searchReader(fetcher,signal);
- const before=await identity(),value=await read('search?'+searchParams(query,range));
- if(value?.scope!=='full-current-snapshot'||value.query!==query||value.from!==range.from||value.to!==range.to||!Array.isArray(value.items)||value.items.length>10000)throw unavailable();
- const c=value.coverage;if(!c||!Array.isArray(c.types)||c.types.some((type:unknown)=>!personalTypes.includes(type as never))||new Set(c.types).size!==c.types.length||!Number.isInteger(c.scanned)||c.scanned<value.items.length||c.scanned>10000||c.matched!==value.items.length)throw unavailable();
+ readPersonalSearchPage(page===1?undefined:String(page),range.monthDay);
+ const paged=range.monthDay!==undefined;
+ const before=await identity(),value=await read('search?'+searchParams(query,range,page));
+ if(value?.scope!==(paged?'filtered-current-page':'full-current-snapshot')||value.query!==query||value.from!==range.from||value.to!==range.to||value.monthDay!==range.monthDay||value.page!==(paged?page:undefined)||!Array.isArray(value.items)||value.items.length>10000)throw unavailable();
+ const c=value.coverage;if(!c||!Array.isArray(c.types)||c.types.some((type:unknown)=>!personalTypes.includes(type as never))||new Set(c.types).size!==c.types.length||!Number.isInteger(c.scanned)||c.scanned<value.items.length||c.scanned>10000||!Number.isInteger(c.matched)||c.matched<0||c.matched>c.scanned)throw unavailable();
+ const count=paged?Math.max(0,Math.min(personalMonthDayPageSize,c.matched-(page-1)*personalMonthDayPageSize)):c.matched;
+ if(value.items.length!==count)throw unavailable();
  let rows:SearchRow[];
  try{rows=value.items.map((entry:unknown)=>searchRow(entry,before.spaceId,query));if(new Set(rows.map(row=>row.id)).size!==rows.length||rows.some(row=>!c.types.includes(row.type)||!matchesPersonalSearchDate(row.date,range)))throw unavailable();}catch{throw unavailable();}
  const detail=selection?await original(selection,before.spaceId,query,rows.find(row=>row.id===selection.id)?.sourceId):null;
  assertSameBinding(before,await identity(),signal);
- return {binding:before,query,rows,coverage:c,detail,detailUnavailable:selection!==null&&detail===null};
+ return {binding:before,query,rows,coverage:c,...(paged?{page}:{}),detail,detailUnavailable:selection!==null&&detail===null};
 }
