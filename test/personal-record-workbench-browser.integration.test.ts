@@ -61,11 +61,15 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
  ]);
  const modules = recordModules.get(process.env.RECORD_BROWSER_MODULE ?? '') ?? ['journal','person','health','media','career','portfolio'] as const;
  for(const type of modules)for(const [width,theme] of [[1365,'light'],[390,'dark']] as const){
-  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+  const page=await browser.newPage({viewport:{width,height:900},colorScheme:theme,timezoneId:'Asia/Shanghai',extraHTTPHeaders:type==='person'||type==='media'?{'x-fixture-owner':'confirmed'}:undefined}),errors:string[]=[],reads:string[]=[],writes:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  let allowDiscard=true;
+  page.on('dialog',dialog=>allowDiscard?dialog.accept():dialog.dismiss());
   const config:PersonalConfig={ownerId:'record-browser-owner',ownerEmail:'record@example.invalid',spaceId:'record-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','project','domain','topic'],approval:'personal-manual-v1',baseURL:origin,healthEnabled:true,calendarEnabled:true,peopleEnabled:true,mediaEnabled:true,careerEnabled:true,portfolioEnabled:true};
   let writable=true,calendarEnabled=true,incompleteOverview=false,overviewUnavailable=false;
   let detailFault: 'denied'|'temporary'|null=null;
   let detailFaultId:string|null=null;
+  const heldDetails=new Map<string,{arrived:()=>void;release:Promise<void>}>();
+  let calendarAuthority:'foreign'|'readonly'|null=null;
   const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
   const calendar=new PersonalCalendarService(service,{...config,enabled:true,writable:true});
   const resumeIds:string[]=[];if(type==='career')for(const variant of ['A','B']){const result=await service.mutate(config.ownerId,'career',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic resume '+variant,text:'Internal saved resume '+variant,occurredOn:null,personal:emptyCareerPersonal('resume')}},'resume-fixture-'+variant);resumeIds.push(result.entry.id);}
@@ -86,6 +90,10 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
   }
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin)return route.abort();if(url.pathname==='/api/platform/status'&&(type==='person'||type==='media'))return route.fulfill({status:200,json:{}});if(!url.pathname.startsWith('/api/platform/personal/'))return route.continue();const headers=new Headers(request.headers());headers.set('host',url.host);if(request.method()==='GET')reads.push(url.pathname);else writes.push(request.method());
    if(url.pathname==='/api/platform/personal/status')return route.fulfill({status:200,json:{...config,calendarEnabled,scope:'personal-manual-candidate',storageVerified:true,writable}});
+   if(calendarAuthority&&url.pathname==='/api/platform/personal/calendar/status'){
+    const status=calendar.status(config.ownerId);
+    return route.fulfill({status:200,json:calendarAuthority==='foreign'?{...status,spaceId:'synthetic-other-calendar-space'}:{...status,writable:false}});
+   }
    if(detailFault&&request.method()==='GET'&&url.pathname==='/api/platform/personal/calendar/'+detailFaultId){
     return route.fulfill({status:detailFault==='denied'?403:503,json:{error:{message:detailFault==='denied'?'Synthetic detail denied':'Synthetic detail temporarily unavailable'}}});
    }
@@ -95,6 +103,11 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
      ?await handlePersonalCalendar(inbound,{ownerId:config.ownerId,baseURL:origin,service:calendar})
      :await handlePersonalRequest(inbound,config.ownerId,origin,service,{assertOwner:async()=>{},assertWritable:async()=>{}});
     assert.ok(response);
+    if(request.method()==='GET'&&url.pathname.startsWith('/api/platform/personal/calendar/')){
+     const id=url.pathname.split('/').at(-1)!;
+     const held=heldDetails.get(id);
+     if(held){heldDetails.delete(id);held.arrived();await held.release;}
+    }
     if(overviewUnavailable&&url.pathname==='/api/platform/personal/overview'){
      return route.fulfill({status:503,json:{error:{message:'Synthetic overview unavailable'}}});
     }
@@ -304,6 +317,78 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    detailFaultId=visit.id;
    detailFault='denied';
    const directPath='/personal/schedule?record='+visit.id;
+   function delayCalendarDetail(id:string) {
+    const arrived=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();
+    heldDetails.set(id,{arrived:arrived.resolve,release:release.promise});
+    return {arrived:arrived.promise,release:release.resolve};
+   }
+   async function releaseCalendarDetail(held:ReturnType<typeof delayCalendarDetail>) {
+    const readback=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/platform/personal/calendar/status');
+    held.release();
+    await readback;
+    await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
+   }
+   detailFault=null;
+   const originalRead=delayCalendarDetail(visit.id);
+   try{
+    await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
+    await originalRead.arrived;
+    await page.getByRole('button',{name:'新建日程',exact:true}).click();
+    const newDraft=page.getByRole('dialog',{name:'新建日程'});
+    await newDraft.getByLabel('名称',{exact:true}).fill('Synthetic newer calendar draft');
+    await releaseCalendarDetail(originalRead);
+    await expect(newDraft.getByLabel('名称',{exact:true})).toHaveValue('Synthetic newer calendar draft');
+    await expect(visitEditor).toHaveCount(0);
+    allowDiscard=false;
+    await page.keyboard.press('Escape');
+    await expect(newDraft.getByLabel('名称',{exact:true})).toHaveValue('Synthetic newer calendar draft');
+    allowDiscard=true;
+    await newDraft.getByRole('button',{name:'关闭',exact:true}).click();
+   }finally{allowDiscard=true;originalRead.release();}
+   const alternateTitle='Synthetic alternate calendar event';
+   const alternate=(await calendar.mutate(config.ownerId,null,{
+    confirmed:true,spaceId:config.spaceId,fields:{...visit.fields,title:alternateTitle,
+     personal:{...visit.fields.personal,links:{...visit.fields.personal.links,people:[]}}},
+   },'person-overview-calendar-alternate')).entry;
+   for(const latestReturnsFirst of [false,true]){
+    const first=delayCalendarDetail(visit.id),latest=delayCalendarDetail(alternate.id);
+    try{
+     await page.goto(origin+'/personal/schedule',{waitUntil:'domcontentloaded'});
+     await page.getByRole('button',{name:'表格',exact:true}).click();
+     await page.getByRole('button',{name:'查看日程：'+visitTitle,exact:true}).click();
+     await first.arrived;
+     await page.getByRole('button',{name:'查看日程：'+alternateTitle,exact:true}).click();
+     await latest.arrived;
+     if(latestReturnsFirst){
+      await releaseCalendarDetail(latest);
+      await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(alternateTitle);
+      await releaseCalendarDetail(first);
+     }else{
+      await releaseCalendarDetail(first);
+      await expect(visitEditor).toHaveCount(0);
+      await releaseCalendarDetail(latest);
+     }
+     await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(alternateTitle);
+     await visitEditor.getByRole('button',{name:'关闭',exact:true}).click();
+    }finally{first.release();latest.release();}
+   }
+   for(const changed of ['foreign','readonly'] as const){
+    const detail=delayCalendarDetail(visit.id);
+    try{
+     await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
+     await detail.arrived;
+     calendarAuthority=changed;
+     await releaseCalendarDetail(detail);
+     await expect(visitEditor).toHaveCount(0);
+     if(changed==='readonly')await expect(page.getByText('日程读写权限已变化，请重新读取。',{exact:true})).toBeVisible();
+    }finally{detail.release();calendarAuthority=null;}
+   }
+   calendarAuthority='readonly';
+   await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
+   await expect(visitEditor.getByLabel('名称',{exact:true})).toHaveValue(visitTitle);
+   await expect(visitEditor.getByRole('button',{name:'保存日程',exact:true})).toBeDisabled();
+   calendarAuthority=null;
+   detailFault='denied';
    const protectedWrites=writes.length;
    await page.goto(origin+directPath,{waitUntil:'domcontentloaded'});
    await expect(page.getByText('Synthetic detail denied',{exact:true})).toBeVisible();

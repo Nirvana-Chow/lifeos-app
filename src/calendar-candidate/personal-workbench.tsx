@@ -35,6 +35,7 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  const [editor,setEditor]=useState<Editor|null>(null),[pending,setPending]=useState<PersonalCalendarCommand|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[conflict,setConflict]=useState(false);
  const openedLink=useRef<{key:string;opened:boolean}|null>(null);
  const [linkRetry,setLinkRetry]=useState(0);
+ const editorIntent=useRef(0);
  const generation=useRef(0),saving=useRef(false),statusRef=useRef(status),editorRef=useRef(editor);statusRef.current=status;editorRef.current=editor;
  const month=day.slice(0,7),weekly=view==='week',periodStart=weekly?calendarWeekStart(day):month+'-01';
  const requestKey=JSON.stringify([weekly,periodStart,zone,search,kind]);
@@ -51,7 +52,7 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  useEffect(()=>{const listener=(event:BeforeUnloadEvent)=>{if(dirty||busy||shownPending){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',listener);return()=>window.removeEventListener('beforeunload',listener);},[dirty,busy,shownPending]);
  async function refresh(){const token=++generation.current;let verifiedStatus=false;setError('');try{const next=await readPersonalCalendarStatus(fetch);verifiedStatus=true;if(token!==generation.current)return;setStatus(next);if(!next.configured){setSnapshot(null);setPending(null);return;}const binding={ownerId:next.ownerId,spaceId:next.spaceId},nextScope=scopeOf(binding);if(statusRef.current?.configured&&scopeOf(statusRef.current)!==nextScope||editorRef.current&&editorRef.current.scope!==nextScope){setSnapshot(null);setEditor(null);setPending(null);}const recovery=readPersonalCalendarCommand(sessionStorage,binding);if(token!==generation.current)return;setPending(recovery);if(recovery&&!editorRef.current)setEditor({scope:nextScope,record:null,fields:structuredClone(recovery.body.fields),initial:''});const window=validateCalendarWindow({from:periodStart,to:weekly?shiftCalendarDate(periodStart,7):shiftMonth(month,1),timeZone:zone,search,calendarKind:kind,limit:100});const data=await readPersonalCalendarSnapshot(fetch,binding,window);if(token===generation.current)setSnapshot({scope:nextScope,requestKey,value:data});}catch(cause){if(token===generation.current){setError(errorText(cause));setSnapshot(null);if(!verifiedStatus||cause instanceof PersonalCalendarClientError&&(cause.status===401||cause.status===403)){setStatus({scope:'personal-calendar-v1',configured:false,writable:false,reason:cause instanceof PersonalCalendarClientError&&(cause.status===401||cause.status===403)?'请重新登录并核对当前私人空间。':'日程服务尚未开放或暂时无法读取。'});setPending(null);}}}}
  useEffect(()=>{void refresh();return()=>{generation.current++;};},[requestKey]);
- function close(){if(canLeave())setEditor(null);}
+ function close(){if(canLeave()){editorIntent.current++;setEditor(null);}}
  function reread(){
   if(!shownEditor&&!blocked&&openedLink.current?.opened===false){
    openedLink.current=null;
@@ -59,9 +60,46 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
   }
   void refresh();
  }
- async function open(recordId:string|null,onOpened?:()=>void){if(!owner||blocked||!canLeave())return;setError('');setMessage('');const referenceToken=generation.current;if(providedReferences===emptyOptions)void readPersonalCalendarReferences(fetch,owner).then(value=>{if(referenceToken===generation.current){setLoadedReferences({scope:scope!,value});setReferenceNotice(null);}}).catch(()=>{if(referenceToken===generation.current)setReferenceNotice({scope:scope!,text:'关联选项读取失败，已有引用仍保留。'});});if(!recordId){const fields=fresh('event',zone);setEditor({scope:scope!,record:null,fields,initial:JSON.stringify(fields)});return;}const token=generation.current;try{const current=await readPersonalCalendarRecord(fetch,owner,recordId);const after=await readPersonalCalendarStatus(fetch);if(token!==generation.current)return;
- if(!after.configured||scopeOf(after)!==scope){setStatus(after);setEditor(null);setSnapshot(null);setLoadedReferences(null);setError('本人日程空间已变化，请重新核对。');return;}
- setStatus(after);setEditor({scope:scope!,record:current,fields:structuredClone(current.fields),initial:JSON.stringify(current.fields)});onOpened?.();}catch(cause){if(token===generation.current)setError(errorText(cause));}}
+ async function open(recordId:string|null,onOpened?:()=>void){
+  const openingStatus=statusRef.current;
+  if(!owner||!scope||!openingStatus?.configured||scopeOf(openingStatus)!==scope||blocked||!canLeave())return;
+  if(recordId===null&&!openingStatus.writable)return;
+  const intent=++editorIntent.current,token=generation.current;
+  const isCurrent=()=>token===generation.current&&intent===editorIntent.current&&!saving.current;
+  setError('');setMessage('');
+  if(providedReferences===emptyOptions)void readPersonalCalendarReferences(fetch,owner).then(value=>{
+   if(isCurrent()){setLoadedReferences({scope,value});setReferenceNotice(null);}
+  }).catch(()=>{
+   if(isCurrent())setReferenceNotice({scope,text:'关联选项读取失败，已有引用仍保留。'});
+  });
+  if(recordId===null){
+   const fields=fresh('event',zone);
+   setEditor({scope,record:null,fields,initial:JSON.stringify(fields)});
+   return;
+  }
+  try{
+   const current=await readPersonalCalendarRecord(fetch,owner,recordId);
+   const after=await readPersonalCalendarStatus(fetch);
+   if(!isCurrent())return;
+   setStatus(after);
+   if(!after.configured||scopeOf(after)!==scope){
+    generation.current++;
+    setEditor(null);setSnapshot(null);setLoadedReferences(null);
+    setError('本人日程空间已变化，请重新核对。');
+    return;
+   }
+   if(openingStatus.writable!==after.writable){
+    editorIntent.current++;
+    setLoadedReferences(null);
+    setError('日程读写权限已变化，请重新读取。');
+    return;
+   }
+   setEditor({scope,record:current,fields:structuredClone(current.fields),initial:JSON.stringify(current.fields)});
+   onOpened?.();
+  }catch(cause){
+   if(isCurrent())setError(errorText(cause));
+  }
+ }
  useEffect(()=>{
   if(!linkedRecordId){openedLink.current=null;return;}
   if(!scope||blocked||shownEditor)return;
@@ -71,9 +109,9 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
   openedLink.current=attempt;
   void open(linkedRecordId,()=>{attempt.opened=true;});
  },[linkedRecordId,scope,blocked,shownEditor,linkRetry]);
- async function send(command:PersonalCalendarCommand){if(saving.current||!writable||!owner||scopeOf(command.binding)!==scope)return;const token=generation.current;saving.current=true;setBusy(true);setError('');setConflict(false);try{try{keepPersonalCalendarCommand(sessionStorage,command);}catch{throw new PersonalCalendarClientError('浏览器不能保留待确认请求，保存尚未发送。');}setPending(command);const result=await sendPersonalCalendarCommand(fetch,sessionStorage,command);if(token!==generation.current)return;setPending(null);setEditor(null);setMessage(result.current.revision===result.receipt.revision?'已保存并读回日程。':'保存已确认；这条日程随后还有新版本。');await refresh();}catch(cause){if(token===generation.current){setError(errorText(cause));setConflict(cause instanceof PersonalCalendarClientError&&cause.status===409&&!cause.uncertain);}}finally{saving.current=false;setBusy(false);}}
+ async function send(command:PersonalCalendarCommand){if(saving.current||!writable||!owner||scopeOf(command.binding)!==scope)return;const token=generation.current;editorIntent.current++;saving.current=true;setBusy(true);setError('');setConflict(false);try{try{keepPersonalCalendarCommand(sessionStorage,command);}catch{throw new PersonalCalendarClientError('浏览器不能保留待确认请求，保存尚未发送。');}setPending(command);const result=await sendPersonalCalendarCommand(fetch,sessionStorage,command);if(token!==generation.current)return;setPending(null);setEditor(null);setMessage(result.current.revision===result.receipt.revision?'已保存并读回日程。':'保存已确认；这条日程随后还有新版本。');await refresh();}catch(cause){if(token===generation.current){setError(errorText(cause));setConflict(cause instanceof PersonalCalendarClientError&&cause.status===409&&!cause.uncertain);}}finally{saving.current=false;setBusy(false);}}
  async function save(){if(!shownEditor||!owner)return;try{await send(shownPending??freezePersonalCalendarCommand(owner,shownEditor.fields,shownEditor.record,crypto.randomUUID()));}catch(cause){setError(errorText(cause));}}
- async function rebase(){if(!shownPending?.path||!owner||!conflict||busy)return;setBusy(true);try{const current=await readPersonalCalendarRecord(fetch,owner,shownPending.path.slice(1));clearPersonalCalendarCommand(sessionStorage,shownPending);setEditor({scope:scope!,record:current,fields:structuredClone(shownPending.body.fields),initial:JSON.stringify(current.fields)});setPending(null);setConflict(false);setError('');setMessage('已读取最新版本，原草稿保留，请核对后保存。');}catch(cause){setError(errorText(cause));}finally{setBusy(false);}}
+ async function rebase(){if(!shownPending?.path||!owner||!conflict||busy)return;editorIntent.current++;setBusy(true);try{const current=await readPersonalCalendarRecord(fetch,owner,shownPending.path.slice(1));clearPersonalCalendarCommand(sessionStorage,shownPending);setEditor({scope:scope!,record:current,fields:structuredClone(shownPending.body.fields),initial:JSON.stringify(current.fields)});setPending(null);setConflict(false);setError('');setMessage('已读取最新版本，原草稿保留，请核对后保存。');}catch(cause){setError(errorText(cause));}finally{setBusy(false);}}
  const columns=useMemo<ColumnDef<typeof dataGridFeatures,CalendarRecord>[]>(()=>[
  {id:'title',header:'名称',size:250,minSize:180,accessorFn:record=>record.fields.title,cell:({row})=><button className={s.title} onClick={()=>void open(row.original.id)} aria-label={`查看日程：${row.original.fields.title}`}>{row.original.fields.title}</button>},
  {id:'kind',header:'类别',size:150,accessorFn:record=>labels[record.fields.personal.calendarKind]},
@@ -83,7 +121,10 @@ export function PersonalCalendarWorkbench({navigationGuard,linkedRecordId,refere
  ],[scope,blocked,zone]);
  const table=useTable({features:dataGridFeatures,data:shown?.entries??[],columns,getRowId:record=>record.id,enableRowSelection:false,state:{pagination:{pageIndex:0,pageSize:Math.max(shown?.entries.length??0,1)}},autoResetPageIndex:false});
  const p=shownEditor?.fields.personal;
- const editFields=(patch:Partial<CalendarPersonalFields>)=>setEditor(current=>current?{...current,fields:{...current.fields,...patch}}:current);
+ const editFields=(patch:Partial<CalendarPersonalFields>)=>{
+  editorIntent.current++;
+  setEditor(current=>current?{...current,fields:{...current.fields,...patch}}:current);
+ };
  const editPersonal=(patch:Record<string,unknown>)=>{if(p)editFields({personal:{...p,...patch} as CalendarPersonal});};
  const stageRows=shown?.entries.filter(record=>record.fields.personal.calendarKind==='life-stage')??[];
  const datedStages=stageRows.flatMap(record=>{const stage=record.fields.personal as Extract<CalendarPersonal,{calendarKind:'life-stage'}>;return stage.startOn&&stage.endOn?[stage]:[];}),stageStart=datedStages.length?Math.min(...datedStages.map(stage=>calendarDayNumber(stage.startOn!))):0,stageEnd=datedStages.length?Math.max(...datedStages.map(stage=>calendarDayNumber(stage.endOn!)))+1:1;
