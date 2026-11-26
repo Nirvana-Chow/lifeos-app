@@ -28,6 +28,14 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   const config:PersonalConfig={ownerId:'search-browser-owner',ownerEmail:'search@example.invalid',spaceId:'search-browser-space',databaseName:'lifeos_platform_test_local',allowedTypes:['todo','journal','calendar'],calendarEnabled:true,approval:'personal-manual-v1',baseURL:origin};const repo=new MemoryPort();repo.readCurrentSnapshot=async owner=>structuredClone([...repo.rows.values()].filter(row=>row.ownerId===owner));const service=new PersonalService(repo,config);
   const entry=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic search diary',text:'Original needle diary body',occurredOn:null}},'browser-search-journal')).entry;const calendar=(await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic calendar',text:'Calendar needle body'}},'browser-search-calendar')).entry;const dated=(await service.mutate(config.ownerId,'journal',null,{spaceId:config.spaceId,confirmed:true,fields:{title:'Synthetic December diary',text:'Boundary needle prose',occurredOn:'2025-12-31'}},'browser-search-december')).entry;
   await service.mutate(config.ownerId,'calendar',null,{spaceId:config.spaceId,confirmed:true,fields:{...calendarFields,title:'Synthetic Shanghai calendar',text:'Boundary needle',personal:{...calendarFields.personal,schedule:{kind:'timed',startAt:'2025-12-31T16:00:00Z',endAt:'2025-12-31T17:00:00Z',timeZone:'UTC'}}}},'browser-search-shanghai');
+  const seedTask=async(key:string,title:string,fields:Record<string,unknown>,owner=config)=>{
+   return (await new PersonalService(repo,owner).mutate(owner.ownerId,'todo',null,{spaceId:owner.spaceId,confirmed:true,fields:{title,notes:'Synthetic needle',...fields}},key)).entry;
+  };
+  const cancelled=await seedTask('browser-search-cancelled','Synthetic cancelled task',{status:'cancelled',dueOn:'2026-01-01',plannedStartOn:'2025-12-29',plannedEndOn:'2025-12-30'});
+  await seedTask('browser-search-outside','Synthetic outside deadline',{status:'cancelled',dueOn:'2026-01-02',plannedStartOn:'2025-12-31',plannedEndOn:'2026-01-01'});
+  const legacy=await seedTask('browser-search-legacy','Synthetic legacy task',{dueOn:'2025-12-31'});
+  delete (repo.rows.get(legacy.id)!.draft as {status?:string}).status;
+  const foreign=await seedTask('browser-search-foreign','Synthetic other owner task',{status:'cancelled',dueOn:'2026-01-01'},{...config,ownerId:'other-owner',spaceId:'other-space'});
   const snapshot=JSON.stringify([...repo.rows.values()]);
   const handler=createPersonalPlatformHandler({repository:repo,config,storageVerified:true,sessions:{read:async()=>({userId:config.ownerId,email:config.ownerEmail})},assertWritable:async()=>{throw Error('No synthetic writes allowed');}});
   await page.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());if(url.origin!==origin){outside.push(url.origin);return route.abort();}if(!url.pathname.startsWith('/api/'))return route.continue();if(request.method()!=='GET')writes.push(request.method()+' '+url.pathname);reads.push(url.pathname);
@@ -50,6 +58,25 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   await expect(original).toHaveCount(0);
   assert.equal(new URL(page.url()).searchParams.get('from'),'2025-12-31');
   assert.equal(new URL(page.url()).searchParams.get('to'),'2026-01-01');
+  const cancelledLink=page.getByRole('link',{name:'Synthetic cancelled task 查看原记录',exact:true});
+  const cancelledRow=page.getByRole('listitem').filter({has:cancelledLink});
+  await expect(cancelledRow.getByText('已取消',{exact:true})).toBeVisible();
+  await expect(cancelledRow.getByText('待办 · 截止日期：2026-01-01',{exact:true})).toBeVisible();
+  const legacyLink=page.getByRole('link',{name:'Synthetic legacy task 查看原记录',exact:true});
+  await expect(legacyLink).toBeVisible();
+  await expect(page.getByRole('listitem').filter({has:legacyLink}).getByText('已取消',{exact:true})).toHaveCount(0);
+  await expect(page.getByRole('link',{name:/Synthetic outside deadline|Synthetic other owner task/})).toHaveCount(0);
+  await cancelledLink.click();
+  const detail=page.getByRole('region',{name:'原业务记录只读详情'});
+  await expect(detail.getByRole('heading',{name:'Synthetic cancelled task',exact:true})).toBeVisible();
+  await expect(detail.getByText('已取消',{exact:true})).toBeVisible();
+  assert.ok(reads.includes('/api/platform/personal/todo/'+cancelled.id));
+  await detail.getByRole('link',{name:'返回搜索结果',exact:true}).click();
+  await expect(cancelledLink).toBeVisible();
+  await expect(keyword).toHaveValue('needle');
+  await expect(start).toHaveValue('2025-12-31');
+  await expect(end).toHaveValue('2026-01-01');
+
   await december.click();
   await expect(page.getByRole('heading',{name:'Synthetic December diary',exact:true})).toBeVisible();
   assert.ok(reads.includes('/api/platform/personal/journal/'+dated.id));
@@ -58,6 +85,16 @@ test('OPT-IN owner search uses stable original reads and retains query/back/keyb
   await expect(keyword).toHaveValue('needle');await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
   await december.click();await expect(page.getByRole('region',{name:'原业务记录只读详情'})).toBeVisible();await page.goBack();
   await expect(december).toBeVisible();await expect(start).toHaveValue('2025-12-31');await expect(end).toHaveValue('2026-01-01');
+  const foreignURL=new URL(page.url());
+  foreignURL.searchParams.set('type','todo');
+  foreignURL.searchParams.set('id',foreign.id);
+  await page.goto(foreignURL.toString());
+  await expect(detail.getByText(/原记录已不可访问/)).toBeVisible();
+  await expect(detail.getByText(/Synthetic other owner task|已取消|来源 ID/)).toHaveCount(0);
+  assert.ok(reads.includes('/api/platform/personal/todo/'+foreign.id));
+  await detail.getByRole('link',{name:'返回搜索结果',exact:true}).click();
+  await expect(cancelledLink).toBeVisible();
+
   broken=true;await page.goto(origin+'/personal/search?q=needle');await expect(page.getByRole('region',{name:'本人记录搜索'}).getByRole('alert')).toContainText('无法核对完整搜索结果');await expect(original).toHaveCount(0);broken=false;await page.getByRole('button',{name:'重新读取',exact:true}).click();await expect(original).toBeVisible();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(writes,[]);assert.deepEqual(outside,[]);assert.equal(JSON.stringify([...repo.rows.values()]),snapshot);
   expired=true;await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));});await expect(original).toHaveCount(0);await page.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));});await expect(page.getByRole('heading',{name:'请重新登录',exact:true})).toBeVisible();assert.deepEqual(errors,[]);await page.close();
