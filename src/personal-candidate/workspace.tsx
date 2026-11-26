@@ -9,12 +9,37 @@ import {ThemeSwitch} from '../workbench/theme-switch';
 import {resolveDetailNavigation,requestedDetailKey} from './detail-navigation';
 import {AppleSourceNotice} from './apple-source-notice';
 import {normalizePersonalFields} from './business';
-import {PersonalRecordForm} from './record-form';import {SnapshotPanel} from './snapshot-panel';import type {PersonalEditorFields} from './editor';import type {PersonalObject,PersonalRelations} from './business';
+import {PersonalRecordForm} from './record-form';import {SnapshotPanel} from './snapshot-panel';import type {PersonalEditorFields} from './editor';import type {PersonalReference} from './business';
 type Status={ownerId:string;spaceId:string;writable:boolean;allowedTypes:PersonalType[]};
 type Fields=PersonalEditorFields;
 const fresh=(type:PersonalType='todo'):Fields=>({title:'',text:'',date:'',status:'open',...(type==='project'?{personal:{type:'project',stage:'idea',purpose:null,nextStep:'',domain:null,topics:[]}}:type==='domain'||type==='topic'?{personal:{type}}:{})});
 export const personalWorkspaceLabels:Record<PersonalType,string>={todo:'待办',journal:'日记',project:'项目',domain:'领域',topic:'主题',calendar:'日程',health:'健康',person:'人物',media:'书影音',career:'职业与简历',portfolio:'账户资产投资',cooking:'做饭'};
 const labels=personalWorkspaceLabels;
+
+const projectStages:Record<string,string>={idea:'想法',planned:'计划',active:'进行中',paused:'暂停',closed:'结束'};
+function ProjectReference({pin}:{pin:PersonalReference}){
+ return <span>记录 <code>{pin.id}</code> · 来源 <code>{pin.sourceId}</code> · 修订 {pin.revision}</span>;
+}
+function ProjectRevision({draft}:{draft:PublicEntry['draft']}){
+ const meta='personal'in draft?draft.personal:null;
+ const project=meta&&'type'in meta&&meta.type==='project'?meta:null;
+ const stage=project?.stage;
+ return <dl className={s.projectRevision}>
+  <dt>阶段</dt><dd>{stage&&Object.hasOwn(projectStages,stage)?projectStages[stage]:'未知'}</dd>
+  <dt>下一步</dt><dd className={s.body}>{typeof project?.nextStep==='string'?project.nextStep||'未填写':'未知'}</dd>
+  <dt>领域引用</dt><dd>{project?.domain?<ProjectReference pin={project.domain}/>:project?.domain===null?'无':'未知'}</dd>
+  <dt>主题引用</dt><dd>{!Array.isArray(project?.topics)?'未知':project.topics.length?
+   <ul>{project.topics.map(pin=><li key={pin.id}><ProjectReference pin={pin}/></li>)}</ul>:'无'}</dd>
+  {/* 本人项目历史当前只保存领域与主题 pin。 */}
+  <dt>证据引用</dt><dd>未知</dd>
+ </dl>;
+}
+function belongsToProject(row:PublicEntry,project:PublicEntry,spaceId:string){
+ const original=row?.source?.original as {marker?:string;type?:string;spaceId?:string}|null;
+ return row?.id===project.id&&row.kind==='inbox'&&row.source?.id===project.source.id&&
+  row.source.externalId===project.id&&!Object.hasOwn(row,'ownerId')&&original?.marker==='personal-manual-v1'&&
+  original.type==='project'&&original.spaceId===spaceId&&Number.isInteger(row.revision)&&row.revision>0&&row.revision<=project.revision;
+}
 export function PersonalWorkspace({initialType='todo',initialId,returnHref='/review/admin',focused=false,navigationGuard}:{
  initialType?:PersonalType;initialId?:string;returnHref?:string;focused?:boolean;
  navigationGuard?:RefObject<(()=>boolean)|null>;
@@ -60,7 +85,11 @@ export function PersonalWorkspace({initialType='todo',initialId,returnHref='/rev
    binding.current=next;draftBinding.current=next;setStatus({...next,writable:v.writable===true,allowedTypes:v.allowedTypes});
    if(!sessionRef.current||!previous){const current=new PersonalMutationSession({binding:next,storage:window.sessionStorage,assertBinding:()=>binding.current?.ownerId===next.ownerId&&binding.current?.spaceId===next.spaceId});sessionRef.current=current;setSession(current);}
    setMessage(v.writable===true?'':'当前只读：本人业务写入已关闭。');
-   if(!v.allowedTypes.includes(typeRef.current)){setMessage('当前配置未开放该类别，请从已开放入口选择。');}await load(typeRef.current,token);
+   if(!v.allowedTypes.includes(typeRef.current)){
+    if(typeRef.current==='project'){initialSelection.current=null;setSelected(null);setHistory([]);resetFields(fresh('project'));setConfirmed(false);}
+    setMessage('当前配置未开放该类别，请从已开放入口选择。');
+   }
+   await load(typeRef.current,token);
   }catch{if(token===generation.current){clearIdentity();setAvailability(false);setMessage('本人空间状态无法核实，请重试。');}}
   finally{if(token===generation.current)setBusy(false);}
  }
@@ -81,10 +110,50 @@ export function PersonalWorkspace({initialType='todo',initialId,returnHref='/rev
  },[snapshot]);
  async function login(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!availability)return;const form=event.currentTarget,data=new FormData(form);setBusy(true);try{const r=await fetch('/api/platform/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({email:data.get('email'),password:data.get('password'),rememberMe:false})});await r.arrayBuffer();form.reset();if(!r.ok){setMessage(r.status===429?'登录过于频繁，请稍后重试。':'登录未通过或写入许可尚未激活。');return;}await refresh();}catch{form.reset();setMessage('登录结果未确认，请重新核对会话。');}finally{setBusy(false);}}
  async function submit(event:FormEvent){event.preventDefault();if(!session||!status?.writable||!binding.current||locked||navigationPending)return;try{const data=type==='todo'?todoDraftFromEditor(fields):{title:fields.title,text:fields.text,occurredOn:fields.date||null,...(fields.personal?{personal:fields.personal}:{})};const command=makePersonalCommand(binding.current,type,selected?.id??null,normalizePersonalFields(type,data),crypto.randomUUID(),confirmed,selected?.revision);await session.submit(command);}catch{setMessage('请核对标题、正文、日期及确认项。');}}
- async function choose(entry:PublicEntry){if(locked)return;const token=generation.current,kind=typeRef.current;setBusy(true);try{const path='/api/platform/personal/'+kind+'/'+entry.id;const [r,h]=await Promise.all([fetch(path,{cache:'no-store',credentials:'same-origin'}),fetch(path+'/history?limit=50',{cache:'no-store',credentials:'same-origin'})]);const [v,hv]=await Promise.all([r.json(),h.json()]);if(token!==generation.current||kind!==typeRef.current)return;if(!r.ok||!h.ok)throw Error();setSelected(v.entry);setHistory(hv.items);const draft=v.entry.draft;resetFields(editorFromEntry(v.entry,binding.current!.spaceId).fields);setConfirmed(false);}catch{if(token===generation.current)setMessage('详情或历史读取失败，请重试。');}finally{if(token===generation.current)setBusy(false);}}
+ async function choose(entry:PublicEntry){
+  const scope=binding.current;
+  if(locked||!scope)return;
+  const token=generation.current,kind=typeRef.current;
+  const isCurrent=()=>token===generation.current&&kind===typeRef.current&&binding.current===scope;
+  setBusy(true);
+  try{
+   const path='/api/platform/personal/'+kind+'/'+entry.id;
+   const [detail,revisions]=await Promise.all([
+    fetch(path,{cache:'no-store',credentials:'same-origin'}),
+    fetch(path+'/history?limit=50',{cache:'no-store',credentials:'same-origin'}),
+   ]);
+   if(!isCurrent())return;
+   if([detail,revisions].some(reply=>reply.status===401||reply.status===403)){
+    clearIdentity();
+    setMessage('本人会话或权限已变化，请重新核对。');
+    return;
+   }
+   if(!detail.ok||!revisions.ok)throw Error();
+   const [value,historyPage]=await Promise.all([detail.json(),revisions.json()]);
+   if(!isCurrent())return;
+   const current:PublicEntry=value.entry,items:PublicEntry[]=historyPage.items;
+   const view=editorFromEntry(current,scope.spaceId);
+   if(!Array.isArray(items)||view.type!==kind)throw Error();
+   if(kind==='project'&&(current.id!==entry.id||current.source.id!==entry.source.id||
+      current.revision<entry.revision||!belongsToProject(current,current,scope.spaceId)||
+      items.some((row,index)=>!belongsToProject(row,current,scope.spaceId)||index>0&&row.revision>=items[index-1].revision)))throw Error();
+   setSelected(current);
+   setHistory(items);
+   resetFields(view.fields);
+   setConfirmed(false);
+  }catch{
+   if(isCurrent()){
+    if(kind==='project')setHistory([]);
+    setMessage('详情或历史读取失败，请重试。');
+   }
+  }finally{
+   if(token===generation.current)setBusy(false);
+  }
+ }
+
  useEffect(()=>{if(!status)return;const next=resolveDetailNavigation({binding:status,type:initialType,id:initialId,processed:initialSelection.current,records:all,locked});if(next.action==='done'||next.action==='wait')return;initialSelection.current=next.key;typeRef.current=initialType;setType(initialType);setSelected(null);setHistory([]);resetFields(fresh(initialType));setConfirmed(false);setItems((all??[]).filter(e=>(e.source.original as {type?:string}).type===initialType));if(next.action==='select')void choose(next.entry);else if(next.action==='missing')setMessage('该记录不在当前授权类别或已不可读取。');},[initialId,initialType,status,all,locked]);
 
  function changeType(kind:PersonalType){if(!allowDiscard())return;if(kind==='todo'){approvedDocumentLeave.current=true;try{window.location.assign('/personal?page=tasks');}catch(error){approvedDocumentLeave.current=false;throw error;}return;}typeRef.current=kind;setType(kind);setSelected(null);setHistory([]);resetFields(fresh(kind));setConfirmed(false);setItems([]);void load(kind).catch(()=>setMessage('列表读取失败，请重试。'));}
  async function exportData(){if(locked||!status)return;const owner=status.ownerId,space=status.spaceId,token=generation.current;try{const response=await fetch('/api/platform/personal/export?limit=100',{credentials:'same-origin',cache:'no-store'}),v=await response.json();if(token!==generation.current||binding.current?.ownerId!==owner||binding.current?.spaceId!==space)return;if(!response.ok||v.spaceId!==space)throw Error();const url=URL.createObjectURL(new Blob([JSON.stringify(v,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='lifeos-personal-window.json';a.click();URL.revokeObjectURL(url);setMessage(v.truncated?'已导出有界窗口，文件标记了截断；这不是完整备份。':'已导出当前有界窗口；未验证备份恢复。');}catch{setMessage('导出未完成，请重试。');}}
- return <div data-lifeos-surface={navigationGuard?undefined:"personal"} className={navigationGuard?`${s.page} ${s.embedded}`:s.page} onClickCapture={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||!(event.target instanceof Element))return;const anchor=event.target.closest('a[href]');if(!anchor||anchor.hasAttribute('download')||anchor.getAttribute('target')&&anchor.getAttribute('target')!=='_self')return;if(locked){event.preventDefault();event.stopPropagation();}}}><div className={s.content}>{navigationGuard?<div className={s.actions}><a href={returnHref}>返回总览</a></div>:<header className={s.bar} aria-label={labels[type]+"导航"}><div><h1>{labels[type]}</h1>{!focused&&<span>手工记录与关联</span>}</div><ThemeSwitch/><a href={returnHref}>返回总览</a></header>}{message&&<p role="status" className={s.hint}>{message}</p>}<div className={s.actions}><button disabled={busy} onClick={()=>{if(allowDiscard())void refresh();}}>重新核对状态</button>{status&&!focused&&<button disabled={locked} onClick={()=>void exportData()}>导出记录窗口</button>}</div>{!status?availability?<form className={s.panel} onSubmit={login}><h2>登录本人账号</h2><label>邮箱<input name="email" type="email" autoComplete="username" required/></label><label>密码<input name="password" type="password" autoComplete="current-password" required/></label><button className={s.primary} disabled={busy}>登录</button></form>:<section className={s.panel}><h2>尚不能保存本人资料</h2><p>需要先完成独立身份初始化、安全入口和写入许可。当前页面不会收集密码，也不会显示虚构个人记录。</p></section>:<>{!focused&&<div className={s.actions}>{status.allowedTypes.map(t=><button key={t} disabled={locked} aria-pressed={type===t} onClick={()=>changeType(t)}>{labels[t]}</button>)}</div>}<section className={s.panel}><h2>{selected?'修改记录':'新建'+labels[type]}</h2><PersonalRecordForm type={type} fields={fields} setFields={setFields} confirmed={confirmed} setConfirmed={setConfirmed} options={options} allowedTypes={status.allowedTypes} disabled={locked||navigationPending||!status.writable||!status.allowedTypes.includes(type)} onSubmit={submit} onCancel={()=>{if(!allowDiscard())return;session?.cancel();setSelected(null);setHistory([]);resetFields(fresh(typeRef.current));setConfirmed(false);}}/>{snapshot?.error&&<p className={s.error} role="alert">{snapshot.error}</p>}{otherPending&&<p role="status">其他记录有待确认的保存请求，先核对后再继续。</p>}{snapshot?.phase==='uncertain'&&<button disabled={busy||!status.writable} onClick={()=>void session?.retry()}>重试保留的原请求</button>}{snapshot?.phase==='saving'&&<><p role="status">保存中，请等待回执。</p><button type="button" onClick={()=>session?.cancel()}>停止等待并保留原请求</button></>}</section>{focused ? snapshotError&&<p role="alert">{snapshotError}</p> : <SnapshotPanel items={all} spaceId={status.spaceId} error={snapshotError} navigationLocked={locked||navigationPending} documentNavigation/>}<section className={s.panel}><h2>当前记录</h2>{items.length?<ul className={s.list}>{items.map(entry=><li key={entry.id}><button disabled={locked} onClick={()=>{if(allowDiscard())void choose(entry);}}>{'title'in entry.draft?entry.draft.title:'记录'}</button></li>)}</ul>:<p>本次读取范围内没有记录。</p>}{truncated&&<p className={s.hint}>这里只读取最近50条窗口，尚有未扫描记录。</p>}</section>{selected&&<section className={s.panel}><h2>原文与更正历史</h2><AppleSourceNotice original={selected.source.original} spaceId={status.spaceId}/><p>版本 {selected.revision}{!focused&&<> · ID {selected.id}</>}</p>{!focused&&<details><summary>最初录入内容</summary><pre>{JSON.stringify(selected.source.original,null,2)}</pre></details>}{history.map(entry=><details key={entry.revision}><summary>版本 {entry.revision}</summary><p className={s.body}>{'notes'in entry.draft?entry.draft.notes:'text'in entry.draft?entry.draft.text:''}</p></details>)}{!focused&&<p className={s.hint}>历史同样有读取上限；本页不提供全量备份恢复。</p>}</section>}</>}</div></div>;
+ return <div data-lifeos-surface={navigationGuard?undefined:"personal"} className={navigationGuard?`${s.page} ${s.embedded}`:s.page} onClickCapture={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||!(event.target instanceof Element))return;const anchor=event.target.closest('a[href]');if(!anchor||anchor.hasAttribute('download')||anchor.getAttribute('target')&&anchor.getAttribute('target')!=='_self')return;if(locked){event.preventDefault();event.stopPropagation();}}}><div className={s.content}>{navigationGuard?<div className={s.actions}><a href={returnHref}>返回总览</a></div>:<header className={s.bar} aria-label={labels[type]+"导航"}><div><h1>{labels[type]}</h1>{!focused&&<span>手工记录与关联</span>}</div><ThemeSwitch/><a href={returnHref}>返回总览</a></header>}{message&&<p role="status" className={s.hint}>{message}</p>}<div className={s.actions}><button disabled={busy} onClick={()=>{if(allowDiscard())void refresh();}}>重新核对状态</button>{status&&!focused&&<button disabled={locked} onClick={()=>void exportData()}>导出记录窗口</button>}</div>{!status?availability?<form className={s.panel} onSubmit={login}><h2>登录本人账号</h2><label>邮箱<input name="email" type="email" autoComplete="username" required/></label><label>密码<input name="password" type="password" autoComplete="current-password" required/></label><button className={s.primary} disabled={busy}>登录</button></form>:<section className={s.panel}><h2>尚不能保存本人资料</h2><p>需要先完成独立身份初始化、安全入口和写入许可。当前页面不会收集密码，也不会显示虚构个人记录。</p></section>:<>{!focused&&<div className={s.actions}>{status.allowedTypes.map(t=><button key={t} disabled={locked} aria-pressed={type===t} onClick={()=>changeType(t)}>{labels[t]}</button>)}</div>}<section className={s.panel}><h2>{selected?'修改记录':'新建'+labels[type]}</h2><PersonalRecordForm type={type} fields={fields} setFields={setFields} confirmed={confirmed} setConfirmed={setConfirmed} options={options} allowedTypes={status.allowedTypes} disabled={locked||navigationPending||!status.writable||!status.allowedTypes.includes(type)} onSubmit={submit} onCancel={()=>{if(!allowDiscard())return;session?.cancel();setSelected(null);setHistory([]);resetFields(fresh(typeRef.current));setConfirmed(false);}}/>{snapshot?.error&&<p className={s.error} role="alert">{snapshot.error}</p>}{otherPending&&<p role="status">其他记录有待确认的保存请求，先核对后再继续。</p>}{snapshot?.phase==='uncertain'&&<button disabled={busy||!status.writable} onClick={()=>void session?.retry()}>重试保留的原请求</button>}{snapshot?.phase==='saving'&&<><p role="status">保存中，请等待回执。</p><button type="button" onClick={()=>session?.cancel()}>停止等待并保留原请求</button></>}</section>{focused ? snapshotError&&<p role="alert">{snapshotError}</p> : <SnapshotPanel items={all} spaceId={status.spaceId} error={snapshotError} navigationLocked={locked||navigationPending} documentNavigation/>}<section className={s.panel}><h2>当前记录</h2>{items.length?<ul className={s.list}>{items.map(entry=><li key={entry.id}><button disabled={locked} onClick={()=>{if(allowDiscard())void choose(entry);}}>{'title'in entry.draft?entry.draft.title:'记录'}</button></li>)}</ul>:<p>本次读取范围内没有记录。</p>}{truncated&&<p className={s.hint}>这里只读取最近50条窗口，尚有未扫描记录。</p>}</section>{selected&&<section className={s.panel}><h2>原文与更正历史</h2><AppleSourceNotice original={selected.source.original} spaceId={status.spaceId}/><p>版本 {selected.revision}{!focused&&<> · ID {selected.id}</>}</p>{!focused&&<details><summary>最初录入内容</summary><pre>{JSON.stringify(selected.source.original,null,2)}</pre></details>}{history.map(entry=><details key={entry.revision}><summary>版本 {entry.revision}</summary>{type==='project'&&<ProjectRevision draft={entry.draft}/>}<p className={s.body}>{'notes'in entry.draft?entry.draft.notes:'text'in entry.draft?entry.draft.text:''}</p></details>)}{!focused&&<p className={s.hint}>历史同样有读取上限；本页不提供全量备份恢复。</p>}</section>}</>}</div></div>;
 }
