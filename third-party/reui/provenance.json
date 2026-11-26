@@ -5,6 +5,16 @@
   "licenseSourceSha256": "09592ffefa6512b68dd7aa9031bc50d5d39cfcc9da08288f5eb1f9d236baca66",
   "files": [
     {
+      "source": "registry-reui/bases/radix/reui/badge.tsx",
+      "sourceSha256": "0426324c5fc92f6885988e32796395747b1baad955ae09f8f1e7ca8bc2e86237",
+      "target": "src/ui-review/reui/badge.tsx",
+      "adaptations": [
+        "Use the existing class-merging helper and locked Radix Slot and class-variance-authority dependencies.",
+        "Preserve the existing LifeOS Badge variants, wrapping, focus styles, data-variant and shared theme rules. Omit upstream size, radius and color variants that require registry styles or tokens LifeOS does not use.",
+        "Retain the original shared import path through src/ui-review/ui/badge.tsx. Compatibility classes derive from the previously vendored shadcn/ui Badge and retain its MIT attribution."
+      ]
+    },
+    {
       "source": "registry-reui/bases/radix/reui/data-grid/data-grid.tsx",
       "sourceSha256": "718d349e005537ee45a65826d6768deedc4479f9f5b9b9afa7e8052509de9be4",
       "target": "src/ui-review/reui/data-grid.tsx",
