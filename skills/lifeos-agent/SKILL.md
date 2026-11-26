@@ -113,11 +113,11 @@ Use these operations only after exact v2 discovery; the three native module gate
 
 ## Private articles
 
-Private articles use the owner website. The Article REST operations `snapshotArticle`, `getArticle`, `createArticle` and `updateArticle` are reserved and currently unavailable. Article authorization requires a separately approved owner action and audited permission for each grant. Activation must recheck the current permission at discovery and lock it in the same database transaction for writes and receipt recovery. Existing general business grants and the server MCP and OAuth catalogs remain separate.
+For Private Article REST operations, use only the operations advertised by live v2 discovery for the current dedicated Article credential. If absent, use the owner website or stop for separately approved provisioning. A read credential can discover `snapshotArticle` and `getArticle`. An explicitly write-enabled Article credential can additionally discover `createArticle` and `updateArticle`. General business credentials, server MCP and OAuth do not confer Article permissions.
 
-The reserved REST contract uses the full `fields` object with `title`, `text`, `occurredOn` and `personal`. It preserves the complete nonblank body with its paragraph breaks. Use `occurredOn: null` when the date is unknown. Set `personal` to `{type:"article",schemaVersion:1,author,attribution,sourceURL}`. Attribution is `original`, `excerpt` or `summary`. Provide an author or a credential-free absolute HTTP(S) source URL, using `null` for unknown optional values. Save only after the user confirms the article and supplied attribution.
+The REST contract uses the full `fields` object with `title`, `text`, `occurredOn` and `personal`. It preserves the complete nonblank body with its paragraph breaks. Use `occurredOn: null` when the date is unknown. Set `personal` to `{type:"article",schemaVersion:1,author,attribution,sourceURL}`. Attribution is `original`, `excerpt` or `summary`. Provide an author or a credential-free absolute HTTP(S) source URL, using `null` for unknown optional values. Save only after the user confirms the article and supplied attribution.
 
-When a later release advertises the approved operation to the current grant, preserve the original idempotency key and independently compare the complete body, attribution, author, URL, source ID and current revision. Use the revision from a fresh GET for updates. The source address is a reference. Saving creates a private article.
+When discovery advertises the approved operation, preserve the original idempotency key and independently compare the complete body, attribution, author, URL, source ID and current revision. Use the revision from a fresh GET for updates. The source address is a reference. Saving creates a private article.
 
 ## Requirement event transport and fenced execution
 

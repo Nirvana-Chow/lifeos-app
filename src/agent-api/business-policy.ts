@@ -43,7 +43,12 @@ export function resolveBusinessPolicyGrant(row:PolicyGrantRow,options:PolicyReso
 }
 
 /** New effective scopes can only originate from reviewed, explicitly allowed server operations. */
-export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[];fileHandoff?:FilePermission}):readonly OperationScope[]{
+export function normalizeOperationGrantScopes(grant:{scopes:readonly string[];businessDataPolicy?:string;allowedOperationIds?:readonly string[];oauthFence?:unknown;fileHandoff?:FilePermission}):readonly OperationScope[]{
+ if(grant.scopes.some(scope=>scope.startsWith('article:'))){
+  if(grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff||
+     grant.scopes[0]!=='article:read'||(grant.scopes.length!==1&&(grant.scopes.length!==2||grant.scopes[1]!=='article:write')))throw Error('Invalid article grant');
+  return Object.freeze([...grant.scopes]) as readonly OperationScope[];
+ }
  if(grant.fileHandoff){
   const proof=filePermissionSchema.parse(grant.fileHandoff),scopes=grant.scopes.filter(scope=>scope.startsWith('file-handoff:'));
   if(scopes.length!==proof.scopes.length||!scopes.every(scope=>proof.scopes.includes(scope as never)))throw Error('Invalid file permission');

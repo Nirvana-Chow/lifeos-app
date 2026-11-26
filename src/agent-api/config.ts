@@ -1,3 +1,4 @@
+import {articleGrantVersion} from '../personal-article/agent-permission.ts';
 import {isHTTPSOrigin, type PlatformConfig} from '../platform/config.ts';
 import type {PersonalConfig} from '../personal-candidate/config.ts';
 import {readBusinessOAuthConfig} from '../business-mcp-oauth/boundary.ts';
@@ -14,6 +15,7 @@ export const agentRuntimeKeys = [
   'LIFEOS_AGENT_CLASSIFICATION',
   'LIFEOS_AGENT_ALL_BUSINESS_DATA',
   'LIFEOS_AGENT_PERSONAL_RECORDS',
+  'LIFEOS_AGENT_ARTICLE',
   'LIFEOS_AGENT_STORAGE_REVIEW',
   'LIFEOS_AGENT_REQUIREMENT_EVENTS',
   'LIFEOS_MCP_HTTP',
@@ -69,13 +71,15 @@ export function readAgentRuntimeConfig(
   return Object.freeze({databaseURL, secret});
 }
 
-export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean;storageReview?:boolean;requirementEvents?:boolean;fileHandoff?:boolean}>;
+export type AgentModules = Readonly<{organization:boolean;classification:boolean;requirements?:boolean;businessDataPolicy?:boolean;personalRecords?:boolean;article?:boolean;storageReview?:boolean;requirementEvents?:boolean;fileHandoff?:boolean}>;
 export function readAgentBusinessModules(env: Record<string,string|undefined>, personal: PersonalConfig|null): AgentModules {
   const files=readFileHandoffConfig(env);if(files&&(!personal||personal.requirementsEnabled!==true||env.LIFEOS_AGENT_REQUIREMENTS!=='requirements-v1'))throw Error('Agent file configuration unavailable');
   const events=env.LIFEOS_AGENT_REQUIREMENT_EVENTS;
   if(events!==undefined&&(events!=='requirement-events-v1'||env.LIFEOS_AGENT_REQUIREMENTS!=='requirements-v1'||personal?.requirementsEnabled!==true))throw Error('Agent requirement events configuration unavailable');
   const review=env.LIFEOS_AGENT_STORAGE_REVIEW;
   if(review!==undefined&&(review!=='storage-review-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent storage review configuration unavailable');
+  const article=env.LIFEOS_AGENT_ARTICLE;
+  if(article!==undefined&&(article!==articleGrantVersion||personal?.articleEnabled!==true))throw Error('Agent article configuration unavailable');
   const records=env.LIFEOS_AGENT_PERSONAL_RECORDS;
   if(records!==undefined&&(records!=='personal-records-v1'||!personal||env.LIFEOS_AGENT_ALL_BUSINESS_DATA!=='all-personal-business-v1'))throw Error('Agent personal records configuration unavailable');
   const policy=env.LIFEOS_AGENT_ALL_BUSINESS_DATA;
@@ -83,5 +87,5 @@ export function readAgentBusinessModules(env: Record<string,string|undefined>, p
   const requirement=env.LIFEOS_AGENT_REQUIREMENTS;if(requirement!==undefined&&requirement!=='requirements-v1'||requirement&&personal?.requirementsEnabled!==true)throw Error('Agent requirements configuration unavailable');
   const org = env.LIFEOS_AGENT_ORGANIZATION; const classification = env.LIFEOS_AGENT_CLASSIFICATION;
   if (org !== undefined && org !== 'organization-v1' || classification !== undefined && classification !== 'todo-classification-v1' || classification && !org || org && !personal) throw Error('Agent business configuration unavailable');
-  return Object.freeze({...(files?{fileHandoff:true}:{}),...(events?{requirementEvents:true}:{}),...(review?{storageReview:true}:{}),...(records?{personalRecords:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
+  return Object.freeze({...(files?{fileHandoff:true}:{}),...(events?{requirementEvents:true}:{}),...(review?{storageReview:true}:{}),...(records?{personalRecords:true}:{}),...(article?{article:true}:{}),...(policy?{businessDataPolicy:true}:{}),...(requirement?{requirements:true}:{}),organization:org === 'organization-v1',classification:classification === 'todo-classification-v1'});
 }

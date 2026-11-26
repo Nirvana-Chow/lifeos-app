@@ -13,8 +13,7 @@ export const personalRecordOperations=personalRecordTypes.flatMap(type=>[
  {id:`create${title(type)}`,method:'POST',path:`/v1/records/${type}`,module:type,policyClass:'personal-business-data',mcpExposure:recordExposure(type),requiredScopes:[`${type}:read`,`${type}:write`] as readonly OperationScope[],description:`Create one ${type} record through the native owner writer with complete fields and an idempotency key.`},
  {id:`update${title(type)}`,method:'PATCH',path:`/v1/records/${type}/{id}`,module:type,policyClass:'personal-business-data',mcpExposure:recordExposure(type),requiredScopes:[`${type}:read`,`${type}:write`] as readonly OperationScope[],description:`Update one ${type} record with complete fields, expectedRevision and an idempotency key; reread the same ID after saving.`},
 ]);
-/** Article remains reserved until current per-grant permission can be proven
- * and locked by the database. A registry entry alone cannot authorize it. */
+/** Article is excluded from inherited policy authorization and uses its own fence. */
 export function requiresExplicitArticlePermission(id:string|undefined,scopes:readonly string[]):boolean{
  return scopes.some(scope=>scope.startsWith('article:'))||personalRecordOperations.some(op=>op.module==='article'&&op.id===id);
 }

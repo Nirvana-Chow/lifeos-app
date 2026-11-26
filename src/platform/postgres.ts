@@ -52,8 +52,13 @@ function decode(row:Record<string,unknown>):StoredEntry{
 export async function readPlatformEntryOnClient(client:SqlClient,owner:string,kind:Kind,id:string,lock=false):Promise<StoredEntry|null>{
  const result=await client.query(select+' WHERE r.owner_id=$1 AND r.kind=$2 AND r.id=$3'+(lock?' FOR UPDATE OF r':''),[owner,kind,id]);return result.rows[0]?decode(result.rows[0]):null;
 }
-export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false):Promise<boolean>{
- if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled||requiresExplicitArticlePermission(grant.operationId,requiredScopes))return false;
+export async function lockCurrentAgentGrant(client:SqlClient,owner:string,grant:AgentGrantBinding,requiredScopes:readonly OperationScope[],policyEnabled=false,articleEnabled=false):Promise<boolean>{
+ if(grant.ownerId!==owner||grant.businessDataPolicy&&!policyEnabled)return false;
+ if(requiresExplicitArticlePermission(grant.operationId,requiredScopes)){
+  if(!articleEnabled||grant.businessDataPolicy||grant.oauthFence||grant.fileHandoff)return false;
+  const article=await client.query('SELECT lifeos_agent.assert_article_grant($1,$2,$3,$4::text[],$5::text) AS allowed',[grant.grantId,owner,grant.spaceId,requiredScopes,grant.operationId??null]);
+  return article.rows[0]?.allowed===true;
+ }
  if(grant.oauthFence){
   if(grant.oauthFence.policy!==undefined&&(grant.oauthFence.policy!=='all-personal-business-v1'||grant.businessDataPolicy!=='all-personal-business-v1'))return false;
   const fn=grant.oauthFence.policy==='all-personal-business-v1'?'assert_policy_oauth_business_grant':'assert_oauth_business_grant';
@@ -106,7 +111,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
  private async transactionImpl<T>(owner:string,key:string,fn:(tx:Transaction,client:SqlClient)=>Promise<T>,commandLock=JSON.stringify([owner,key])):Promise<T>{return this.scoped(owner,async client=>{
   if(this.personalOwnerGate)await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',[ownerMaintenanceKey(owner)]);
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[commandLock]);
-  const lockGrant=(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>lockCurrentAgentGrant(client,owner,grant,requiredScopes,this.businessFeatures?.businessDataPolicy);
+  const ordinaryGrants=this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements;
+  const lockGrant=(grant:AgentGrantBinding,requiredScopes:readonly OperationScope[])=>lockCurrentAgentGrant(client,owner,grant,requiredScopes,this.businessFeatures?.businessDataPolicy,this.businessFeatures?.article);
   const tx:Transaction={
    ...(this.requirementEventsEnabled?{
     assertRequirementExecutionLease:async(binding:import('../requirement-events/transaction.ts').LeaseWriteBinding)=>assertPostgresExecutionLease(client,owner,binding),
@@ -116,7 +122,8 @@ export class PostgresPlatformRepository implements ClassificationRepository{
    }:{}),
    lockRecordIdentity:async(kind,id)=>{await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['record-identity-v1',owner,kind,id])]);},
    lockOAuthAgentGrant:(grant,scopes)=>grant.oauthFence?lockGrant(grant,scopes):Promise.resolve(false),
-   ...(this.businessFeatures?.businessDataPolicy||this.businessFeatures?.organization||this.businessFeatures?.requirements?{lockAgentGrant:lockGrant}:{}),
+   ...(ordinaryGrants?{lockAgentGrant:lockGrant}:{}),
+   ...(this.businessFeatures?.article?{lockArticleAgentGrant:(grant:AgentGrantBinding,scopes:readonly OperationScope[])=>requiresExplicitArticlePermission(grant.operationId,scopes)?lockGrant(grant,scopes):Promise.resolve(false)}:{}),
    ...(this.agentWriteFenceEnabled?{lockAgentTodoWriteGrant:async(grant:Readonly<{grantId:string;ownerId:string;spaceId:string}>)=>{
     if(grant.ownerId!==owner)return false;
     const result=await client.query('SELECT lifeos_agent.assert_todo_write_grant($1,$2,$3) AS allowed',[grant.grantId,grant.ownerId,grant.spaceId]);
