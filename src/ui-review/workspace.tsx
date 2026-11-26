@@ -161,6 +161,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const { access, onRefresh, unavailablePage, contentPage } = props;
   const state = visibleWorkspaceState(props.state, access);
   const ownerModules=useOwnerModules(access.authenticated===true,props.viewPreferenceScope??null);
+  const journalNavigationReady=ownerModules.links.some(link=>link.id==='journal');
   const routePath=props.unifiedRoute?.path;
   const modulePath=routePath??ownerModules.path;
   const [workspacePage, setPage] = useState<WorkspacePage>(
@@ -231,6 +232,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
   const routePositions=useRef(new Map<string,{windowY:number;regions:{x:number;y:number}[];focus:{control:HTMLElement|null;sidebarLink:string|null}}>());
   const restoreRouteScroll=useRef(false);
   const restoreRouteFocus=useRef<{control:HTMLElement|null;sidebarLink:string|null}|null>(null);
+  const fallbackRouteFocus=useRef<HTMLElement|null>(null);
   const mainRegion=useRef<HTMLElement>(null);
   function scrollRegions(main:HTMLElement){
     return [main,...main.querySelectorAll<HTMLElement>(':scope > .lo-content, .lo-list-rows, .lo-board-cards, [data-slot="data-grid-table-viewport"]')];
@@ -360,6 +362,7 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
     const entry=pendingRoutePush.current&&old?{scope:old.scope,index:old.index+1}:
       workspaceHistoryEntry(window.history.state)??{scope:old?.scope??crypto.randomUUID(),index:old?.index??0};
     restoreRouteFocus.current=(pendingRoutePush.current?null:routePositions.current.get(href)?.focus)??{control:null,sidebarLink:null};
+    fallbackRouteFocus.current=null;
     pendingRoutePush.current=false;
     window.history.replaceState({...window.history.state,[workspaceHistoryKey]:entry},'',href);
     currentHistory.current=entry;
@@ -384,15 +387,24 @@ export function LifeOSWorkspace(props: LifeOSWorkspaceProps) {
       const position=restoreRouteFocus.current;
       if(!position)return;
       restoreRouteFocus.current=null;
+      const previousFallback=fallbackRouteFocus.current;
+      if(previousFallback&&document.activeElement!==previousFallback&&document.activeElement!==document.body)return;
       const {control,sidebarLink}=position;
-      const link=sidebarLink?document.querySelector<HTMLElement>(`aside.lo-sidebar a[href="${CSS.escape(sidebarLink)}"]`):null;
-      const target=[control,link,mainRegion.current?.querySelector<HTMLElement>('h1')].find(element=>element?.isConnected&&element.getClientRects().length);
-      target?.focus({preventScroll:true});
-      // The previous sidebar action may return only after owner navigation loads.
-      if(sidebarLink&&!control?.isConnected&&!link&&routePath==='/personal'&&(state.status==='unknown'||state.status==='loading'))restoreRouteFocus.current=position;
+      // The owner capability check may restore the sidebar link after task rows load.
+      const link=sidebarLink&&journalNavigationReady
+        ?document.querySelector<HTMLElement>(`aside.lo-sidebar a[href="${CSS.escape(sidebarLink)}"]`)
+        :null;
+      const target=sidebarLink?link:control;
+      if(target?.isConnected&&target.getClientRects().length){target.focus({preventScroll:true});return;}
+      const heading=mainRegion.current?.querySelector<HTMLElement>('h1')??null;
+      heading?.focus({preventScroll:true});
+      if(sidebarLink&&routePath==='/personal'&&state.status!=='forbidden'&&state.status!=='error'){
+        fallbackRouteFocus.current=heading;
+        restoreRouteFocus.current=position;
+      }
     });
     return()=>cancelAnimationFrame(frame);
-  },[routePath,state.status,page]);
+  },[routePath,state.status,page,journalNavigationReady]);
   useLayoutEffect(()=>{
     if(!restoreRouteScroll.current)return;
     const main=mainRegion.current;
