@@ -10,6 +10,7 @@ import {MemoryPort} from './helpers/platform.ts';
 import {emptyMediaPersonal} from '../src/personal-media/domain.ts';
 import {emptyCareerPersonal} from '../src/personal-career/domain.ts';
 import {emptyPersonPersonal} from '../src/personal-people/model.ts';
+import {emptyHealthFields} from '../src/personal-health/presentation.ts';
 import {makePersonalCommand} from '../src/personal-candidate/client.ts';
 import type {RecordModule} from '../src/personal-candidate/record-model.ts';
 import {PersonalService} from '../src/personal-candidate/service.ts';
@@ -174,7 +175,36 @@ test('OPT-IN record workbenches use native persistence and shell styles',{
    await page.getByRole('combobox',{name:'简历版本',exact:true}).selectOption(resumeIds[1]);await expect(page.getByRole('heading',{name:'Synthetic resume B',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Synthetic resume A',exact:true})).toHaveCount(0);
    await page.getByRole('button',{name:'表格',exact:true}).click();
   }
-  if(type==='health'){await page.getByRole('button',{name:'运动',exact:true}).click();await expect(page.getByText('暂无已完成的运动记录。飞盘、跑步、力量训练等都可记录；已有计划不会当作完成。',{exact:true})).toBeVisible();await page.getByRole('button',{name:'表格',exact:true}).click();}
+  if(type==='health'){
+   await page.getByRole('button',{name:'运动',exact:true}).click();
+   const calendar=page.getByRole('region',{name:'运动日历与记录',exact:true});
+   const plans=calendar.getByRole('region',{name:'运动计划',exact:true});
+   const noMatchingPlan=plans.getByText('当前没有匹配的运动计划。',{exact:true});
+   const noCompletion=calendar.getByText('暂无已读完成记录。',{exact:true});
+   const heatmap=calendar.getByRole('img',{name:/^已读运动日历/});
+   await expect(noCompletion).toBeVisible();
+   await expect(noMatchingPlan).toBeVisible();
+   await expect(heatmap).toHaveCount(0);
+   const planTitle='Synthetic exercise plan';
+   await service.mutate(config.ownerId,'health',null,{spaceId:config.spaceId,confirmed:true,fields:{
+    ...emptyHealthFields('training','Asia/Shanghai'),title:planTitle,occurredOn:'2031-02-01',
+   }},'record-browser-exercise-plan');
+   await page.getByRole('button',{name:'刷新',exact:true}).click();
+   const plan=plans.getByRole('button',{name:planTitle,exact:true});
+   await expect(plan).toBeVisible();
+   await expect(noMatchingPlan).toHaveCount(0);
+   await expect(noCompletion).toBeVisible();
+   await expect(heatmap).toHaveCount(0);
+   const search=page.getByRole('textbox',{name:'搜索健康',exact:true});
+   await search.fill('Unsent synthetic health');
+   await expect(noMatchingPlan).toBeVisible();
+   await expect(plan).toHaveCount(0);
+   await expect(noCompletion).toBeVisible();
+   await search.clear();
+   await expect(plan).toBeVisible();
+   await expect(noMatchingPlan).toHaveCount(0);
+   await page.getByRole('button',{name:'表格',exact:true}).click();
+  }
   await page.getByRole('button',{name:'Unsent synthetic '+type,exact:true}).click();const dialog=page.getByRole('dialog');assert.ok(await dialog.evaluate(element=>element.scrollWidth<=element.clientWidth+1));await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);assert.deepEqual(errors,[]);assert.deepEqual(writes,type==='health'?['POST','POST','PATCH']:type==='career'||type==='media'?['POST','PATCH','PATCH']:['POST','PATCH']);assert.equal(repo.rows.get(id)!.revision,type==='career'||type==='media'?3:2);if(type==='media'||type==='career'||type==='portfolio')await page.getByRole('button',{name:type==='portfolio'?'概览':type==='career'?'求职看板':'看板',exact:true}).click();
   if(type==='person'){
    const namesake='Synthetic namesake', privateStart='Synthetic private note starts here ', privateEnd=' synthetic final marker';
